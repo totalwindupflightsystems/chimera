@@ -185,10 +185,13 @@ def _extract_text(result: Any) -> str:
     content = getattr(message, "content", None)
     if content:
         return content
-    # DeepSeek reasoning models (v4-pro, v4-flash) put response in reasoning_content
-    reasoning = getattr(message, "reasoning_content", None)
-    if reasoning:
-        return reasoning
+    # Reasoning models put their response in non-standard fields:
+    #   DeepSeek V4 series → reasoning_content
+    #   MiniMax M3, Kimi K2 → reasoning
+    for attr in ("reasoning_content", "reasoning"):
+        val = getattr(message, attr, None)
+        if val:
+            return val
     return ""
 
 
