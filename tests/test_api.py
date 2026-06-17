@@ -114,3 +114,91 @@ def test_chat_completions_strips_system_messages(config) -> None:  # type: ignor
     )
     assert "the real prompt" in captured[0]
     assert "be helpful" not in captured[0]
+
+
+# --------------------------------------------------------------------------- #
+# Client-defined DAG + stage_models over the HTTP API (Features 1 & 2)
+# --------------------------------------------------------------------------- #
+
+
+def _client_dag_dict() -> dict[str, object]:
+    return {
+        "stages": [
+            {"id": "researcher", "kind": "worker", "model": "deepseek/deepseek-chat"},
+            {"id": "finalizer", "kind": "aggregator",
+             "model": "zai-coding-plan/glm-5.2", "depends_on": ["researcher"]},
+        ],
+        "edges": [["researcher", "finalizer"]],
+    }
+
+
+def test_client_dag_rejected_without_opt_in(config) -> None:  # type: ignore[no-untyped-def]
+    """dag supplied without allow_custom_dag → HTTP 400."""
+    client = _client(config)
+    r = client.post(
+        "/v1/deliberate",
+        json={"prompt": "hi", "dag": _client_dag_dict(), "allow_custom_dag": False},
+    )
+    assert r.status_code == 400
+    assert "allow_custom_dag" in r.json()["detail"]
+
+
+def test_client_dag_accepted_with_opt_in(config) -> None:  # type: ignore[no-untyped-def]
+    """dag + allow_custom_dag=true → 200, trace source is 'custom'."""
+    client = _client(config)
+    r = client.post(
+        "/v1/deliberate",
+        json={"prompt": "hi", "dag": _client_dag_dict(), "allow_custom_dag": True},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["trace"]["source"] == "custom"
+    stage_ids = {s["stage_id"] for s in data["trace"]["stages"]}
+    assert stage_ids == {"researcher", "finalizer"}
+
+
+def test_client_dag_invalid_model_returns_400(config) -> None:  # type: ignore[no-untyped-def]
+    """Invalid model in a client DAG surfaces as HTTP 400."""
+    client = _client(config)
+    bad_dag = {
+        "stages": [
+            {"id": "w", "kind": "worker", "model": "no/such/model"},
+            {"id": "a", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2",
+             "depends_on": ["w"]},
+        ],
+        "edges": [["w", "a"]],
+    }
+    r = client.post(
+        "/v1/deliberate",
+        json={"prompt": "hi", "dag": bad_dag, "allow_custom_dag": True},
+    )
+    assert r.status_code == 400
+
+
+def test_stage_models_via_api(config) -> None:  # type: ignore[no-untyped-def]
+    """stage_models passes through the API and forces a stage's model."""
+    client = _client(config)
+    r = client.post(
+        "/v1/deliberate",
+        json={"prompt": "hi", "stage_models": {"worker_1": "zai-coding-plan/glm-5.2"}},
+    )
+    assert r.status_code == 200, r.text
+    workers = {s["stage_id"]: s["model"] for s in r.json()["trace"]["stages"]
+               if s["kind"] == "worker"}
+    assert workers["worker_1"] == "zai-coding-plan/glm-5.2"
+
+
+def test_chat_completions_accepts_custom_dag(config) -> None:  # type: ignore[no-untyped-def]
+    """The OpenAI-compatible endpoint also honors allow_custom_dag."""
+    client = _client(config)
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "hi"}],
+            "dag": _client_dag_dict(),
+            "allow_custom_dag": True,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["choices"][0]["message"]["content"] == "FINAL ANSWER"

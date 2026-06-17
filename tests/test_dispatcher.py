@@ -7,6 +7,7 @@ with a scripted gateway.
 
 from __future__ import annotations
 
+from typing import Any
 
 import pytest
 
@@ -16,12 +17,37 @@ from chimera.dispatcher import (
     Dispatcher,
     FormationDAG,
     Stage,
+    build_dag_from_dict,
     build_dispatcher_prompt,
     build_preset_dag,
     parse_dispatch_result,
 )
 from chimera.gateway import GatewayError
 from tests.conftest import FakeGateway, dispatch_json, resp
+
+
+def _client_dag(
+    *,
+    workers: list[tuple[str, str]] | None = None,
+    aggregator: str = "zai-coding-plan/glm-5.2",
+    extra_stages: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build a valid client/config DAG mapping (the runtime DAG shape)."""
+    workers = workers or [("worker_1", "deepseek/deepseek-chat")]
+    stages: list[dict[str, Any]] = []
+    edges: list[list[str]] = []
+    worker_ids = [wid for wid, _ in workers]
+    for wid, wmodel in workers:
+        stages.append({"id": wid, "kind": "worker", "model": wmodel, "depends_on": []})
+        edges.append([wid, "aggregator"])
+    stages.append(
+        {"id": "aggregator", "kind": "aggregator", "model": aggregator, "depends_on": worker_ids}
+    )
+    for s in extra_stages or []:
+        stages.append(s)
+        for dep in s.get("depends_on", []):
+            edges.append([dep, s["id"]])
+    return {"stages": stages, "edges": edges}
 
 
 # --------------------------------------------------------------------------- #
@@ -258,3 +284,175 @@ async def test_dispatcher_unknown_formation_uses_auto(config) -> None:  # type: 
     outcome = await Dispatcher(config, gw).dispatch("task", "nonexistent")
     # auto mode applied
     assert outcome.result.source == "auto"
+
+
+# --------------------------------------------------------------------------- #
+# Config-defined custom DAG formation (Feature 3) + build_dag_from_dict
+# --------------------------------------------------------------------------- #
+
+
+def test_config_defined_custom_formation_loaded_correctly(config) -> None:  # type: ignore[no-untyped-def]
+    """A FormationPreset with `dag` builds that DAG directly via build_preset_dag."""
+    dag_dict = _client_dag(
+        workers=[("analyzer", "deepseek/deepseek-chat"),
+                 ("designer", "openrouter/google/gemini-2.5-flash")],
+        aggregator="zai-coding-plan/glm-5.2",
+    )
+    preset = FormationPreset(dag=dag_dict)
+    assert preset.has_dag is True
+    dag = build_preset_dag(preset, config)
+    stage_ids = dag.stage_ids()
+    assert stage_ids == ["analyzer", "designer", "aggregator"]
+    # models preserved
+    assert dag.stage("analyzer").model == "deepseek/deepseek-chat"
+    assert dag.stage("designer").model == "openrouter/google/gemini-2.5-flash"
+    assert dag.stage("aggregator").model == "zai-coding-plan/glm-5.2"
+    # edges preserved
+    assert ("analyzer", "aggregator") in dag.edges
+    assert ("designer", "aggregator") in dag.edges
+
+
+def test_config_defined_dag_wins_over_legacy_fields(config) -> None:  # type: ignore[no-untyped-def]
+    """When both `dag` and legacy `workers` are set, `dag` wins."""
+    dag_dict = _client_dag(workers=[("solo", "deepseek/deepseek-chat")])
+    preset = FormationPreset(workers=99, aggregator="default", dag=dag_dict)
+    dag = build_preset_dag(preset, config)
+    # Only the single worker from the dag, not 99
+    assert len([s for s in dag.stages if s.kind == "worker"]) == 1
+    assert dag.stage("solo") is not None
+
+
+def test_config_defined_custom_chain_dag(config) -> None:  # type: ignore[no-untyped-def]
+    """An arbitrary multi-stage chain DAG from config is honored exactly."""
+    chain = {
+        "stages": [
+            {"id": "analyzer", "kind": "worker", "model": "deepseek/deepseek-chat"},
+            {"id": "reviewer", "kind": "aggregator",
+             "model": "zai-coding-plan/glm-5.2", "depends_on": ["analyzer"]},
+            {"id": "implementer", "kind": "worker",
+             "model": "openrouter/anthropic/claude-sonnet-4", "depends_on": ["reviewer"]},
+            {"id": "verifier", "kind": "aggregator",
+             "model": "zai-coding-plan/glm-5.2", "depends_on": ["implementer"]},
+            {"id": "finalizer", "kind": "merge",
+             "model": "deepseek/deepseek-chat", "depends_on": ["verifier"]},
+        ],
+        "edges": [["analyzer", "reviewer"], ["reviewer", "implementer"],
+                  ["implementer", "verifier"], ["verifier", "finalizer"]],
+    }
+    dag = build_preset_dag(FormationPreset(dag=chain), config)
+    order = dag.topo_order()
+    ids = [s.id for s in order]
+    assert ids == ["analyzer", "reviewer", "implementer", "verifier", "finalizer"]
+    assert dag.terminals()[-1].id == "finalizer"
+
+
+# --------------------------------------------------------------------------- #
+# Client DAG validation (Feature 1) — build_dag_from_dict rejections
+# --------------------------------------------------------------------------- #
+
+
+def test_client_dag_invalid_model_rejected(config) -> None:  # type: ignore[no-untyped-def]
+    bad = _client_dag(workers=[("worker_1", "no/such/model")])
+    with pytest.raises(ValueError, match="unknown model"):
+        build_dag_from_dict(bad, config)
+
+
+def test_client_dag_cycle_rejected(config) -> None:  # type: ignore[no-untyped-def]
+    cyclic = {
+        "stages": [
+            {"id": "a", "kind": "worker", "model": "deepseek/deepseek-chat",
+             "depends_on": ["b"]},
+            {"id": "b", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2",
+             "depends_on": ["a"]},
+        ],
+        "edges": [["a", "b"], ["b", "a"]],
+    }
+    with pytest.raises(ValueError, match="cycle"):
+        build_dag_from_dict(cyclic, config)
+
+
+def test_client_dag_no_worker_stages_rejected(config) -> None:  # type: ignore[no-untyped-def]
+    no_worker = {
+        "stages": [
+            {"id": "aggregator", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2"},
+        ],
+        "edges": [],
+    }
+    with pytest.raises(ValueError, match="no worker"):
+        build_dag_from_dict(no_worker, config)
+
+
+def test_client_dag_no_aggregator_stages_rejected(config) -> None:  # type: ignore[no-untyped-def]
+    no_agg = {
+        "stages": [
+            {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat"},
+        ],
+        "edges": [],
+    }
+    with pytest.raises(ValueError, match="no aggregator"):
+        build_dag_from_dict(no_agg, config)
+
+
+def test_client_dag_dangling_dependency_rejected(config) -> None:  # type: ignore[no-untyped-def]
+    bad = {
+        "stages": [
+            {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat",
+             "depends_on": ["ghost"]},
+            {"id": "aggregator", "kind": "aggregator",
+             "model": "zai-coding-plan/glm-5.2", "depends_on": ["worker_1"]},
+        ],
+        "edges": [["worker_1", "aggregator"]],
+    }
+    with pytest.raises(ValueError, match="unknown"):
+        build_dag_from_dict(bad, config)
+
+
+def test_client_dag_resolves_default_alias(config) -> None:  # type: ignore[no-untyped-def]
+    dag_dict = {
+        "stages": [
+            {"id": "worker_1", "kind": "worker", "model": "default_worker"},
+            {"id": "aggregator", "kind": "aggregator", "model": "default",
+             "depends_on": ["worker_1"]},
+        ],
+        "edges": [["worker_1", "aggregator"]],
+    }
+    dag = build_dag_from_dict(dag_dict, config)
+    assert dag.stage("worker_1").model == config.defaults.default_worker
+    assert dag.stage("aggregator").model == config.defaults.default_aggregator
+
+
+# --------------------------------------------------------------------------- #
+# Custom DAG dispatcher flow (Feature 1) — FILL-IN pass only
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_custom_dag_dispatch_fills_prompts_and_honors_structure(config) -> None:  # type: ignore[no-untyped-def]
+    """allow_custom_dag: dispatcher is called once to FILL-IN, structure honored."""
+    dag_dict = _client_dag(
+        workers=[("researcher", "deepseek/deepseek-chat")],
+        aggregator="zai-coding-plan/glm-5.2",
+    )
+    # Dispatcher payload references different/ignored stage ids — must be ignored
+    # in favor of the fixed DAG, but its prompts should still parse.
+    payload = dispatch_json(
+        workers=[("researcher", "deepseek/deepseek-chat")],
+        aggregator_instructions="Merge research into a final answer.",
+    )
+
+    def responder(model, messages, **kw):
+        if model == config.defaults.dispatcher:
+            return resp(payload, model, tok_in=100, tok_out=200)
+        return resp(f"[output from {model}]", model)
+
+    gw = FakeGateway(responder)
+    custom_dag = build_dag_from_dict(dag_dict, config)
+    outcome = await Dispatcher(config, gw).dispatch("task", "auto", custom_dag=custom_dag)
+    assert outcome.result.source == "custom"
+    # Structure honored exactly
+    assert outcome.result.formation.stage_ids() == ["researcher", "aggregator"]
+    # Dispatcher called exactly once (FILL-IN pass)
+    dispatcher_calls = [c for c in gw.calls if c[0] == config.defaults.dispatcher]
+    assert len(dispatcher_calls) == 1
+    # The fixed DAG was embedded in the dispatcher prompt
+    assert "researcher" in dispatcher_calls[0][1][0]["content"]

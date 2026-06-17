@@ -55,6 +55,10 @@ class DeliberateRequest(BaseModel):
     aggregator_model: str | None = None                # Override aggregator
     worker_model: str | None = None               # Override default worker
     output_schema: dict[str, Any] | None = None   # JSON Schema for final answer
+    stage_models: dict[str, str] | None = None    # Per-stage model overrides (stage_id → model)
+    # Client-defined DAG (Feature 1) — disabled unless allow_custom_dag=True
+    dag: dict[str, Any] | None = None             # Full DAG definition from client
+    allow_custom_dag: bool = False                # Must be True to accept client DAG
 
 
 class DeliberateResponse(BaseModel):
@@ -79,6 +83,10 @@ class ChatCompletionRequest(BaseModel):
     dispatcher_model: str | None = None
     aggregator_model: str | None = None
     worker_model: str | None = None
+    stage_models: dict[str, str] | None = None    # Per-stage model overrides (stage_id → model)
+    # Client-defined DAG (Feature 1) — disabled unless allow_custom_dag=True
+    dag: dict[str, Any] | None = None             # Full DAG definition from client
+    allow_custom_dag: bool = False                # Must be True to accept client DAG
 
 
 class ChatChoiceMessage(BaseModel):
@@ -140,6 +148,11 @@ def _register_routes(app: FastAPI) -> None:
     @app.post("/v1/deliberate", response_model=DeliberateResponse)
     async def deliberate(request: Request, body: DeliberateRequest) -> DeliberateResponse:
         engine: Engine = request.app.state.engine
+        if body.dag is not None and not body.allow_custom_dag:
+            raise HTTPException(
+                status_code=400,
+                detail="Custom DAG requires allow_custom_dag=true",
+            )
         from chimera.config import DeliberationOverrides
         overrides = DeliberationOverrides(
             allowed_models=body.allowed_models,
@@ -148,10 +161,15 @@ def _register_routes(app: FastAPI) -> None:
             aggregator_model=body.aggregator_model,
             worker_model=body.worker_model,
             output_schema=body.output_schema,
+            stage_models=body.stage_models,
         )
-        result = await engine.deliberate(
-            body.prompt, body.formation, overrides=overrides,
-        )
+        try:
+            result = await engine.deliberate(
+                body.prompt, body.formation, overrides=overrides,
+                dag=body.dag, allow_custom_dag=body.allow_custom_dag,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         return DeliberateResponse(
             answer=result.answer,
             trace=result.trace.model_dump(mode="json"),
@@ -163,6 +181,11 @@ def _register_routes(app: FastAPI) -> None:
         request: Request, body: ChatCompletionRequest
     ) -> ChatCompletionResponse:
         engine: Engine = request.app.state.engine
+        if body.dag is not None and not body.allow_custom_dag:
+            raise HTTPException(
+                status_code=400,
+                detail="Custom DAG requires allow_custom_dag=true",
+            )
         prompt = "\n".join(m.content for m in body.messages if m.role != "system")
         formation = body.model or "auto"
         from chimera.config import DeliberationOverrides
@@ -172,6 +195,7 @@ def _register_routes(app: FastAPI) -> None:
             dispatcher_model=body.dispatcher_model,
             aggregator_model=body.aggregator_model,
             worker_model=body.worker_model,
+            stage_models=body.stage_models,
         )
         # Extract output schema from OpenAI-style response_format
         output_schema = None
@@ -184,8 +208,9 @@ def _register_routes(app: FastAPI) -> None:
         try:
             result = await engine.deliberate(
                 prompt, formation, overrides=overrides, output_schema=output_schema,
+                dag=body.dag, allow_custom_dag=body.allow_custom_dag,
             )
-        except KeyError as exc:
+        except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=f"Unknown model/formation: {exc}")
         trace = result.trace
         completion_tokens = trace.total_tokens - trace.dispatch.tokens_input

@@ -51,23 +51,56 @@ class ChimeraGroup(click.Group):
 @click.option("-f", "--formation", default="auto", help="Formation preset name.")
 @click.option("-v", "--verbose", is_flag=True, help="Print the full trace.")
 @click.option("-c", "--config", "config_path", default=None, help="Path to chimera.yaml.")
+@click.option(
+    "--allow-custom-dag",
+    is_flag=True,
+    help="Accept a client-defined DAG (requires --dag).",
+)
+@click.option(
+    "--dag",
+    "dag_json",
+    default=None,
+    help="Client-defined DAG as a JSON string ({stages:[...], edges:[[a,b]]}).",
+)
+@click.option(
+    "--stage-models",
+    "stage_models_json",
+    default=None,
+    help='Per-stage model overrides as JSON (e.g. \'{"worker_1":"zai-coding-plan/glm-5.2"}\').',
+)
 @click.pass_context
 def main(
     ctx: click.Context,
     formation: str,
     verbose: bool,
     config_path: str | None,
+    allow_custom_dag: bool,
+    dag_json: str | None,
+    stage_models_json: str | None,
 ) -> None:
     """Chimera — dynamic multi-model deliberation gateway."""
     ctx.obj = {
         "formation": formation,
         "verbose": verbose,
         "config_path": config_path,
+        "allow_custom_dag": allow_custom_dag,
+        "dag": _parse_json_opt(dag_json, "dag"),
+        "stage_models": _parse_json_opt(stage_models_json, "stage-models"),
     }
     # Bare empty invocation (no subcommand, no prompt) → show help.
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
         ctx.exit()
+
+
+def _parse_json_opt(value: str | None, opt_name: str) -> Any:
+    """Parse a CLI JSON option; ``None`` passes through untouched."""
+    if value is None:
+        return None
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise click.BadParameter(f"--{opt_name} must be valid JSON: {exc}") from exc
 
 
 def _load_cfg(ctx: click.Context) -> ChimeraConfig:
@@ -86,7 +119,26 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
         console.print(f"[red]error:[/red] {exc}")
         sys.exit(2)
     engine = Engine(config, LiteLLMGateway(config))
-    result = asyncio.run(engine.deliberate(prompt, ctx.obj["formation"]))
+    # Only forward the new kwargs when they are actually set, so the default
+    # call shape stays ``deliberate(prompt, formation)`` (backward compatible).
+    extra_kwargs: dict[str, Any] = {}
+    stage_models = ctx.obj.get("stage_models")
+    dag = ctx.obj.get("dag")
+    allow_custom_dag = ctx.obj.get("allow_custom_dag", False)
+    if stage_models:
+        from chimera.config import DeliberationOverrides
+
+        extra_kwargs["overrides"] = DeliberationOverrides(stage_models=stage_models)
+    if dag is not None:
+        extra_kwargs["dag"] = dag
+        extra_kwargs["allow_custom_dag"] = allow_custom_dag
+    try:
+        result = asyncio.run(
+            engine.deliberate(prompt, ctx.obj["formation"], **extra_kwargs)
+        )
+    except ValueError as exc:
+        console.print(f"[red]error:[/red] {exc}")
+        sys.exit(2)
     console.print(Panel(result.answer, title="Chimera", border_style="cyan"))
     if ctx.obj.get("verbose"):
         _print_trace(result.trace)

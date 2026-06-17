@@ -162,7 +162,18 @@ class DispatchOutcome:
 
 
 def build_preset_dag(preset: FormationPreset, config: ChimeraConfig) -> FormationDAG:
-    """Construct a :class:`FormationDAG` from a config preset."""
+    """Construct a :class:`FormationDAG` from a config preset.
+
+    Resolution order:
+    1. ``preset.dag`` — an explicit client/config-defined DAG. Returned (validated)
+       directly. This is the modern path; the legacy ``simple``/``debate``/``audit``
+       presets can be redefined this way in config.
+    2. ``preset.workers`` / ``aggregator`` — the legacy structural fallback.
+    3. Otherwise (e.g. an ``auto`` preset) → ``ValueError``.
+    """
+    if preset.has_dag and preset.dag is not None:
+        return build_dag_from_dict(preset.dag, config)
+
     if preset.is_auto or preset.workers is None:
         raise ValueError("Cannot build a structural DAG from an auto preset")
 
@@ -209,6 +220,41 @@ def _resolve_worker_models(preset: FormationPreset, config: ChimeraConfig) -> li
     return [config.defaults.default_worker] * (preset.workers or 1)
 
 
+def build_dag_from_dict(dag_dict: dict[str, Any], config: ChimeraConfig) -> FormationDAG:
+    """Parse a client/config-defined DAG mapping into a validated :class:`FormationDAG`.
+
+    Expected shape::
+
+        {"stages": [{"id", "kind", "model", "depends_on"}, ...], "edges": [["a","b"], ...]}
+
+    Validation (via :func:`_validate_dag`):
+    * every ``depends_on`` references a known stage id,
+    * every stage ``model`` exists in the catalog (``"default"`` alias resolved),
+    * at least one ``worker`` stage,
+    * at least one ``aggregator``/``merge``/``audit`` stage,
+    * no cycles.
+    """
+    stages_raw = dag_dict.get("stages") or []
+    if not isinstance(stages_raw, list) or not stages_raw:
+        raise ValueError("Client DAG must define a non-empty 'stages' list")
+    stages: list[Stage] = []
+    for s in stages_raw:
+        if not isinstance(s, dict) or "id" not in s:
+            raise ValueError("Each DAG stage must be a mapping with an 'id'")
+        stages.append(
+            Stage(
+                id=s["id"],
+                kind=s.get("kind", "worker"),
+                model=config.resolve_model_alias(s.get("model", "")),
+                depends_on=list(s.get("depends_on", [])),
+            )
+        )
+    edges = [tuple(e) for e in (dag_dict.get("edges") or [])]
+    dag = FormationDAG(stages=stages, edges=edges)
+    _validate_dag(dag, config)
+    return dag
+
+
 def _resolve_aggregator_models(preset: FormationPreset, config: ChimeraConfig) -> list[str]:
     if preset.aggregators:
         return [config.resolve_model_alias(j) for j in preset.aggregators]
@@ -216,8 +262,33 @@ def _resolve_aggregator_models(preset: FormationPreset, config: ChimeraConfig) -
     return [config.resolve_model_alias(agg_name)]
 
 
+def _has_cycle(dag: FormationDAG) -> bool:
+    """Return True if the DAG's dependency graph contains a cycle."""
+    by_id = {s.id: s for s in dag.stages}
+    state: dict[str, int] = {}  # 0=visiting, 1=done
+
+    def visit(node_id: str) -> bool:
+        st = state.get(node_id)
+        if st == 1:
+            return False
+        if st == 0:
+            return True
+        state[node_id] = 0
+        node = by_id.get(node_id)
+        if node is not None:
+            for dep in node.depends_on:
+                if dep in by_id and visit(dep):
+                    return True
+        state[node_id] = 1
+        return False
+
+    return any(visit(s.id) for s in dag.stages)
+
+
 def _validate_dag(dag: FormationDAG, config: ChimeraConfig) -> None:
     ids = set(dag.stage_ids())
+    if len(ids) != len(dag.stages):
+        raise ValueError("Formation DAG has duplicate stage ids")
     for stage in dag.stages:
         for dep in stage.depends_on:
             if dep not in ids:
@@ -228,6 +299,8 @@ def _validate_dag(dag: FormationDAG, config: ChimeraConfig) -> None:
         raise ValueError("Formation has no worker stages")
     if not any(s.kind in {"aggregator", "merge", "audit"} for s in dag.stages):
         raise ValueError("Formation has no aggregator/merge/audit stages")
+    if _has_cycle(dag):
+        raise ValueError("Formation DAG contains a cycle")
 
 
 # --------------------------------------------------------------------------- #
@@ -489,13 +562,31 @@ class Dispatcher:
         self.gateway = gateway
         self.model = config.defaults.dispatcher
 
-    async def dispatch(self, user_prompt: str, formation: str = "auto") -> DispatchOutcome:
-        preset = self._resolve_preset(formation)
+    async def dispatch(
+        self,
+        user_prompt: str,
+        formation: str = "auto",
+        *,
+        custom_dag: FormationDAG | None = None,
+    ) -> DispatchOutcome:
+        """Run the single dispatcher model call.
+
+        When ``custom_dag`` is supplied (a validated client/config-defined DAG),
+        the DESIGN phase is skipped: the dispatcher only performs the FILL-IN pass
+        (writing per-worker prompts + merge instructions) against that fixed DAG.
+        Otherwise the preset (``formation``) or ``auto`` path is used.
+        """
         start = time.monotonic()
-        if preset is not None and not preset.is_auto:
-            messages, response, result = await self._dispatch_preset(user_prompt, formation, preset)
+        if custom_dag is not None:
+            messages, response, result = await self._dispatch_custom(user_prompt, custom_dag)
         else:
-            messages, response, result = await self._dispatch_auto(user_prompt)
+            preset = self._resolve_preset(formation)
+            if preset is not None and not preset.is_auto:
+                messages, response, result = await self._dispatch_preset(
+                    user_prompt, formation, preset
+                )
+            else:
+                messages, response, result = await self._dispatch_auto(user_prompt)
         latency_ms = int((time.monotonic() - start) * 1000)
         return DispatchOutcome(
             result=result, messages=messages, response=response, latency_ms=latency_ms
@@ -517,6 +608,22 @@ class Dispatcher:
             "dispatch_auto_done",
             stages=result.formation.stage_ids(),
             source=result.source,
+        )
+        return messages, response, result
+
+    async def _dispatch_custom(
+        self, user_prompt: str, dag: FormationDAG
+    ) -> tuple[list[dict[str, str]], GatewayResponse, DispatchResult]:
+        """Fill-in pass for a client/config-defined DAG (no design phase)."""
+        messages = build_dispatcher_prompt(user_prompt, self.config, fixed_dag=dag)
+        response = await self._call_dispatcher(messages)
+        result = parse_dispatch_result(response.text, self.config, fallback_dag=dag)
+        # Always honor the client-provided structure exactly.
+        result.formation = dag
+        result.source = "custom"
+        log.info(
+            "dispatch_custom_done",
+            stages=dag.stage_ids(),
         )
         return messages, response, result
 
@@ -557,6 +664,7 @@ __all__ = [
     "FormationDAG",
     "Stage",
     "WorkerPrompt",
+    "build_dag_from_dict",
     "build_dispatcher_prompt",
     "build_preset_dag",
     "parse_dispatch_result",

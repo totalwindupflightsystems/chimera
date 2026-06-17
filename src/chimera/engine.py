@@ -22,6 +22,7 @@ from chimera.dispatcher import (
     Dispatcher,
     FormationDAG,
     Stage,
+    build_dag_from_dict,
 )
 from chimera.gateway import Gateway, GatewayError, GatewayResponse
 from chimera.aggregator import Aggregator, StageResult
@@ -86,6 +87,39 @@ def _last_user_content(messages: list[dict[str, str]]) -> str:
     return messages[-1].get("content", "") if messages else ""
 
 
+def _apply_stage_models(
+    dispatch: DispatchResult,
+    stage_models: dict[str, str] | None,
+    config: ChimeraConfig,
+) -> None:
+    """Force per-stage models (stage_id → model) onto a dispatch plan.
+
+    * Unknown stage ids are logged as warnings and skipped (never fatal).
+    * Unknown model names raise ``ValueError`` (validated against the catalog).
+    * Worker prompt model entries are kept in sync with the stage model.
+    * Applies to ``auto``, ``preset`` and ``custom`` DAGs uniformly. Per-stage
+      overrides take precedence over global request overrides.
+    """
+    if not stage_models:
+        return
+    stage_ids = set(dispatch.formation.stage_ids())
+    for stage_id, model in stage_models.items():
+        if stage_id not in stage_ids:
+            log.warning("stage_model_unknown_stage", stage_id=stage_id)
+            continue
+        if model not in config.models:
+            raise ValueError(
+                f"stage_models references unknown model for stage "
+                f"{stage_id!r}: {model!r}"
+            )
+        stage = dispatch.formation.stage(stage_id)
+        stage.model = model
+        if stage.kind == "worker":
+            wp = dispatch.worker_prompt_for(stage_id)
+            if wp is not None:
+                wp.model = model
+
+
 class Engine:
     """Runs the full pipeline: dispatcher → workers → aggregator → (merge/audit)."""
 
@@ -102,23 +136,40 @@ class Engine:
         overrides: DeliberationOverrides | None = None,
         *,
         output_schema: dict[str, Any] | None = None,
+        dag: dict[str, Any] | None = None,
+        allow_custom_dag: bool = False,
     ) -> DeliberationResult:
         """Run the full deliberation pipeline and return the merged answer + trace.
         
         Args:
             user_prompt: The user's query.
             formation: Formation name or 'auto'.
-            overrides: Request-level model overrides (allowed/disallowed/force models).
+            overrides: Request-level model overrides (allowed/disallowed/force models,
+                per-stage model overrides via ``stage_models``).
             output_schema: Optional JSON Schema the final answer must conform to.
                 If omitted, the dispatcher provides one. If the client provides one,
                 it overrides the dispatcher's.
+            dag: Optional client-defined DAG definition (a mapping with ``stages``
+                and ``edges``). Requires ``allow_custom_dag=True``; otherwise a
+                ``ValueError`` is raised. When enabled, the dispatcher skips the
+                DESIGN pass and only fills in per-stage prompts/instructions.
+            allow_custom_dag: Must be True for ``dag`` to be accepted.
         """
         request_id = uuid.uuid4().hex[:16]
         structlog.contextvars.bind_contextvars(request_id=request_id, formation=formation)
         started = time.monotonic()
 
-        outcome = await self.dispatcher.dispatch(user_prompt, formation)
+        custom_formation = self._resolve_custom_dag(dag, allow_custom_dag)
+        outcome = await self.dispatcher.dispatch(
+            user_prompt, formation, custom_dag=custom_formation
+        )
         dispatch_span = self._build_dispatch_span(outcome, formation)
+
+        # Apply per-stage model overrides (Feature 2). Unknown stages warn;
+        # unknown models raise ValueError. Done after dispatch so it applies to
+        # auto, preset, and custom DAGs alike.
+        stage_models = overrides.stage_models if overrides else None
+        _apply_stage_models(outcome.result, stage_models, self.config)
 
         log.info(
             "engine_dispatched",
@@ -150,6 +201,22 @@ class Engine:
         _maybe_langfuse(trace, user_prompt)
         structlog.contextvars.unbind_contextvars("request_id", "formation")
         return DeliberationResult(answer=answer, trace=trace)
+
+    def _resolve_custom_dag(
+        self,
+        dag: dict[str, Any] | None,
+        allow_custom_dag: bool,
+    ) -> FormationDAG | None:
+        """Validate and build a client-defined DAG, or return None.
+
+        Raises ``ValueError`` if a DAG was supplied without opting in, or if the
+        DAG fails validation (unknown model, cycle, missing worker/aggregator, ...).
+        """
+        if dag is None:
+            return None
+        if not allow_custom_dag:
+            raise ValueError("Custom DAG requires allow_custom_dag=True")
+        return build_dag_from_dict(dag, self.config)
 
     # ------------------------------------------------------------------ #
     # DAG execution

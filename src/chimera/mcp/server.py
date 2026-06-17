@@ -9,6 +9,7 @@ Tools:
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -32,9 +33,28 @@ def build_server(
     state = {"engine": engine or Engine(cfg, LiteLLMGateway(cfg)), "config": cfg}
 
     @server.tool()
-    async def chimera_deliberate(prompt: str, formation: str = "auto") -> str:
-        """Run a full multi-model deliberation and return the merged answer + trace."""
-        result = await state["engine"].deliberate(prompt, formation)
+    async def chimera_deliberate(
+        prompt: str,
+        formation: str = "auto",
+        stage_models: dict[str, str] | None = None,
+        dag: dict[str, Any] | None = None,
+        allow_custom_dag: bool = False,
+    ) -> str:
+        """Run a full multi-model deliberation and return the merged answer + trace.
+
+        ``stage_models`` forces models per stage (stage_id → model).
+        ``dag`` defines a full client DAG (requires ``allow_custom_dag=True``).
+        """
+        from chimera.config import DeliberationOverrides
+
+        overrides = DeliberationOverrides(stage_models=stage_models)
+        result = await state["engine"].deliberate(
+            prompt,
+            formation,
+            overrides=overrides,
+            dag=dag,
+            allow_custom_dag=allow_custom_dag,
+        )
         return json.dumps(
             {"answer": result.answer, "trace": result.trace.model_dump(mode="json")},
             indent=2,

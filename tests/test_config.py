@@ -10,6 +10,7 @@ import yaml
 from chimera.config import (
     DEFAULT_COST_RATES,
     ChimeraConfig,
+    FormationPreset,
     ModelEntry,
     find_config_path,
     load_config,
@@ -111,3 +112,66 @@ def test_load_config_rejects_non_mapping(tmp_path: Path) -> None:
     path.write_text("- just\n- a\n- list\n", encoding="utf-8")
     with pytest.raises(ValueError):
         load_config(path)
+
+
+# --------------------------------------------------------------------------- #
+# Config-defined custom formations (Feature 3)
+# --------------------------------------------------------------------------- #
+
+
+def test_formation_preset_accepts_dag_field() -> None:
+    """FormationPreset carries an optional `dag` mapping."""
+    preset = FormationPreset(
+        dag={
+            "stages": [
+                {"id": "w", "kind": "worker", "model": "m"},
+                {"id": "a", "kind": "aggregator", "model": "m", "depends_on": ["w"]},
+            ],
+            "edges": [["w", "a"]],
+        }
+    )
+    assert preset.has_dag is True
+    assert preset.is_auto is False
+    assert preset.dag is not None
+    assert preset.dag["stages"][0]["id"] == "w"
+
+
+def test_formation_preset_without_dag_has_dag_false() -> None:
+    assert FormationPreset(workers=2, aggregator="default").has_dag is False
+    assert FormationPreset(mode="auto").has_dag is False
+    assert FormationPreset().has_dag is False
+
+
+def test_config_dag_preset_round_trips(config_file: Path) -> None:
+    """A config-defined DAG formation loads through load_config unchanged."""
+    # add a dag preset to the raw dict via a fresh file
+    import copy
+    raw = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+    raw2 = copy.deepcopy(raw)
+    raw2["formations"]["custom-chain"] = {
+        "dag": {
+            "stages": [
+                {"id": "analyzer", "kind": "worker",
+                 "model": "deepseek/deepseek-chat"},
+                {"id": "finalizer", "kind": "aggregator",
+                 "model": "zai-coding-plan/glm-5.2", "depends_on": ["analyzer"]},
+            ],
+            "edges": [["analyzer", "finalizer"]],
+        }
+    }
+    custom_path = config_file.parent / "chimera_custom.yaml"
+    custom_path.write_text(yaml.safe_dump(raw2), encoding="utf-8")
+    cfg2 = load_config(custom_path)
+    preset = cfg2.formations["custom-chain"]
+    assert preset.has_dag is True
+    assert preset.dag is not None
+    assert preset.dag["stages"][0]["id"] == "analyzer"
+
+
+def test_backward_compat_legacy_presets_still_present(config: ChimeraConfig) -> None:
+    """simple/debate/audit remain available without any config changes."""
+    assert set(config.formations) >= {"auto", "simple", "debate", "audit"}
+    # Legacy structural fields still populated (no dag).
+    assert config.formations["simple"].has_dag is False
+    assert config.formations["debate"].workers == 3
+    assert config.formations["audit"].audit is not None

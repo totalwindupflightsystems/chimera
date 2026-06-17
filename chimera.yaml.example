@@ -31,6 +31,37 @@ formations:
     workers: 2
     aggregator: default
     audit: openrouter/anthropic/claude-haiku-4.5
+  # Config-defined custom formation — arbitrary DAG (Feature 3).
+  # `dag` wins over `workers`/`aggregator`. The dispatcher still writes a
+  # custom prompt per worker and merge instructions per aggregator (FILL-IN).
+  # Any preset (including simple/debate/audit above) may be redefined this way.
+  my-custom-chain:
+    dag:
+      stages:
+        - id: analyzer
+          kind: worker
+          model: deepseek/deepseek-v4-pro
+        - id: reviewer
+          kind: aggregator
+          model: zai-coding-plan/glm-5.2
+          depends_on: [analyzer]
+        - id: implementer
+          kind: worker
+          model: openrouter/anthropic/claude-sonnet-4
+          depends_on: [reviewer]
+        - id: verifier
+          kind: aggregator
+          model: zai-coding-plan/glm-5.2
+          depends_on: [implementer]
+        - id: finalizer
+          kind: merge
+          model: deepseek/deepseek-v4-pro
+          depends_on: [verifier]
+      edges:
+        - [analyzer, reviewer]
+        - [reviewer, implementer]
+        - [implementer, verifier]
+        - [verifier, finalizer]
 
 models:
   deepseek/deepseek-v4-pro:

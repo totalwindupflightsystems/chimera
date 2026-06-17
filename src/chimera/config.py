@@ -62,7 +62,12 @@ class Defaults(BaseModel):
 class FormationPreset(BaseModel):
     """A named formation template.
 
-    Exactly one of ``mode`` (auto) or a worker/aggregator structure should be set.
+    Exactly one of ``mode`` (auto), a worker/aggregator structure, or an explicit
+    ``dag`` definition should be set.
+
+    When ``dag`` is provided it is a full client/config-defined DAG (a mapping
+    with ``stages`` and ``edges`` keys, matching the runtime DAG shape). It wins
+    over the legacy ``workers``/``aggregator`` fields.
     """
 
     mode: str | None = None
@@ -72,10 +77,15 @@ class FormationPreset(BaseModel):
     aggregators: list[str] | None = None
     merge: str | None = None
     audit: str | None = None
+    dag: dict[str, Any] | None = None
 
     @property
     def is_auto(self) -> bool:
         return self.mode == "auto"
+
+    @property
+    def has_dag(self) -> bool:
+        return self.dag is not None
 
 
 class LangfuseConfig(BaseModel):
@@ -110,6 +120,7 @@ class DeliberationOverrides(BaseModel):
     aggregator_model: str | None = None               # Force aggregator model
     worker_model: str | None = None              # Force default worker model
     output_schema: dict[str, Any] | None = None  # JSON Schema for final answer
+    stage_models: dict[str, str] | None = None   # Per-stage model overrides (stage_id → model)
 
 
 class ChimeraConfig(BaseModel):

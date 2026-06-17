@@ -250,3 +250,129 @@ async def test_output_schema_passed_to_aggregator(config) -> None:  # type: igno
     rf = captured_rf[0]
     assert rf["type"] == "json_schema"
     assert rf["json_schema"]["schema"]["required"] == ["summary", "score"]
+
+
+# --------------------------------------------------------------------------- #
+# Per-stage model selection (Feature 2)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_stage_models_override_applied_correctly(config) -> None:  # type: ignore[no-untyped-def]
+    """stage_models forces a specific model onto a stage after dispatch."""
+    from chimera.config import DeliberationOverrides
+
+    gw = FakeGateway(_engine_responder(config))
+    overrides = DeliberationOverrides(
+        stage_models={"worker_1": "zai-coding-plan/glm-5.2"}
+    )
+    result = await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
+    worker_models = {w.stage_id: w.model for w in result.trace.workers}
+    # worker_1 forced to glm-5.2; worker_2 untouched (gemini-flash from dispatcher)
+    assert worker_models["worker_1"] == "zai-coding-plan/glm-5.2"
+    assert worker_models["worker_2"] == "openrouter/google/gemini-2.5-flash"
+
+
+@pytest.mark.asyncio
+async def test_stage_models_unknown_stage_warns_not_crash(config) -> None:  # type: ignore[no-untyped-def]
+    """An unknown stage id in stage_models is warned and skipped, not fatal."""
+    from chimera.config import DeliberationOverrides
+
+    gw = FakeGateway(_engine_responder(config))
+    overrides = DeliberationOverrides(
+        stage_models={
+            "worker_1": "zai-coding-plan/glm-5.2",
+            "does_not_exist": "deepseek/deepseek-chat",
+        }
+    )
+    result = await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
+    # Still completes; the known override was applied, the unknown ignored.
+    worker_models = {w.stage_id: w.model for w in result.trace.workers}
+    assert worker_models["worker_1"] == "zai-coding-plan/glm-5.2"
+
+
+@pytest.mark.asyncio
+async def test_stage_models_unknown_model_rejected(config) -> None:  # type: ignore[no-untyped-def]
+    """An unknown model name in stage_models raises ValueError (validated)."""
+    from chimera.config import DeliberationOverrides
+
+    gw = FakeGateway(_engine_responder(config))
+    overrides = DeliberationOverrides(
+        stage_models={"worker_1": "no/such/model"}
+    )
+    with pytest.raises(ValueError, match="unknown model"):
+        await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
+
+
+@pytest.mark.asyncio
+async def test_stage_models_overrides_aggregator_too(config) -> None:  # type: ignore[no-untyped-def]
+    """stage_models can also retarget non-worker (aggregator) stages."""
+    from chimera.config import DeliberationOverrides
+
+    gw = FakeGateway(_engine_responder(config))
+    overrides = DeliberationOverrides(
+        stage_models={"aggregator": "deepseek/deepseek-chat"}
+    )
+    result = await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
+    assert result.trace.aggregator is not None
+    assert result.trace.aggregator.model == "deepseek/deepseek-chat"
+
+
+# --------------------------------------------------------------------------- #
+# Client-defined DAG (Feature 1) via the engine
+# --------------------------------------------------------------------------- #
+
+
+def _client_dag_dict() -> dict[str, object]:
+    return {
+        "stages": [
+            {"id": "researcher", "kind": "worker",
+             "model": "deepseek/deepseek-chat"},
+            {"id": "finalizer", "kind": "aggregator",
+             "model": "zai-coding-plan/glm-5.2", "depends_on": ["researcher"]},
+        ],
+        "edges": [["researcher", "finalizer"]],
+    }
+
+
+@pytest.mark.asyncio
+async def test_client_dag_accepted_with_allow_custom_dag(config) -> None:  # type: ignore[no-untyped-def]
+    """allow_custom_dag=True: engine runs the client DAG, source == 'custom'."""
+    gw = FakeGateway(_engine_responder(config))
+    result = await Engine(config, gw).deliberate(
+        "task", "auto", dag=_client_dag_dict(), allow_custom_dag=True
+    )
+    assert result.trace.source == "custom"
+    stage_ids = {s.stage_id for s in result.trace.stages}
+    assert stage_ids == {"researcher", "finalizer"}
+    # Answer is produced by the terminal aggregator stage
+    assert result.trace.answer_stage_id == "finalizer"
+    assert result.answer.startswith("[FINAL MERGED ANSWER")
+
+
+@pytest.mark.asyncio
+async def test_client_dag_rejected_without_allow_custom_dag(config) -> None:  # type: ignore[no-untyped-def]
+    """allow_custom_dag=False (default): supplying a dag raises ValueError."""
+    gw = FakeGateway(_engine_responder(config))
+    with pytest.raises(ValueError, match="allow_custom_dag=True"):
+        await Engine(config, gw).deliberate(
+            "task", "auto", dag=_client_dag_dict(), allow_custom_dag=False
+        )
+
+
+@pytest.mark.asyncio
+async def test_client_dag_invalid_model_rejected_at_engine(config) -> None:  # type: ignore[no-untyped-def]
+    """Invalid model in client DAG is rejected when building the DAG."""
+    bad_dag = {
+        "stages": [
+            {"id": "w", "kind": "worker", "model": "no/such/model"},
+            {"id": "a", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2",
+             "depends_on": ["w"]},
+        ],
+        "edges": [["w", "a"]],
+    }
+    gw = FakeGateway(_engine_responder(config))
+    with pytest.raises(ValueError, match="unknown model"):
+        await Engine(config, gw).deliberate(
+            "task", "auto", dag=bad_dag, allow_custom_dag=True
+        )
