@@ -6,7 +6,7 @@
 
 Chimera is a multi-model deliberation gateway. Not a jury voting on the same prompt —
 a dispatcher designs a custom formation, writes tailored prompts for every stage,
-and a judge merges the results using dispatcher-written instructions.
+and a aggregator merges the results using dispatcher-written instructions.
 
 **One model (the Dispatcher) designs the entire deliberation in one shot.**
 
@@ -23,13 +23,13 @@ User Prompt
 │ Output:                                          │
 │   • Formation DAG (which models, how many)       │
 │   • Worker prompts (tailored per worker)          │
-│   • Judge merge instructions                     │
+│   • Aggregator merge instructions                     │
 │                                                 │
 │ The dispatcher reads the config, understands     │
 │ model strengths via weighted category offsets,   │
 │ and designs the ENTIRE formation at once.        │
-│ Worker prompts and judge instructions are        │
-│ designed TOGETHER — the judge is told what each   │
+│ Worker prompts and aggregator instructions are        │
+│ designed TOGETHER — the aggregator is told what each   │
 │ worker was asked to do so it can merge correctly. │
 └───────────────────┬─────────────────────────────┘
                     │
@@ -44,12 +44,12 @@ User Prompt
      └────────────┼────────────┘
                   ▼
 ┌─────────────────────────────────────────────────┐
-│ ② JUDGE (one model call)                         │
+│ ② AGGREGATOR (one model call)                         │
 │                                                 │
 │ Input: worker outputs + merge instructions       │
 │ Output: final merged answer for the user         │
 │                                                 │
-│ The dispatcher told the judge:                   │
+│ The dispatcher told the aggregator:                   │
 │ "Worker A was asked to do X — here's their output│
 │  Worker B was asked to do Y — here's their output│
 │  Merge these together to produce Z for the user" │
@@ -63,7 +63,7 @@ User Prompt
 ### 1. Dispatcher writes ALL prompts at once
 The dispatcher doesn't just pick models — it writes every prompt in the formation:
 - Each worker's prompt (tailored to that worker's subtask)
-- The judge's merge instructions (explaining what each worker was asked to do)
+- The aggregator's merge instructions (explaining what each worker was asked to do)
 
 This is what makes weak models work together: each one gets a task scoped to what it can do well.
 
@@ -102,7 +102,7 @@ Not just 1-X-1. The dispatcher can design:
 ```
 1 → [A, B, C] → 1        (simple fan-out)
 1 → [A, B] → D → [E, F] → 1    (multi-layer)
-1 → [A, B, C] → [D, E] → 1     (fan-in to multiple judges, then merge)
+1 → [A, B, C] → [D, E] → 1     (fan-in to multiple aggregators, then merge)
 ```
 
 The dispatcher decides the DAG structure at runtime based on the task.
@@ -118,7 +118,7 @@ If a coding agent is calling Chimera, the final merged output can include tool c
 ### REST API (OpenAI-compatible)
 ```
 POST /v1/deliberate
-  → Full pipeline: dispatcher → workers → judge
+  → Full pipeline: dispatcher → workers → aggregator
   → Request: {
       "prompt": "...",
       "formation": "auto|simple|debate",
@@ -126,7 +126,7 @@ POST /v1/deliberate
       "allowed_models": ["deepseek/deepseek-chat"],
       "disallowed_models": ["openrouter/anthropic/claude-sonnet-4"],
       "dispatcher_model": "zai-coding-plan/glm-5.2",
-      "judge_model": "deepseek/deepseek-chat",
+      "aggregator_model": "deepseek/deepseek-chat",
       "worker_model": "deepseek/deepseek-chat"
     }
   → Response: {"answer": "...", "trace": {...}, "request_id": "..."}
@@ -220,27 +220,27 @@ models:
 defaults:
   dispatcher: zai-coding-plan/glm-5.2   # Strong reasoning for formation design
   default_worker: deepseek/deepseek-chat
-  default_judge: zai-coding-plan/glm-5.2
+  default_aggregator: zai-coding-plan/glm-5.2
 
 # Formation presets
 formations:
   auto:                                  # Dispatcher decides everything
     mode: auto
 
-  simple:                                # 1 dispatcher → 2 workers → 1 judge
+  simple:                                # 1 dispatcher → 2 workers → 1 aggregator
     workers: 2
-    judge: default
+    aggregator: default
 
-  debate:                                # 1 dispatcher → 3 workers → 2 judges → merge
+  debate:                                # 1 dispatcher → 3 workers → 2 aggregators → merge
     workers: 3
-    judges:
+    aggregators:
       - default
       - openrouter/anthropic/claude-sonnet-4
     merge: best_of_n
 
-  audit:                                 # 1 dispatcher → 2 workers → 1 judge → 1 auditor
+  audit:                                 # 1 dispatcher → 2 workers → 1 aggregator → 1 auditor
     workers: 2
-    judge: default
+    aggregator: default
     audit: openrouter/anthropic/claude-haiku-4.5
 
 # Observability
@@ -264,7 +264,7 @@ class DispatchResult:
     """What the dispatcher produces in one call."""
     formation: FormationDAG
     worker_prompts: list[WorkerPrompt]     # One per worker
-    judge_instructions: str               # Merge instructions for judge
+    aggregator_instructions: str               # Merge instructions for aggregator
 
 class FormationDAG:
     """The dispatcher-designed execution graph."""
@@ -272,8 +272,8 @@ class FormationDAG:
     edges: list[tuple[str, str]]          # stage_id → stage_id
 
 class Stage:
-    id: str                               # "worker_1", "judge", "audit"
-    kind: str                             # "worker" | "judge" | "audit"
+    id: str                               # "worker_1", "aggregator", "audit"
+    kind: str                             # "worker" | "aggregator" | "audit"
     model: str                            # Which model to use
     depends_on: list[str]                 # Stage IDs this waits for
 
@@ -287,7 +287,7 @@ class DeliberationTrace:
     request_id: str
     dispatch: StageSpan
     workers: list[StageSpan]
-    judge: StageSpan
+    aggregator: StageSpan
     total_duration_ms: int
     total_cost: float
     total_tokens: int
@@ -322,12 +322,12 @@ to solve the user's task.
 2. Pick the best models for each subtask using category weights.
 3. Design a formation DAG. You can use:
    - Multiple workers in parallel
-   - Multiple judges with merge
+   - Multiple aggregators with merge
    - Audit stages
    - Fan-out → intermediate processing → fan-in
 4. Write a CUSTOM prompt for each worker. Scope their task to what they're good at.
    Don't give all workers the same prompt unless the task requires consensus.
-5. Write merge instructions for the judge. Tell the judge:
+5. Write merge instructions for the aggregator. Tell the aggregator:
    - What each worker was asked to do
    - How to combine their outputs
    - What the final answer should look like

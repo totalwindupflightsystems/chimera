@@ -2,7 +2,7 @@
 
 Uses a scripted gateway that mimics a real category-weighted dispatch: a
 "design + code" task gets a code worker (DeepSeek) and a design worker
-(Gemini), then the judge merges. Verifies the entire trace.
+(Gemini), then the aggregator merges. Verifies the entire trace.
 """
 
 from __future__ import annotations
@@ -22,8 +22,8 @@ REAL_DISPATCH = dispatch_json(
         ("worker_code", "deepseek/deepseek-chat"),
         ("worker_design", "openrouter/google/gemini-2.5-flash"),
     ],
-    judge="zai-coding-plan/glm-5.2",
-    judge_instructions=(
+    aggregator="zai-coding-plan/glm-5.2",
+    aggregator_instructions=(
         "worker_code was asked to implement the service code; "
         "worker_design was asked to design the architecture. "
         "Merge them into a single design + implementation answer."
@@ -35,8 +35,8 @@ def _real_responder(model, messages, response_format=None, **kw):
     if response_format is not None:  # dispatcher
         return resp(REAL_DISPATCH, model, tok_in=140, tok_out=210)
     joined = json.dumps(messages)
-    if "Upstream outputs" in joined:  # judge
-        # The judge prompt must mention what each worker was asked + their outputs
+    if "Upstream outputs" in joined:  # aggregator
+        # The aggregator prompt must mention what each worker was asked + their outputs
         assert "implement the service code" in joined
         assert "design the architecture" in joined
         return resp(
@@ -60,34 +60,34 @@ async def test_e2e_full_pipeline(config) -> None:  # type: ignore[no-untyped-def
         "Design and implement a scalable e-commerce platform", "auto"
     )
 
-    # ---- Final answer is the judge's merge ----
+    # ---- Final answer is the aggregator's merge ----
     assert "E-commerce Platform" in result.answer
     assert "OrderService" in result.answer
 
     trace = result.trace
 
-    # ---- Trace structure: dispatch → workers → judge ----
+    # ---- Trace structure: dispatch → workers → aggregator ----
     assert trace.dispatch.kind == "dispatch"
     worker_ids = [w.stage_id for w in trace.workers]
     assert worker_ids == ["worker_code", "worker_design"]
-    assert trace.judge is not None
-    assert trace.judge.kind == "judge"
+    assert trace.aggregator is not None
+    assert trace.aggregator.kind == "aggregator"
 
     # ---- Correct model assignments (category-weighted routing) ----
     code_worker = next(w for w in trace.workers if w.stage_id == "worker_code")
     design_worker = next(w for w in trace.workers if w.stage_id == "worker_design")
     assert code_worker.model == "deepseek/deepseek-chat"      # code=0.95
     assert design_worker.model == "openrouter/google/gemini-2.5-flash"  # design=0.90
-    assert trace.judge.model == "zai-coding-plan/glm-5.2"     # premium reasoning
+    assert trace.aggregator.model == "zai-coding-plan/glm-5.2"     # premium reasoning
 
     # ---- Custom (non-identical) worker prompts ----
     assert code_worker.prompt != design_worker.prompt
 
-    # ---- Execution order: judge ran after both workers ----
-    assert trace.judge.tokens_input > 0  # received worker outputs
+    # ---- Execution order: aggregator ran after both workers ----
+    assert trace.aggregator.tokens_input > 0  # received worker outputs
 
     # ---- Totals aggregate every span ----
-    every = [trace.dispatch, *trace.workers, trace.judge]
+    every = [trace.dispatch, *trace.workers, trace.aggregator]
     assert trace.total_tokens == sum(s.tokens_input + s.tokens_output for s in every)
     assert trace.total_cost > 0
 
@@ -110,4 +110,4 @@ async def test_e2e_trace_is_json_serializable(config) -> None:  # type: ignore[n
     parsed = json.loads(blob)
     assert parsed["dispatch"]["kind"] == "dispatch"
     assert len(parsed["workers"]) == 2
-    assert parsed["answer_stage_id"] == "judge"
+    assert parsed["answer_stage_id"] == "aggregator"

@@ -56,20 +56,20 @@ class ModelEntry(BaseModel):
 class Defaults(BaseModel):
     dispatcher: str
     default_worker: str
-    default_judge: str
+    default_aggregator: str
 
 
 class FormationPreset(BaseModel):
     """A named formation template.
 
-    Exactly one of ``mode`` (auto) or a worker/judge structure should be set.
+    Exactly one of ``mode`` (auto) or a worker/aggregator structure should be set.
     """
 
     mode: str | None = None
     workers: int | None = None
     worker_models: list[str] | None = None
-    judge: str | None = None
-    judges: list[str] | None = None
+    aggregator: str | None = None
+    aggregators: list[str] | None = None
     merge: str | None = None
     audit: str | None = None
 
@@ -107,8 +107,9 @@ class DeliberationOverrides(BaseModel):
     allowed_models: list[str] | None = None     # Only these models permitted
     disallowed_models: list[str] | None = None   # Exclude these models
     dispatcher_model: str | None = None          # Force dispatcher model
-    judge_model: str | None = None               # Force judge/aggregator model
+    aggregator_model: str | None = None               # Force aggregator model
     worker_model: str | None = None              # Force default worker model
+    output_schema: dict[str, Any] | None = None  # JSON Schema for final answer
 
 
 class ChimeraConfig(BaseModel):
@@ -136,9 +137,9 @@ class ChimeraConfig(BaseModel):
         return self.models[name]
 
     def resolve_model_alias(self, name: str) -> str:
-        """Resolve ``"default"`` aliases for judge/worker to real model names."""
+        """Resolve ``"default"`` aliases for aggregator/worker to real model names."""
         if name == "default":
-            return self.defaults.default_judge
+            return self.defaults.default_aggregator
         if name == "default_worker":
             return self.defaults.default_worker
         return name

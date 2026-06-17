@@ -2,13 +2,13 @@
 
 Reads the user prompt + the model catalog (with category-weighted scores) and
 produces a :class:`DispatchResult`: a formation DAG, a custom prompt for every
-worker, and merge instructions for the judge.
+worker, and merge instructions for the aggregator.
 
 Two operating modes:
 * ``auto`` — the dispatcher designs the DAG structure *and* writes all prompts.
 * named preset (``simple`` / ``debate`` / ``audit`` / ...) — the DAG structure is
   derived from the config preset, and the dispatcher writes the per-worker
-  prompts and judge/audit instructions for that fixed structure.
+  prompts and aggregator/audit instructions for that fixed structure.
 
 Either way Chimera makes exactly one dispatcher model call.
 """
@@ -35,7 +35,7 @@ DISPATCH_SCHEMA_HINT = {
         "stages": [
             {"id": "worker_1", "kind": "worker", "model": "<model name>", "depends_on": []}
         ],
-        "edges": [["worker_1", "judge"]],
+        "edges": [["worker_1", "aggregator"]],
     },
     "worker_prompts": [
         {
@@ -45,8 +45,16 @@ DISPATCH_SCHEMA_HINT = {
             "expected_output_schema": None,
         }
     ],
-    "judge_instructions": "<how to merge the worker outputs into the final answer>",
+    "aggregator_instructions": "<how to merge the worker outputs into the final answer>",
     "stage_instructions": {"<audit/merge stage id>": "<instructions>"},
+    "output_schema": {
+        "type": "object",
+        "properties": {
+            "answer": {"type": "string", "description": "The final merged answer for the user"},
+            "sources": {"type": "array", "items": {"type": "string"}, "description": "Worker IDs that contributed"},
+        },
+        "required": ["answer"],
+    },
 }
 
 
@@ -54,7 +62,7 @@ class Stage(BaseModel):
     """A single node in the formation DAG."""
 
     id: str
-    kind: str = "worker"  # worker | judge | audit | merge
+    kind: str = "worker"  # worker | aggregator | audit | merge
     model: str
     depends_on: list[str] = Field(default_factory=list)
 
@@ -118,8 +126,9 @@ class DispatchResult(BaseModel):
 
     formation: FormationDAG
     worker_prompts: list[WorkerPrompt] = Field(default_factory=list)
-    judge_instructions: str = ""
+    aggregator_instructions: str = ""
     stage_instructions: dict[str, str] = Field(default_factory=dict)
+    output_schema: dict[str, Any] | None = None  # JSON Schema for the final answer
     source: str = "auto"  # auto | preset | fallback
 
     def worker_prompt_for(self, stage_id: str) -> WorkerPrompt | None:
@@ -132,8 +141,8 @@ class DispatchResult(BaseModel):
         """Prompt instructions for a non-worker stage."""
         if stage_id in self.stage_instructions:
             return self.stage_instructions[stage_id]
-        if kind == "judge" and not self.stage_instructions:
-            return self.judge_instructions
+        if kind == "aggregator" and not self.stage_instructions:
+            return self.aggregator_instructions
         return ""
 
 
@@ -168,25 +177,25 @@ def build_preset_dag(preset: FormationPreset, config: ChimeraConfig) -> Formatio
         worker_ids.append(wid)
         stages.append(Stage(id=wid, kind="worker", model=worker_models[i % len(worker_models)]))
 
-    judge_models = _resolve_judge_models(preset, config)
-    judge_ids: list[str] = []
-    for i, jm in enumerate(judge_models):
-        jid = "judge" if i == 0 else f"judge_{i + 1}"
-        judge_ids.append(jid)
-        stages.append(Stage(id=jid, kind="judge", model=jm, depends_on=list(worker_ids)))
+    aggregator_models = _resolve_aggregator_models(preset, config)
+    aggregator_ids: list[str] = []
+    for i, jm in enumerate(aggregator_models):
+        jid = "aggregator" if i == 0 else f"aggregator_{i + 1}"
+        aggregator_ids.append(jid)
+        stages.append(Stage(id=jid, kind="aggregator", model=jm, depends_on=list(worker_ids)))
         for wid in worker_ids:
             edges.append((wid, jid))
 
     if preset.audit:
         audit_model = config.resolve_model_alias(preset.audit)
-        stages.append(Stage(id="audit", kind="audit", model=audit_model, depends_on=[judge_ids[0]]))
-        edges.append((judge_ids[0], "audit"))
+        stages.append(Stage(id="audit", kind="audit", model=audit_model, depends_on=[aggregator_ids[0]]))
+        edges.append((aggregator_ids[0], "audit"))
 
-    if len(judge_ids) > 1:
-        merge_model = config.defaults.default_judge
+    if len(aggregator_ids) > 1:
+        merge_model = config.defaults.default_aggregator
         merge_id = "merge"
-        stages.append(Stage(id=merge_id, kind="merge", model=merge_model, depends_on=list(judge_ids)))
-        for jid in judge_ids:
+        stages.append(Stage(id=merge_id, kind="merge", model=merge_model, depends_on=list(aggregator_ids)))
+        for jid in aggregator_ids:
             edges.append((jid, merge_id))
 
     dag = FormationDAG(stages=stages, edges=edges)
@@ -200,11 +209,11 @@ def _resolve_worker_models(preset: FormationPreset, config: ChimeraConfig) -> li
     return [config.defaults.default_worker] * (preset.workers or 1)
 
 
-def _resolve_judge_models(preset: FormationPreset, config: ChimeraConfig) -> list[str]:
-    if preset.judges:
-        return [config.resolve_model_alias(j) for j in preset.judges]
-    judge = preset.judge or "default"
-    return [config.resolve_model_alias(judge)]
+def _resolve_aggregator_models(preset: FormationPreset, config: ChimeraConfig) -> list[str]:
+    if preset.aggregators:
+        return [config.resolve_model_alias(j) for j in preset.aggregators]
+    agg_name = preset.aggregator or "default"
+    return [config.resolve_model_alias(agg_name)]
 
 
 def _validate_dag(dag: FormationDAG, config: ChimeraConfig) -> None:
@@ -217,8 +226,8 @@ def _validate_dag(dag: FormationDAG, config: ChimeraConfig) -> None:
             raise ValueError(f"Stage {stage.id!r} uses unknown model {stage.model!r}")
     if not any(s.kind == "worker" for s in dag.stages):
         raise ValueError("Formation has no worker stages")
-    if not any(s.kind in {"judge", "merge", "audit"} for s in dag.stages):
-        raise ValueError("Formation has no judge/merge/audit stages")
+    if not any(s.kind in {"aggregator", "merge", "audit"} for s in dag.stages):
+        raise ValueError("Formation has no aggregator/merge/audit stages")
 
 
 # --------------------------------------------------------------------------- #
@@ -242,12 +251,12 @@ def build_dispatcher_prompt(
             "1. Analyze the task and the domains it touches "
             "(code, analysis, design, audit, reasoning, ...).\n"
             "2. Pick the best model for each subtask using the category weights above.\n"
-            "3. Design a formation DAG: parallel workers, then a judge that merges. "
-            "You may add an audit stage or multiple judges with a merge stage.\n"
+            "3. Design a formation DAG: parallel workers, then an aggregator that merges. "
+            "You may add an audit stage or multiple aggregators with a merge stage.\n"
             "4. Write a CUSTOM prompt for each worker, scoped to what that model is "
             "good at. Do NOT give every worker the same prompt unless consensus is "
             "required.\n"
-            "5. Write judge_instructions telling the judge exactly what each worker was "
+            "5. Write aggregator_instructions telling the aggregator exactly what each worker was "
             "asked to do and how to combine their outputs into the final answer.\n"
             "6. Use only models from the catalog. Keep it small: 2-4 workers is ideal.\n"
         )
@@ -256,7 +265,7 @@ def build_dispatcher_prompt(
         task_block = (
             "A fixed formation has already been chosen. Do NOT change the structure.\n"
             "Your only job: write a CUSTOM prompt for each worker and the merge "
-            "instructions for the judge, tailored to this specific task and to each "
+            "instructions for the aggregator, tailored to this specific task and to each "
             "model's strengths from the category weights above.\n"
         )
         formation_block = (
@@ -363,8 +372,9 @@ def parse_dispatch_result(
         result = DispatchResult(
             formation=formation,
             worker_prompts=worker_prompts,
-            judge_instructions=data.get("judge_instructions", "") or "",
+            aggregator_instructions=data.get("aggregator_instructions", "") or "",
             stage_instructions=data.get("stage_instructions", {}) or {},
+            output_schema=data.get("output_schema"),
             source="auto",
         )
         _normalize_result(result, config)
@@ -381,8 +391,8 @@ def _validate_result(result: DispatchResult) -> None:
         raise ValueError("dispatch produced no stages")
     if not any(s.kind == "worker" for s in result.formation.stages):
         raise ValueError("dispatch produced no worker stages")
-    if not any(s.kind in {"judge", "merge", "audit"} for s in result.formation.stages):
-        raise ValueError("dispatch produced no judge/merge/audit stage")
+    if not any(s.kind in {"aggregator", "merge", "audit"} for s in result.formation.stages):
+        raise ValueError("dispatch produced no aggregator/merge/audit stage")
     ids = set(result.formation.stage_ids())
     for stage in result.formation.stages:
         for dep in stage.depends_on:
@@ -398,7 +408,7 @@ def _normalize_result(result: DispatchResult, config: ChimeraConfig) -> None:
             stage.model = (
                 config.defaults.default_worker
                 if stage.kind == "worker"
-                else config.defaults.default_judge
+                else config.defaults.default_aggregator
             )
         if stage.kind == "worker":
             existing = result.worker_prompt_for(stage.id)
@@ -419,7 +429,7 @@ def _fallback_result(
     *,
     user_prompt: str,
 ) -> DispatchResult:
-    """Build a safe 1-worker + 1-judge result when parsing fails."""
+    """Build a safe 1-worker + 1-aggregator result when parsing fails."""
     if fallback_dag is not None:
         dag = fallback_dag
     else:
@@ -427,13 +437,13 @@ def _fallback_result(
             stages=[
                 Stage(id="worker_1", kind="worker", model=config.defaults.default_worker),
                 Stage(
-                    id="judge",
-                    kind="judge",
-                    model=config.defaults.default_judge,
+                    id="aggregator",
+                    kind="aggregator",
+                    model=config.defaults.default_aggregator,
                     depends_on=["worker_1"],
                 ),
             ],
-            edges=[("worker_1", "judge")],
+            edges=[("worker_1", "aggregator")],
         )
     worker_prompts = [
         WorkerPrompt(stage_id=s.id, model=s.model, prompt=_templated_worker_prompt(s.id, config))
@@ -443,11 +453,18 @@ def _fallback_result(
     return DispatchResult(
         formation=dag,
         worker_prompts=worker_prompts,
-        judge_instructions=(
+        aggregator_instructions=(
             "Merge the worker outputs into a single, coherent final answer "
             "for the user's request."
         ),
         stage_instructions={},
+        output_schema={
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string", "description": "The final merged answer for the user"},
+            },
+            "required": ["answer"],
+        },
         source="fallback",
     )
 

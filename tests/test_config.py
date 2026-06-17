@@ -32,7 +32,7 @@ def test_catalog_description_contains_weights(config: ChimeraConfig) -> None:
 
 
 def test_resolve_model_alias(config: ChimeraConfig) -> None:
-    assert config.resolve_model_alias("default") == config.defaults.default_judge
+    assert config.resolve_model_alias("default") == config.defaults.default_aggregator
     assert config.resolve_model_alias("default_worker") == config.defaults.default_worker
     assert config.resolve_model_alias("deepseek/deepseek-chat") == "deepseek/deepseek-chat"
 
@@ -68,7 +68,7 @@ def test_env_substitution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
         },
         "defaults": {"dispatcher": "deepseek/deepseek-chat",
                      "default_worker": "deepseek/deepseek-chat",
-                     "default_judge": "deepseek/deepseek-chat"},
+                     "default_aggregator": "deepseek/deepseek-chat"},
         "formations": {"auto": {"mode": "auto"}},
     }
     path = tmp_path / "chimera.yaml"
@@ -91,7 +91,7 @@ def test_find_config_path_walks_upwards(tmp_path: Path) -> None:
     (tmp_path / "chimera.yaml").write_text(
         'defaults: {dispatcher: "deepseek/deepseek-chat", '
         'default_worker: "deepseek/deepseek-chat", '
-        'default_judge: "deepseek/deepseek-chat"}\n'
+        'default_aggregator: "deepseek/deepseek-chat"}\n'
         'models:\n  "deepseek/deepseek-chat": {categories: {}, cost_tier: budget, provider: deepseek}\n'
         'formations: {auto: {mode: auto}}\n',
         encoding="utf-8",

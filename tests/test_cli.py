@@ -43,7 +43,7 @@ def test_cli_bare_prompt_routes_to_run(config_file, monkeypatch) -> None:  # typ
                                    tokens_input=1, tokens_output=2, latency_ms=5, cost=0.0)
             trace = SimpleNamespace(request_id="r1", dispatch=span, stages=[],
                                     total_tokens=3, total_duration_ms=9, total_cost=0.0,
-                                    source="auto", answer_stage_id="judge")
+                                    source="auto", answer_stage_id="aggregator")
             return SimpleNamespace(answer="42", trace=trace)
 
     monkeypatch.setattr("chimera.cli.main.Engine", StubEngine)

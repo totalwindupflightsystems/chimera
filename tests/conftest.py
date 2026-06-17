@@ -47,19 +47,19 @@ CONFIG_DICT: dict[str, Any] = {
     "defaults": {
         "dispatcher": "zai-coding-plan/glm-5.2",
         "default_worker": "deepseek/deepseek-chat",
-        "default_judge": "zai-coding-plan/glm-5.2",
+        "default_aggregator": "zai-coding-plan/glm-5.2",
     },
     "formations": {
         "auto": {"mode": "auto"},
-        "simple": {"workers": 2, "judge": "default"},
+        "simple": {"workers": 2, "aggregator": "default"},
         "debate": {
             "workers": 3,
-            "judges": ["default", "openrouter/anthropic/claude-sonnet-4"],
+            "aggregators": ["default", "openrouter/anthropic/claude-sonnet-4"],
             "merge": "best_of_n",
         },
         "audit": {
             "workers": 2,
-            "judge": "default",
+            "aggregator": "default",
             "audit": "openrouter/anthropic/claude-sonnet-4",
         },
     },
@@ -118,8 +118,8 @@ def resp(text: str, model: str, tok_in: int = 12, tok_out: int = 34) -> GatewayR
 def dispatch_json(
     *,
     workers: list[tuple[str, str]] | None = None,
-    judge: str = "zai-coding-plan/glm-5.2",
-    judge_instructions: str = "Merge the worker outputs.",
+    aggregator: str = "zai-coding-plan/glm-5.2",
+    aggregator_instructions: str = "Merge the worker outputs.",
     extra_stages: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build a valid dispatcher JSON payload string.
@@ -134,8 +134,8 @@ def dispatch_json(
     for wid, wmodel in workers:
         stages.append({"id": wid, "kind": "worker", "model": wmodel, "depends_on": []})
         worker_ids.append(wid)
-        edges.append([wid, "judge"])
-    stages.append({"id": "judge", "kind": "judge", "model": judge,
+        edges.append([wid, "aggregator"])
+    stages.append({"id": "aggregator", "kind": "aggregator", "model": aggregator,
                    "depends_on": list(worker_ids)})
     worker_prompts = [
         {"stage_id": wid, "model": wm, "prompt": f"Custom subtask for {wid}", "expected_output_schema": None}
@@ -152,7 +152,7 @@ def dispatch_json(
     payload = {
         "formation": {"stages": stages, "edges": edges},
         "worker_prompts": worker_prompts,
-        "judge_instructions": judge_instructions,
+        "aggregator_instructions": aggregator_instructions,
         "stage_instructions": stage_instructions,
     }
     return json.dumps(payload)
@@ -170,7 +170,7 @@ def make_dispatcher_responder(config: ChimeraConfig,
             return resp(_payload, model, tok_in=100, tok_out=200)
         # figure out which stage from prompt content
         joined = json.dumps(messages)
-        if "merge" in joined or "judge" in joined.lower() and "Your job" in joined:
+        if "merge" in joined or "aggregator" in joined.lower() and "Your job" in joined:
             return resp(f"[merged answer from {model}]", model, tok_in=50, tok_out=80)
         return resp(f"[worker output from {model}]", model, tok_in=20, tok_out=40)
 

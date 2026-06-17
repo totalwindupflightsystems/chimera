@@ -1,15 +1,15 @@
-"""The Judge — merges worker outputs using dispatcher-written instructions.
+"""The Aggregator — merges worker outputs using dispatcher-written instructions.
 
-The judge is a "dumb executor": it receives the dispatcher's merge instructions
+The aggregator is a "dumb executor": it receives the dispatcher's merge instructions
 plus each worker's output (and what that worker was asked to do) and produces
-the final merged answer. Different stage kinds (``judge``, ``merge``, ``audit``)
+the final merged answer. Different stage kinds (``aggregator``, ``merge``, ``audit``)
 only differ in how their instructions are sourced; the call is identical.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
@@ -20,12 +20,12 @@ from chimera.gateway import Gateway, GatewayResponse
 if TYPE_CHECKING:
     pass
 
-log = structlog.get_logger("chimera.judge")
+log = structlog.get_logger("chimera.aggregator")
 
 
 @dataclass(slots=True)
 class StageResult:
-    """The outcome of executing one DAG stage (input to the judge)."""
+    """The outcome of executing one DAG stage (input to the aggregator)."""
 
     stage_id: str
     model: str
@@ -39,7 +39,7 @@ def build_merge_prompt(
     dependencies: list[StageResult],
     user_prompt: str,
 ) -> list[dict[str, str]]:
-    """Build the message list for a judge / merge / audit stage."""
+    """Build the message list for an aggregator / merge / audit stage."""
     instructions = _stage_instructions(stage, dispatch)
 
     blocks: list[str] = []
@@ -75,11 +75,11 @@ def build_merge_prompt(
 def _stage_instructions(stage: Stage, dispatch: DispatchResult) -> str:
     if stage.id in dispatch.stage_instructions:
         return dispatch.stage_instructions[stage.id]
-    if stage.kind == "judge":
-        return dispatch.judge_instructions or _default_judge_instructions()
+    if stage.kind == "aggregator":
+        return dispatch.aggregator_instructions or _default_aggregator_instructions()
     if stage.kind == "merge":
         return (
-            "Multiple judges produced the outputs above. Merge them into one "
+            "Multiple aggregators produced the outputs above. Merge them into one "
             "authoritative final answer, preserving the strongest content from each "
             "and resolving any contradictions."
         )
@@ -91,7 +91,7 @@ def _stage_instructions(stage: Stage, dispatch: DispatchResult) -> str:
     return "Produce the final answer from the upstream outputs."
 
 
-def _default_judge_instructions() -> str:
+def _default_aggregator_instructions() -> str:
     return (
         "Merge the worker outputs into a single coherent final answer. "
         "Each worker handled a different part of the task — combine them so the "
@@ -106,8 +106,12 @@ def _what_worker_was_asked(stage_id: str, dispatch: DispatchResult) -> str:
     return "Solve the user's request."
 
 
-class Judge:
-    """Executes a non-worker stage (judge / merge / audit)."""
+class Aggregator:
+    """Executes a non-worker stage (aggregator / merge / audit).
+
+    When ``output_schema`` is provided, the aggregator uses provider-aware structured
+    output to ensure the final response matches the requested schema exactly.
+    """
 
     def __init__(self, config: ChimeraConfig, gateway: Gateway) -> None:
         self.config = config
@@ -119,16 +123,31 @@ class Judge:
         dispatch: DispatchResult,
         dependencies: list[StageResult],
         user_prompt: str,
+        *,
+        output_schema: dict[str, Any] | None = None,
     ) -> GatewayResponse:
         messages = build_merge_prompt(stage, dispatch, dependencies, user_prompt)
         log.info(
-            "judge_execute",
+            "aggregator_execute",
             stage=stage.id,
             kind=stage.kind,
             model=stage.model,
             n_inputs=len(dependencies),
+            structured=output_schema is not None,
         )
-        return await self.gateway.complete(stage.model, messages, temperature=0.2)
+        response_format = None
+        if output_schema is not None:
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "chimera_output",
+                    "strict": True,
+                    "schema": output_schema,
+                },
+            }
+        return await self.gateway.complete(
+            stage.model, messages, temperature=0.2, response_format=response_format,
+        )
 
 
-__all__ = ["Judge", "StageResult", "build_merge_prompt"]
+__all__ = ["Aggregator", "StageResult", "build_merge_prompt"]

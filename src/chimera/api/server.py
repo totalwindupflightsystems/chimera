@@ -52,8 +52,9 @@ class DeliberateRequest(BaseModel):
     allowed_models: list[str] | None = None      # Only these models allowed
     disallowed_models: list[str] | None = None    # Exclude these models
     dispatcher_model: str | None = None           # Override dispatcher
-    judge_model: str | None = None                # Override judge/aggregator
+    aggregator_model: str | None = None                # Override aggregator
     worker_model: str | None = None               # Override default worker
+    output_schema: dict[str, Any] | None = None   # JSON Schema for final answer
 
 
 class DeliberateResponse(BaseModel):
@@ -71,11 +72,12 @@ class ChatCompletionRequest(BaseModel):
     model: str = "auto"
     messages: list[ChatMessage]
     temperature: float | None = None
+    response_format: dict[str, Any] | None = None  # OpenAI-compatible structured output
     # Request-level overrides (passed as extra fields)
     allowed_models: list[str] | None = None
     disallowed_models: list[str] | None = None
     dispatcher_model: str | None = None
-    judge_model: str | None = None
+    aggregator_model: str | None = None
     worker_model: str | None = None
 
 
@@ -138,7 +140,18 @@ def _register_routes(app: FastAPI) -> None:
     @app.post("/v1/deliberate", response_model=DeliberateResponse)
     async def deliberate(request: Request, body: DeliberateRequest) -> DeliberateResponse:
         engine: Engine = request.app.state.engine
-        result = await engine.deliberate(body.prompt, body.formation)
+        from chimera.config import DeliberationOverrides
+        overrides = DeliberationOverrides(
+            allowed_models=body.allowed_models,
+            disallowed_models=body.disallowed_models,
+            dispatcher_model=body.dispatcher_model,
+            aggregator_model=body.aggregator_model,
+            worker_model=body.worker_model,
+            output_schema=body.output_schema,
+        )
+        result = await engine.deliberate(
+            body.prompt, body.formation, overrides=overrides,
+        )
         return DeliberateResponse(
             answer=result.answer,
             trace=result.trace.model_dump(mode="json"),
@@ -152,8 +165,26 @@ def _register_routes(app: FastAPI) -> None:
         engine: Engine = request.app.state.engine
         prompt = "\n".join(m.content for m in body.messages if m.role != "system")
         formation = body.model or "auto"
+        from chimera.config import DeliberationOverrides
+        overrides = DeliberationOverrides(
+            allowed_models=body.allowed_models,
+            disallowed_models=body.disallowed_models,
+            dispatcher_model=body.dispatcher_model,
+            aggregator_model=body.aggregator_model,
+            worker_model=body.worker_model,
+        )
+        # Extract output schema from OpenAI-style response_format
+        output_schema = None
+        if body.response_format:
+            rf = body.response_format
+            if rf.get("type") == "json_schema":
+                output_schema = rf.get("json_schema", {}).get("schema")
+            elif rf.get("type") == "json_object":
+                output_schema = {"type": "object"}  # generic object
         try:
-            result = await engine.deliberate(prompt, formation)
+            result = await engine.deliberate(
+                prompt, formation, overrides=overrides, output_schema=output_schema,
+            )
         except KeyError as exc:
             raise HTTPException(status_code=400, detail=f"Unknown model/formation: {exc}")
         trace = result.trace

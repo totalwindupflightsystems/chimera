@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from typing import Any
 
 import structlog
 from pydantic import BaseModel, Field
@@ -23,7 +24,7 @@ from chimera.dispatcher import (
     Stage,
 )
 from chimera.gateway import Gateway, GatewayError, GatewayResponse
-from chimera.judge import Judge, StageResult
+from chimera.aggregator import Aggregator, StageResult
 from chimera.observability import get_langfuse
 
 log = structlog.get_logger("chimera.engine")
@@ -52,7 +53,7 @@ class DeliberationTrace(BaseModel):
     source: str
     dispatch: StageSpan
     workers: list[StageSpan] = Field(default_factory=list)
-    judge: StageSpan | None = None
+    aggregator: StageSpan | None = None
     stages: list[StageSpan] = Field(default_factory=list)
     answer_stage_id: str = ""
     total_duration_ms: int = 0
@@ -86,19 +87,21 @@ def _last_user_content(messages: list[dict[str, str]]) -> str:
 
 
 class Engine:
-    """Runs the full pipeline: dispatcher → workers → judge → (merge/audit)."""
+    """Runs the full pipeline: dispatcher → workers → aggregator → (merge/audit)."""
 
     def __init__(self, config: ChimeraConfig, gateway: Gateway) -> None:
         self.config = config
         self.gateway = gateway
         self.dispatcher = Dispatcher(config, gateway)
-        self.judge = Judge(config, gateway)
+        self.aggregator = Aggregator(config, gateway)
 
     async def deliberate(
         self,
         user_prompt: str,
         formation: str = "auto",
         overrides: DeliberationOverrides | None = None,
+        *,
+        output_schema: dict[str, Any] | None = None,
     ) -> DeliberationResult:
         """Run the full deliberation pipeline and return the merged answer + trace.
         
@@ -106,6 +109,9 @@ class Engine:
             user_prompt: The user's query.
             formation: Formation name or 'auto'.
             overrides: Request-level model overrides (allowed/disallowed/force models).
+            output_schema: Optional JSON Schema the final answer must conform to.
+                If omitted, the dispatcher provides one. If the client provides one,
+                it overrides the dispatcher's.
         """
         request_id = uuid.uuid4().hex[:16]
         structlog.contextvars.bind_contextvars(request_id=request_id, formation=formation)
@@ -120,8 +126,15 @@ class Engine:
             stages=outcome.result.formation.stage_ids(),
         )
 
+        # Client-provided schema wins; dispatcher's is the fallback.
+        effective_schema = (
+            output_schema
+            or (overrides.output_schema if overrides else None)
+            or outcome.result.output_schema
+        )
+
         stage_spans, stage_results = await self._run_dag(
-            outcome.result, user_prompt, request_id
+            outcome.result, user_prompt, request_id, effective_schema
         )
 
         answer, answer_stage_id = self._select_answer(outcome.result.formation, stage_results)
@@ -147,6 +160,7 @@ class Engine:
         dispatch: DispatchResult,
         user_prompt: str,
         request_id: str,
+        output_schema: dict[str, Any] | None = None,
     ) -> tuple[dict[str, StageSpan], dict[str, StageResult]]:
         dag = dispatch.formation
         topo = dag.topo_order()
@@ -159,7 +173,7 @@ class Engine:
             if not ready:
                 raise RuntimeError("DAG has unresolvable dependencies")
             outcomes = await asyncio.gather(
-                *(self._execute_stage(s, dispatch, results, user_prompt) for s in ready)
+                *(self._execute_stage(s, dispatch, results, user_prompt, output_schema) for s in ready)
             )
             for stage, (result, span) in zip(ready, outcomes):
                 results[stage.id] = result
@@ -182,20 +196,21 @@ class Engine:
         dispatch: DispatchResult,
         results: dict[str, StageResult],
         user_prompt: str,
+        output_schema: dict[str, Any] | None = None,
     ) -> tuple[StageResult, StageSpan]:
         dep_results = [results[d] for d in stage.depends_on if d in results]
 
         start = time.monotonic()
         messages: list[dict[str, str]] = []
         try:
-            messages, response = await self._call_stage(stage, dispatch, dep_results, user_prompt)
+            messages, response = await self._call_stage(stage, dispatch, dep_results, user_prompt, output_schema)
         except GatewayError as exc:
             latency_ms = int((time.monotonic() - start) * 1000)
             log.warning("engine_stage_failed", stage=stage.id, model=stage.model, error=str(exc))
-            # Answer-producing stages retry once with the default judge so the user
-            # still gets a real answer if the dispatcher picked an unavailable judge.
-            fallback_model = self.config.defaults.default_judge
-            if stage.kind in {"judge", "merge", "audit"} and stage.model != fallback_model:
+            # Answer-producing stages retry once with the default aggregator so the user
+            # still gets a real answer if the dispatcher picked an unavailable aggregator.
+            fallback_model = self.config.defaults.default_aggregator
+            if stage.kind in {"aggregator", "merge", "audit"} and stage.model != fallback_model:
                 retry_stage = stage.model_copy(update={"model": fallback_model})
                 try:
                     messages, response = await self._call_stage(
@@ -212,7 +227,7 @@ class Engine:
 
         latency_ms = int((time.monotonic() - start) * 1000)
 
-        prompt_text = _last_user_content(messages) if messages else _judge_prompt_summary(
+        prompt_text = _last_user_content(messages) if messages else _aggregator_prompt_summary(
             stage, dispatch, dep_results
         )
         span = StageSpan(
@@ -241,13 +256,16 @@ class Engine:
         dispatch: DispatchResult,
         dep_results: list[StageResult],
         user_prompt: str,
+        output_schema: dict[str, Any] | None = None,
     ) -> tuple[list[dict[str, str]], GatewayResponse]:
         """Make the actual model call for a stage; returns (messages, response)."""
         if stage.kind == "worker":
             messages = self._worker_messages(stage, dispatch, user_prompt)
             response = await self.gateway.complete(stage.model, messages, temperature=0.3)
             return messages, response
-        response = await self.judge.execute(stage, dispatch, dep_results, user_prompt)
+        response = await self.aggregator.execute(
+            stage, dispatch, dep_results, user_prompt, output_schema=output_schema,
+        )
         return [], response
 
     def _degraded_stage(
@@ -358,8 +376,8 @@ class Engine:
         started: float,
     ) -> DeliberationTrace:
         workers = [s for s in stage_spans.values() if s.kind == "worker"]
-        primary_judge = next(
-            (s for s in stage_spans.values() if s.kind in {"judge", "merge", "audit"}),
+        primary_aggregator = next(
+            (s for s in stage_spans.values() if s.kind in {"aggregator", "merge", "audit"}),
             None,
         )
         all_spans: list[StageSpan] = [dispatch_span, *stage_spans.values()]
@@ -371,7 +389,7 @@ class Engine:
             source=dispatch.source,
             dispatch=dispatch_span,
             workers=workers,
-            judge=primary_judge,
+            aggregator=primary_aggregator,
             stages=list(stage_spans.values()),
             answer_stage_id=answer_stage_id,
             total_duration_ms=int((time.monotonic() - started) * 1000),
@@ -380,10 +398,10 @@ class Engine:
         )
 
 
-def _judge_prompt_summary(
+def _aggregator_prompt_summary(
     stage: Stage, dispatch: DispatchResult, deps: list[StageResult]
 ) -> str:
-    """Compact prompt string for judge spans (whose messages are built internally)."""
+    """Compact prompt string for aggregator spans (whose messages are built internally)."""
     deps_desc = ", ".join(d.stage_id for d in deps) or "(none)"
     return f"merge stage '{stage.id}' over upstream: {deps_desc}"
 

@@ -25,7 +25,7 @@ from chimera.dispatcher import (
 )
 from chimera.engine import DeliberationResult, DeliberationTrace, Engine, StageSpan
 from chimera.gateway import Gateway, GatewayResponse, LiteLLMGateway
-from chimera.judge import Judge
+from chimera.aggregator import Aggregator
 
 __version__ = "0.1.0"
 
