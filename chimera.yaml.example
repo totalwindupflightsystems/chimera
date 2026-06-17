@@ -9,9 +9,9 @@ api_keys:
 # Budget-first defaults — cheap models for dispatch/aggregation.
 # Every request can override ANY of these via API params.
 defaults:
-  dispatcher: deepseek/deepseek-chat           # Budget dispatcher (V4 class)
-  default_worker: deepseek/deepseek-chat        # Budget worker
-  default_judge: deepseek/deepseek-chat         # Budget judge (aggregator)
+  dispatcher: deepseek/deepseek-v4-pro           # Budget dispatcher (V4 class)
+  default_worker: deepseek/deepseek-v4-pro        # Budget worker
+  default_judge: deepseek/deepseek-v4-pro         # Budget judge (aggregator)
   # Premium alternatives available as overrides:
   #   zai-coding-plan/glm-5.2, openrouter/anthropic/claude-sonnet-4
 
@@ -33,7 +33,7 @@ formations:
     audit: openrouter/anthropic/claude-haiku-4.5
 
 models:
-  deepseek/deepseek-chat:
+  deepseek/deepseek-v4-pro:
     categories:
       analysis: 0.85
       audit: 0.6
