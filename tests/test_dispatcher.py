@@ -8,6 +8,7 @@ with a scripted gateway.
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -456,3 +457,158 @@ async def test_custom_dag_dispatch_fills_prompts_and_honors_structure(config) ->
     assert len(dispatcher_calls) == 1
     # The fixed DAG was embedded in the dispatcher prompt
     assert "researcher" in dispatcher_calls[0][1][0]["content"]
+
+
+# --------------------------------------------------------------------------- #
+# Worker prompt enforcement + dispatcher reliability (Fix 1 + Fix 2)
+# ---------------------------------------------------------------------------
+
+
+def _dispatch_payload(
+    *,
+    worker_stage_id: str = "worker_1",
+    worker_model: str = "deepseek/deepseek-chat",
+    aggregator_model: str = "zai-coding-plan/glm-5.2",
+    worker_prompt: str = "Custom subtask for worker_1",
+) -> dict[str, Any]:
+    """Build a raw dispatcher payload dict (parse_dispatch_result accepts dicts)."""
+    return {
+        "formation": {
+            "stages": [
+                {"id": "worker_1", "kind": "worker", "model": worker_model, "depends_on": []},
+                {"id": "aggregator", "kind": "aggregator",
+                 "model": aggregator_model, "depends_on": ["worker_1"]},
+            ],
+            "edges": [["worker_1", "aggregator"]],
+        },
+        "worker_prompts": [
+            {"stage_id": worker_stage_id, "model": worker_model,
+             "prompt": worker_prompt, "expected_output_schema": None},
+        ],
+        "aggregator_instructions": "Merge the worker outputs.",
+    }
+
+
+def test_dispatcher_prompt_auto_enforces_nonempty_worker_prompts(config) -> None:  # type: ignore[no-untyped-def]
+    msgs = build_dispatcher_prompt("some task", config)
+    sys_text = msgs[0]["content"]
+    assert "Worker Prompt Rules" in sys_text
+    assert "non-empty" in sys_text
+    assert "Do NOT copy the user's request verbatim" in sys_text
+    assert "DISTINCT subtask" in sys_text
+
+
+def test_dispatcher_prompt_fixed_dag_lists_exact_worker_ids(config) -> None:  # type: ignore[no-untyped-def]
+    dag = build_preset_dag(config.formations["simple"], config)  # worker_1, worker_2
+    msgs = build_dispatcher_prompt("task", config, fixed_dag=dag)
+    sys_text = msgs[0]["content"]
+    assert "EXACT stage_id values" in sys_text
+    # both worker ids surfaced in the hint
+    assert "worker_1" in sys_text
+    assert "worker_2" in sys_text
+
+
+def test_parse_fuzzy_stage_id_match(config) -> None:  # type: ignore[no-untyped-def]
+    """Case-mismatched worker_prompts[].stage_id reconciles to the formation id."""
+    payload = _dispatch_payload(worker_stage_id="Worker_1", worker_prompt="fuzzy prompt")
+    result = parse_dispatch_result(payload, config)
+    wp = result.worker_prompt_for("worker_1")
+    assert wp is not None
+    assert wp.prompt == "fuzzy prompt"
+
+
+def test_empty_worker_prompt_warns_and_fills_template(config, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    mock_log = MagicMock()
+    monkeypatch.setattr("chimera.dispatcher.log", mock_log)
+
+    payload = _dispatch_payload(worker_prompt="")
+    result = parse_dispatch_result(payload, config)
+
+    wp = result.worker_prompt_for("worker_1")
+    assert wp is not None
+    assert wp.prompt  # filled
+    assert "worker 'worker_1'" in wp.prompt  # templated content
+    mock_log.warning.assert_any_call(
+        "worker_prompt_templated", stage_id="worker_1", reason="empty_or_missing"
+    )
+
+
+def test_missing_worker_prompt_entry_warns(config, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    """A worker stage with NO worker_prompts entry is templated + warned."""
+    mock_log = MagicMock()
+    monkeypatch.setattr("chimera.dispatcher.log", mock_log)
+
+    payload = _dispatch_payload()
+    payload["worker_prompts"] = []  # no entry for worker_1
+    result = parse_dispatch_result(payload, config)
+
+    wp = result.worker_prompt_for("worker_1")
+    assert wp is not None
+    assert wp.prompt
+    mock_log.warning.assert_any_call(
+        "worker_prompt_templated", stage_id="worker_1", reason="empty_or_missing"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Dispatcher reliability — model-name normalization (Fix 2)
+# --------------------------------------------------------------------------- #
+
+
+def test_parse_normalizes_fuzzy_model_names(config) -> None:  # type: ignore[no-untyped-def]
+    payload = _dispatch_payload(
+        worker_model="claude-sonnet-4",
+        aggregator_model="glm-5.2",
+        worker_prompt="do code",
+    )
+    result = parse_dispatch_result(payload, config)
+    assert result.formation.stage("worker_1").model == "openrouter/anthropic/claude-sonnet-4"
+    assert result.formation.stage("aggregator").model == "zai-coding-plan/glm-5.2"
+    wp = result.worker_prompt_for("worker_1")
+    assert wp is not None
+    assert wp.model == "openrouter/anthropic/claude-sonnet-4"
+
+
+def test_parse_ambiguous_suffix_not_matched(config) -> None:  # type: ignore[no-untyped-def]
+    """A suffix matching multiple catalog models is left alone (→ default fallback)."""
+    # Both deepseek/deepseek-chat and .../something share no suffix here; use a
+    # clearly-unknown name to confirm unknown models still fall back to default.
+    payload = _dispatch_payload(worker_model="totally-unknown-xyz")
+    result = parse_dispatch_result(payload, config)
+    assert result.formation.stage("worker_1").model == config.defaults.default_worker
+
+
+def test_parse_logs_raw_output_at_debug(config, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    mock_log = MagicMock()
+    monkeypatch.setattr("chimera.dispatcher.log", mock_log)
+
+    raw_str = '{"formation": {"stages": []}, "worker_prompts": []}'
+    parse_dispatch_result(raw_str, config)  # will fall back (no worker stages)
+    mock_log.debug.assert_any_call("dispatcher_raw_output", text=raw_str)
+
+
+# --------------------------------------------------------------------------- #
+# Model locking (Fix 4)
+# --------------------------------------------------------------------------- #
+
+
+def test_defaults_lock_flags_default_false(config) -> None:  # type: ignore[no-untyped-def]
+    assert config.defaults.lock_dispatcher is False
+    assert config.defaults.lock_aggregator is False
+
+
+def test_lock_aggregator_forces_default_model(config) -> None:  # type: ignore[no-untyped-def]
+    cfg = config.model_copy(update={
+        "defaults": config.defaults.model_copy(update={"lock_aggregator": True}),
+    })
+    payload = _dispatch_payload(aggregator_model="openrouter/anthropic/claude-sonnet-4")
+    result = parse_dispatch_result(payload, cfg)
+    agg = result.formation.stage("aggregator")
+    assert agg.model == cfg.defaults.default_aggregator
+    assert agg.model != "openrouter/anthropic/claude-sonnet-4"
+
+
+def test_aggregator_choice_honored_when_unlocked(config) -> None:  # type: ignore[no-untyped-def]
+    payload = _dispatch_payload(aggregator_model="openrouter/anthropic/claude-sonnet-4")
+    result = parse_dispatch_result(payload, config)
+    assert result.formation.stage("aggregator").model == "openrouter/anthropic/claude-sonnet-4"

@@ -57,6 +57,10 @@ class Defaults(BaseModel):
     dispatcher: str
     default_worker: str
     default_aggregator: str
+    # When True the dispatcher's model choice for these roles is ignored in
+    # favor of the configured default. See ``dispatcher._normalize_result``.
+    lock_dispatcher: bool = False
+    lock_aggregator: bool = False
 
 
 class FormationPreset(BaseModel):
@@ -98,6 +102,7 @@ class LangfuseConfig(BaseModel):
 class Observability(BaseModel):
     log_level: str = "info"
     trace_enabled: bool = True
+    use_stdout: bool = True
     langfuse: LangfuseConfig = Field(default_factory=LangfuseConfig)
 
 

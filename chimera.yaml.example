@@ -12,6 +12,9 @@ defaults:
   dispatcher: deepseek/deepseek-v4-pro           # Budget dispatcher (V4 class)
   default_worker: deepseek/deepseek-v4-pro        # Budget worker
   default_aggregator: deepseek/deepseek-v4-pro         # Budget aggregator
+  # Lock a role's model so the dispatcher CANNOT override it (uses the default above):
+  lock_dispatcher: false   # force `dispatcher` model for any dispatcher-kind stage
+  lock_aggregator: false   # force `default_aggregator` for aggregator/merge/audit stages
   # Premium alternatives available as overrides:
   #   zai-coding-plan/glm-5.2, openrouter/anthropic/claude-sonnet-4
 
@@ -119,5 +122,6 @@ server:
 observability:
   log_level: info
   trace_enabled: true
+  use_stdout: true          # emit structlog JSON to stdout (default) instead of stderr
   langfuse:
     enabled: false

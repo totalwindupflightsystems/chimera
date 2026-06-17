@@ -318,6 +318,19 @@ def build_dispatcher_prompt(
     catalog = config.catalog_description()
     schema_str = json.dumps(DISPATCH_SCHEMA_HINT, indent=2)
 
+    # STRICT worker-prompt rules — prevent empty / verbatim / generic prompts.
+    enforcement = (
+        "\n## Worker Prompt Rules (STRICT — failures degrade the output)\n"
+        "- EVERY entry in worker_prompts[] MUST have a non-empty, specific, "
+        "domain-scoped `prompt`.\n"
+        "- Do NOT leave worker_prompts[].prompt empty.\n"
+        "- Do NOT copy the user's request verbatim into a worker prompt.\n"
+        "- Each worker must receive a DISTINCT subtask focused on what THAT model "
+        "is best at (per the category weights above).\n"
+        "- Each worker_prompts[].stage_id MUST match a formation worker stage id "
+        "exactly (case-sensitive)."
+    )
+
     if fixed_dag is None:
         task_block = (
             "You are in AUTO mode. Design the entire formation yourself.\n"
@@ -345,6 +358,14 @@ def build_dispatcher_prompt(
             "Use this EXACT formation (return it unchanged in the `formation` field):\n"
             f"{json.dumps(fixed_dag.model_dump(mode='json'), indent=2)}"
         )
+        # Surface the exact worker stage ids so the dispatcher addresses them
+        # with the correct (case-sensitive) stage_id values.
+        worker_ids = [s.id for s in fixed_dag.stages if s.kind == "worker"]
+        if worker_ids:
+            formation_block += (
+                "\nThe worker stage ids you MUST address in worker_prompts[] "
+                f"(use these EXACT stage_id values): {worker_ids}"
+            )
 
     system = (
         "You are the Chimera dispatcher. Your job: design (or fill in) a "
@@ -352,7 +373,8 @@ def build_dispatcher_prompt(
         "across models according to their strengths.\n\n"
         f"## Available Models\n{catalog}\n\n"
         f"## Your Task\n{task_block}\n"
-        f"{formation_block}\n\n"
+        f"{formation_block}\n"
+        f"{enforcement}\n\n"
         "## Output\n"
         "Respond with ONLY a JSON object (no markdown fences) matching:\n"
         f"{schema_str}"
@@ -397,6 +419,43 @@ def _extract_json_object(text: str) -> Any:
     raise ValueError("Unbalanced JSON object in dispatcher output")
 
 
+def _normalize_model_name(name: str, config: ChimeraConfig) -> str:
+    """Resolve a dispatcher-emitted model name to a known catalog model.
+
+    Dispatcher models sometimes emit partial or differently-cased names
+    (e.g. ``claude-sonnet-4`` instead of ``openrouter/anthropic/claude-sonnet-4``).
+    Matching strategy, in order:
+
+    * exact match in the catalog → returned as-is,
+    * case-insensitive exact match,
+    * unique suffix match (``"x/y/foo"`` ends with ``"/foo"``),
+    * otherwise the original (unknown models are later replaced by the default).
+
+    The ``"default"`` / ``"default_worker"`` aliases are passed through unchanged
+    so :meth:`ChimeraConfig.resolve_model_alias` can handle them upstream.
+    """
+    cleaned = (name or "").strip()
+    if not cleaned or cleaned in {"default", "default_worker"}:
+        return cleaned
+    models = config.models
+    if cleaned in models:
+        return cleaned
+    lower = cleaned.lower()
+    for m in models:
+        if m.lower() == lower:
+            return m
+    # Unique suffix match: dispatcher's name is the tail of a catalog entry.
+    candidates = [m for m in models if m.lower().endswith("/" + lower)]
+    if len(candidates) == 1:
+        return candidates[0]
+    return cleaned
+
+
+def _resolve_and_normalize_model(name: str, config: ChimeraConfig) -> str:
+    """Resolve ``default`` aliases then fuzzy-match against the catalog."""
+    return _normalize_model_name(config.resolve_model_alias(name), config)
+
+
 def parse_dispatch_result(
     raw: str | dict[str, Any],
     config: ChimeraConfig,
@@ -408,6 +467,9 @@ def parse_dispatch_result(
     If the output is malformed or references unknown models, fall back to
     ``fallback_dag`` (or a minimal 1-worker formation) with templated prompts.
     """
+    if isinstance(raw, str):
+        # Visible at debug level so malformed/strict-JSON failures can be diagnosed.
+        log.debug("dispatcher_raw_output", text=raw)
     data: dict[str, Any]
     if isinstance(raw, dict):
         data = raw
@@ -425,7 +487,7 @@ def parse_dispatch_result(
             Stage(
                 id=s["id"],
                 kind=s.get("kind", "worker"),
-                model=config.resolve_model_alias(s.get("model", "")),
+                model=_resolve_and_normalize_model(s.get("model", ""), config),
                 depends_on=list(s.get("depends_on", [])),
             )
             for s in stages_raw
@@ -436,7 +498,7 @@ def parse_dispatch_result(
         worker_prompts = [
             WorkerPrompt(
                 stage_id=wp.get("stage_id", ""),
-                model=config.resolve_model_alias(wp.get("model", "")),
+                model=_resolve_and_normalize_model(wp.get("model", ""), config),
                 prompt=wp.get("prompt", ""),
                 expected_output_schema=wp.get("expected_output_schema"),
             )
@@ -474,9 +536,36 @@ def _validate_result(result: DispatchResult) -> None:
 
 
 def _normalize_result(result: DispatchResult, config: ChimeraConfig) -> None:
-    """Resolve model aliases, fill missing worker prompts, validate the DAG."""
+    """Resolve model aliases, fill missing worker prompts, validate the DAG.
+
+    * Reconciles ``worker_prompts[].stage_id`` against the formation using a
+      case-insensitive fallback so dispatcher case mismatches still line up.
+    * Honors model locking: when ``lock_aggregator``/``lock_dispatcher`` are set,
+      the dispatcher's model choice for those roles is overridden by the
+      configured defaults.
+    * Emits a ``worker_prompt_templated`` WARNING whenever a worker prompt had
+      to be filled from the generic template (the dispatcher left it empty).
+    """
     valid_models = set(config.models.keys())
+    lock_agg = config.defaults.lock_aggregator
+    lock_disp = config.defaults.lock_dispatcher
+
+    # Fuzzy (case-insensitive) stage_id reconciliation for worker prompts.
+    formation_ids = {s.id for s in result.formation.stages}
+    lower_to_id = {s.id.lower(): s.id for s in result.formation.stages}
+    for wp in result.worker_prompts:
+        if wp.stage_id not in formation_ids:
+            matched = lower_to_id.get(wp.stage_id.lower())
+            if matched is not None:
+                wp.stage_id = matched
+
     for stage in result.formation.stages:
+        # Model locking: force configured defaults for locked roles.
+        if lock_disp and stage.kind == "dispatcher":
+            stage.model = config.defaults.dispatcher
+        if lock_agg and stage.kind in {"aggregator", "merge", "audit"}:
+            stage.model = config.defaults.default_aggregator
+
         if stage.model not in valid_models:
             stage.model = (
                 config.defaults.default_worker
@@ -493,6 +582,11 @@ def _normalize_result(result: DispatchResult, config: ChimeraConfig) -> None:
                 existing.model = stage.model
     for wp in result.worker_prompts:
         if not wp.prompt:
+            log.warning(
+                "worker_prompt_templated",
+                stage_id=wp.stage_id,
+                reason="empty_or_missing",
+            )
             wp.prompt = _templated_worker_prompt(wp.stage_id, config)
 
 

@@ -1,14 +1,16 @@
 """Structured logging (structlog) and optional Langfuse tracing.
 
-structlog emits JSON to stderr. Langfuse is enabled only when configured and
-the ``langfuse`` package is importable.
+structlog emits JSON to stderr by default, or to stdout when
+``observability.use_stdout`` is true (the default, since Chimera is a CLI tool,
+not a daemon). Langfuse is enabled only when configured and the ``langfuse``
+package is importable.
 """
 
 from __future__ import annotations
 
 import logging
 import sys
-from typing import Any
+from typing import Any, TextIO
 
 import structlog
 
@@ -18,15 +20,21 @@ _LOGGER_CONFIGURED = False
 _LANGFUSE_CLIENT: Any = None
 
 
+def _log_stream(obs: Observability) -> TextIO:
+    """Return the stream structlog/basicConfig should write to."""
+    return sys.stdout if obs.use_stdout else sys.stderr
+
+
 def configure_logging(obs: Observability) -> structlog.stdlib.BoundLogger:
     """Configure structlog once and return a bound logger."""
     global _LOGGER_CONFIGURED
     level = getattr(logging, obs.log_level.upper(), logging.INFO)
 
     if not _LOGGER_CONFIGURED:
+        stream: TextIO = _log_stream(obs)
         logging.basicConfig(
             format="%(message)s",
-            stream=sys.stderr,
+            stream=stream,
             level=level,
         )
         structlog.configure(
@@ -39,7 +47,7 @@ def configure_logging(obs: Observability) -> structlog.stdlib.BoundLogger:
                 structlog.processors.JSONRenderer(),
             ],
             wrapper_class=structlog.make_filtering_bound_logger(level),
-            logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+            logger_factory=structlog.PrintLoggerFactory(file=stream),
             cache_logger_on_first_use=True,
         )
         _LOGGER_CONFIGURED = True
@@ -88,4 +96,4 @@ def get_langfuse() -> Any:
     return _LANGFUSE_CLIENT
 
 
-__all__ = ["configure_logging", "get_langfuse", "get_logger"]
+__all__ = ["_log_stream", "configure_logging", "get_langfuse", "get_logger"]

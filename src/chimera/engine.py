@@ -30,6 +30,11 @@ from chimera.observability import get_langfuse
 
 log = structlog.get_logger("chimera.engine")
 
+#: Per-stage wall-clock timeout (seconds). A stage that exceeds this is cancelled
+#: and recorded as degraded so one slow worker cannot block the deliberation.
+#: Tests monkeypatch this module global to exercise the timeout path quickly.
+DEFAULT_STAGE_TIMEOUT_S: float = 120.0
+
 
 class StageSpan(BaseModel):
     """One traced stage execution."""
@@ -270,7 +275,24 @@ class Engine:
         start = time.monotonic()
         messages: list[dict[str, str]] = []
         try:
-            messages, response = await self._call_stage(stage, dispatch, dep_results, user_prompt, output_schema)
+            messages, response = await asyncio.wait_for(
+                self._call_stage(stage, dispatch, dep_results, user_prompt, output_schema),
+                timeout=DEFAULT_STAGE_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            log.warning(
+                "engine_stage_timeout",
+                stage=stage.id,
+                model=stage.model,
+                timeout=DEFAULT_STAGE_TIMEOUT_S,
+            )
+            return self._degraded_stage(
+                stage,
+                GatewayError(f"timed out after {DEFAULT_STAGE_TIMEOUT_S}s"),
+                [],
+                latency_ms,
+            )
         except GatewayError as exc:
             latency_ms = int((time.monotonic() - start) * 1000)
             log.warning("engine_stage_failed", stage=stage.id, model=stage.model, error=str(exc))

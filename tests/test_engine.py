@@ -376,3 +376,37 @@ async def test_client_dag_invalid_model_rejected_at_engine(config) -> None:  # t
         await Engine(config, gw).deliberate(
             "task", "auto", dag=bad_dag, allow_custom_dag=True
         )
+
+
+# --------------------------------------------------------------------------- #
+# Per-stage timeout (Fix 3)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_stage_timeout_produces_degraded_result(config, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    """A worker exceeding the stage timeout is cancelled and degraded; the
+    deliberation still completes via the aggregator."""
+    import asyncio
+    import chimera.engine as engine_mod
+
+    # Shrink the timeout so the test is fast; workers sleep past it.
+    monkeypatch.setattr(engine_mod, "DEFAULT_STAGE_TIMEOUT_S", 0.05)
+
+    class SlowWorkerGateway(FakeGateway):
+        async def complete(self, model, messages, response_format=None, **kw):
+            if response_format is not None:  # dispatcher
+                return resp(dispatch_json(), model, 10, 10)
+            if "Upstream outputs" in json.dumps(messages):  # aggregator
+                return resp("AGG ANSWER", model, 10, 10)
+            await asyncio.sleep(1.0)  # worker exceeds timeout
+            return resp("never returns", model)
+
+    gw = SlowWorkerGateway()
+    result = await Engine(config, gw).deliberate("task", "auto")
+
+    # Aggregator still answered despite every worker timing out.
+    assert result.answer == "AGG ANSWER"
+    for w in result.trace.workers:
+        assert "timed out" in w.response
+        assert w.cost == 0.0
