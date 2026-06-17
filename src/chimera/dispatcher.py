@@ -1,0 +1,546 @@
+"""The Dispatcher — designs the entire deliberation in ONE model call.
+
+Reads the user prompt + the model catalog (with category-weighted scores) and
+produces a :class:`DispatchResult`: a formation DAG, a custom prompt for every
+worker, and merge instructions for the judge.
+
+Two operating modes:
+* ``auto`` — the dispatcher designs the DAG structure *and* writes all prompts.
+* named preset (``simple`` / ``debate`` / ``audit`` / ...) — the DAG structure is
+  derived from the config preset, and the dispatcher writes the per-worker
+  prompts and judge/audit instructions for that fixed structure.
+
+Either way Chimera makes exactly one dispatcher model call.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import time
+from dataclasses import dataclass
+from typing import Any
+
+import structlog
+from pydantic import BaseModel, Field
+
+from chimera.config import ChimeraConfig, FormationPreset
+from chimera.gateway import Gateway, GatewayError, GatewayResponse
+
+log = structlog.get_logger("chimera.dispatcher")
+
+#: JSON schema description embedded in the dispatcher prompt.
+DISPATCH_SCHEMA_HINT = {
+    "formation": {
+        "stages": [
+            {"id": "worker_1", "kind": "worker", "model": "<model name>", "depends_on": []}
+        ],
+        "edges": [["worker_1", "judge"]],
+    },
+    "worker_prompts": [
+        {
+            "stage_id": "worker_1",
+            "model": "<model name>",
+            "prompt": "<custom subtask prompt>",
+            "expected_output_schema": None,
+        }
+    ],
+    "judge_instructions": "<how to merge the worker outputs into the final answer>",
+    "stage_instructions": {"<audit/merge stage id>": "<instructions>"},
+}
+
+
+class Stage(BaseModel):
+    """A single node in the formation DAG."""
+
+    id: str
+    kind: str = "worker"  # worker | judge | audit | merge
+    model: str
+    depends_on: list[str] = Field(default_factory=list)
+
+
+class FormationDAG(BaseModel):
+    """The dispatcher-designed execution graph."""
+
+    stages: list[Stage]
+    edges: list[tuple[str, str]] = Field(default_factory=list)
+
+    def stage(self, stage_id: str) -> Stage:
+        for s in self.stages:
+            if s.id == stage_id:
+                return s
+        raise KeyError(stage_id)
+
+    def stage_ids(self) -> list[str]:
+        return [s.id for s in self.stages]
+
+    def kinds(self) -> set[str]:
+        return {s.kind for s in self.stages}
+
+    def terminals(self) -> list[Stage]:
+        """Stages that nothing else depends on (the answer producers)."""
+        depended = {src for src, _ in self.edges}
+        return [s for s in self.stages if s.id not in depended]
+
+    def topo_order(self) -> list[Stage]:
+        """Return stages ordered so dependencies come first."""
+        by_id = {s.id: s for s in self.stages}
+        ordered: list[Stage] = []
+        done: set[str] = set()
+
+        def visit(node: Stage, stack: set[str]) -> None:
+            if node.id in done:
+                return
+            if node.id in stack:
+                raise ValueError(f"Cycle detected at {node.id}")
+            stack.add(node.id)
+            for dep in node.depends_on:
+                if dep in by_id:
+                    visit(by_id[dep], stack)
+            stack.discard(node.id)
+            done.add(node.id)
+            ordered.append(node)
+
+        for s in self.stages:
+            visit(s, set())
+        return ordered
+
+
+class WorkerPrompt(BaseModel):
+    stage_id: str
+    model: str
+    prompt: str
+    expected_output_schema: dict[str, Any] | None = None
+
+
+class DispatchResult(BaseModel):
+    """What the dispatcher produces in one call."""
+
+    formation: FormationDAG
+    worker_prompts: list[WorkerPrompt] = Field(default_factory=list)
+    judge_instructions: str = ""
+    stage_instructions: dict[str, str] = Field(default_factory=dict)
+    source: str = "auto"  # auto | preset | fallback
+
+    def worker_prompt_for(self, stage_id: str) -> WorkerPrompt | None:
+        for wp in self.worker_prompts:
+            if wp.stage_id == stage_id:
+                return wp
+        return None
+
+    def stage_instruction(self, stage_id: str, kind: str) -> str:
+        """Prompt instructions for a non-worker stage."""
+        if stage_id in self.stage_instructions:
+            return self.stage_instructions[stage_id]
+        if kind == "judge" and not self.stage_instructions:
+            return self.judge_instructions
+        return ""
+
+
+@dataclass(slots=True)
+class DispatchOutcome:
+    """The dispatcher model call result + parsed dispatch plan."""
+
+    result: DispatchResult
+    messages: list[dict[str, str]]
+    response: GatewayResponse
+    latency_ms: int
+
+
+# --------------------------------------------------------------------------- #
+# Preset → DAG construction (deterministic, testable without an LLM)
+# --------------------------------------------------------------------------- #
+
+
+def build_preset_dag(preset: FormationPreset, config: ChimeraConfig) -> FormationDAG:
+    """Construct a :class:`FormationDAG` from a config preset."""
+    if preset.is_auto or preset.workers is None:
+        raise ValueError("Cannot build a structural DAG from an auto preset")
+
+    worker_models = _resolve_worker_models(preset, config)
+    n_workers = preset.workers
+    stages: list[Stage] = []
+    edges: list[tuple[str, str]] = []
+
+    worker_ids: list[str] = []
+    for i in range(n_workers):
+        wid = f"worker_{i + 1}"
+        worker_ids.append(wid)
+        stages.append(Stage(id=wid, kind="worker", model=worker_models[i % len(worker_models)]))
+
+    judge_models = _resolve_judge_models(preset, config)
+    judge_ids: list[str] = []
+    for i, jm in enumerate(judge_models):
+        jid = "judge" if i == 0 else f"judge_{i + 1}"
+        judge_ids.append(jid)
+        stages.append(Stage(id=jid, kind="judge", model=jm, depends_on=list(worker_ids)))
+        for wid in worker_ids:
+            edges.append((wid, jid))
+
+    if preset.audit:
+        audit_model = config.resolve_model_alias(preset.audit)
+        stages.append(Stage(id="audit", kind="audit", model=audit_model, depends_on=[judge_ids[0]]))
+        edges.append((judge_ids[0], "audit"))
+
+    if len(judge_ids) > 1:
+        merge_model = config.defaults.default_judge
+        merge_id = "merge"
+        stages.append(Stage(id=merge_id, kind="merge", model=merge_model, depends_on=list(judge_ids)))
+        for jid in judge_ids:
+            edges.append((jid, merge_id))
+
+    dag = FormationDAG(stages=stages, edges=edges)
+    _validate_dag(dag, config)
+    return dag
+
+
+def _resolve_worker_models(preset: FormationPreset, config: ChimeraConfig) -> list[str]:
+    if preset.worker_models:
+        return [config.resolve_model_alias(m) for m in preset.worker_models]
+    return [config.defaults.default_worker] * (preset.workers or 1)
+
+
+def _resolve_judge_models(preset: FormationPreset, config: ChimeraConfig) -> list[str]:
+    if preset.judges:
+        return [config.resolve_model_alias(j) for j in preset.judges]
+    judge = preset.judge or "default"
+    return [config.resolve_model_alias(judge)]
+
+
+def _validate_dag(dag: FormationDAG, config: ChimeraConfig) -> None:
+    ids = set(dag.stage_ids())
+    for stage in dag.stages:
+        for dep in stage.depends_on:
+            if dep not in ids:
+                raise ValueError(f"Stage {stage.id!r} depends on unknown {dep!r}")
+        if stage.model not in config.models:
+            raise ValueError(f"Stage {stage.id!r} uses unknown model {stage.model!r}")
+    if not any(s.kind == "worker" for s in dag.stages):
+        raise ValueError("Formation has no worker stages")
+    if not any(s.kind in {"judge", "merge", "audit"} for s in dag.stages):
+        raise ValueError("Formation has no judge/merge/audit stages")
+
+
+# --------------------------------------------------------------------------- #
+# Dispatcher prompt construction
+# --------------------------------------------------------------------------- #
+
+
+def build_dispatcher_prompt(
+    user_prompt: str,
+    config: ChimeraConfig,
+    *,
+    fixed_dag: FormationDAG | None = None,
+) -> list[dict[str, str]]:
+    """Build the message list for the dispatcher model call."""
+    catalog = config.catalog_description()
+    schema_str = json.dumps(DISPATCH_SCHEMA_HINT, indent=2)
+
+    if fixed_dag is None:
+        task_block = (
+            "You are in AUTO mode. Design the entire formation yourself.\n"
+            "1. Analyze the task and the domains it touches "
+            "(code, analysis, design, audit, reasoning, ...).\n"
+            "2. Pick the best model for each subtask using the category weights above.\n"
+            "3. Design a formation DAG: parallel workers, then a judge that merges. "
+            "You may add an audit stage or multiple judges with a merge stage.\n"
+            "4. Write a CUSTOM prompt for each worker, scoped to what that model is "
+            "good at. Do NOT give every worker the same prompt unless consensus is "
+            "required.\n"
+            "5. Write judge_instructions telling the judge exactly what each worker was "
+            "asked to do and how to combine their outputs into the final answer.\n"
+            "6. Use only models from the catalog. Keep it small: 2-4 workers is ideal.\n"
+        )
+        formation_block = "Design the `formation` field yourself."
+    else:
+        task_block = (
+            "A fixed formation has already been chosen. Do NOT change the structure.\n"
+            "Your only job: write a CUSTOM prompt for each worker and the merge "
+            "instructions for the judge, tailored to this specific task and to each "
+            "model's strengths from the category weights above.\n"
+        )
+        formation_block = (
+            "Use this EXACT formation (return it unchanged in the `formation` field):\n"
+            f"{json.dumps(fixed_dag.model_dump(mode='json'), indent=2)}"
+        )
+
+    system = (
+        "You are the Chimera dispatcher. Your job: design (or fill in) a "
+        "multi-model deliberation that solves the user's task by splitting it "
+        "across models according to their strengths.\n\n"
+        f"## Available Models\n{catalog}\n\n"
+        f"## Your Task\n{task_block}\n"
+        f"{formation_block}\n\n"
+        "## Output\n"
+        "Respond with ONLY a JSON object (no markdown fences) matching:\n"
+        f"{schema_str}"
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": f"User's request:\n{user_prompt}"},
+    ]
+
+
+# --------------------------------------------------------------------------- #
+# Output parsing
+# --------------------------------------------------------------------------- #
+
+
+_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
+
+
+def _strip_fences(text: str) -> str:
+    return _FENCE_RE.sub("", text.strip())
+
+
+def _extract_json_object(text: str) -> Any:
+    """Pull the first balanced JSON object out of ``text``."""
+    cleaned = _strip_fences(text)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    start = cleaned.find("{")
+    if start == -1:
+        raise ValueError("No JSON object found in dispatcher output")
+    depth = 0
+    for i in range(start, len(cleaned)):
+        ch = cleaned[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return json.loads(cleaned[start : i + 1])
+    raise ValueError("Unbalanced JSON object in dispatcher output")
+
+
+def parse_dispatch_result(
+    raw: str | dict[str, Any],
+    config: ChimeraConfig,
+    *,
+    fallback_dag: FormationDAG | None = None,
+) -> DispatchResult:
+    """Parse dispatcher output into a validated :class:`DispatchResult`.
+
+    If the output is malformed or references unknown models, fall back to
+    ``fallback_dag`` (or a minimal 1-worker formation) with templated prompts.
+    """
+    data: dict[str, Any]
+    if isinstance(raw, dict):
+        data = raw
+    else:
+        try:
+            data = _extract_json_object(raw)
+        except (json.JSONDecodeError, ValueError) as exc:
+            log.warning("dispatcher_bad_json", error=str(exc))
+            return _fallback_result(config, fallback_dag, user_prompt="")
+
+    try:
+        formation_data = data.get("formation") or {}
+        stages_raw = formation_data.get("stages") or []
+        stages = [
+            Stage(
+                id=s["id"],
+                kind=s.get("kind", "worker"),
+                model=config.resolve_model_alias(s.get("model", "")),
+                depends_on=list(s.get("depends_on", [])),
+            )
+            for s in stages_raw
+        ]
+        edges = [tuple(e) for e in (formation_data.get("edges") or [])]
+        formation = FormationDAG(stages=stages, edges=edges)
+
+        worker_prompts = [
+            WorkerPrompt(
+                stage_id=wp.get("stage_id", ""),
+                model=config.resolve_model_alias(wp.get("model", "")),
+                prompt=wp.get("prompt", ""),
+                expected_output_schema=wp.get("expected_output_schema"),
+            )
+            for wp in (data.get("worker_prompts") or [])
+        ]
+        result = DispatchResult(
+            formation=formation,
+            worker_prompts=worker_prompts,
+            judge_instructions=data.get("judge_instructions", "") or "",
+            stage_instructions=data.get("stage_instructions", {}) or {},
+            source="auto",
+        )
+        _normalize_result(result, config)
+        _validate_result(result)
+        return result
+    except (KeyError, TypeError, ValueError, IndexError) as exc:
+        log.warning("dispatcher_parse_failed", error=str(exc))
+        return _fallback_result(config, fallback_dag, user_prompt="")
+
+
+def _validate_result(result: DispatchResult) -> None:
+    """Raise ``ValueError`` if the dispatch plan is structurally unusable."""
+    if not result.formation.stages:
+        raise ValueError("dispatch produced no stages")
+    if not any(s.kind == "worker" for s in result.formation.stages):
+        raise ValueError("dispatch produced no worker stages")
+    if not any(s.kind in {"judge", "merge", "audit"} for s in result.formation.stages):
+        raise ValueError("dispatch produced no judge/merge/audit stage")
+    ids = set(result.formation.stage_ids())
+    for stage in result.formation.stages:
+        for dep in stage.depends_on:
+            if dep not in ids:
+                raise ValueError(f"stage {stage.id!r} depends on unknown {dep!r}")
+
+
+def _normalize_result(result: DispatchResult, config: ChimeraConfig) -> None:
+    """Resolve model aliases, fill missing worker prompts, validate the DAG."""
+    valid_models = set(config.models.keys())
+    for stage in result.formation.stages:
+        if stage.model not in valid_models:
+            stage.model = (
+                config.defaults.default_worker
+                if stage.kind == "worker"
+                else config.defaults.default_judge
+            )
+        if stage.kind == "worker":
+            existing = result.worker_prompt_for(stage.id)
+            if existing is None:
+                result.worker_prompts.append(
+                    WorkerPrompt(stage_id=stage.id, model=stage.model, prompt="")
+                )
+            elif not existing.prompt:
+                existing.model = stage.model
+    for wp in result.worker_prompts:
+        if not wp.prompt:
+            wp.prompt = _templated_worker_prompt(wp.stage_id, config)
+
+
+def _fallback_result(
+    config: ChimeraConfig,
+    fallback_dag: FormationDAG | None,
+    *,
+    user_prompt: str,
+) -> DispatchResult:
+    """Build a safe 1-worker + 1-judge result when parsing fails."""
+    if fallback_dag is not None:
+        dag = fallback_dag
+    else:
+        dag = FormationDAG(
+            stages=[
+                Stage(id="worker_1", kind="worker", model=config.defaults.default_worker),
+                Stage(
+                    id="judge",
+                    kind="judge",
+                    model=config.defaults.default_judge,
+                    depends_on=["worker_1"],
+                ),
+            ],
+            edges=[("worker_1", "judge")],
+        )
+    worker_prompts = [
+        WorkerPrompt(stage_id=s.id, model=s.model, prompt=_templated_worker_prompt(s.id, config))
+        for s in dag.stages
+        if s.kind == "worker"
+    ]
+    return DispatchResult(
+        formation=dag,
+        worker_prompts=worker_prompts,
+        judge_instructions=(
+            "Merge the worker outputs into a single, coherent final answer "
+            "for the user's request."
+        ),
+        stage_instructions={},
+        source="fallback",
+    )
+
+
+def _templated_worker_prompt(stage_id: str, config: ChimeraConfig) -> str:
+    return (
+        f"You are worker '{stage_id}'. Solve the user's request as completely as you can. "
+        "Be precise and concise."
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Dispatcher
+# --------------------------------------------------------------------------- #
+
+
+class Dispatcher:
+    """Runs the one dispatcher model call and returns a :class:`DispatchResult`."""
+
+    def __init__(self, config: ChimeraConfig, gateway: Gateway) -> None:
+        self.config = config
+        self.gateway = gateway
+        self.model = config.defaults.dispatcher
+
+    async def dispatch(self, user_prompt: str, formation: str = "auto") -> DispatchOutcome:
+        preset = self._resolve_preset(formation)
+        start = time.monotonic()
+        if preset is not None and not preset.is_auto:
+            messages, response, result = await self._dispatch_preset(user_prompt, formation, preset)
+        else:
+            messages, response, result = await self._dispatch_auto(user_prompt)
+        latency_ms = int((time.monotonic() - start) * 1000)
+        return DispatchOutcome(
+            result=result, messages=messages, response=response, latency_ms=latency_ms
+        )
+
+    def _resolve_preset(self, formation: str) -> FormationPreset | None:
+        if formation not in self.config.formations:
+            log.warning("unknown_formation", formation=formation, using="auto")
+            return None
+        return self.config.formations[formation]
+
+    async def _dispatch_auto(
+        self, user_prompt: str
+    ) -> tuple[list[dict[str, str]], GatewayResponse, DispatchResult]:
+        messages = build_dispatcher_prompt(user_prompt, self.config, fixed_dag=None)
+        response = await self._call_dispatcher(messages)
+        result = parse_dispatch_result(response.text, self.config, fallback_dag=None)
+        log.info(
+            "dispatch_auto_done",
+            stages=result.formation.stage_ids(),
+            source=result.source,
+        )
+        return messages, response, result
+
+    async def _dispatch_preset(
+        self, user_prompt: str, formation_name: str, preset: FormationPreset
+    ) -> tuple[list[dict[str, str]], GatewayResponse, DispatchResult]:
+        dag = build_preset_dag(preset, self.config)
+        messages = build_dispatcher_prompt(user_prompt, self.config, fixed_dag=dag)
+        response = await self._call_dispatcher(messages)
+        result = parse_dispatch_result(response.text, self.config, fallback_dag=dag)
+        # Always honor the preset structure exactly.
+        result.formation = dag
+        result.source = "preset"
+        log.info(
+            "dispatch_preset_done",
+            formation=formation_name,
+            stages=dag.stage_ids(),
+        )
+        return messages, response, result
+
+    async def _call_dispatcher(self, messages: list[dict[str, str]]) -> GatewayResponse:
+        try:
+            return await self.gateway.complete(
+                self.model,
+                messages,
+                temperature=0.1,
+                response_format={"type": "json_object"},
+            )
+        except GatewayError as exc:
+            log.warning("dispatcher_call_failed", error=str(exc), using="fallback")
+            return GatewayResponse(text="{}", model=self.model, tokens_input=0, tokens_output=0)
+
+
+__all__ = [
+    "DispatchOutcome",
+    "DispatchResult",
+    "Dispatcher",
+    "FormationDAG",
+    "Stage",
+    "WorkerPrompt",
+    "build_dispatcher_prompt",
+    "build_preset_dag",
+    "parse_dispatch_result",
+]

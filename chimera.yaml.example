@@ -1,0 +1,92 @@
+# Chimera Configuration
+# Copy to chimera.yaml and fill in your API keys.
+
+api_keys:
+  deepseek: ${DEEPSEEK_API_KEY}
+  openrouter: ${OPENROUTER_API_KEY}
+  zai: ${ZAI_API_KEY}
+
+# Budget-first defaults — cheap models for dispatch/aggregation.
+# Every request can override ANY of these via API params.
+defaults:
+  dispatcher: deepseek/deepseek-chat           # Budget dispatcher (V4 class)
+  default_worker: deepseek/deepseek-chat        # Budget worker
+  default_judge: deepseek/deepseek-chat         # Budget judge (aggregator)
+  # Premium alternatives available as overrides:
+  #   zai-coding-plan/glm-5.2, openrouter/anthropic/claude-sonnet-4
+
+formations:
+  auto:
+    mode: auto
+  simple:
+    workers: 2
+    judge: default
+  debate:
+    workers: 3
+    judges:
+      - default
+      - openrouter/anthropic/claude-sonnet-4
+    merge: best_of_n
+  audit:
+    workers: 2
+    judge: default
+    audit: openrouter/anthropic/claude-haiku-4.5
+
+models:
+  deepseek/deepseek-chat:
+    categories:
+      analysis: 0.85
+      audit: 0.6
+      code: 0.95
+      design: 0.4
+      reasoning: 0.8
+    cost_tier: budget
+    provider: deepseek                               # Direct API (set DEEPSEEK_API_KEY)
+
+  openrouter/anthropic/claude-sonnet-4:
+    categories:
+      analysis: 0.92
+      audit: 0.85
+      code: 0.9
+      design: 0.88
+      reasoning: 0.93
+    cost_tier: premium
+    provider: openrouter                             # Via OpenRouter (set OPENROUTER_API_KEY)
+
+  openrouter/google/gemini-2.5-flash:
+    categories:
+      analysis: 0.75
+      audit: 0.5
+      code: 0.7
+      design: 0.9
+      reasoning: 0.65
+    cost_tier: budget
+    provider: openrouter
+
+  zai-coding-plan/glm-5.2:
+    categories:
+      analysis: 0.9
+      audit: 0.88
+      code: 0.92
+      design: 0.85
+      reasoning: 0.95
+    cost_tier: premium
+    provider: zai
+
+providers:
+  anthropic:
+    base_url: https://api.anthropic.com/v1
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+  zai:
+    base_url: https://api.z.ai/api/coding/paas/v4
+
+server:
+  host: 0.0.0.0
+  port: 8000
+
+observability:
+  log_level: info
+  trace_enabled: true
+  langfuse:
+    enabled: false

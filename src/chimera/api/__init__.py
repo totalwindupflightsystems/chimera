@@ -1,0 +1,1 @@
+"""Chimera package — REST API."""

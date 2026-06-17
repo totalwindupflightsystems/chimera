@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+dist/
+*.egg-info/
+chimera.yaml
+.env
+.pytest_cache/
+.ruff_cache/
