@@ -24,6 +24,7 @@ full = ["chimera[server,cli,mcp,dev]"]
 
 [project.scripts]
 chimera = "chimera.cli.main:main"
+chimera-mcp = "chimera.mcp.server:run"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

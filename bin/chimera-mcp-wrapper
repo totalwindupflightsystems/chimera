@@ -1,0 +1,4 @@
+#!/bin/bash
+# Chimera MCP wrapper — ensures chimera.yaml is found
+cd /home/kara/chimera-v2 || exit 1
+exec /home/kara/.hermes/hermes-agent/venv/bin/chimera-mcp

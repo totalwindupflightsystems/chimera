@@ -72,7 +72,14 @@ def build_server(
 
 
 def run(config_path: str | None = None) -> None:
-    """Run the MCP server over stdio."""
+    """Run the MCP server over stdio.
+
+    Accepts an optional config path as the first CLI argument, or falls
+    back to ``find_config_path()`` (walks up from CWD).
+    """
+    import sys
+    if config_path is None and len(sys.argv) > 1:
+        config_path = sys.argv[1]
     config = load_config(config_path)
     server = build_server(config)
     server.run()

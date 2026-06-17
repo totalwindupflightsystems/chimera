@@ -1,0 +1,3 @@
+#!/bin/bash
+# Chimera MCP wrapper for Hermes
+exec /home/kara/.hermes/hermes-agent/venv/bin/chimera-mcp /home/kara/chimera-v2/chimera.yaml
