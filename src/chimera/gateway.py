@@ -135,11 +135,42 @@ class LiteLLMGateway:
             call_kwargs["response_format"] = response_format
 
         log.debug("gateway_call", model=model, litellm_model=lm_model)
-        try:
-            result = await asyncio.to_thread(_litellm_sync_complete, call_kwargs)
-        except _PROVIDER_ERRORS as exc:
-            raise GatewayError(f"{model} call failed: {exc}") from exc
+        return await self._complete_with_retry(call_kwargs, model)
 
+    async def _complete_with_retry(
+        self, call_kwargs: dict[str, Any], model: str
+    ) -> GatewayResponse:
+        """Call LiteLLM with response_format fallback retries.
+        
+        Some providers (DeepSeek) reject ``json_schema`` but accept ``json_object``.
+        Try the requested format, then downgrade, then plain text.
+        """
+        rf = call_kwargs.get("response_format")
+        attempts: list[dict[str, Any] | None] = [rf]
+        if rf is not None and rf.get("type") == "json_schema":
+            # DeepSeek et al. support json_object but not json_schema
+            attempts.append({"type": "json_object"})
+            attempts.append(None)  # plain text last resort
+
+        last_error = None
+        for attempt in attempts:
+            kwargs = {**call_kwargs}
+            if attempt is not None:
+                kwargs["response_format"] = attempt
+            else:
+                kwargs.pop("response_format", None)
+            try:
+                result = await asyncio.to_thread(_litellm_sync_complete, kwargs)
+                return self._build_response(result, model)
+            except _PROVIDER_ERRORS as exc:
+                last_error = exc
+                if attempt is not None and "response_format" in str(exc).lower():
+                    log.info("gateway_retry_response_format", model=model, attempt=attempt.get("type") if attempt else "none")
+                    continue
+                raise GatewayError(f"{model} call failed: {exc}") from exc
+        raise GatewayError(f"{model} call failed after retries: {last_error}") from last_error
+
+    def _build_response(self, result: Any, model: str) -> GatewayResponse:
         text = _extract_text(result)
         usage = getattr(result, "usage", None)
         tok_in = int(getattr(usage, "prompt_tokens", 0) or 0)
