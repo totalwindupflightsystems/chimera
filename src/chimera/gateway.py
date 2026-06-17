@@ -185,6 +185,10 @@ def _extract_text(result: Any) -> str:
     content = getattr(message, "content", None)
     if content:
         return content
+    # DeepSeek reasoning models (v4-pro, v4-flash) put response in reasoning_content
+    reasoning = getattr(message, "reasoning_content", None)
+    if reasoning:
+        return reasoning
     return ""
 
 
