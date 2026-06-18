@@ -71,10 +71,8 @@ class SSEBroadcaster:
     def unsubscribe(self, session_id: str, sub: SSESubscriber) -> None:
         """Remove a subscriber; signal completion by pushing None."""
         if session_id in self._subscribers:
-            try:
+            with contextlib.suppress(ValueError):
                 self._subscribers[session_id].remove(sub)
-            except ValueError:
-                pass
             if not self._subscribers[session_id]:
                 del self._subscribers[session_id]
         # Push sentinel so the generator exits cleanly
