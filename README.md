@@ -1,6 +1,9 @@
 # Chimera — Dynamic Multi-Model Deliberation Gateway
 
 [![CI](https://github.com/totalwindupflightsystems/chimera/actions/workflows/ci.yml/badge.svg)](https://github.com/totalwindupflightsystems/chimera/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/chimera-deliberation)](https://pypi.org/project/chimera-deliberation/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 One API call. A team of models. One answer.
 
@@ -8,6 +11,43 @@ Chimera takes your prompt, dispatches it to a hand-picked team of LLMs (each wit
 a custom subtask scoped to their strengths), and an aggregator merges their outputs
 using dispatcher-written instructions. One dispatcher model call designs the entire
 deliberation at once.
+
+## Quickstart
+
+```bash
+# Install
+pip install chimera-deliberation[full]
+# Or for just the API server:
+pip install chimera-deliberation[server]
+
+# Configure
+cp chimera.yaml.example chimera.yaml
+# Add your API keys (at minimum: DEEPSEEK_API_KEY)
+
+# Run
+chimera "What is the capital of France?"          # CLI
+chimera serve                                       # REST API + web UI
+chimera-mcp                                        # MCP tools for agents
+```
+
+Open http://localhost:8765/web/ for the web UI with live DAG visualization.
+
+**Python:**
+```python
+from chimera import Engine, ChimeraConfig, load_config
+
+config = load_config()
+engine = Engine(config, LiteLLMGateway(config))
+result = await engine.deliberate("Explain quantum computing.")
+print(result.answer)  # merged output from multiple models
+```
+
+**OpenAI-compatible:**
+```bash
+curl -X POST http://localhost:8765/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "auto", "messages": [{"role": "user", "content": "Hello"}]}'
+```
 
 ## Architecture
 

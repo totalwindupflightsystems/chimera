@@ -6,168 +6,683 @@
 <title>Chimera — Multi-Model Deliberation</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <style>
+/* ── Design Tokens ── */
 :root {
   --bg: #0d1117;
-  --surface: #161b22;
+  --bg-elevated: #161b22;
+  --bg-overlay: #1c2333;
   --border: #30363d;
-  --text: #c9d1d9;
+  --border-faint: #21262d;
+  --text: #e6edf3;
   --text-secondary: #8b949e;
+  --text-muted: #6e7681;
   --accent: #58a6ff;
+  --accent-glow: #1f6feb;
   --green: #3fb950;
+  --green-dim: #238636;
   --yellow: #d2991d;
+  --orange: #db6d28;
   --red: #f85149;
   --purple: #a371f7;
-  --radius: 8px;
+  --coral: #e17055;
+  --pink: #fd79a8;
+  --blue: #74b9ff;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-xs: 4px;
+  --shadow: 0 2px 8px rgba(0,0,0,.3);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,.5);
+  --transition: 180ms cubic-bezier(.4,0,.2,1);
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; }
-#sidebar { width: 320px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
-#sidebar h2 { padding: 16px; font-size: 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
-#sidebar h2 .logo { font-size: 24px; }
-#session-info { padding: 12px 16px; font-size: 12px; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
-#history { flex: 1; overflow-y: auto; padding: 12px; }
-.turn { margin-bottom: 12px; padding: 10px; background: var(--bg); border-radius: var(--radius); border: 1px solid var(--border); font-size: 13px; }
-.turn-header { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px; color: var(--text-secondary); }
-.turn-prompt { color: var(--accent); margin-bottom: 4px; word-break: break-word; }
-.turn-answer { color: var(--green); word-break: break-word; }
-.turn-stats { margin-top: 6px; font-size: 10px; color: var(--text-secondary); display: flex; gap: 12px; }
-#controls { padding: 12px 16px; border-top: 1px solid var(--border); }
-#controls label { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; margin-top: 8px; }
-#controls select, #controls input { width: 100%; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 12px; }
-#prompt-area { display: flex; gap: 6px; padding: 12px 16px; border-top: 1px solid var(--border); }
-#prompt-area input { flex: 1; padding: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; }
-#prompt-area button { padding: 8px 16px; background: var(--accent); border: none; border-radius: 4px; color: #fff; font-size: 13px; cursor: pointer; font-weight: 600; }
-#prompt-area button:hover { opacity: 0.9; }
-#prompt-area button:disabled { opacity: 0.4; cursor: default; }
-#main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-#dag-panel { flex: 1; overflow: auto; padding: 20px; display: flex; align-items: center; justify-content: center; }
-#dag-panel .mermaid { background: var(--surface); border-radius: var(--radius); padding: 20px; min-width: 400px; }
-#token-bar { padding: 12px 20px; border-top: 1px solid var(--border); background: var(--surface); display: flex; gap: 24px; font-size: 12px; }
-.token-stat { display: flex; flex-direction: column; }
-.token-stat .label { color: var(--text-secondary); font-size: 10px; }
-.token-stat .value { font-size: 16px; font-weight: 600; }
-.token-stat .value.cost { color: var(--yellow); }
+
+/* ── Reset & Base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100%;
+  display: flex;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ── Sidebar ── */
+#sidebar {
+  width: 320px; min-width: 320px;
+  background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg) 100%);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  transition: transform var(--transition), margin-left var(--transition);
+  z-index: 100;
+  position: relative;
+}
+#sidebar-header {
+  padding: 18px 16px;
+  border-bottom: 1px solid var(--border-faint);
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(22,27,34,.95);
+  backdrop-filter: blur(12px);
+}
+#sidebar-header .logo { font-size: 26px; line-height: 1; }
+#sidebar-header h2 {
+  font-size: 17px; font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+#session-info {
+  padding: 10px 16px;
+  font-size: 11px; color: var(--text-muted);
+  border-bottom: 1px solid var(--border-faint);
+  font-family: var(--font-mono);
+  display: flex; justify-content: space-between; align-items: center;
+}
+#session-info .sid { color: var(--accent); }
+#new-session-btn {
+  background: none; border: 1px solid var(--border); color: var(--text-secondary);
+  padding: 3px 10px; border-radius: var(--radius-xs); font-size: 11px;
+  cursor: pointer; transition: all var(--transition);
+}
+#new-session-btn:hover { border-color: var(--accent); color: var(--accent); }
+#history {
+  flex: 1; overflow-y: auto; padding: 8px 10px;
+}
+#controls {
+  padding: 14px 16px; border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+#controls label {
+  display: block; font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--text-muted); margin-bottom: 4px; margin-top: 10px;
+}
+#controls label:first-child { margin-top: 0; }
+#controls select, #controls input {
+  width: 100%; padding: 7px 10px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text);
+  font-size: 12px; font-family: inherit;
+  transition: border-color var(--transition);
+}
+#controls select:focus, #controls input:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(88,166,255,.15);
+}
+#controls select { cursor: pointer; }
+#prompt-area {
+  display: flex; gap: 8px; padding: 12px 16px;
+  border-top: 1px solid var(--border); background: var(--bg-elevated);
+}
+#prompt-input {
+  flex: 1; padding: 9px 12px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text);
+  font-size: 13px; font-family: inherit; resize: none;
+  transition: border-color var(--transition);
+  min-height: 38px; max-height: 120px;
+}
+#prompt-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(88,166,255,.15); }
+#send-btn {
+  padding: 0 18px;
+  background: linear-gradient(135deg, var(--accent-glow), var(--accent));
+  border: none; border-radius: var(--radius-sm); color: #fff;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all var(--transition); white-space: nowrap;
+  display: flex; align-items: center; gap: 6px;
+}
+#send-btn:hover { filter: brightness(1.15); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(31,111,235,.3); }
+#send-btn:active { transform: translateY(0); }
+#send-btn:disabled { opacity: .4; cursor: not-allowed; transform: none; box-shadow: none; filter: none; }
+
+/* ── Hamburger ── */
+#hamburger {
+  display: none;
+  position: fixed; top: 12px; left: 12px; z-index: 200;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px; cursor: pointer;
+  color: var(--text); font-size: 20px; line-height: 1;
+  box-shadow: var(--shadow);
+}
+#sidebar-overlay {
+  display: none;
+  position: fixed; inset: 0; background: rgba(0,0,0,.5);
+  z-index: 99;
+}
+
+/* ── Main Panel ── */
+#main {
+  flex: 1; display: flex; flex-direction: column;
+  overflow: hidden; min-width: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(88,166,255,.03) 0%, transparent 60%);
+}
+
+/* ── Chat Area ── */
+#chat-area {
+  flex: 1; overflow-y: auto; padding: 20px 24px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+.chat-empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: var(--text-muted); gap: 12px;
+}
+.chat-empty .logo-big { font-size: 56px; opacity: .3; }
+.chat-empty h3 { font-size: 18px; font-weight: 600; color: var(--text-secondary); }
+.chat-empty p { font-size: 13px; max-width: 400px; text-align: center; line-height: 1.6; }
+
+/* ── Message Bubbles ── */
+.turn-block {
+  animation: fadeSlideIn .35s ease-out;
+  display: flex; flex-direction: column; gap: 12px;
+}
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.msg-bubble {
+  max-width: 78%; padding: 14px 18px; border-radius: var(--radius);
+  line-height: 1.55; font-size: 14px; position: relative;
+}
+.msg-user {
+  align-self: flex-end;
+  background: linear-gradient(135deg, var(--accent-glow), #388bfd);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.msg-assistant {
+  align-self: flex-start;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+  white-space: pre-wrap; word-break: break-word;
+  color: var(--text);
+}
+.msg-meta {
+  font-size: 10px; color: var(--text-muted);
+  display: flex; gap: 12px; align-items: center;
+  padding: 0 18px;
+}
+.msg-meta.user { justify-content: flex-end; }
+.msg-meta .formation-badge {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  padding: 2px 8px; border-radius: 10px;
+  font-size: 10px; text-transform: uppercase;
+  letter-spacing: .3px;
+}
+.msg-dag-toggle {
+  align-self: flex-start; padding: 0 18px;
+  font-size: 11px; color: var(--accent); cursor: pointer;
+  display: flex; align-items: center; gap: 4px;
+  user-select: none;
+}
+.msg-dag-toggle:hover { text-decoration: underline; }
+.msg-dag-container {
+  align-self: stretch;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: auto;
+  max-height: 400px;
+  display: none;
+}
+.msg-dag-container.open { display: block; animation: fadeIn .3s ease-out; }
+.msg-dag-container .mermaid {
+  padding: 16px; display: flex; justify-content: center;
+  min-height: 100px;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ── DAG Panel (live) ── */
+#dag-panel {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  overflow: hidden;
+  max-height: 600px;
+  transition: max-height .35s ease-out;
+}
+#dag-panel.collapsed { max-height: 0 !important; border-bottom: none; }
+#dag-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 16px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-faint);
+}
+#dag-header .dag-title {
+  font-size: 12px; font-weight: 600;
+  color: var(--text-secondary); text-transform: uppercase;
+  letter-spacing: .5px; display: flex; align-items: center; gap: 8px;
+}
+#dag-header .dag-live {
+  color: var(--green); font-size: 10px;
+  display: flex; align-items: center; gap: 4px;
+}
+#dag-header .dag-live::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); animation: pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .3; }
+}
+.dag-controls { display: flex; gap: 4px; }
+.dag-controls button {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text-secondary); padding: 4px 10px;
+  border-radius: var(--radius-xs); font-size: 11px;
+  cursor: pointer; transition: all var(--transition);
+}
+.dag-controls button:hover { border-color: var(--accent); color: var(--accent); }
+#dag-viz-scroll {
+  padding: 16px; overflow: auto;
+  display: flex; align-items: flex-start; justify-content: center;
+  min-height: 120px;
+}
+#dag-viz-scroll .mermaid { width: 100%; }
+#dag-viz-scroll .mermaid svg { max-width: 100%; height: auto; }
+
+/* ── Token Bar ── */
+#token-bar {
+  padding: 14px 24px;
+  background: linear-gradient(180deg, var(--bg-elevated), var(--bg));
+  border-bottom: 1px solid var(--border);
+  display: flex; gap: 32px; flex-wrap: wrap;
+}
+.token-stat {
+  display: flex; flex-direction: column; gap: 2px;
+  position: relative;
+}
+.token-stat .label {
+  font-size: 9px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--text-muted);
+}
+.token-stat .value {
+  font-size: 20px; font-weight: 700; font-family: var(--font-mono);
+  transition: color var(--transition);
+}
 .token-stat .value.tokens { color: var(--accent); }
+.token-stat .value.cost { color: var(--yellow); }
 .token-stat .value.time { color: var(--purple); }
-#result-panel { max-height: 30%; overflow-y: auto; padding: 16px 20px; border-top: 1px solid var(--border); background: var(--surface); }
-#result-panel h3 { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
-#result-text { white-space: pre-wrap; font-size: 14px; line-height: 1.5; }
-#status { padding: 4px 20px; font-size: 11px; color: var(--text-secondary); min-height: 20px; }
-#status .live { color: var(--green); }
-#status .error { color: var(--red); }
-.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--text-secondary); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 6px; }
+.token-stat .value.stages { color: var(--green); }
+
+/* ── Status Bar ── */
+#status-bar {
+  padding: 6px 24px;
+  font-size: 11px; color: var(--text-muted);
+  display: flex; align-items: center; gap: 8px;
+  min-height: 30px;
+}
+#status-bar .spinner-sm {
+  display: inline-block; width: 10px; height: 10px;
+  border: 2px solid var(--text-muted);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+}
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Stage Detail Modal ── */
+#modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.6); z-index: 300;
+  align-items: center; justify-content: center;
+}
+#modal-overlay.open { display: flex; }
+#modal {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px; max-width: 560px; width: 90%;
+  max-height: 80vh; overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+  animation: fadeSlideIn .2s ease-out;
+}
+#modal h3 {
+  font-size: 16px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px;
+}
+#modal .stage-kind-badge {
+  padding: 3px 10px; border-radius: 10px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .3px;
+}
+#modal .stage-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 10px; margin-bottom: 14px;
+}
+#modal .stage-grid .stage-field {
+  font-size: 12px;
+}
+#modal .stage-grid .stage-field .field-label {
+  color: var(--text-muted); font-size: 10px; text-transform: uppercase;
+  letter-spacing: .3px; margin-bottom: 2px;
+}
+#modal .stage-grid .stage-field .field-value {
+  font-family: var(--font-mono); font-size: 13px; color: var(--text);
+}
+#modal .stage-output {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 12px;
+  font-size: 12px; line-height: 1.5; color: var(--text);
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 240px; overflow-y: auto;
+  margin-top: 8px;
+}
+#modal .stage-output-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .3px;
+  color: var(--text-muted); margin-bottom: 6px;
+}
+#modal-close {
+  position: absolute; top: 12px; right: 16px;
+  background: none; border: none; color: var(--text-secondary);
+  font-size: 20px; cursor: pointer; padding: 4px;
+}
+#modal { position: relative; }
+
+/* ── Sidebar History Turns ── */
+.turn-card {
+  padding: 10px 12px; margin-bottom: 6px;
+  background: var(--bg); border: 1px solid var(--border-faint);
+  border-radius: var(--radius-sm); cursor: pointer;
+  transition: all var(--transition); font-size: 12px;
+}
+.turn-card:hover { border-color: var(--accent); background: rgba(88,166,255,.04); }
+.turn-card .turn-card-header {
+  display: flex; justify-content: space-between;
+  font-size: 10px; color: var(--text-muted); margin-bottom: 4px;
+}
+.turn-card .turn-card-prompt {
+  color: var(--text-secondary); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.turn-card .turn-card-stats {
+  margin-top: 5px; font-size: 10px; color: var(--text-muted);
+  display: flex; gap: 8px;
+}
+
+/* ── Mobile Responsive ── */
+@media (max-width: 767px) {
+  #sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0;
+    transform: translateX(-100%);
+  }
+  #sidebar.open { transform: translateX(0); }
+  #sidebar-overlay.open { display: block; }
+  #hamburger { display: flex; align-items: center; justify-content: center; }
+  #chat-area { padding: 16px 12px; }
+  .msg-bubble { max-width: 90%; }
+  #token-bar { padding: 10px 16px; gap: 20px; }
+  .token-stat .value { font-size: 17px; }
+  #dag-header { padding: 8px 12px; }
+  #dag-viz-scroll { padding: 10px; }
+}
+
+/* ── Mermaid stage click cursor ── */
+#dag-viz-scroll .mermaid svg g.node { cursor: pointer; transition: opacity var(--transition); }
+#dag-viz-scroll .mermaid svg g.node:hover { opacity: .8; }
+.msg-dag-container .mermaid svg g.node { cursor: pointer; transition: opacity var(--transition); }
+.msg-dag-container .mermaid svg g.node:hover { opacity: .8; }
+
+/* ── Loading / Skeleton ── */
+.skeleton {
+  background: linear-gradient(90deg, var(--border) 25%, var(--bg-elevated) 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+/* ── Toast ── */
+#toast {
+  position: fixed; bottom: 24px; right: 24px;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  padding: 10px 18px; border-radius: var(--radius-sm);
+  font-size: 12px; box-shadow: var(--shadow-lg);
+  z-index: 400; opacity: 0; transform: translateY(10px);
+  transition: all var(--transition); pointer-events: none;
+}
+#toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+#toast.error { border-color: var(--red); }
 </style>
 </head>
 <body>
 
+<!-- Hamburger (mobile only) -->
+<button id="hamburger" aria-label="Toggle sidebar" title="Toggle sidebar (Esc)">☰</button>
+<div id="sidebar-overlay"></div>
+
+<!-- Sidebar -->
 <div id="sidebar">
-  <h2><span class="logo">🦁</span> Chimera</h2>
-  <div id="session-info">Session: —</div>
+  <div id="sidebar-header">
+    <span class="logo">🦁</span>
+    <h2>Chimera</h2>
+  </div>
+  <div id="session-info">
+    <span>Session: <span class="sid" id="sid-display">—</span></span>
+    <button id="new-session-btn" title="New session">+ New</button>
+  </div>
   <div id="history"></div>
   <div id="controls">
-    <label>Formation</label>
+    <label for="formation-select">Formation</label>
     <select id="formation-select">
-      <option value="auto">Auto</option>
-      <option value="simple">Simple</option>
-      <option value="debate">Debate</option>
-      <option value="audit">Audit</option>
+      <option value="auto">Auto — best-fit selection</option>
+      <option value="simple">Simple — single worker</option>
+      <option value="debate">Debate — models argue it out</option>
+      <option value="audit">Audit — worker + reviewer</option>
     </select>
-    <label>Aggregator model (optional)</label>
+    <label for="aggregator-model">Aggregator model (optional)</label>
     <input id="aggregator-model" placeholder="e.g. deepseek/deepseek-v4-flash" type="text">
   </div>
   <div id="prompt-area">
-    <input id="prompt-input" placeholder="Ask anything..." type="text">
-    <button id="send-btn" onclick="sendMessage()">Send</button>
+    <textarea id="prompt-input" placeholder="Ask anything…" rows="1"></textarea>
+    <button id="send-btn" title="Send (Enter)">Send</button>
   </div>
 </div>
 
+<!-- Main Panel -->
 <div id="main">
+  <!-- Live DAG Panel -->
   <div id="dag-panel">
-    <pre class="mermaid" id="dag-viz">flowchart TB
+    <div id="dag-header">
+      <span class="dag-title">
+        <span>Live DAG</span>
+        <span class="dag-live" id="dag-live-indicator" style="display:none">LIVE</span>
+      </span>
+      <div class="dag-controls">
+        <button id="dag-fit" title="Fit to view">Fit</button>
+        <button id="dag-zoom-in" title="Zoom in">+</button>
+        <button id="dag-zoom-out" title="Zoom out">−</button>
+        <button id="dag-collapse" title="Toggle DAG panel">▲</button>
+      </div>
+    </div>
+    <div id="dag-viz-scroll">
+      <pre class="mermaid" id="dag-viz">flowchart TB
     start["Send a prompt to begin"]
     style start fill:#30363d,stroke:#58a6ff,color:#c9d1d9</pre>
+    </div>
   </div>
+
+  <!-- Token Dashboard -->
   <div id="token-bar">
     <div class="token-stat"><span class="label">Tokens</span><span class="value tokens" id="stat-tokens">—</span></div>
     <div class="token-stat"><span class="label">Cost</span><span class="value cost" id="stat-cost">—</span></div>
     <div class="token-stat"><span class="label">Time</span><span class="value time" id="stat-time">—</span></div>
-    <div class="token-stat"><span class="label">Stages</span><span class="value" id="stat-stages">—</span></div>
+    <div class="token-stat"><span class="label">Stages</span><span class="value stages" id="stat-stages">—</span></div>
   </div>
-  <div id="status"></div>
-  <div id="result-panel">
-    <h3>Result</h3>
-    <div id="result-text"></div>
+
+  <!-- Status Bar -->
+  <div id="status-bar"><span id="status-text">Ready — send a prompt to begin</span></div>
+
+  <!-- Chat Area (multi-turn messages) -->
+  <div id="chat-area">
+    <div class="chat-empty">
+      <span class="logo-big">🦁</span>
+      <h3>Chimera Multi-Model Deliberation</h3>
+      <p>Ask a complex question and watch as multiple AI models collaborate, debate, and synthesize an answer — with live DAG visualization.</p>
+    </div>
   </div>
 </div>
 
+<!-- Stage Detail Modal -->
+<div id="modal-overlay">
+  <div id="modal">
+    <button id="modal-close" aria-label="Close modal" title="Close (Esc)">×</button>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
 <script>
-// ── State ──
+// ═══════════════════════════════════════════
+// Chimera Web UI — State & Globals
+// ═══════════════════════════════════════════
 let sessionId = null;
 let eventSource = null;
+let traceData = null; // Full trace for node click lookups
+let dagZoomLevel = 1;
+let dagPanelCollapsed = false;
 
-// ── Init ──
-mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
+// ═══════════════════════════════════════════
+// Mermaid Init
+// ═══════════════════════════════════════════
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  securityLevel: 'loose',
+  themeVariables: {
+    darkMode: true,
+    background: '#0d1117',
+    primaryColor: '#161b22',
+    primaryBorderColor: '#30363d',
+    primaryTextColor: '#e6edf3',
+    lineColor: '#30363d',
+  }
+});
 
-(async function init() {
-  const r = await fetch('/web/sessions', { method: 'POST' });
-  const data = await r.json();
-  sessionId = data.session_id;
-  document.getElementById('session-info').textContent = `Session: ${sessionId}`;
-  connectSSE();
-  document.getElementById('prompt-input').focus();
-})();
+// ═══════════════════════════════════════════
+// Session Management
+// ═══════════════════════════════════════════
+async function createSession() {
+  try {
+    const r = await fetch('/web/sessions', { method: 'POST' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    sessionId = data.session_id;
+    localStorage.setItem('chimera_session_id', sessionId);
+    updateSessionDisplay();
+    connectSSE();
+    return sessionId;
+  } catch (err) {
+    showToast('Failed to create session', 'error');
+    throw err;
+  }
+}
 
-// ── SSE ──
+async function restoreSession(sid) {
+  try {
+    const r = await fetch(`/web/sessions/${sid}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    sessionId = sid;
+    localStorage.setItem('chimera_session_id', sessionId);
+    updateSessionDisplay();
+    connectSSE();
+    await loadHistory();
+    return true;
+  } catch (err) {
+    localStorage.removeItem('chimera_session_id');
+    return false;
+  }
+}
+
+function updateSessionDisplay() {
+  document.getElementById('sid-display').textContent = sessionId ? sessionId.slice(0, 12) : '—';
+}
+
+// ═══════════════════════════════════════════
+// SSE Connection
+// ═══════════════════════════════════════════
 function connectSSE() {
   if (eventSource) eventSource.close();
+  if (!sessionId) return;
+
   eventSource = new EventSource(`/web/sse/${sessionId}`);
 
-  eventSource.addEventListener('deliberation_started', () => {
-    setStatus('live', 'Thinking...');
+  eventSource.addEventListener('deliberation_started', (e) => {
+    const data = JSON.parse(e.data);
+    setStatus('live', 'Dispatching…');
     document.getElementById('send-btn').disabled = true;
+    document.getElementById('dag-live-indicator').style.display = 'flex';
+    // Show loading in DAG panel
+    document.getElementById('dag-viz').textContent = 'flowchart TB\n    thinking["🧠 Designing DAG…"]\n    style thinking fill:#30363d,stroke:#58a6ff,color:#c9d1d9';
+    mermaid.run({ nodes: [document.getElementById('dag-viz')] }).then(attachDagClickHandlers);
   });
 
   eventSource.addEventListener('dag_designed', (e) => {
     const data = JSON.parse(e.data);
     document.getElementById('dag-viz').textContent = data.mermaid;
     document.getElementById('stat-stages').textContent = data.stage_count;
-    mermaid.run({ nodes: [document.getElementById('dag-viz')] });
+    // Animate DAG fade-in
+    const dagEl = document.getElementById('dag-viz');
+    dagEl.style.opacity = '0';
+    dagEl.style.transition = 'opacity 0.4s ease-out';
+    mermaid.run({ nodes: [dagEl] }).then(() => {
+      dagEl.style.opacity = '1';
+      attachDagClickHandlers();
+    });
   });
 
   eventSource.addEventListener('deliberation_done', (e) => {
     const data = JSON.parse(e.data);
-    document.getElementById('result-text').textContent = data.answer;
-    document.getElementById('stat-tokens').textContent = fmtNum(data.total_tokens);
+    animateValue('stat-tokens', data.total_tokens);
     document.getElementById('stat-cost').textContent = '$' + data.total_cost.toFixed(6);
     document.getElementById('stat-time').textContent = fmtMs(data.elapsed_ms);
     document.getElementById('send-btn').disabled = false;
+    document.getElementById('dag-live-indicator').style.display = 'none';
     document.getElementById('prompt-input').focus();
     setStatus('', `Done — turn ${data.turn_number}`);
     loadHistory();
+    // Add message bubble for this turn
+    addMessageBubble(data.answer, data.turn_number);
   });
 
   eventSource.onerror = () => {
-    setStatus('error', 'SSE disconnected — reconnecting...');
-    setTimeout(connectSSE, 2000);
+    setStatus('warn', 'SSE reconnecting…');
+    setTimeout(() => {
+      if (sessionId) connectSSE();
+    }, 3000);
   };
 }
 
-// ── Send ──
+// ═══════════════════════════════════════════
+// Send Message
+// ═══════════════════════════════════════════
 async function sendMessage() {
   const input = document.getElementById('prompt-input');
   const prompt = input.value.trim();
   if (!prompt || !sessionId) return;
   input.value = '';
+  autoResize(input);
 
   const formation = document.getElementById('formation-select').value;
   const aggModel = document.getElementById('aggregator-model').value.trim();
+
+  // Add user bubble immediately
+  addUserBubble(prompt);
 
   const body = { prompt, formation };
   if (aggModel) body.aggregator_model = aggModel;
 
   document.getElementById('send-btn').disabled = true;
-  setStatus('live', 'Sending...');
+  setStatus('live', 'Sending…');
 
   try {
     const r = await fetch(`/web/sessions/${sessionId}/chat`, {
@@ -179,56 +694,480 @@ async function sendMessage() {
       const err = await r.text();
       setStatus('error', `Error: ${r.status} — ${err.slice(0, 200)}`);
       document.getElementById('send-btn').disabled = false;
+      document.getElementById('dag-live-indicator').style.display = 'none';
+      showToast(`Error ${r.status}: ${err.slice(0, 100)}`, 'error');
       return;
     }
     const data = await r.json();
-    // SSE already updated DAG — just refresh final state
-    document.getElementById('result-text').textContent = data.answer;
-    document.getElementById('dag-viz').textContent = data.mermaid;
-    mermaid.run({ nodes: [document.getElementById('dag-viz')] });
-    document.getElementById('stat-tokens').textContent = fmtNum(data.trace.total_tokens);
-    document.getElementById('stat-cost').textContent = '$' + data.trace.total_cost.toFixed(6);
-    loadHistory();
+    traceData = data.trace;
+
+    // Update DAG if SSE didn't (fallback)
+    if (data.mermaid) {
+      document.getElementById('dag-viz').textContent = data.mermaid;
+      await mermaid.run({ nodes: [document.getElementById('dag-viz')] });
+      attachDagClickHandlers();
+    }
+
+    // Update stats
+    if (data.trace) {
+      animateValue('stat-tokens', data.trace.total_tokens || 0);
+      document.getElementById('stat-cost').textContent = '$' + (data.trace.total_cost || 0).toFixed(6);
+      document.getElementById('stat-stages').textContent = (data.trace.stages || []).length;
+    }
+
+    document.getElementById('dag-live-indicator').style.display = 'none';
+    document.getElementById('send-btn').disabled = false;
+    document.getElementById('prompt-input').focus();
+
+    // Add assistant message bubble
+    addMessageBubble(data.answer, data.turn_number, data.mermaid, data.trace);
+
+    setStatus('', `Turn ${data.turn_number} complete`);
+    await loadHistory();
   } catch (err) {
     setStatus('error', `Network error: ${err.message}`);
     document.getElementById('send-btn').disabled = false;
+    document.getElementById('dag-live-indicator').style.display = 'none';
+    showToast(`Network error: ${err.message}`, 'error');
   }
 }
 
-// ── History ──
+// ═══════════════════════════════════════════
+// Chat Messages
+// ═══════════════════════════════════════════
+function addUserBubble(prompt) {
+  const area = document.getElementById('chat-area');
+  // Remove empty state
+  const emptyEl = area.querySelector('.chat-empty');
+  if (emptyEl) emptyEl.remove();
+
+  const block = document.createElement('div');
+  block.className = 'turn-block';
+  block.innerHTML = `
+    <div class="msg-meta user">
+      <span>You</span>
+      <span class="formation-badge">${escHtml(document.getElementById('formation-select').value)}</span>
+    </div>
+    <div class="msg-bubble msg-user">${escHtml(prompt)}</div>
+  `;
+  area.appendChild(block);
+  area.scrollTop = area.scrollHeight;
+}
+
+function addMessageBubble(answer, turnNum, mermaidStr, trace) {
+  const area = document.getElementById('chat-area');
+  const emptyEl = area.querySelector('.chat-empty');
+  if (emptyEl) emptyEl.remove();
+
+  const block = document.createElement('div');
+  block.className = 'turn-block';
+  block.dataset.turn = turnNum;
+
+  let dagSection = '';
+  if (mermaidStr) {
+    dagSection = `
+      <div class="msg-dag-toggle" onclick="toggleDagInMessage(this)" title="Click to expand DAG">
+        ▸ Show DAG visualization
+      </div>
+      <div class="msg-dag-container">
+        <pre class="mermaid msg-mermaid-${turnNum}"></pre>
+      </div>
+    `;
+  }
+
+  let statsHtml = '';
+  if (trace) {
+    const tok = trace.total_tokens || 0;
+    const cost = trace.total_cost || 0;
+    statsHtml = `<div class="msg-meta"><span>${fmtNum(tok)} tokens</span><span>$${cost.toFixed(6)}</span><span>${(trace.stages || []).length} stages</span></div>`;
+  }
+
+  block.innerHTML = `
+    <div class="msg-meta">
+      <span>Chimera</span>
+      <span class="formation-badge">${escHtml(document.getElementById('formation-select').value)}</span>
+    </div>
+    <div class="msg-bubble msg-assistant">${escHtml(answer)}</div>
+    ${statsHtml}
+    ${dagSection}
+  `;
+
+  area.appendChild(block);
+  area.scrollTop = area.scrollHeight;
+
+  // Render mermaid if present
+  if (mermaidStr) {
+    const mermaidEl = block.querySelector(`.msg-mermaid-${turnNum}`);
+    if (mermaidEl) {
+      mermaidEl.textContent = mermaidStr;
+      mermaid.run({ nodes: [mermaidEl] }).then(() => {
+        attachDagClickHandlers(block);
+      });
+    }
+  }
+}
+
+function toggleDagInMessage(toggleEl) {
+  const container = toggleEl.nextElementSibling;
+  if (!container) return;
+  const isOpen = container.classList.toggle('open');
+  toggleEl.textContent = isOpen ? '▾ Hide DAG' : '▸ Show DAG visualization';
+}
+
+// ═══════════════════════════════════════════
+// History Loading
+// ═══════════════════════════════════════════
 async function loadHistory() {
   if (!sessionId) return;
-  const r = await fetch(`/web/sessions/${sessionId}`);
-  const data = await r.json();
-  const el = document.getElementById('history');
-  el.innerHTML = data.turns.map((t, i) => `
-    <div class="turn">
-      <div class="turn-header"><span>Turn ${i + 1}</span><span>${t.formation} · ${shortModel(t.aggregator_model)}</span></div>
-      <div class="turn-prompt">${escHtml(t.user_prompt.slice(0, 100))}</div>
-      <div class="turn-answer">${escHtml(t.answer.slice(0, 200))}</div>
-      <div class="turn-stats">
-        <span>${fmtNum(t.total_tokens)} tok</span>
-        <span>$${t.total_cost.toFixed(6)}</span>
+  try {
+    const r = await fetch(`/web/sessions/${sessionId}`);
+    if (!r.ok) return;
+    const data = await r.json();
+    const el = document.getElementById('history');
+    el.innerHTML = data.turns.map((t, i) => `
+      <div class="turn-card" data-turn="${i}" onclick="scrollToTurn(${i})" title="Jump to turn ${i + 1}">
+        <div class="turn-card-header"><span>Turn ${i + 1}</span><span>${escHtml(t.formation)}</span></div>
+        <div class="turn-card-prompt">${escHtml(t.user_prompt.slice(0, 80))}</div>
+        <div class="turn-card-stats">
+          <span>${fmtNum(t.total_tokens)} tok</span>
+          <span>$${t.total_cost.toFixed(6)}</span>
+        </div>
+      </div>
+    `).reverse().join('');
+    if (!data.turns.length) {
+      el.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:12px;text-align:center">No turns yet</div>';
+    }
+  } catch (_) { /* silent */ }
+}
+
+function scrollToTurn(idx) {
+  const area = document.getElementById('chat-area');
+  const blocks = area.querySelectorAll('.turn-block');
+  // idx is 0-based, blocks are pairs (user + assistant)
+  const targetIdx = idx * 2 + 1; // assistant bubble
+  if (blocks[targetIdx]) {
+    blocks[targetIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Highlight briefly
+    blocks[targetIdx].style.boxShadow = '0 0 0 2px var(--accent)';
+    setTimeout(() => { blocks[targetIdx].style.boxShadow = ''; }, 1500);
+  }
+  // Close sidebar on mobile
+  closeSidebar();
+}
+
+// ═══════════════════════════════════════════
+// DAG Interaction — Click Nodes for Details
+// ═══════════════════════════════════════════
+function attachDagClickHandlers(container) {
+  const scope = container || document;
+  const svgs = scope.querySelectorAll('.mermaid svg');
+  svgs.forEach(svg => {
+    const nodes = svg.querySelectorAll('g.node');
+    nodes.forEach(node => {
+      // Avoid double-binding
+      if (node.dataset.chimeraBound) return;
+      node.dataset.chimeraBound = '1';
+
+      node.addEventListener('click', () => {
+        // Extract stage_id from the node's text or id
+        const titleEl = node.querySelector('text') || node.querySelector('span');
+        const text = titleEl ? titleEl.textContent.trim() : '';
+        // The first line of the node label is the kind or stage_id
+        const lines = text.split('\n');
+        const firstLine = lines[0].trim();
+
+        // Try to find matching stage data
+        if (traceData) {
+          showStageModal(firstLine, traceData);
+        }
+      });
+    });
+  });
+}
+
+function findStageInTrace(label, trace) {
+  // label could be a kind ("worker", "dispatch") or a model name
+  const stages = trace.stages || [];
+  // First try exact stage_id match
+  for (const s of stages) {
+    if (s.stage_id === label) return s;
+  }
+  // Try kind match
+  for (const s of stages) {
+    if (s.kind === label) return s;
+  }
+  // Check dispatch
+  const disp = trace.dispatch;
+  if (disp && (disp.stage_id === label || 'dispatch' === label)) return disp;
+  // Try model short name match
+  const shortModels = stages.map(s => s.model ? s.model.split('/').pop() : '');
+  for (let i = 0; i < stages.length; i++) {
+    if (shortModels[i] && label.includes(shortModels[i])) return stages[i];
+  }
+  return null;
+}
+
+function showStageModal(label, trace) {
+  const stage = findStageInTrace(label, trace);
+  if (!stage) {
+    showToast('No detail data for this stage', '');
+    return;
+  }
+
+  const kind = stage.kind || 'unknown';
+  const kindColors = {
+    dispatch: '#6C5CE7', worker: '#00B894', aggregator: '#FDCB6E',
+    judge: '#E17055', merge: '#74B9FF', audit: '#FD79A8'
+  };
+  const color = kindColors[kind] || '#B2BEC3';
+  const model = stage.model || '—';
+  const tokensIn = stage.tokens_input || 0;
+  const tokensOut = stage.tokens_output || 0;
+  const latency = stage.latency_ms || 0;
+  const output = stage.output || stage.result || stage.response || '';
+
+  document.getElementById('modal-content').innerHTML = `
+    <h3>
+      <span class="stage-kind-badge" style="background:${color};color:#fff">${escHtml(kind)}</span>
+      ${escHtml(label)}
+    </h3>
+    <div class="stage-grid">
+      <div class="stage-field">
+        <div class="field-label">Model</div>
+        <div class="field-value">${escHtml(model)}</div>
+      </div>
+      <div class="stage-field">
+        <div class="field-label">Latency</div>
+        <div class="field-value">${fmtMs(latency)}</div>
+      </div>
+      <div class="stage-field">
+        <div class="field-label">Input Tokens</div>
+        <div class="field-value">${fmtNum(tokensIn)}</div>
+      </div>
+      <div class="stage-field">
+        <div class="field-label">Output Tokens</div>
+        <div class="field-value">${fmtNum(tokensOut)}</div>
       </div>
     </div>
-  `).reverse().join('');
-  el.scrollTop = el.scrollHeight;
+    ${output ? `<div class="stage-output-label">Output</div><div class="stage-output">${escHtml(output.slice(0, 2000))}</div>` : ''}
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
 }
 
-// ── Helpers ──
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+// ═══════════════════════════════════════════
+// DAG Zoom Controls
+// ═══════════════════════════════════════════
+function dagZoom(delta) {
+  dagZoomLevel = Math.max(0.3, Math.min(3, dagZoomLevel + delta));
+  const svg = document.querySelector('#dag-viz-scroll .mermaid svg');
+  if (svg) {
+    svg.style.transform = `scale(${dagZoomLevel})`;
+    svg.style.transformOrigin = 'top center';
+    svg.style.transition = 'transform 0.2s ease-out';
+  }
+}
+
+function dagFit() {
+  dagZoomLevel = 1;
+  const svg = document.querySelector('#dag-viz-scroll .mermaid svg');
+  if (svg) {
+    svg.style.transform = 'scale(1)';
+    svg.style.transformOrigin = 'top center';
+  }
+}
+
+function toggleDagPanel() {
+  dagPanelCollapsed = !dagPanelCollapsed;
+  const panel = document.getElementById('dag-panel');
+  const btn = document.getElementById('dag-collapse');
+  if (dagPanelCollapsed) {
+    panel.style.maxHeight = '0px';
+    panel.classList.add('collapsed');
+    btn.textContent = '▼';
+  } else {
+    panel.style.maxHeight = '600px';
+    panel.classList.remove('collapsed');
+    btn.textContent = '▲';
+  }
+}
+
+// ═══════════════════════════════════════════
+// Mobile Sidebar
+// ═══════════════════════════════════════════
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  const isOpen = sidebar.classList.toggle('open');
+  overlay.classList.toggle('open', isOpen);
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+
+// ═══════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════
 function setStatus(cls, msg) {
-  const el = document.getElementById('status');
-  el.innerHTML = cls ? `<span class="${cls}"><span class="spinner"></span>${msg}</span>` : msg;
+  const el = document.getElementById('status-text');
+  if (cls === 'live') {
+    el.innerHTML = `<span class="spinner-sm"></span> ${msg}`;
+  } else if (cls === 'error') {
+    el.innerHTML = `⚠️ ${msg}`;
+    el.style.color = 'var(--red)';
+    setTimeout(() => { el.style.color = ''; }, 5000);
+  } else if (cls === 'warn') {
+    el.innerHTML = `⏳ ${msg}`;
+  } else {
+    el.textContent = msg;
+  }
 }
-function fmtNum(n) { return n != null ? n.toLocaleString() : '—'; }
-function fmtMs(ms) { return ms >= 1000 ? (ms/1000).toFixed(1) + 's' : ms + 'ms'; }
-function shortModel(m) { return m ? m.split('/').pop() : '—'; }
-function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-// Enter to send
+function animateValue(id, target) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const current = parseInt(el.textContent.replace(/[^0-9]/g, '')) || 0;
+  if (current === target) { el.textContent = fmtNum(target); return; }
+  const duration = 400;
+  const start = performance.now();
+  function tick(now) {
+    const progress = Math.min((now - start) / duration, 1);
+    const val = Math.round(current + (target - current) * easeOutCubic(progress));
+    el.textContent = fmtNum(val);
+    if (progress < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+function fmtNum(n) { return n != null ? n.toLocaleString() : '—'; }
+function fmtMs(ms) {
+  if (ms == null) return '—';
+  if (ms >= 60000) return (ms / 60000).toFixed(1) + 'm';
+  if (ms >= 1000) return (ms / 1000).toFixed(1) + 's';
+  return ms + 'ms';
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function showToast(msg, cls) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = cls || '';
+  toast.classList.add('show');
+  clearTimeout(toast._timeout);
+  toast._timeout = setTimeout(() => { toast.classList.remove('show'); }, 3500);
+}
+
+function autoResize(textarea) {
+  textarea.style.height = 'auto';
+  textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+}
+
+// ═══════════════════════════════════════════
+// Event Listeners
+// ═══════════════════════════════════════════
+document.getElementById('send-btn').addEventListener('click', sendMessage);
+
 document.getElementById('prompt-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendMessage();
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
 });
+
+document.getElementById('prompt-input').addEventListener('input', function() {
+  autoResize(this);
+});
+
+document.getElementById('new-session-btn').addEventListener('click', async () => {
+  if (eventSource) eventSource.close();
+  sessionId = null;
+  traceData = null;
+  document.getElementById('dag-viz').textContent = 'flowchart TB\n    start["Send a prompt to begin"]\n    style start fill:#30363d,stroke:#58a6ff,color:#c9d1d9';
+  mermaid.run({ nodes: [document.getElementById('dag-viz')] });
+  document.getElementById('stat-tokens').textContent = '—';
+  document.getElementById('stat-cost').textContent = '—';
+  document.getElementById('stat-time').textContent = '—';
+  document.getElementById('stat-stages').textContent = '—';
+  document.getElementById('chat-area').innerHTML = `
+    <div class="chat-empty">
+      <span class="logo-big">🦁</span>
+      <h3>Chimera Multi-Model Deliberation</h3>
+      <p>Ask a complex question and watch as multiple AI models collaborate, debate, and synthesize an answer — with live DAG visualization.</p>
+    </div>`;
+  document.getElementById('history').innerHTML = '';
+  setStatus('', 'Creating new session…');
+  await createSession();
+  setStatus('', 'Ready — send a prompt to begin');
+  document.getElementById('prompt-input').focus();
+});
+
+document.getElementById('hamburger').addEventListener('click', toggleSidebar);
+document.getElementById('sidebar-overlay').addEventListener('click', closeSidebar);
+
+document.getElementById('dag-fit').addEventListener('click', dagFit);
+document.getElementById('dag-zoom-in').addEventListener('click', () => dagZoom(0.2));
+document.getElementById('dag-zoom-out').addEventListener('click', () => dagZoom(-0.2));
+document.getElementById('dag-collapse').addEventListener('click', toggleDagPanel);
+
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('modal-overlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (document.getElementById('modal-overlay').classList.contains('open')) {
+      closeModal();
+    } else {
+      closeSidebar();
+    }
+  }
+  // Ctrl+K / Cmd+K to focus prompt
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+    e.preventDefault();
+    document.getElementById('prompt-input').focus();
+  }
+});
+
+// ═══════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════
+(async function init() {
+  const savedId = localStorage.getItem('chimera_session_id');
+  if (savedId) {
+    setStatus('', 'Restoring session…');
+    const restored = await restoreSession(savedId);
+    if (restored) {
+      setStatus('', 'Ready — send a prompt to begin');
+      document.getElementById('prompt-input').focus();
+      return;
+    }
+  }
+  await createSession();
+  setStatus('', 'Ready — send a prompt to begin');
+  document.getElementById('prompt-input').focus();
+
+  // Re-attach DAG click handlers when new DAGs are rendered via mutation
+  const dagScroll = document.getElementById('dag-viz-scroll');
+  const observer = new MutationObserver(() => {
+    attachDagClickHandlers();
+  });
+  observer.observe(dagScroll, { childList: true, subtree: true });
+})();
 </script>
 
 </body>

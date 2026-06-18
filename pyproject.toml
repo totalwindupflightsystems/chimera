@@ -7,6 +7,25 @@ name = "chimera-deliberation"
 version = "0.1.0"
 description = "Dynamic multi-model deliberation gateway"
 requires-python = ">=3.11"
+authors = [
+    { name = "Total Wind-Up Flight Systems", email = "dev@totalwindup.com" },
+]
+license = { text = "MIT" }
+readme = "README.md"
+keywords = ["llm", "ai", "multi-model", "deliberation", "orchestration", "gateway"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
 dependencies = [
     "litellm>=1.50.0",
     "pydantic>=2.0",
@@ -14,6 +33,12 @@ dependencies = [
     "httpx>=0.27.0",
     "structlog>=24.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/totalwindupflightsystems/chimera"
+Repository = "https://github.com/totalwindupflightsystems/chimera.git"
+Issues = "https://github.com/totalwindupflightsystems/chimera/issues"
+Changelog = "https://github.com/totalwindupflightsystems/chimera/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 server = ["fastapi>=0.115.0", "uvicorn[standard]>=0.30.0"]
