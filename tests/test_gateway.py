@@ -37,8 +37,9 @@ def test_openrouter_provider_ensures_prefix() -> None:
 def test_anthropic_and_deepseek_prefixes() -> None:
     m1, _ = resolve_litellm_model("claude-sonnet-4", _entry("anthropic"))
     assert m1 == "anthropic/claude-sonnet-4"
-    m2, _ = resolve_litellm_model("deepseek-chat", _entry("deepseek"))
-    assert m2 == "deepseek/deepseek-chat"
+    m2, extra = resolve_litellm_model("deepseek-chat", _entry("deepseek"))
+    assert m2 == "openai/deepseek-chat"
+    assert extra.get("custom_llm_provider") == "openai"
 
 
 def test_explicit_litellm_model_override() -> None:

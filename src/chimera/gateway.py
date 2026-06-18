@@ -94,9 +94,15 @@ def resolve_litellm_model(
         return f"anthropic/{model_name}", kwargs
 
     if provider == "deepseek":
-        if model_name.startswith("deepseek/"):
-            return model_name, kwargs
-        return f"deepseek/{model_name}", kwargs
+        # Route through LiteLLM's OpenAI provider to avoid DeepSeek-specific
+        # cost calculator that doesn't know about v4-flash/v4-pro model names.
+        api_model = model_name.rsplit("/", 1)[-1]
+        lm_model = f"openai/{api_model}"
+        kwargs["api_base"] = "https://api.deepseek.com/v1"
+        kwargs["custom_llm_provider"] = "openai"
+        if "api_key" not in kwargs:
+            kwargs["api_key"] = os.environ.get("DEEPSEEK_API_KEY")
+        return lm_model, kwargs
 
     if provider == "openai":
         if model_name.startswith("openai/"):
