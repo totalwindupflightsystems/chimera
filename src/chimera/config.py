@@ -332,6 +332,8 @@ def _apply_env_overrides(config: ChimeraConfig) -> None:
         ("OPENROUTER_KEY", "openrouter"),
         ("OPENROUTER_API_KEY", "openrouter"),
         ("ZAI_KEY", "zai"),
+        ("ANTHROPIC_KEY", "anthropic"),
+        ("GEMINI_KEY", "google"),
     ):
         if _os.environ.get(env_var):
             config.api_keys[key_name] = _os.environ[env_var]

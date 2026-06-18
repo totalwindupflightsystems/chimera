@@ -71,20 +71,23 @@ def _parse_sse_events(raw: str) -> list[dict]:
     data_lines: list[str] = []
     for line in raw.splitlines():
         if line.startswith("event: "):
-            # Flush previous event
-            if current:
+            # Flush previous event if it has meaningful content
+            carried_id = current.get("id")  # Preserve id: across event boundaries
+            if current.get("event") or data_lines:
                 if data_lines:
                     current["data"] = "\n".join(data_lines)
                 events.append(current)
             current = {"event": line[7:].strip()}
+            if carried_id:
+                current["id"] = carried_id
             data_lines = []
         elif line.startswith("data: "):
             data_lines.append(line[6:])
         elif line.startswith("id: "):
             current["id"] = line[4:].strip()
         # Ignore empty lines and other SSE fields
-    # Flush final event
-    if current:
+    # Flush final event (including data-only events with no event: header)
+    if current.get("event") or data_lines:
         if data_lines:
             current["data"] = "\n".join(data_lines)
         events.append(current)

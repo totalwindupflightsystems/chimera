@@ -267,3 +267,59 @@ class TestEnvOverrides:
         assert cfg.server.host == "127.0.0.1"
         assert cfg.server.port == 8000
         assert cfg.defaults.dispatcher == "zai-coding-plan/glm-5.2"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  REGRESSION: Formation models must exist in the model catalog
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_formation_models_exist_in_catalog() -> None:
+    """Every model referenced in formations must be in the model catalog.
+
+    REGRESSION: ``chimera.yaml`` had ``audit: openrouter/anthropic/claude-haiku-4.5``
+    and ``debate`` had ``claude-sonnet-4`` — neither existed in the model catalog,
+    causing 500 errors.  The fix changed them to ``default``.
+    """
+    import yaml
+    from pathlib import Path
+
+    config_path = Path(__file__).parent.parent / "chimera.yaml"
+    if not config_path.exists():
+        pytest.skip("chimera.yaml not found")
+    with open(config_path) as f:
+        cfg = yaml.safe_load(f)
+
+    # Collect all known model IDs from the config
+    known_models: set[str] = set()
+    for provider_entry in cfg.get("providers", []):
+        if isinstance(provider_entry, str):
+            continue  # provider name-only entries
+        for model in provider_entry.get("models", []):
+            if isinstance(model, dict):
+                known_models.add(model.get("id", ""))
+    # Add special values
+    known_models.add("default")
+    known_models.add("")
+
+    # Check every formation
+    formations = cfg.get("formations", {})
+    for name, fm_config in formations.items():
+        if isinstance(fm_config, dict):
+            if "dag" in fm_config:
+                continue  # Custom DAGs have different structure
+            # Check aggregator/audit model references (merge is a strategy)
+            for field in ("aggregator", "audit"):
+                value = fm_config.get(field)
+                if isinstance(value, str) and value not in known_models:
+                    raise AssertionError(
+                        f"Formation '{name}.{field}' references unknown model "
+                        f"'{value}'. Add it to the model catalog or use 'default'."
+                    )
+            # Check aggregators list
+            for agg in fm_config.get("aggregators", []):
+                if isinstance(agg, str) and agg not in known_models:
+                    raise AssertionError(
+                        f"Formation '{name}' aggregators list references "
+                        f"unknown model '{agg}'."
+                    )
