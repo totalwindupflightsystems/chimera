@@ -22,13 +22,16 @@ Configuration (chimera.yaml):
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any
+from typing import TYPE_CHECKING
 
 import structlog
 
 from chimera.config import CircuitBreakerConfig
+
+if TYPE_CHECKING:
+    from chimera.gateway import GatewayResponse
 
 log = structlog.get_logger("chimera.circuit_breaker")
 

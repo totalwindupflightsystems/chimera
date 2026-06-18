@@ -31,6 +31,7 @@ from chimera.gateway import Gateway, GatewayResponse, LiteLLMGateway
 __version__ = "0.1.0"
 
 __all__ = [
+    "Aggregator",
     "BudgetExhaustedError",
     "ChimeraConfig",
     "Defaults",
@@ -44,7 +45,6 @@ __all__ = [
     "FormationPreset",
     "Gateway",
     "GatewayResponse",
-    "Judge",
     "LiteLLMGateway",
     "ModelEntry",
     "Provider",

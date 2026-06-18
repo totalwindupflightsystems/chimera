@@ -11,7 +11,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 
-from chimera.config import AuthConfig, ChimeraConfig
+from chimera.config import ChimeraConfig
 
 
 def _get_config(request: Request) -> ChimeraConfig:

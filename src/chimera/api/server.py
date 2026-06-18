@@ -24,7 +24,7 @@ from typing import Annotated, Any
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel
 
-from chimera.api.dependencies import _get_config, require_api_key
+from chimera.api.dependencies import require_api_key
 from chimera.api.rate_limit import RateLimiter
 from chimera.config import ChimeraConfig, load_config
 from chimera.engine import Engine
@@ -466,7 +466,7 @@ async def _check_providers(
 
             # Quick ping: try a trivial completion with very short timeout
             try:
-                response = await asyncio.wait_for(
+                await asyncio.wait_for(
                     gateway.complete(
                         test_model,
                         [{"role": "user", "content": "ping"}],
