@@ -36,6 +36,9 @@ full = [
 chimera = "chimera.cli.main:main"
 chimera-mcp = "chimera.mcp.server:run"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/chimera"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
