@@ -55,3 +55,27 @@ jobs:
         if: always()
         run: |
           .venv/bin/python -m pytest tests/ --collect-only -q 2>&1 | tail -5
+
+  publish:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build package
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install build twine
+          .venv/bin/python -m build
+
+      - name: Publish to PyPI
+        run: .venv/bin/twine upload dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}

@@ -1,0 +1,18 @@
+{
+    "exit_code_by_key": {
+        "chimera.circuit_breaker.x_fast_fail_response__mutmut_1": null,
+        "chimera.circuit_breaker.x_fast_fail_response__mutmut_2": null,
+        "chimera.circuit_breaker.x_fast_fail_response__mutmut_3": null,
+        "chimera.circuit_breaker.x_fast_fail_response__mutmut_4": null,
+        "chimera.circuit_breaker.x_fast_fail_response__mutmut_5": null,
+        "chimera.circuit_breaker.x_fast_fail_response__mutmut_6": null,
+        "chimera.circuit_breaker.x_fast_fail_response__mutmut_7": null,
+        "chimera.circuit_breaker.x_fast_fail_response__mutmut_8": null,
+        "chimera.circuit_breaker.x_fast_fail_response__mutmut_9": null,
+        "chimera.circuit_breaker.x_fast_fail_response__mutmut_10": null,
+        "chimera.circuit_breaker.x_make_circuit_breaker_fast_fail_response__mutmut_1": null
+    },
+    "type_check_error_by_key": {},
+    "durations_by_key": {},
+    "estimated_durations_by_key": {}
+}
