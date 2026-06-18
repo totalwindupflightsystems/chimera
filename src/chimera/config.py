@@ -262,6 +262,18 @@ def load_config(path: Path | str | None = None) -> ChimeraConfig:
 
     Environment variable tokens (``${VAR}``) are substituted from the
     process environment.
+
+    After YAML loading, env-var overrides are applied so that Docker /
+    CI users never need to edit the YAML directly:
+
+    * ``CHIMERA_HOST`` / ``CHIMERA_PORT`` → ``server.host`` / ``server.port``
+    * ``CHIMERA_DISPATCHER`` / ``CHIMERA_WORKER`` / ``CHIMERA_AGGREGATOR``
+      → ``defaults.*`` model overrides
+    * ``CHIMERA_LOG_LEVEL`` → ``observability.log_level``
+    * ``CHIMERA_AUTH_ENABLED`` → ``auth.enabled`` (``\"true\"`` / ``\"false\"``)
+    * ``CHIMERA_RATE_LIMIT_ENABLED`` → ``rate_limit.enabled``
+    * ``DEEPSEEK_KEY`` / ``OPENROUTER_KEY`` / ``ZAI_KEY``
+      → ``api_keys.*`` shortcuts
     """
     import os as _os
 
@@ -276,7 +288,52 @@ def load_config(path: Path | str | None = None) -> ChimeraConfig:
     if not isinstance(raw, dict):
         raise ValueError(f"Config {config_path} did not parse to a mapping")
     raw = _substitute_env(raw)
-    return ChimeraConfig.model_validate(raw)
+    config = ChimeraConfig.model_validate(raw)
+    _apply_env_overrides(config)
+    return config
+
+
+def _apply_env_overrides(config: ChimeraConfig) -> None:
+    """Mutate *config* with environment variable overrides.
+
+    This is the bridge between ``chimera.yaml`` and Docker-style
+    12-factor config: every commonly-tweaked knob has a
+    ``CHIMERA_*`` env var that takes precedence over the file.
+    """
+    import os as _os
+
+    # ── Server ──
+    if _os.environ.get("CHIMERA_HOST"):
+        config.server.host = _os.environ["CHIMERA_HOST"]
+    if _os.environ.get("CHIMERA_PORT"):
+        config.server.port = int(_os.environ["CHIMERA_PORT"])
+
+    # ── Default models ──
+    if _os.environ.get("CHIMERA_DISPATCHER"):
+        config.defaults.dispatcher = _os.environ["CHIMERA_DISPATCHER"]
+    if _os.environ.get("CHIMERA_WORKER"):
+        config.defaults.default_worker = _os.environ["CHIMERA_WORKER"]
+    if _os.environ.get("CHIMERA_AGGREGATOR"):
+        config.defaults.default_aggregator = _os.environ["CHIMERA_AGGREGATOR"]
+
+    # ── Observability ──
+    if _os.environ.get("CHIMERA_LOG_LEVEL"):
+        config.observability.log_level = _os.environ["CHIMERA_LOG_LEVEL"]
+
+    # ── Toggles ──
+    if _os.environ.get("CHIMERA_AUTH_ENABLED", "").lower() in ("true", "1"):
+        config.auth.enabled = True
+    if _os.environ.get("CHIMERA_RATE_LIMIT_ENABLED", "").lower() in ("true", "1"):
+        config.rate_limit.enabled = True
+
+    # ── API key shortcuts (Docker-friendly names) ──
+    for env_var, key_name in (
+        ("DEEPSEEK_KEY", "deepseek"),
+        ("OPENROUTER_KEY", "openrouter"),
+        ("ZAI_KEY", "zai"),
+    ):
+        if _os.environ.get(env_var):
+            config.api_keys[key_name] = _os.environ[env_var]
 
 
 __all__ = [

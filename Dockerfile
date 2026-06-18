@@ -1,17 +1,24 @@
 # Chimera — Multi-Model Deliberation Gateway
 #
-# Usage:
-#   docker build -t chimera .
+# Quick start with docker compose (recommended):
 #   cp chimera.yaml.example chimera.yaml
-#   # Add your API keys to chimera.yaml
-#   docker run -p 8765:8765 -v ./chimera.yaml:/etc/chimera/chimera.yaml chimera
+#   # Set your keys via env vars (no YAML editing needed):
+#   export DEEPSEEK_KEY=sk-... OPENROUTER_KEY=sk-or-v1-... ZAI_KEY=sk-...
+#   docker compose up -d
 #
-# Or with env vars:
+# Or without compose:
+#   docker build -t chimera .
 #   docker run -p 8765:8765 \
 #     -e DEEPSEEK_KEY=sk-... \
 #     -e OPENROUTER_KEY=sk-or-v1-... \
+#     -e ZAI_KEY=sk-... \
 #     -v ./chimera.yaml:/etc/chimera/chimera.yaml \
 #     chimera
+#
+# Every common setting has a CHIMERA_* env var:
+#   CHIMERA_HOST, CHIMERA_PORT, CHIMERA_DISPATCHER,
+#   CHIMERA_WORKER, CHIMERA_AGGREGATOR, CHIMERA_LOG_LEVEL,
+#   CHIMERA_AUTH_ENABLED, CHIMERA_RATE_LIMIT_ENABLED
 
 FROM python:3.11-slim
 

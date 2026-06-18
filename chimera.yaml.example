@@ -1,5 +1,24 @@
 # Chimera Configuration
 # Copy to chimera.yaml and fill in your API keys.
+#
+# ENVIRONMENT VARIABLE OVERRIDES (Docker / CI friendly):
+# Every commonly-tweaked knob can be set via env vars — no YAML editing needed.
+#
+#   CHIMERA_CONFIG=path/chimera.yaml   # custom config path
+#   CHIMERA_HOST=0.0.0.0               # bind address
+#   CHIMERA_PORT=8765                  # bind port
+#   CHIMERA_DISPATCHER=deepseek/...    # override dispatcher model
+#   CHIMERA_WORKER=deepseek/...        # override default worker model
+#   CHIMERA_AGGREGATOR=deepseek/...    # override default aggregator model
+#   CHIMERA_LOG_LEVEL=debug            # log level (debug/info/warning/error)
+#   CHIMERA_AUTH_ENABLED=true          # enable API key auth
+#   CHIMERA_RATE_LIMIT_ENABLED=true    # enable rate limiting
+#
+# API KEY SHORTCUTS (use these in Docker env):
+#   DEEPSEEK_KEY=sk-...                # → api_keys.deepseek
+#   OPENROUTER_KEY=sk-or-v1-...        # → api_keys.openrouter
+#   ZAI_KEY=sk-...                     # → api_keys.zai
+#   (These are the same keys listed under api_keys: below, just env-friendly)
 
 # --------------------------------------------------------------------------- #
 # API Authentication (F1)
@@ -166,7 +185,7 @@ providers:
 
 server:
   host: 0.0.0.0
-  port: 8000
+  port: 8765
 
 # ------------------------------------------------------------------ #
 # Resilience configuration (F5–F8)

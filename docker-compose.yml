@@ -1,28 +1,51 @@
-# Chimera — one-command deployment
+# Chimera — one-command deployment with docker-compose
 #
-# Usage:
-#   cp chimera.yaml.example chimera.yaml
-#   # Edit chimera.yaml with your API keys
-#   docker compose up -d
-#   curl http://localhost:8765/v1/health
-#   open http://localhost:8765/web/
+# Quick start:
+#   1. cp chimera.yaml.example chimera.yaml   (or just set env vars below)
+#   2. docker compose up -d
+#   3. curl http://localhost:8765/v1/health
+#   4. open http://localhost:8765/web/
+#
+# All settings are configurable via CHIMERA_* env vars —
+# no YAML editing required unless you need fine-grained model catalogs.
 
 services:
   chimera:
     build: .
     container_name: chimera
     ports:
-      - "8765:8765"
-    volumes:
-      - ./chimera.yaml:/etc/chimera/chimera.yaml:ro
+      - "${CHIMERA_PORT:-8765}:${CHIMERA_PORT:-8765}"
     environment:
-      # Set your provider keys here or in chimera.yaml
+      # ── Server ──
+      - CHIMERA_HOST=${CHIMERA_HOST:-0.0.0.0}
+      - CHIMERA_PORT=${CHIMERA_PORT:-8765}
+
+      # ── Default models (budget-first) ──
+      - CHIMERA_DISPATCHER=${CHIMERA_DISPATCHER:-deepseek/deepseek-v4-pro}
+      - CHIMERA_WORKER=${CHIMERA_WORKER:-deepseek/deepseek-v4-pro}
+      - CHIMERA_AGGREGATOR=${CHIMERA_AGGREGATOR:-deepseek/deepseek-v4-pro}
+
+      # ── API keys (use the short Docker-friendly names) ──
       - DEEPSEEK_KEY=${DEEPSEEK_KEY:-}
       - OPENROUTER_KEY=${OPENROUTER_KEY:-}
       - ZAI_KEY=${ZAI_KEY:-}
+
+      # ── Observability ──
+      - CHIMERA_LOG_LEVEL=${CHIMERA_LOG_LEVEL:-info}
+
+      # ── Security (off by default for dev) ──
+      - CHIMERA_AUTH_ENABLED=${CHIMERA_AUTH_ENABLED:-false}
+      - CHIMERA_RATE_LIMIT_ENABLED=${CHIMERA_RATE_LIMIT_ENABLED:-false}
+
+    volumes:
+      # Mount your chimera.yaml for the full model catalog.
+      # If you skip this, Chimera falls back to its built-in defaults
+      # (just the budget models above + whatever providers have keys).
+      - ./chimera.yaml:/etc/chimera/chimera.yaml:ro
+
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8765/v1/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:${CHIMERA_PORT:-8765}/v1/health/live"]
       interval: 30s
       timeout: 5s
       retries: 3

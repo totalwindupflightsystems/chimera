@@ -175,3 +175,76 @@ def test_backward_compat_legacy_presets_still_present(config: ChimeraConfig) -> 
     assert config.formations["simple"].has_dag is False
     assert config.formations["debate"].workers == 3
     assert config.formations["audit"].audit is not None
+
+
+# ── Env-var override tests ──────────────────────────────────────────────
+
+
+class TestEnvOverrides:
+    """Verify that ``_apply_env_overrides`` bridges env vars ↔ config."""
+
+    @staticmethod
+    def _with_env(config: ChimeraConfig, **env: str) -> ChimeraConfig:
+        import os as _os
+
+        from chimera.config import _apply_env_overrides
+
+        saved = {}
+        try:
+            for k, v in env.items():
+                saved[k] = _os.environ.get(k)
+                _os.environ[k] = v
+            _apply_env_overrides(config)
+            return config
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
+
+    def test_host_port(self, config: ChimeraConfig) -> None:
+        cfg = self._with_env(config, CHIMERA_HOST="1.2.3.4", CHIMERA_PORT="9999")
+        assert cfg.server.host == "1.2.3.4"
+        assert cfg.server.port == 9999
+
+    def test_dispatcher_worker_aggregator(self, config: ChimeraConfig) -> None:
+        cfg = self._with_env(
+            config,
+            CHIMERA_DISPATCHER="openrouter/a",
+            CHIMERA_WORKER="openrouter/b",
+            CHIMERA_AGGREGATOR="openrouter/c",
+        )
+        assert cfg.defaults.dispatcher == "openrouter/a"
+        assert cfg.defaults.default_worker == "openrouter/b"
+        assert cfg.defaults.default_aggregator == "openrouter/c"
+
+    def test_log_level(self, config: ChimeraConfig) -> None:
+        cfg = self._with_env(config, CHIMERA_LOG_LEVEL="debug")
+        assert cfg.observability.log_level == "debug"
+
+    def test_auth_toggle_on(self, config: ChimeraConfig) -> None:
+        cfg = self._with_env(config, CHIMERA_AUTH_ENABLED="true")
+        assert cfg.auth.enabled is True
+
+    def test_rate_limit_toggle_on(self, config: ChimeraConfig) -> None:
+        cfg = self._with_env(config, CHIMERA_RATE_LIMIT_ENABLED="1")
+        assert cfg.rate_limit.enabled is True
+
+    def test_auth_toggle_false_does_nothing(self, config: ChimeraConfig) -> None:
+        cfg = self._with_env(config, CHIMERA_AUTH_ENABLED="false")
+        assert cfg.auth.enabled is False  # unchanged from conftest default
+
+    def test_api_key_shortcuts(self, config: ChimeraConfig) -> None:
+        cfg = self._with_env(
+            config, DEEPSEEK_KEY="sk-ds", OPENROUTER_KEY="sk-or", ZAI_KEY="sk-z"
+        )
+        assert cfg.api_keys["deepseek"] == "sk-ds"
+        assert cfg.api_keys["openrouter"] == "sk-or"
+        assert cfg.api_keys["zai"] == "sk-z"
+
+    def test_no_env_vars_leaves_config_unchanged(self, config: ChimeraConfig) -> None:
+        cfg = self._with_env(config)
+        assert cfg.server.host == "127.0.0.1"
+        assert cfg.server.port == 8000
+        assert cfg.defaults.dispatcher == "zai-coding-plan/glm-5.2"
