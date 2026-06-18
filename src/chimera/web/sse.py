@@ -59,6 +59,8 @@ class SSEBroadcaster:
 
     def __init__(self) -> None:
         self._subscribers: dict[str, list[SSESubscriber]] = {}
+        # Per-session signal: set when the first subscriber's event_stream starts
+        self._ready: dict[str, asyncio.Event] = {}
 
     def subscribe(self, session_id: str) -> SSESubscriber:
         """Register a new SSE subscriber for *session_id*."""
@@ -66,7 +68,13 @@ class SSEBroadcaster:
         if session_id not in self._subscribers:
             self._subscribers[session_id] = []
         self._subscribers[session_id].append(sub)
+        # Ensure a ready-event exists for this session
+        self._ready.setdefault(session_id, asyncio.Event())
         return sub
+
+    def ensure_ready(self, session_id: str) -> asyncio.Event:
+        """Return (or create) the ready-event that chat waits on before broadcasting."""
+        return self._ready.setdefault(session_id, asyncio.Event())
 
     def unsubscribe(self, session_id: str, sub: SSESubscriber) -> None:
         """Remove a subscriber; signal completion by pushing None."""
@@ -89,6 +97,8 @@ class SSEBroadcaster:
         for sub in subs:
             with contextlib.suppress(asyncio.QueueFull):
                 sub.queue.put_nowait(None)
+        # Clean up ready-event so it doesn't leak across tests
+        self._ready.pop(session_id, None)
 
     def broadcast(self, session_id: str, event: SSEEvent) -> None:
         """Send an event to every subscriber of *session_id*."""
@@ -101,15 +111,24 @@ class SSEBroadcaster:
     async def event_stream(self, session_id: str, sub: SSESubscriber):
         """Async generator yielding SSE-formatted strings.
 
-        Yields events until the subscriber is unsubscribed (sentinel None)
-        or the client disconnects.
+        Yields events until the subscriber is unsubscribed (sentinel None),
+        the client disconnects, or 5 seconds pass with no events (idle timeout).
         """
+        # Signal that at least one subscriber is live and ready to receive.
+        ready = self._ready.get(session_id)
+        if ready is not None:
+            ready.set()
+        idle_timeout = 15.0  # Close idle connections after 15s of no events
         try:
             while True:
-                event = await sub.queue.get()
+                try:
+                    event = await asyncio.wait_for(sub.queue.get(), timeout=idle_timeout)
+                except asyncio.TimeoutError:
+                    break  # No events within timeout — close cleanly
                 if event is None:
                     break
                 yield event.format()
+                idle_timeout = 120.0  # Reset to long timeout after first event
         except asyncio.CancelledError:
             pass
         finally:

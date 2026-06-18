@@ -266,6 +266,14 @@ def auth_server(tmp_path_factory: pytest.TempPathFactory) -> str:
 # ── Convenience fixtures ───────────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _reset_singletons(live_server: str) -> None:
+    """Reset shared state between tests so no cross-test contamination."""
+    with httpx.Client() as client:
+        r = client.post(f"{live_server}/web/debug/reset", timeout=5.0)
+        assert r.status_code == 200, f"Reset failed: {r.status_code}"
+
+
 @pytest.fixture
 def auth_headers() -> dict[str, str]:
     """Valid auth headers for the auth server."""

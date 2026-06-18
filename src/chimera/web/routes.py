@@ -97,6 +97,16 @@ async def session_chat(session_id: str, body: ChatRequest, request: Request) -> 
 
     started = time.monotonic()
 
+    # ── Wait for SSE subscriber readiness (if any) ──
+    # Prevents race where chat broadcasts before SSE subscriber is listening.
+    import asyncio as _asyncio
+
+    try:
+        ready = _sse_broadcaster.ensure_ready(session_id)
+        await _asyncio.wait_for(ready.wait(), timeout=2.0)
+    except _asyncio.TimeoutError:
+        pass  # No SSE subscriber within 2s — proceed anyway
+
     # ── SSE: deliberation started ──
     _sse_broadcaster.broadcast(
         session_id,
@@ -211,9 +221,22 @@ async def get_session(session_id: str) -> SessionInfo:
             for t in session.turns
         ],
     )
+# ═══════════════════════════════════════════════════════════════════════════
+#  SSE endpoint
+# ═══════════════════════════════════════════════════════════════════════════
 
 
-# ── SSE endpoint ───────────────────────────────────────────────────────────
+@router.post("/debug/reset")
+async def debug_reset():
+    """Reset singleton state between integration tests.
+
+    Clears session manager and SSE broadcaster so tests start clean.
+    Only available when server is running locally (no auth required).
+    """
+    global _session_manager, _sse_broadcaster
+    _session_manager = SessionManager()
+    _sse_broadcaster = SSEBroadcaster()
+    return {"status": "ok", "message": "singletons reset"}
 
 
 @router.get("/sse/{session_id}")

@@ -60,22 +60,33 @@ def _deliberate_sync(
 
 
 def _parse_sse_events(raw: str) -> list[dict]:
-    """Parse raw SSE text into a list of {event, data} dicts."""
+    """Parse raw SSE text into a list of {event, data} dicts.
+
+    Handles multi-line ``data:`` values (e.g. mermaid diagrams containing
+    blank lines) by accumulating consecutive ``data:`` lines and joining
+    them with newlines to reconstruct the original JSON.
+    """
     events: list[dict] = []
     current: dict[str, str] = {}
+    data_lines: list[str] = []
     for line in raw.splitlines():
-        if not line.strip():
-            if current:
-                events.append(current)
-                current = {}
-            continue
         if line.startswith("event: "):
-            current["event"] = line[7:].strip()
+            # Flush previous event
+            if current:
+                if data_lines:
+                    current["data"] = "\n".join(data_lines)
+                events.append(current)
+            current = {"event": line[7:].strip()}
+            data_lines = []
         elif line.startswith("data: "):
-            current["data"] = line[6:].strip()
+            data_lines.append(line[6:])
         elif line.startswith("id: "):
             current["id"] = line[4:].strip()
+        # Ignore empty lines and other SSE fields
+    # Flush final event
     if current:
+        if data_lines:
+            current["data"] = "\n".join(data_lines)
         events.append(current)
     return events
 
@@ -105,7 +116,7 @@ async def test_sse_receives_all_events(live_server: str) -> None:
                 )
             )
             # Give SSE task a moment to connect
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(0.5)
 
             chat_task = tg.create_task(
                 client.post(
@@ -201,7 +212,7 @@ async def test_sse_multiple_clients_no_crash(live_server: str) -> None:
         async with asyncio.TaskGroup() as tg:
             sse1 = tg.create_task(sse_listener())
             sse2 = tg.create_task(sse_listener())
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(0.5)
 
             chat = tg.create_task(
                 client.post(
@@ -250,7 +261,7 @@ async def test_sse_dag_designed_has_mermaid(live_server: str) -> None:
                     timeout=httpx.Timeout(TIMEOUT, read=TIMEOUT),
                 )
             )
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(0.5)
             chat_task = tg.create_task(
                 client.post(
                     f"{live_server}/web/sessions/{sid}/chat",
@@ -297,7 +308,7 @@ async def test_sse_deliberation_done_has_all_metrics(live_server: str) -> None:
                     timeout=httpx.Timeout(TIMEOUT, read=TIMEOUT),
                 )
             )
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(0.5)
             chat_task = tg.create_task(
                 client.post(
                     f"{live_server}/web/sessions/{sid}/chat",
@@ -536,7 +547,7 @@ async def test_sse_event_data_is_valid_json(live_server: str) -> None:
                     timeout=httpx.Timeout(TIMEOUT, read=TIMEOUT),
                 )
             )
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(0.5)
             chat_task = tg.create_task(
                 client.post(
                     f"{live_server}/web/sessions/{sid}/chat",
@@ -706,7 +717,7 @@ async def test_sse_event_ordering_guaranteed(live_server: str) -> None:
                     timeout=httpx.Timeout(TIMEOUT, read=TIMEOUT),
                 )
             )
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(0.5)
             chat_task = tg.create_task(
                 client.post(
                     f"{live_server}/web/sessions/{sid}/chat",
@@ -751,7 +762,7 @@ async def test_sse_subscriber_session_isolation(live_server: str) -> None:
                     timeout=httpx.Timeout(TIMEOUT, read=TIMEOUT),
                 )
             )
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(0.5)
             chat_task = tg.create_task(
                 client.post(
                     f"{live_server}/web/sessions/{sid_a}/chat",
@@ -795,7 +806,7 @@ async def test_sse_events_never_duplicated(live_server: str) -> None:
                     timeout=httpx.Timeout(TIMEOUT, read=TIMEOUT),
                 )
             )
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(0.5)
             chat_task = tg.create_task(
                 client.post(
                     f"{live_server}/web/sessions/{sid}/chat",
@@ -885,7 +896,7 @@ async def test_sse_two_consecutive_deliberations(live_server: str) -> None:
                         timeout=httpx.Timeout(TIMEOUT, read=TIMEOUT),
                     )
                 )
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(0.5)
                 chat_task = tg.create_task(
                     client.post(
                         f"{live_server}/web/sessions/{sid}/chat",
@@ -906,7 +917,7 @@ async def test_sse_two_consecutive_deliberations(live_server: str) -> None:
             assert "deliberation_done" in event_types, (
                 f"Turn {i + 1}: deliberation_done missing. Events: {event_types}"
             )
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(0.5)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -957,7 +968,7 @@ async def test_sse_emoji_in_prompt(live_server: str) -> None:
                     timeout=httpx.Timeout(TIMEOUT, read=TIMEOUT),
                 )
             )
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(0.5)
             chat_task = tg.create_task(
                 client.post(
                     f"{live_server}/web/sessions/{sid}/chat",
@@ -1085,7 +1096,7 @@ async def test_sse_response_headers(live_server: str) -> None:
         sid = _create_session(live_server)
         r = await client.get(
             f"{live_server}/web/sse/{sid}",
-            timeout=httpx.Timeout(5.0, read=5.0),
+            timeout=httpx.Timeout(20.0, read=20.0),
         )
         assert r.status_code == 200
         content_type = r.headers.get("content-type", "")
