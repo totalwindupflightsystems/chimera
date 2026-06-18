@@ -78,9 +78,8 @@ def test_extract_text_handles_missing_content() -> None:
 
 def test_token_limit_detection_logs_warning(capsys) -> None:
     """C3: finish_reason='length' should log a WARNING with model and tokens."""
-    import logging
 
-    from chimera.gateway import GatewayResponse, LiteLLMGateway, _build_response
+    from chimera.gateway import _build_response
 
     # Simulate a LiteLLM result with finish_reason="length"
     result = SimpleNamespace(

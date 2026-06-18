@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import os
 import time
 
 import pytest
@@ -19,7 +17,6 @@ from chimera.circuit_breaker import (  # noqa: E402
     fast_fail_response,
 )
 from chimera.config import (  # noqa: E402
-    AuthConfig,
     AuthKeyEntry,
     ChimeraConfig,
     CircuitBreakerConfig,
@@ -30,11 +27,8 @@ from chimera.gateway import GatewayError  # noqa: E402
 from tests.conftest import (  # noqa: E402
     CONFIG_DICT,
     FakeGateway,
-    dispatch_json,
     make_dispatcher_responder,
-    resp,
 )
-
 
 # =========================================================================== #
 # F1: Authentication Tests

@@ -20,7 +20,6 @@ from chimera.engine import Engine
 from chimera.gateway import GatewayError, GatewayResponse
 from tests.conftest import FakeGateway, dispatch_json, resp
 
-
 # --------------------------------------------------------------------------- #
 # Concurrency-safe gateway that tags responses with per-request data
 # --------------------------------------------------------------------------- #

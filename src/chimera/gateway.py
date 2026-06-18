@@ -21,8 +21,8 @@ from typing import Any, Protocol, runtime_checkable
 
 import structlog
 
-from chimera.config import ChimeraConfig, ModelEntry
 from chimera.circuit_breaker import ProviderCircuitBreaker, fast_fail_response
+from chimera.config import ChimeraConfig, ModelEntry
 from chimera.exceptions import BudgetExhaustedError
 
 log = structlog.get_logger("chimera.gateway")

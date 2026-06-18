@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from chimera.gateway import GatewayError, LiteLLMGateway
+from chimera.gateway import LiteLLMGateway
 
 # ── Shared prompt used by every model ──────────────────────────────────────
 SIMPLE_PROMPT: list[dict[str, str]] = [

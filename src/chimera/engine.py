@@ -26,8 +26,8 @@ from chimera.dispatcher import (
     Stage,
     build_dag_from_dict,
 )
-from chimera.gateway import Gateway, GatewayError, GatewayResponse
 from chimera.exceptions import BudgetExhaustedError
+from chimera.gateway import Gateway, GatewayError, GatewayResponse
 from chimera.observability import get_langfuse
 
 log = structlog.get_logger("chimera.engine")

@@ -21,6 +21,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
+import structlog
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel
 
@@ -30,8 +31,6 @@ from chimera.config import ChimeraConfig, load_config
 from chimera.engine import Engine
 from chimera.gateway import LiteLLMGateway
 from chimera.observability import configure_logging
-
-import structlog
 
 log = structlog.get_logger("chimera.api")
 
@@ -478,7 +477,7 @@ async def _check_providers(
                     "healthy": True,
                     "model_tested": test_model,
                 }
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 status[provider_name] = {
                     "healthy": False,
                     "error": "timeout",
