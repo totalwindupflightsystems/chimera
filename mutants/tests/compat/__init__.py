@@ -1,1 +1,0 @@
-"""Model compatibility smoke tests."""

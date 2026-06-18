@@ -7,3 +7,6 @@ chimera.yaml
 .env
 .pytest_cache/
 .ruff_cache/
+mutants/
+.coverage
+htmlcov/
