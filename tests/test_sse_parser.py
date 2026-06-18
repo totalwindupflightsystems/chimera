@@ -8,9 +8,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
-# ── Import the parser from the test helper module ──────────────────────────
 from tests.integration.test_web_sse import _parse_sse_events
 
 
@@ -103,8 +100,11 @@ data: {}"""
 def test_parse_real_mermaid_output() -> None:
     """Parse a realistic mermaid DAG — the exact format that broke the parser."""
     # Single-line JSON with \\n inside — this is what json.dumps() produces
-    raw = 'event: dag_designed\n'
-    raw += 'data: {"mermaid": "flowchart TB\\n    worker_1\\n\\n    subgraph Legend\\n    end", "formation": "simple", "stage_count": 3}\n'
+    mermaid_json = (
+        '{"mermaid": "flowchart TB\\n    worker_1\\n\\n    '
+        'subgraph Legend\\n    end", "formation": "simple", "stage_count": 3}'
+    )
+    raw = 'event: dag_designed\n' + 'data: ' + mermaid_json + '\n'
 
     events = _parse_sse_events(raw)
     assert len(events) == 1, f"Should be 1 event, got {len(events)}: {events}"
