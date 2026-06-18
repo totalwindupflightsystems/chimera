@@ -1,6 +1,53 @@
 # Chimera Configuration
 # Copy to chimera.yaml and fill in your API keys.
 
+# --------------------------------------------------------------------------- #
+# API Authentication (F1)
+# --------------------------------------------------------------------------- #
+auth:
+  # Set enabled: true to require API keys on protected endpoints
+  enabled: false
+  # mode: "env" — single key from CHIMERA_API_KEY environment variable
+  # mode: "list" — multiple named keys from the keys list below
+  mode: env
+  keys: []
+  #   - key: "your-api-key-here"
+  #     name: "admin"
+
+# --------------------------------------------------------------------------- #
+# Rate Limiting (F2)
+# --------------------------------------------------------------------------- #
+rate_limit:
+  enabled: false
+  requests_per_minute: 60
+  burst_size: 10
+
+# --------------------------------------------------------------------------- #
+# Circuit Breakers (F3)
+# --------------------------------------------------------------------------- #
+circuit_breakers:
+  # Default configuration applied to all providers unless overridden
+  default:
+    failure_threshold: 5       # consecutive failures before opening
+    recovery_timeout_s: 30     # seconds to wait before testing recovery
+    half_open_max_requests: 1  # test requests allowed in half-open state
+
+# --------------------------------------------------------------------------- #
+# Retry / Backoff (F7)
+# --------------------------------------------------------------------------- #
+retry:
+  max_attempts: 3
+  base_delay_ms: 500
+  max_delay_ms: 10000
+  backoff_multiplier: 2.0
+
+# --------------------------------------------------------------------------- #
+# Request Queue / Backpressure (F5)
+# --------------------------------------------------------------------------- #
+queue:
+  max_concurrent: 10
+  max_queue_depth: 100
+
 api_keys:
   deepseek: ${DEEPSEEK_API_KEY}
   openrouter: ${OPENROUTER_API_KEY}
@@ -118,6 +165,22 @@ providers:
 server:
   host: 0.0.0.0
   port: 8000
+
+# ------------------------------------------------------------------ #
+# Resilience configuration (F5–F8)
+# ------------------------------------------------------------------ #
+
+# F7: Retry with exponential backoff for transient provider failures
+retry:
+  max_attempts: 3          # Total attempts (including the first)
+  base_delay_ms: 500       # Initial delay in milliseconds
+  max_delay_ms: 10000      # Maximum delay cap (10 seconds)
+  backoff_multiplier: 2.0  # Multiply delay each attempt
+
+# F5: Request queue / backpressure
+queue:
+  max_concurrent: 10       # Maximum simultaneously executing requests
+  max_queue_depth: 100     # Maximum waiting requests (503 when full)
 
 observability:
   log_level: info

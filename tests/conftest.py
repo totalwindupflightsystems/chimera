@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from typing import Any
@@ -106,8 +107,11 @@ class FakeGateway:
         self.calls.append((model, messages, {"temperature": temperature,
                                              "response_format": response_format, **kwargs}))
         if self.responder is not None:
-            return self.responder(model, messages, response_format=response_format,
-                                  temperature=temperature, **kwargs)
+            result = self.responder(model, messages, response_format=response_format,
+                                    temperature=temperature, **kwargs)
+            if asyncio.iscoroutine(result):
+                return await result
+            return result
         return GatewayResponse(text=f"[fake response from {model}]",
                                model=model, tokens_input=10, tokens_output=20)
 

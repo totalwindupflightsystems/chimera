@@ -37,7 +37,10 @@ def test_health(config) -> None:  # type: ignore[no-untyped-def]
     client = _client(config)
     r = client.get("/v1/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    data = r.json()
+    assert data["status"] in {"healthy", "degraded", "unhealthy"}
+    assert "details" in data
+    assert data["details"]["config_loaded"] is True
 
 
 def test_list_formations(config) -> None:  # type: ignore[no-untyped-def]

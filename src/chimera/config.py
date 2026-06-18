@@ -106,9 +106,56 @@ class Observability(BaseModel):
     langfuse: LangfuseConfig = Field(default_factory=LangfuseConfig)
 
 
+class RetryConfig(BaseModel):
+    """Exponential backoff retry policy for provider calls (F7)."""
+
+    max_attempts: int = 3
+    base_delay_ms: int = 500
+    max_delay_ms: int = 10000
+    backoff_multiplier: float = 2.0
+
+
+class QueueConfig(BaseModel):
+    """In-memory request queue / backpressure config (F5)."""
+
+    max_concurrent: int = 10
+    max_queue_depth: int = 100
+
+
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
+
+
+class AuthKeyEntry(BaseModel):
+    """A named API key for list-based authentication."""
+
+    key: str
+    name: str = "default"
+
+
+class AuthConfig(BaseModel):
+    """Authentication configuration for the REST API."""
+
+    enabled: bool = False
+    mode: str = "env"  # "env" | "list"
+    keys: list[AuthKeyEntry] = Field(default_factory=list)
+
+
+class RateLimitConfig(BaseModel):
+    """In-memory token-bucket rate limiting configuration."""
+
+    enabled: bool = False
+    requests_per_minute: int = 60
+    burst_size: int = 10
+
+
+class CircuitBreakerConfig(BaseModel):
+    """Per-provider circuit breaker configuration."""
+
+    failure_threshold: int = 5
+    recovery_timeout_s: int = 30
+    half_open_max_requests: int = 1
 
 
 class DeliberationOverrides(BaseModel):
@@ -137,6 +184,11 @@ class ChimeraConfig(BaseModel):
     formations: dict[str, FormationPreset] = Field(default_factory=dict)
     observability: Observability = Field(default_factory=Observability)
     server: ServerConfig = Field(default_factory=ServerConfig)
+    retry: RetryConfig = Field(default_factory=RetryConfig)
+    queue: QueueConfig = Field(default_factory=QueueConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
+    rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
+    circuit_breakers: dict[str, CircuitBreakerConfig] = Field(default_factory=dict)
     api_keys: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -217,13 +269,19 @@ def load_config(path: Path | str | None = None) -> ChimeraConfig:
 
 
 __all__ = [
+    "AuthConfig",
+    "AuthKeyEntry",
     "ChimeraConfig",
+    "CircuitBreakerConfig",
     "Defaults",
     "FormationPreset",
     "LangfuseConfig",
     "ModelEntry",
     "Observability",
     "Provider",
+    "QueueConfig",
+    "RateLimitConfig",
+    "RetryConfig",
     "ServerConfig",
     "DEFAULT_COST_RATES",
     "find_config_path",

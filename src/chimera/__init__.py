@@ -25,11 +25,13 @@ from chimera.dispatcher import (
     WorkerPrompt,
 )
 from chimera.engine import DeliberationResult, DeliberationTrace, Engine, StageSpan
+from chimera.exceptions import BudgetExhaustedError
 from chimera.gateway import Gateway, GatewayResponse, LiteLLMGateway
 
 __version__ = "0.1.0"
 
 __all__ = [
+    "BudgetExhaustedError",
     "ChimeraConfig",
     "Defaults",
     "DeliberationResult",

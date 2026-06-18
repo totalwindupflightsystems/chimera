@@ -8,6 +8,7 @@ concurrently via :func:`asyncio.gather`. Every call is traced into a
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import uuid
 from typing import Any
@@ -26,6 +27,7 @@ from chimera.dispatcher import (
     build_dag_from_dict,
 )
 from chimera.gateway import Gateway, GatewayError, GatewayResponse
+from chimera.exceptions import BudgetExhaustedError
 from chimera.observability import get_langfuse
 
 log = structlog.get_logger("chimera.engine")
@@ -126,13 +128,69 @@ def _apply_stage_models(
 
 
 class Engine:
-    """Runs the full pipeline: dispatcher → workers → aggregator → (merge/audit)."""
+    """Runs the full pipeline: dispatcher → workers → aggregator → (merge/audit).
+
+    On construction the config is deep-copied into an immutable snapshot.
+    All in-flight requests read from the snapshot, not the caller's live
+    object, so configuration is stable for the lifetime of the Engine instance.
+
+    Mutation checks on the caller's original config object are logged as
+    warnings so operators know when a change they made won't take effect.
+    """
+
+    # Fast checksum of struct fields to detect external mutations.
+    _CONFIG_CHECK_FIELDS = (
+        "defaults.dispatcher",
+        "defaults.default_worker",
+        "defaults.default_aggregator",
+        "defaults.lock_dispatcher",
+        "defaults.lock_aggregator",
+        "models",
+        "formations",
+        "providers",
+        "api_keys",
+    )
 
     def __init__(self, config: ChimeraConfig, gateway: Gateway) -> None:
-        self.config = config
+        self._config_original = config
+        self._config = config.model_copy(deep=True)
+        self._config_checksum = self._compute_config_checksum(self._config_original)
         self.gateway = gateway
-        self.dispatcher = Dispatcher(config, gateway)
-        self.aggregator = Aggregator(config, gateway)
+        self.dispatcher = Dispatcher(self._config, gateway)
+        self.aggregator = Aggregator(self._config, gateway)
+
+    @property
+    def config(self) -> ChimeraConfig:
+        """The frozen config snapshot, safe from external mutation."""
+        return self._config
+
+    # ------------------------------------------------------------------ #
+    # Config mutation detection
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _compute_config_checksum(cfg: ChimeraConfig) -> int:
+        """Compute a fast structural checksum of key config fields.
+
+        Pydantic model_dump with sort_keys=True produces a stable string
+        that changes when any nested field is mutated.
+        """
+        raw = cfg.model_dump(mode="python", exclude={"observability", "server"})
+        return hash(json.dumps(raw, sort_keys=True, default=str))
+
+    def _check_config_mutation(self) -> None:
+        """Log a warning if the caller's original config was mutated since init."""
+        current = self._compute_config_checksum(self._config_original)
+        if current != self._config_checksum:
+            log.warning(
+                "config_mutated_after_snapshot",
+                msg=(
+                    "The ChimeraConfig object passed to Engine() has been mutated "
+                    "since the Engine was constructed. In-flight requests use the "
+                    "frozen snapshot, so external mutations will NOT take effect "
+                    "until a new Engine instance is created."
+                ),
+            )
 
     async def deliberate(
         self,
@@ -163,6 +221,9 @@ class Engine:
         request_id = uuid.uuid4().hex[:16]
         structlog.contextvars.bind_contextvars(request_id=request_id, formation=formation)
         started = time.monotonic()
+
+        # Warn if the caller's original config has been mutated since Engine init.
+        self._check_config_mutation()
 
         custom_formation = self._resolve_custom_dag(dag, allow_custom_dag)
         outcome = await self.dispatcher.dispatch(
@@ -293,7 +354,7 @@ class Engine:
                 [],
                 latency_ms,
             )
-        except GatewayError as exc:
+        except (GatewayError, BudgetExhaustedError) as exc:
             latency_ms = int((time.monotonic() - start) * 1000)
             log.warning("engine_stage_failed", stage=stage.id, model=stage.model, error=str(exc))
             # Answer-producing stages retry once with the default aggregator so the user
@@ -360,7 +421,7 @@ class Engine:
     def _degraded_stage(
         self,
         stage: Stage,
-        error: GatewayError,
+        error: Exception,
         messages: list[dict[str, str]],
         latency_ms: int,
     ) -> tuple[StageResult, StageSpan]:
@@ -392,6 +453,7 @@ class Engine:
             model=stage.model,
             prompt=prompt_text,
             response=degraded_response,
+            degraded=True,
         )
         return result, span
 

@@ -31,6 +31,7 @@ class StageResult:
     model: str
     prompt: str
     response: GatewayResponse
+    degraded: bool = False
 
 
 def build_merge_prompt(
@@ -43,13 +44,33 @@ def build_merge_prompt(
     instructions = _stage_instructions(stage, dispatch)
 
     blocks: list[str] = []
+    degraded_count = 0
     for dep in dependencies:
         asked = _what_worker_was_asked(dep.stage_id, dispatch)
-        blocks.append(
-            f"### {dep.stage_id} (model: {dep.model})\n"
-            f"Was asked to: {asked}\n\n"
-            f"Output:\n{dep.response.text}"
+        if dep.degraded:
+            degraded_count += 1
+            blocks.append(
+                f"### {dep.stage_id} (model: {dep.model}) [DEGRADED]\n"
+                f"Was asked to: {asked}\n\n"
+                f"Output:\n{dep.response.text}\n"
+                f"Note: This stage failed to produce valid output."
+            )
+        else:
+            blocks.append(
+                f"### {dep.stage_id} (model: {dep.model})\n"
+                f"Was asked to: {asked}\n\n"
+                f"Output:\n{dep.response.text}"
+            )
+
+    if degraded_count > 0:
+        log.warning(
+            "aggregator_partial_inputs",
+            stage=stage.id,
+            total_deps=len(dependencies),
+            degraded=degraded_count,
+            healthy=len(dependencies) - degraded_count,
         )
+
     worker_section = "\n\n".join(blocks) if blocks else "(no upstream outputs)"
 
     kind_label = stage.kind

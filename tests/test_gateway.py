@@ -69,3 +69,196 @@ def test_extract_text_handles_missing_content() -> None:
         choices=[SimpleNamespace(message=SimpleNamespace(content="hello"))]
     )
     assert _extract_text(with_content) == "hello"
+
+
+# --------------------------------------------------------------------------- #
+# C3 — Token limit handling (finish_reason="length")
+# --------------------------------------------------------------------------- #
+
+
+def test_token_limit_detection_logs_warning(capsys) -> None:
+    """C3: finish_reason='length' should log a WARNING with model and tokens."""
+    import logging
+
+    from chimera.gateway import GatewayResponse, LiteLLMGateway, _build_response
+
+    # Simulate a LiteLLM result with finish_reason="length"
+    result = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                finish_reason="length",
+                message=SimpleNamespace(content="truncated output..."),
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=500, completion_tokens=4096),
+    )
+    response = _build_response(result, "deepseek/deepseek-chat")
+    assert response.finish_reason == "length"
+    assert not response.is_empty
+    # structlog writes to stdout — check captured output
+    captured = capsys.readouterr().out
+    assert "token_limit_reached" in captured, f"Expected token_limit_reached in stdout, got: {captured}"
+
+
+def test_token_limit_field_on_response() -> None:
+    """C3: GatewayResponse carries finish_reason from the provider."""
+    from chimera.gateway import GatewayResponse
+
+    r = GatewayResponse(
+        text="partial", model="m", tokens_input=100, tokens_output=4096,
+        finish_reason="length",
+    )
+    assert r.finish_reason == "length"
+    assert r.is_empty is False
+
+
+def test_normal_finish_reason_does_not_warn(caplog) -> None:
+    """C3: finish_reason='stop' should NOT log a warning."""
+    import logging
+
+    from chimera.gateway import _build_response
+
+    caplog.set_level(logging.WARNING)
+
+    result = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content="normal output"),
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=50, completion_tokens=200),
+    )
+    response = _build_response(result, "m")
+    assert response.finish_reason == "stop"
+    assert not response.is_empty
+    # No token limit warning
+    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert not any("token_limit_reached" in str(r.message) for r in warnings)
+
+
+# --------------------------------------------------------------------------- #
+# C4 — Empty/null response handling
+# --------------------------------------------------------------------------- #
+
+
+def test_extract_text_empty_content_no_crash() -> None:
+    """C4: empty string content should not crash, returns empty string."""
+    from chimera.gateway import _extract_text
+
+    # Empty content
+    result = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content=""),
+            )
+        ],
+    )
+    assert _extract_text(result) == ""
+
+
+def test_extract_text_null_content_no_crash() -> None:
+    """C4: None/null content should not crash, returns empty string."""
+    from chimera.gateway import _extract_text
+
+    result = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content=None),
+            )
+        ],
+    )
+    assert _extract_text(result) == ""
+
+
+def test_extract_text_missing_choices_no_crash() -> None:
+    """C4: missing choices array should not crash, returns empty string."""
+    from chimera.gateway import _extract_text
+
+    # No choices attribute
+    result = SimpleNamespace()
+    assert _extract_text(result) == ""
+
+    # choices is None
+    result2 = SimpleNamespace(choices=None)
+    assert _extract_text(result2) == ""
+
+
+def test_extract_text_stop_with_empty_content_is_empty_flag() -> None:
+    """C4: finish_reason='stop' with empty content should set is_empty=True."""
+    from chimera.gateway import _build_response
+
+    result = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content=""),
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=0),
+    )
+    response = _build_response(result, "m")
+    assert response.is_empty is True
+    assert response.finish_reason == "stop"
+    assert response.text == ""
+
+
+def test_extract_text_reasoning_content_fallback() -> None:
+    """C4: content is empty but reasoning_content has text — should extract it."""
+    from chimera.gateway import _extract_text
+
+    result = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content=None, reasoning_content="actual reasoning text"),
+            )
+        ],
+    )
+    assert _extract_text(result) == "actual reasoning text"
+
+
+# --------------------------------------------------------------------------- #
+# C7 — Budget exhaustion error detection
+# --------------------------------------------------------------------------- #
+
+
+def test_is_budget_exhausted_detects_quota_errors() -> None:
+    """C7: _is_budget_exhausted returns True for budget/quota exhaustion errors."""
+    from chimera.gateway import _is_budget_exhausted
+
+    assert _is_budget_exhausted("insufficient_quota: you exceeded your limit")
+    assert _is_budget_exhausted("billing issue: payment required")
+    assert _is_budget_exhausted("Error: you exceeded your current quota")
+    assert _is_budget_exhausted("quota exceeded for model gpt-4")
+    assert _is_budget_exhausted("insufficient_credits available")
+    assert _is_budget_exhausted("spending limit reached")
+
+
+def test_is_budget_exhausted_ignores_normal_errors() -> None:
+    """C7: _is_budget_exhausted returns False for non-budget errors."""
+    from chimera.gateway import _is_budget_exhausted
+
+    assert not _is_budget_exhausted("authentication failed")
+    assert not _is_budget_exhausted("invalid api key")
+    assert not _is_budget_exhausted("rate limited temporarily")
+    assert not _is_budget_exhausted("internal server error")
+    assert not _is_budget_exhausted("connection timeout")
+
+
+def test_budget_exhausted_error_has_model_and_provider() -> None:
+    """C7: BudgetExhaustedError carries model, provider, and details."""
+    from chimera.exceptions import BudgetExhaustedError
+
+    exc = BudgetExhaustedError(
+        model="deepseek/deepseek-chat",
+        provider="openrouter",
+        details="insufficient_quota: limit $10 reached",
+    )
+    assert "deepseek/deepseek-chat" in str(exc)
+    assert "openrouter" in str(exc)
+    assert "insufficient_quota" in str(exc)
+    assert exc.model == "deepseek/deepseek-chat"
+    assert exc.provider == "openrouter"

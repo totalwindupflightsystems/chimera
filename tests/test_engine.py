@@ -411,3 +411,106 @@ async def test_stage_timeout_produces_degraded_result(config, monkeypatch: pytes
     for w in result.trace.workers:
         assert "timed out" in w.response
         assert w.cost == 0.0
+
+
+# --------------------------------------------------------------------------- #
+# C2 — Partial worker failure resilience
+# --------------------------------------------------------------------------- #
+
+_THREE_WORKER_DISPATCH = dispatch_json(
+    workers=[
+        ("worker_1", "deepseek/deepseek-chat"),
+        ("worker_2", "openrouter/google/gemini-2.5-flash"),
+        ("worker_3", "deepseek/deepseek-chat"),
+    ],
+)
+
+
+def _three_worker_responder(config, fail_workers: set[str] | None = None):
+    """Responder for 3-worker dispatch. Workers in ``fail_workers`` raise errors."""
+    fail = fail_workers or set()
+
+    def _responder(model, messages, response_format=None, **kw):
+        if response_format is not None:  # dispatcher
+            return resp(_THREE_WORKER_DISPATCH, model, tok_in=120, tok_out=200)
+        joined = json.dumps(messages)
+        if "Upstream outputs" in joined:  # aggregator
+            return resp("[FINAL MERGED ANSWER]", model, tok_in=60, tok_out=90)
+        # Determine which worker from the messages
+        for wid in ("worker_1", "worker_2", "worker_3"):
+            if wid in joined and "Your assigned task" in joined:
+                if wid in fail:
+                    raise GatewayError(f"{wid} unavailable")
+                return resp(f"[{wid} output]", model, tok_in=25, tok_out=35)
+        return resp("[generic output]", model, tok_in=10, tok_out=20)
+
+    return _responder
+
+
+class _PartialFailureGateway(FakeGateway):
+    """Gateway that fails specific workers by stage_id detection."""
+
+    def __init__(self, config, fail_workers: set[str]):
+        super().__init__()
+        self._fail = fail_workers
+        self._dispatch_sent = False
+
+    async def complete(self, model, messages, response_format=None, **kw):
+        self.calls.append((model, messages, {"temperature": kw.get("temperature", 0.2),
+                                              "response_format": response_format, **kw}))
+        if response_format is not None:  # dispatcher
+            self._dispatch_sent = True
+            return resp(_THREE_WORKER_DISPATCH, model, tok_in=120, tok_out=200)
+
+        joined = json.dumps(messages)
+        if "Upstream outputs" in joined:  # aggregator
+            return resp("[FINAL MERGED ANSWER]", model, tok_in=60, tok_out=90)
+
+        # Worker detection
+        for wid in ("worker_1", "worker_2", "worker_3"):
+            if wid in joined and "Your assigned task" in joined:
+                if wid in self._fail:
+                    raise GatewayError(f"{wid} unavailable")
+                return resp(f"[{wid} output]", model, tok_in=25, tok_out=35)
+        return resp("[generic output]", model, tok_in=10, tok_out=20)
+
+
+@pytest.mark.asyncio
+async def test_one_of_three_workers_fails_deliberation_completes(config) -> None:
+    """C2: 1 of 3 workers fails → deliberation still completes with valid output."""
+    gw = _PartialFailureGateway(config, fail_workers={"worker_1"})
+    result = await Engine(config, gw).deliberate("task", "auto")
+    # Deliberation completes successfully
+    assert result.answer == "[FINAL MERGED ANSWER]"
+    # Trace shows 3 workers: 1 degraded, 2 healthy
+    assert len(result.trace.workers) == 3
+    degraded = [w for w in result.trace.workers if "unavailable" in w.response]
+    healthy = [w for w in result.trace.workers if "unavailable" not in w.response]
+    assert len(degraded) == 1
+    assert len(healthy) == 2
+
+
+@pytest.mark.asyncio
+async def test_two_of_three_workers_fail_degraded_answer(config) -> None:
+    """C2: 2 of 3 workers fail → deliberation still completes with degraded
+    worker inputs, aggregator produces an answer."""
+    gw = _PartialFailureGateway(config, fail_workers={"worker_1", "worker_2"})
+    result = await Engine(config, gw).deliberate("task", "auto")
+    # Deliberation still completes (aggregator runs with partial inputs)
+    assert result.answer == "[FINAL MERGED ANSWER]"
+    assert len(result.trace.workers) == 3
+    degraded = [w for w in result.trace.workers if "unavailable" in w.response]
+    assert len(degraded) == 2
+
+
+@pytest.mark.asyncio
+async def test_three_of_three_workers_fail_clear_error(config) -> None:
+    """C2: 3 of 3 workers fail → deliberation completes; aggregator receives
+    all-degraded inputs and produces a clear response."""
+    gw = _PartialFailureGateway(config, fail_workers={"worker_1", "worker_2", "worker_3"})
+    result = await Engine(config, gw).deliberate("task", "auto")
+    # Aggregator still runs and produces an answer
+    assert result.answer == "[FINAL MERGED ANSWER]"
+    # All 3 workers are degraded
+    assert all("unavailable" in w.response for w in result.trace.workers)
+    assert result.trace.aggregator is not None
