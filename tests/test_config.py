@@ -189,6 +189,13 @@ class TestEnvOverrides:
 
         from chimera.config import _apply_env_overrides
 
+        # Clear any real env vars that would conflict with test mocks
+        conflicts = {
+            "OPENROUTER_API_KEY": _os.environ.get("OPENROUTER_API_KEY"),
+        }
+        for k in conflicts:
+            _os.environ.pop(k, None)
+
         saved = {}
         try:
             for k, v in env.items():
@@ -201,6 +208,10 @@ class TestEnvOverrides:
                 if v is None:
                     _os.environ.pop(k, None)
                 else:
+                    _os.environ[k] = v
+            # Restore conflicts
+            for k, v in conflicts.items():
+                if v is not None:
                     _os.environ[k] = v
 
     def test_host_port(self, config: ChimeraConfig) -> None:
@@ -237,7 +248,10 @@ class TestEnvOverrides:
 
     def test_api_key_shortcuts(self, config: ChimeraConfig) -> None:
         cfg = self._with_env(
-            config, DEEPSEEK_KEY="sk-ds", OPENROUTER_KEY="sk-or", ZAI_KEY="sk-z"
+            config,
+            DEEPSEEK_KEY="sk-ds",
+            OPENROUTER_KEY="sk-or",
+            ZAI_KEY="sk-z",
         )
         assert cfg.api_keys["deepseek"] == "sk-ds"
         assert cfg.api_keys["openrouter"] == "sk-or"
