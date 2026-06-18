@@ -1,0 +1,42 @@
+# Chimera — Development Dockerfile (builds from local source)
+#
+# For developers working on the Chimera codebase.
+# End users should use Dockerfile (installs from PyPI).
+#
+# Usage:
+#   docker build -f Dockerfile.dev -t chimera-dev .
+#   docker run -p 8765:8765 -e DEEPSEEK_KEY=sk-... chimera-dev
+#
+# Or with compose:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+FROM python:3.11-slim
+
+LABEL org.opencontainers.image.title="Chimera (dev)"
+LABEL org.opencontainers.image.description="Dynamic multi-model deliberation gateway — development build"
+
+# ── System deps ──────────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Install Chimera from local source ────────────────────────────────────
+COPY . /src/chimera
+RUN pip install --no-cache-dir "/src/chimera[full]"
+
+# ── Runtime setup ────────────────────────────────────────────────────────
+RUN mkdir -p /etc/chimera
+WORKDIR /etc/chimera
+
+# Minimal built-in config
+COPY chimera.yaml.docker /etc/chimera/chimera.yaml
+
+ENV CHIMERA_CONFIG=/etc/chimera/chimera.yaml
+
+EXPOSE 8765
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8765/v1/health/live || exit 1
+
+ENTRYPOINT ["chimera"]
+CMD ["serve", "--host", "0.0.0.0", "--port", "8765"]

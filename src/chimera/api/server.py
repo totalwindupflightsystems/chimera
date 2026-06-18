@@ -288,7 +288,7 @@ def _register_routes(app: FastAPI) -> None:
             raise HTTPException(
                 status_code=503,
                 detail=f"Not ready: {str(exc)[:200]}",
-            )
+            ) from exc
 
     @app.get("/v1/health/live")
     async def liveness(request: Request) -> dict[str, Any]:
@@ -364,7 +364,7 @@ def _register_routes(app: FastAPI) -> None:
                     dag=body.dag, allow_custom_dag=body.allow_custom_dag,
                 )
             except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc))
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
             return DeliberateResponse(
                 answer=result.answer,
                 trace=result.trace.model_dump(mode="json"),
@@ -424,7 +424,7 @@ def _register_routes(app: FastAPI) -> None:
                     dag=body.dag, allow_custom_dag=body.allow_custom_dag,
                 )
             except (KeyError, ValueError) as exc:
-                raise HTTPException(status_code=400, detail=f"Unknown model/formation: {exc}")
+                raise HTTPException(status_code=400, detail=f"Unknown model/formation: {exc}") from exc
             trace = result.trace
             completion_tokens = trace.total_tokens - trace.dispatch.tokens_input
             return ChatCompletionResponse(
@@ -456,7 +456,7 @@ async def _check_providers(
     """
     status: dict[str, dict[str, Any]] = {}
 
-    for provider_name, provider_cfg in config.providers.items():
+    for provider_name, _provider_cfg in config.providers.items():
         try:
             # Use a simple model entry test by picking any model from that provider
             test_model = next(

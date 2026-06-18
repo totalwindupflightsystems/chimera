@@ -12,7 +12,6 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    continue-on-error: true  # Non-blocking: advisory lint (matches pre-commit hook)
     steps:
       - uses: actions/checkout@v4
 
@@ -58,7 +57,7 @@ jobs:
           .venv/bin/python -m pytest tests/ --collect-only -q 2>&1 | tail -5
 
   publish:
-    needs: [test]
+    needs: [lint, test]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:

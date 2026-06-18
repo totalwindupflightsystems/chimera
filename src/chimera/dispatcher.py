@@ -51,7 +51,11 @@ DISPATCH_SCHEMA_HINT = {
         "type": "object",
         "properties": {
             "answer": {"type": "string", "description": "The final merged answer for the user"},
-            "sources": {"type": "array", "items": {"type": "string"}, "description": "Worker IDs that contributed"},
+            "sources": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Worker IDs that contributed",
+            },
         },
         "required": ["answer"],
     },

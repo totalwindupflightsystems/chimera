@@ -143,20 +143,20 @@ def _start_server(
     if extra_env:
         env.update(extra_env)
 
-    log_fd = tempfile.NamedTemporaryFile(
+    with tempfile.NamedTemporaryFile(
         mode="w", prefix=f"chimera-{port}-", suffix=".log", delete=False,
-    )
-    log_fd.close()
-    log_path = log_fd.name
+    ) as log_fd:
+        log_path = log_fd.name
 
-    proc = subprocess.Popen(
-        [VENV_PYTHON, "-c", snippet],
-        cwd=str(PROJECT_ROOT),
-        env=env,
-        stdout=open(log_path, "w"),
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
+    with open(log_path, "w") as log_fh:
+        proc = subprocess.Popen(
+            [VENV_PYTHON, "-c", snippet],
+            cwd=str(PROJECT_ROOT),
+            env=env,
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
     _server_logs[proc.pid] = log_path
     return proc
 

@@ -244,20 +244,16 @@ def _is_retryable(exc: BaseException) -> bool:
                 code = getattr(exc, "status_code", 0)
                 if code in _RETRYABLE_STATUS_CODES:
                     return True
-            # APIConnectionError and APITimeoutError are transient
-            if isinstance(exc, (openai.APIConnectionError, openai.APITimeoutError)):
-                return True
-            # 401/403/400 are NOT retryable
-            return False
+            # APIConnectionError and APITimeoutError are transient; 401/403/400 are NOT
+            return isinstance(exc, (openai.APIConnectionError, openai.APITimeoutError))
     except ImportError:
         pass
 
     # litellm exceptions can wrap httpx/openai
     try:
         import litellm
-        if isinstance(exc, litellm.exceptions.APIError):
-            if hasattr(exc, "status_code"):
-                return getattr(exc, "status_code", 0) in _RETRYABLE_STATUS_CODES
+        if isinstance(exc, litellm.exceptions.APIError) and hasattr(exc, "status_code"):
+            return getattr(exc, "status_code", 0) in _RETRYABLE_STATUS_CODES
         if isinstance(exc, litellm.exceptions.APIConnectionError):
             return True
         if isinstance(exc, litellm.exceptions.RateLimitError):

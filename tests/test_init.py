@@ -32,13 +32,16 @@ def _parse_init_imports() -> tuple[set[str], list[str]]:
         # Collect __all__ entries
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == "__all__":
-                    if isinstance(node.value, ast.List):
-                        all_entries = [
-                            str(e.value)
-                            for e in node.value.elts
-                            if isinstance(e, ast.Constant)
-                        ]
+                if (
+                    isinstance(target, ast.Name)
+                    and target.id == "__all__"
+                    and isinstance(node.value, ast.List)
+                ):
+                    all_entries = [
+                        str(e.value)
+                        for e in node.value.elts
+                        if isinstance(e, ast.Constant)
+                    ]
 
     return imported, all_entries
 

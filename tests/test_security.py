@@ -402,7 +402,7 @@ class TestCircuitBreakerGatewayIntegration:
 
     def test_circuit_opens_after_failures(self) -> None:
         """After N consecutive failures, gateway returns fast-fail response."""
-        config = self._breaker_config(failure_threshold=3)
+        self._breaker_config(failure_threshold=3)
         call_count = 0
 
         def failing_gateway(model, messages, **kw):
@@ -413,7 +413,7 @@ class TestCircuitBreakerGatewayIntegration:
         gateway = FakeGateway(failing_gateway)
 
         # Cause 3 failures — circuit should open
-        for i in range(3):
+        for _i in range(3):
             try:
                 import asyncio
                 asyncio.run(gateway.complete("deepseek/deepseek-chat", [{"role": "user", "content": "hi"}]))

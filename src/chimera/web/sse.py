@@ -15,6 +15,7 @@ frontend can update the DAG visualization and token dashboard in real time.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from dataclasses import dataclass, field
 from typing import Any
@@ -74,20 +75,16 @@ class SSEBroadcaster:
             if not self._subscribers[session_id]:
                 del self._subscribers[session_id]
         # Push sentinel so the generator exits cleanly
-        try:
+        with contextlib.suppress(asyncio.QueueFull):
             sub.queue.put_nowait(None)
-        except asyncio.QueueFull:
-            pass
 
     def broadcast(self, session_id: str, event: SSEEvent) -> None:
         """Send an event to every subscriber of *session_id*."""
         subs = self._subscribers.get(session_id, set())
         for sub in list(subs):
-            try:
+            # Client can't keep up — drop the event rather than block.
+            with contextlib.suppress(asyncio.QueueFull):
                 sub.queue.put_nowait(event)
-            except asyncio.QueueFull:
-                # Client can't keep up — drop the event rather than block.
-                pass
 
     async def event_stream(self, session_id: str, sub: SSESubscriber):
         """Async generator yielding SSE-formatted strings.
