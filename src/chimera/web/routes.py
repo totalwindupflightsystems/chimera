@@ -151,16 +151,29 @@ async def session_chat(session_id: str, body: ChatRequest, request: Request) -> 
     session.add_turn(turn)
 
     # ── SSE: deliberation done ──
+    done_event_data = {
+        "answer": answer,
+        "total_tokens": trace.get("total_tokens", 0),
+        "total_cost": trace.get("total_cost", 0.0),
+        "elapsed_ms": elapsed_ms,
+        "turn_number": session.turn_count,
+    }
     _sse_broadcaster.broadcast(
         session_id,
-        SSEEvent(event="deliberation_done", data={
-            "answer": answer,
-            "total_tokens": trace.get("total_tokens", 0),
-            "total_cost": trace.get("total_cost", 0.0),
-            "elapsed_ms": elapsed_ms,
-            "turn_number": session.turn_count,
-        }),
+        SSEEvent(event="deliberation_done", data=done_event_data),
     )
+
+    # ── Store events in session for late-connecting SSE subscribers ──
+    session.last_sse_events = [
+        ("deliberation_started", {"prompt": body.prompt}),
+        ("dag_designed", {
+            "mermaid": mermaid_str,
+            "formation": body.formation,
+            "source": trace.get("source", ""),
+            "stage_count": len(trace.get("stages", [])),
+        }),
+        ("deliberation_done", done_event_data),
+    ]
 
     # ── Close all SSE streams for this session ──
     # Schedule after a short grace period so late-connecting clients
@@ -223,6 +236,11 @@ async def sse_stream(session_id: str, request: Request):
         raise HTTPException(status_code=404, detail=f"Session {session_id!r} not found")
 
     sub = _sse_broadcaster.subscribe(session_id)
+
+    # Replay stored events for late-connecting clients that missed the
+    # live broadcast (race-condition guard).
+    for event_name, event_data in session.last_sse_events:
+        sub.queue.put_nowait(SSEEvent(event=event_name, data=event_data))
 
     async def generate():
         async for event_str in _sse_broadcaster.event_stream(session_id, sub):

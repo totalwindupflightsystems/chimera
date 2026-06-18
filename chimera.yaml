@@ -1,0 +1,143 @@
+api_keys:
+  deepseek: ${DEEPSEEK_API_KEY}
+  openrouter: ${OPENROUTER_API_KEY}
+  zai: ${ZAI_API_KEY}
+  anthropic: ${ANTHROPIC_API_KEY}
+  google: ${GEMINI_API_KEY}
+
+defaults:
+  dispatcher: deepseek/deepseek-v4-flash
+  default_worker: deepseek/deepseek-v4-pro
+  default_aggregator: deepseek/deepseek-v4-flash
+  lock_dispatcher: false
+  lock_aggregator: true   # dispatcher cannot override the aggregator model
+
+formations:
+  audit:
+    audit: default
+    aggregator: default
+    workers: 2
+  auto:
+    mode: auto
+  debate:
+    aggregators:
+    - default
+    - default
+    merge: best_of_n
+    workers: 2
+  simple:
+    aggregator: default
+    workers: 2
+
+models:
+  deepseek/deepseek-v4-flash:
+    categories:
+      analysis: 0.80
+      audit: 0.55
+      code: 0.90
+      design: 0.35
+      reasoning: 0.75
+    cost_tier: budget
+    provider: deepseek
+
+  deepseek/deepseek-v4-pro:
+    categories:
+      analysis: 0.85
+      audit: 0.6
+      code: 0.95
+      design: 0.4
+      reasoning: 0.8
+    cost_tier: budget
+    provider: deepseek
+
+  zai-coding-plan/glm-5.2:
+    categories:
+      analysis: 0.90
+      audit: 0.88
+      code: 0.92
+      design: 0.85
+      reasoning: 0.95
+    cost_tier: premium
+    provider: zai
+
+  openrouter/moonshotai/kimi-k2.7-code:
+    categories:
+      analysis: 0.82
+      audit: 0.60
+      code: 0.93
+      design: 0.70
+      reasoning: 0.85
+    cost_tier: standard
+    provider: openrouter
+
+  openrouter/minimax/minimax-m3:
+    categories:
+      analysis: 0.80
+      audit: 0.55
+      code: 0.75
+      design: 0.82
+      reasoning: 0.78
+    cost_tier: standard
+    provider: openrouter
+
+  openrouter/anthropic/claude-sonnet-4:
+    categories:
+      analysis: 0.92
+      audit: 0.85
+      code: 0.9
+      design: 0.88
+      reasoning: 0.93
+    cost_tier: premium
+    provider: openrouter
+
+  google/gemini-3-flash-preview:
+    categories:
+      analysis: 0.85
+      audit: 0.60
+      code: 0.78
+      design: 0.75
+      reasoning: 0.82
+    cost_tier: budget
+    provider: google
+
+  google/gemini-3-pro-preview:
+    categories:
+      analysis: 0.88
+      audit: 0.82
+      code: 0.85
+      design: 0.83
+      reasoning: 0.90
+    cost_tier: premium
+    provider: google
+
+  anthropic/claude-sonnet-4:
+    categories:
+      analysis: 0.92
+      audit: 0.85
+      code: 0.90
+      design: 0.88
+      reasoning: 0.93
+    cost_tier: premium
+    provider: anthropic
+
+providers:
+  deepseek:
+    base_url: https://api.deepseek.com/v1
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+  zai:
+    base_url: https://api.z.ai/api/coding/paas/v4
+  anthropic:
+    base_url: https://api.anthropic.com/v1
+  google:
+    base_url: https://generativelanguage.googleapis.com/v1beta
+
+server:
+  host: 0.0.0.0
+  port: 8000
+
+observability:
+  log_level: debug
+  trace_enabled: true
+  langfuse:
+    enabled: false

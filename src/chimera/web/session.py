@@ -48,6 +48,9 @@ class Session:
     created_at: float
     turns: list[Turn] = field(default_factory=list)
     max_context_turns: int = 10  # Only inject the last N turns
+    #: SSE events from the most recent deliberation, stored for replay
+    #: to late-connecting subscribers (race-condition guard).
+    last_sse_events: list[tuple[str, dict]] = field(default_factory=list)
 
     @property
     def turn_count(self) -> int:
