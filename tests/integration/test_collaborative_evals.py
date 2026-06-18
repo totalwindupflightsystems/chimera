@@ -18,8 +18,6 @@ from __future__ import annotations
 
 import pytest
 
-from tests.integration.conftest import BUDGET_MODELS
-
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 TIMEOUT = 180.0  # These are complex tasks — allow 3 min
@@ -100,7 +98,6 @@ async def test_collaborative_static_website(live_server: str) -> None:
             "must merge them into one valid HTML document."
         ),
         "formation": "auto",
-        "allowed_models": BUDGET_MODELS,
     }
 
     async with httpx.AsyncClient() as client:
@@ -171,7 +168,6 @@ async def test_collaborative_math_proof(live_server: str) -> None:
             "Output the complete proof."
         ),
         "formation": "auto",
-        "allowed_models": BUDGET_MODELS,
     }
 
     async with httpx.AsyncClient() as client:
@@ -271,7 +267,6 @@ async def test_website_with_structured_output(live_server: str) -> None:
             "Use dark theme styling."
         ),
         "formation": "auto",
-        "allowed_models": BUDGET_MODELS,
         "output_schema": schema,
     }
 
