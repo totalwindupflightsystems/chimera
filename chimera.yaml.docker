@@ -1,0 +1,79 @@
+# Built-in minimal config — mount a full chimera.yaml to extend the model catalog.
+api_keys:
+  deepseek: ${DEEPSEEK_KEY}
+  openrouter: ${OPENROUTER_KEY}
+  zai: ${ZAI_KEY}
+
+defaults:
+  dispatcher: deepseek/deepseek-v4-pro
+  default_worker: deepseek/deepseek-v4-pro
+  default_aggregator: deepseek/deepseek-v4-pro
+
+formations:
+  auto:
+    mode: auto
+  simple:
+    workers: 2
+    aggregator: default
+  debate:
+    workers: 3
+    aggregators: ["default"]
+    merge: best_of_n
+  audit:
+    workers: 2
+    aggregator: default
+    audit: default
+
+models:
+  deepseek/deepseek-v4-pro:
+    categories: {analysis: 0.85, code: 0.95, reasoning: 0.80, design: 0.40, audit: 0.60}
+    cost_tier: budget
+    provider: deepseek
+  deepseek/deepseek-v4-flash:
+    categories: {analysis: 0.80, code: 0.90, reasoning: 0.75, design: 0.40, audit: 0.55}
+    cost_tier: budget
+    provider: deepseek
+
+providers:
+  deepseek:
+    base_url: https://api.deepseek.com/v1
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+  zai:
+    base_url: https://api.z.ai/api/coding/paas/v4
+
+server:
+  host: 0.0.0.0
+  port: 8765
+
+observability:
+  log_level: info
+  trace_enabled: true
+  use_stdout: true
+  langfuse: {enabled: false}
+
+retry:
+  max_attempts: 3
+  base_delay_ms: 500
+  max_delay_ms: 10000
+  backoff_multiplier: 2.0
+
+queue:
+  max_concurrent: 10
+  max_queue_depth: 100
+
+auth:
+  enabled: false
+  mode: env
+  keys: []
+
+rate_limit:
+  enabled: false
+  requests_per_minute: 60
+  burst_size: 10
+
+circuit_breakers:
+  default:
+    failure_threshold: 5
+    recovery_timeout_s: 30
+    half_open_max_requests: 1

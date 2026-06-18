@@ -32,13 +32,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Install Chimera ──────────────────────────────────────────────────────
-# Use the full extra to get CLI, server, MCP, and web UI
-RUN pip install --no-cache-dir chimera-deliberation[full]
+# ── Install Chimera from local source ────────────────────────────────────
+# (Replace with `pip install chimera-deliberation[full]` for PyPI installs)
+COPY . /src/chimera
+RUN pip install --no-cache-dir "/src/chimera[full]"
 
 # ── Runtime setup ────────────────────────────────────────────────────────
 RUN mkdir -p /etc/chimera
 WORKDIR /etc/chimera
+
+# Minimal built-in config so the container works without a mounted YAML.
+# Every setting here can be overridden via CHIMERA_* env vars at runtime.
+COPY chimera.yaml.docker /etc/chimera/chimera.yaml
 
 # Default config path — user mounts or overrides via CHIMERA_CONFIG
 ENV CHIMERA_CONFIG=/etc/chimera/chimera.yaml
