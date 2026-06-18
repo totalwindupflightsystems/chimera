@@ -215,8 +215,8 @@ async def test_multi_level_aggregation_dag(config) -> None:  # type: ignore[no-u
 async def test_output_schema_passed_to_aggregator(config) -> None:  # type: ignore[no-untyped-def]
     """The aggregator passes the output_schema as response_format to the gateway."""
     from chimera.aggregator import Aggregator
-    from chimera.dispatcher import Stage, DispatchResult, FormationDAG
-    
+    from chimera.dispatcher import DispatchResult, FormationDAG, Stage
+
     client_schema = {
         "type": "object",
         "properties": {"summary": {"type": "string"}, "score": {"type": "integer"}},
@@ -233,7 +233,7 @@ async def test_output_schema_passed_to_aggregator(config) -> None:  # type: igno
 
     gw = CaptureGateway()
     agg = Aggregator(config, gw)
-    
+
     # Minimal dispatch + stage
     stage = Stage(id="aggregator", kind="aggregator", model=config.defaults.default_aggregator)
     dag = FormationDAG(stages=[stage], edges=[])
@@ -243,9 +243,9 @@ async def test_output_schema_passed_to_aggregator(config) -> None:  # type: igno
         aggregator_instructions="Merge the worker outputs.",
         source="auto",
     )
-    
+
     await agg.execute(stage, dispatch, [], "task", output_schema=client_schema)
-    
+
     assert len(captured_rf) == 1, f"Expected 1 captured response_format, got {len(captured_rf)}"
     rf = captured_rf[0]
     assert rf["type"] == "json_schema"
@@ -388,6 +388,7 @@ async def test_stage_timeout_produces_degraded_result(config, monkeypatch: pytes
     """A worker exceeding the stage timeout is cancelled and degraded; the
     deliberation still completes via the aggregator."""
     import asyncio
+
     import chimera.engine as engine_mod
 
     # Shrink the timeout so the test is fast; workers sleep past it.

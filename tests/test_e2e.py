@@ -14,7 +14,6 @@ import pytest
 from chimera.engine import Engine
 from tests.conftest import FakeGateway, dispatch_json, resp
 
-
 # A dispatcher payload that demonstrates category-weighted routing:
 # code-heavy task → DeepSeek (code=0.95), design-heavy task → Gemini (design=0.90).
 REAL_DISPATCH = dispatch_json(

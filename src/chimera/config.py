@@ -140,7 +140,7 @@ class ChimeraConfig(BaseModel):
     api_keys: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _resolve_provider_api_keys(self) -> "ChimeraConfig":
+    def _resolve_provider_api_keys(self) -> ChimeraConfig:
         for provider in self.providers.values():
             if provider.api_key is None and provider.api_key_env:
                 provider.api_key = os.environ.get(provider.api_key_env)

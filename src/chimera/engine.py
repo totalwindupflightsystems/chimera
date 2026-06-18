@@ -15,17 +15,17 @@ from typing import Any
 import structlog
 from pydantic import BaseModel, Field
 
+from chimera.aggregator import Aggregator, StageResult
 from chimera.config import ChimeraConfig, DeliberationOverrides
 from chimera.dispatcher import (
+    Dispatcher,
     DispatchOutcome,
     DispatchResult,
-    Dispatcher,
     FormationDAG,
     Stage,
     build_dag_from_dict,
 )
 from chimera.gateway import Gateway, GatewayError, GatewayResponse
-from chimera.aggregator import Aggregator, StageResult
 from chimera.observability import get_langfuse
 
 log = structlog.get_logger("chimera.engine")
@@ -145,7 +145,7 @@ class Engine:
         allow_custom_dag: bool = False,
     ) -> DeliberationResult:
         """Run the full deliberation pipeline and return the merged answer + trace.
-        
+
         Args:
             user_prompt: The user's query.
             formation: Formation name or 'auto'.
@@ -247,7 +247,7 @@ class Engine:
             outcomes = await asyncio.gather(
                 *(self._execute_stage(s, dispatch, results, user_prompt, output_schema) for s in ready)
             )
-            for stage, (result, span) in zip(ready, outcomes):
+            for stage, (result, span) in zip(ready, outcomes, strict=False):
                 results[stage.id] = result
                 spans[stage.id] = span
                 log.info(
@@ -279,7 +279,7 @@ class Engine:
                 self._call_stage(stage, dispatch, dep_results, user_prompt, output_schema),
                 timeout=DEFAULT_STAGE_TIMEOUT_S,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             latency_ms = int((time.monotonic() - start) * 1000)
             log.warning(
                 "engine_stage_timeout",

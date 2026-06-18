@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * *"  # daily at 6am UTC
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Non-blocking: advisory lint (matches pre-commit hook)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Create venv and install ruff
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install ruff>=0.6.0
+
+      - name: Run ruff
+        run: .venv/bin/ruff check .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Create venv and install project
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e ".[full]"
+
+      - name: Run tests
+        run: .venv/bin/python -m pytest tests/ -q
+
+      - name: Report test count
+        if: always()
+        run: |
+          .venv/bin/python -m pytest tests/ --collect-only -q 2>&1 | tail -5

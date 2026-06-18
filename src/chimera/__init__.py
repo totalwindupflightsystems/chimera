@@ -7,6 +7,7 @@ extra dependencies lazily.
 
 from __future__ import annotations
 
+from chimera.aggregator import Aggregator
 from chimera.config import (
     ChimeraConfig,
     Defaults,
@@ -16,16 +17,15 @@ from chimera.config import (
     load_config,
 )
 from chimera.dispatcher import (
+    Dispatcher,
     DispatchOutcome,
     DispatchResult,
-    Dispatcher,
     FormationDAG,
     Stage,
     WorkerPrompt,
 )
 from chimera.engine import DeliberationResult, DeliberationTrace, Engine, StageSpan
 from chimera.gateway import Gateway, GatewayResponse, LiteLLMGateway
-from chimera.aggregator import Aggregator
 
 __version__ = "0.1.0"
 

@@ -147,7 +147,7 @@ class LiteLLMGateway:
         self, call_kwargs: dict[str, Any], model: str
     ) -> GatewayResponse:
         """Call LiteLLM with response_format fallback retries.
-        
+
         Some providers (DeepSeek) reject ``json_schema`` but accept ``json_object``.
         Try the requested format, then downgrade, then plain text.
         """

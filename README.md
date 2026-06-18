@@ -1,5 +1,7 @@
 # Chimera — Dynamic Multi-Model Deliberation Gateway
 
+[![CI](https://github.com/totalwindupflightsystems/chimera/actions/workflows/ci.yml/badge.svg)](https://github.com/totalwindupflightsystems/chimera/actions/workflows/ci.yml)
+
 One API call. A team of models. One answer.
 
 Chimera takes your prompt, dispatches it to a hand-picked team of LLMs (each with

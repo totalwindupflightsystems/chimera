@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from chimera.aggregator import Aggregator, StageResult, build_merge_prompt
 from chimera.dispatcher import DispatchResult, FormationDAG, Stage, WorkerPrompt
 from chimera.gateway import GatewayResponse
-from chimera.aggregator import Aggregator, StageResult, build_merge_prompt
 from tests.conftest import FakeGateway, resp
 
 

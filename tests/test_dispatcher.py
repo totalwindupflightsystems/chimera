@@ -14,8 +14,8 @@ import pytest
 
 from chimera.config import FormationPreset
 from chimera.dispatcher import (
-    DispatchOutcome,
     Dispatcher,
+    DispatchOutcome,
     FormationDAG,
     Stage,
     build_dag_from_dict,
