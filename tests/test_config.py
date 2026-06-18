@@ -89,12 +89,17 @@ def test_load_config_from_file(config_file: Path) -> None:
 
 
 def test_find_config_path_walks_upwards(tmp_path: Path) -> None:
+    models_line = (
+        'models:\n'
+        '  "deepseek/deepseek-chat": '
+        "{categories: {}, cost_tier: budget, provider: deepseek}\n"
+    )
     (tmp_path / "chimera.yaml").write_text(
         'defaults: {dispatcher: "deepseek/deepseek-chat", '
         'default_worker: "deepseek/deepseek-chat", '
         'default_aggregator: "deepseek/deepseek-chat"}\n'
-        'models:\n  "deepseek/deepseek-chat": {categories: {}, cost_tier: budget, provider: deepseek}\n'
-        'formations: {auto: {mode: auto}}\n',
+        + models_line
+        + "formations: {auto: {mode: auto}}\n",
         encoding="utf-8",
     )
     nested = tmp_path / "a" / "b" / "c"
