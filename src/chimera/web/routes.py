@@ -236,11 +236,22 @@ async def sse_stream(session_id: str, request: Request):
 
     # Replay stored events for late-connecting clients that missed the
     # live broadcast, then push sentinel to close the stream cleanly.
+    # Only replay if the last turn was recent (<30s) — stale sessions
+    # get a clean close with no events.
+    import time as _time
+
     has_stored = bool(session.last_sse_events)
-    for event_name, event_data in session.last_sse_events:
-        sub.queue.put_nowait(SSEEvent(event=event_name, data=event_data))
-    if has_stored:
-        # Deliberation already complete — close stream after replay.
+    is_recent = False
+    if has_stored and session.turns:
+        age = _time.time() - session.turns[-1].timestamp
+        is_recent = age < 30.0
+    if has_stored and is_recent:
+        for event_name, event_data in session.last_sse_events:
+            sub.queue.put_nowait(SSEEvent(event=event_name, data=event_data))
+        with _contextlib.suppress(_asyncio.QueueFull):
+            sub.queue.put_nowait(None)
+    elif has_stored:
+        # Stale session — close cleanly with no events.
         with _contextlib.suppress(_asyncio.QueueFull):
             sub.queue.put_nowait(None)
 

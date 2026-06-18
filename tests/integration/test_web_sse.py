@@ -164,17 +164,19 @@ async def test_sse_clean_close_no_events_after_done(live_server: str) -> None:
         # First deliberation to populate the session
         _deliberate_sync(httpx.Client(), live_server, sid, "What is 5+5? Just the number.")
 
-        # Now open a fresh SSE connection — it should get a clean close
+        # Now open a fresh SSE connection — it should get a clean close.
+        # Since the last turn just completed, events are replayed.
         r = await client.get(
             f"{live_server}/web/sse/{sid}",
             timeout=httpx.Timeout(30.0, read=30.0),
         )
         assert r.status_code == 200
-        # The SSE should close cleanly (no error status codes)
-        # Just checking it doesn't crash or hang indefinitely
         body = r.text
-        assert "deliberation_started" not in body, (
-            "SSE for idle session should not emit new events"
+        # Replayed events are fine — what matters is the stream closed cleanly
+        events = _parse_sse_events(body)
+        event_types = [e.get("event") for e in events]
+        assert "deliberation_done" in event_types, (
+            f"Replay should include deliberation_done. Got: {event_types}"
         )
 
 
