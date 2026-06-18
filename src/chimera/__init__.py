@@ -27,6 +27,7 @@ from chimera.dispatcher import (
 from chimera.engine import DeliberationResult, DeliberationTrace, Engine, StageSpan
 from chimera.exceptions import BudgetExhaustedError
 from chimera.gateway import Gateway, GatewayResponse, LiteLLMGateway
+from chimera.web.trace_viz import trace_to_mermaid
 
 __version__ = "0.1.0"
 
@@ -51,6 +52,7 @@ __all__ = [
     "Stage",
     "StageSpan",
     "WorkerPrompt",
-    "__version__",
     "load_config",
+    "trace_to_mermaid",
+    "__version__",
 ]

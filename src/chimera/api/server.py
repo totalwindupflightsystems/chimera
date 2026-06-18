@@ -116,6 +116,14 @@ def create_app(
     app.state.request_queue = request_queue
     app.state.rate_limiter = RateLimiter(cfg.rate_limit)
     _register_routes(app)
+
+    # Web UI (session-backed multi-turn with live DAG viz + SSE)
+    try:
+        from chimera.web import router as web_router
+        app.include_router(web_router)
+    except ImportError:
+        pass  # web extra not installed — skip gracefully
+
     return app
 
 
