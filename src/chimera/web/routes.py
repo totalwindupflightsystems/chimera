@@ -163,7 +163,13 @@ async def session_chat(session_id: str, body: ChatRequest, request: Request) -> 
     )
 
     # ── Close all SSE streams for this session ──
-    _sse_broadcaster.unsubscribe_all(session_id)
+    # Schedule after a short grace period so late-connecting clients
+    # have time to receive all buffered events before the sentinel.
+    import asyncio as _asyncio
+
+    _asyncio.get_running_loop().call_later(
+        3.0, lambda: _sse_broadcaster.unsubscribe_all(session_id),
+    )
 
     return ChatResponse(
         answer=answer,
