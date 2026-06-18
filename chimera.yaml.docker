@@ -1,7 +1,7 @@
 # Built-in minimal config — mount a full chimera.yaml to extend the model catalog.
 api_keys:
   deepseek: ${DEEPSEEK_KEY}
-  openrouter: ${OPENROUTER_KEY}
+  openrouter: ${OPENROUTER_API_KEY}
   zai: ${ZAI_KEY}
 
 defaults:
@@ -33,6 +33,14 @@ models:
     categories: {analysis: 0.80, code: 0.90, reasoning: 0.75, design: 0.40, audit: 0.55}
     cost_tier: budget
     provider: deepseek
+  openrouter/anthropic/claude-sonnet-4:
+    categories: {analysis: 0.92, code: 0.90, reasoning: 0.93, design: 0.88, audit: 0.85}
+    cost_tier: premium
+    provider: openrouter
+  openrouter/google/gemini-2.5-flash:
+    categories: {analysis: 0.75, code: 0.70, reasoning: 0.65, design: 0.90, audit: 0.50}
+    cost_tier: budget
+    provider: openrouter
 
 providers:
   deepseek:

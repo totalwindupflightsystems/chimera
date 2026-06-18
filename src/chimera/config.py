@@ -330,6 +330,7 @@ def _apply_env_overrides(config: ChimeraConfig) -> None:
     for env_var, key_name in (
         ("DEEPSEEK_KEY", "deepseek"),
         ("OPENROUTER_KEY", "openrouter"),
+        ("OPENROUTER_API_KEY", "openrouter"),
         ("ZAI_KEY", "zai"),
     ):
         if _os.environ.get(env_var):
