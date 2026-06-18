@@ -176,13 +176,7 @@ async def session_chat(session_id: str, body: ChatRequest, request: Request) -> 
     ]
 
     # ── Close all SSE streams for this session ──
-    # Schedule after a short grace period so late-connecting clients
-    # have time to receive all buffered events before the sentinel.
-    import asyncio as _asyncio
-
-    _asyncio.get_running_loop().call_later(
-        3.0, lambda: _sse_broadcaster.unsubscribe_all(session_id),
-    )
+    _sse_broadcaster.unsubscribe_all(session_id)
 
     return ChatResponse(
         answer=answer,
@@ -229,6 +223,9 @@ async def sse_stream(session_id: str, request: Request):
     The client opens this as an EventSource and receives real-time updates
     as the deliberation progresses.
     """
+    import asyncio as _asyncio
+    import contextlib as _contextlib
+
     from starlette.responses import StreamingResponse
 
     session = _session_manager.get(session_id)
@@ -238,9 +235,14 @@ async def sse_stream(session_id: str, request: Request):
     sub = _sse_broadcaster.subscribe(session_id)
 
     # Replay stored events for late-connecting clients that missed the
-    # live broadcast (race-condition guard).
+    # live broadcast, then push sentinel to close the stream cleanly.
+    has_stored = bool(session.last_sse_events)
     for event_name, event_data in session.last_sse_events:
         sub.queue.put_nowait(SSEEvent(event=event_name, data=event_data))
+    if has_stored:
+        # Deliberation already complete — close stream after replay.
+        with _contextlib.suppress(_asyncio.QueueFull):
+            sub.queue.put_nowait(None)
 
     async def generate():
         async for event_str in _sse_broadcaster.event_stream(session_id, sub):
