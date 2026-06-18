@@ -1,0 +1,29 @@
+# Chimera — one-command deployment
+#
+# Usage:
+#   cp chimera.yaml.example chimera.yaml
+#   # Edit chimera.yaml with your API keys
+#   docker compose up -d
+#   curl http://localhost:8765/v1/health
+#   open http://localhost:8765/web/
+
+services:
+  chimera:
+    build: .
+    container_name: chimera
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./chimera.yaml:/etc/chimera/chimera.yaml:ro
+    environment:
+      # Set your provider keys here or in chimera.yaml
+      - DEEPSEEK_KEY=${DEEPSEEK_KEY:-}
+      - OPENROUTER_KEY=${OPENROUTER_KEY:-}
+      - ZAI_KEY=${ZAI_KEY:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/v1/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

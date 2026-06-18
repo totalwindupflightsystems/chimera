@@ -228,13 +228,15 @@ def models(ctx: click.Context) -> None:
 
 
 @main.command()
+@click.option("--host", default=None, help="Bind address (default: from config).")
+@click.option("--port", type=int, default=None, help="Bind port (default: from config).")
 @click.pass_context
-def serve(ctx: click.Context) -> None:
+def serve(ctx: click.Context, host: str | None, port: int | None) -> None:
     """Run the REST API server."""
     from chimera.api.server import run as run_api
 
     config = _load_cfg(ctx)
-    run_api(config.server.host, config.server.port)
+    run_api(host or config.server.host, port or config.server.port)
 
 
 @main.command()

@@ -255,11 +255,22 @@ def find_config_path(start: Path | str | None = None) -> Path:
 def load_config(path: Path | str | None = None) -> ChimeraConfig:
     """Load and validate a Chimera config from YAML.
 
-    If ``path`` is ``None``, searches the working directory and its parents for
-    ``chimera.yaml``. Environment variable tokens (``${VAR}``) are substituted
-    from the process environment.
+    Resolution order:
+    1. Explicit *path* argument
+    2. ``CHIMERA_CONFIG`` environment variable
+    3. Walk up from cwd looking for ``chimera.yaml``
+
+    Environment variable tokens (``${VAR}``) are substituted from the
+    process environment.
     """
-    config_path = Path(path) if path else find_config_path()
+    import os as _os
+
+    if path is not None:
+        config_path = Path(path)
+    elif _os.environ.get("CHIMERA_CONFIG"):
+        config_path = Path(_os.environ["CHIMERA_CONFIG"])
+    else:
+        config_path = find_config_path()
     raw_text = config_path.read_text(encoding="utf-8")
     raw = yaml.safe_load(raw_text)
     if not isinstance(raw, dict):
