@@ -355,28 +355,75 @@ class Engine:
                 latency_ms,
             )
         except (GatewayError, BudgetExhaustedError) as exc:
-            latency_ms = int((time.monotonic() - start) * 1000)
-            log.warning("engine_stage_failed", stage=stage.id, model=stage.model, error=str(exc))
-            # Answer-producing stages retry once with the default aggregator so the user
-            # still gets a real answer if the dispatcher picked an unavailable aggregator.
-            fallback_model = self.config.defaults.default_aggregator
-            if stage.kind in {"aggregator", "merge", "audit"} and stage.model != fallback_model:
-                retry_stage = stage.model_copy(update={"model": fallback_model})
-                try:
-                    messages, response = await self._call_stage(
-                        retry_stage, dispatch, dep_results, user_prompt
-                    )
-                    log.info(
-                        "engine_stage_retry_ok",
-                        stage=stage.id, original=stage.model, fallback=fallback_model,
-                    )
-                except GatewayError as exc2:
-                    return self._degraded_stage(stage, exc2, [], latency_ms)
-            else:
-                return self._degraded_stage(stage, exc, [], latency_ms)
+            return await self._handle_stage_failure(
+                stage, dispatch, dep_results, user_prompt, output_schema, exc, start,
+            )
 
+        return self._build_stage_result(stage, response, messages, start, user_prompt,
+                                        dispatch, dep_results)
+
+    async def _handle_stage_failure(
+        self,
+        stage: Stage,
+        dispatch: DispatchResult,
+        dep_results: list[StageResult],
+        user_prompt: str,
+        output_schema: dict[str, Any] | None,
+        exc: Exception,
+        start: float,
+    ) -> tuple[StageResult, StageSpan]:
+        """Retry aggregator/merge/audit stages: model fallback → plain-text fallback."""
         latency_ms = int((time.monotonic() - start) * 1000)
+        log.warning("engine_stage_failed", stage=stage.id, model=stage.model, error=str(exc))
 
+        if stage.kind not in {"aggregator", "merge", "audit"}:
+            return self._degraded_stage(stage, exc, [], latency_ms)
+
+        fallback_model = self.config.defaults.default_aggregator
+
+        # Retry 1: different model, same output_schema (if model differs)
+        if stage.model != fallback_model:
+            retry_stage = stage.model_copy(update={"model": fallback_model})
+            try:
+                messages, response = await self._call_stage(
+                    retry_stage, dispatch, dep_results, user_prompt, output_schema,
+                )
+                log.info(
+                    "engine_stage_retry_ok",
+                    stage=stage.id, original=stage.model, fallback=fallback_model,
+                )
+                return self._build_stage_result(stage, response, messages, start,
+                                                user_prompt, dispatch, dep_results)
+            except GatewayError:
+                pass  # fall through to plain-text retry
+
+        # Retry 2: plain text (no output_schema) — catches json_schema/json_object
+        # provider incompatibilities (e.g. DeepSeek requires "json" in prompt).
+        try:
+            messages, response = await self._call_stage(
+                stage, dispatch, dep_results, user_prompt, output_schema=None,
+            )
+            log.info(
+                "engine_stage_retry_plaintext",
+                stage=stage.id, model=stage.model,
+            )
+            return self._build_stage_result(stage, response, messages, start,
+                                            user_prompt, dispatch, dep_results)
+        except GatewayError as exc2:
+            return self._degraded_stage(stage, exc2, [], latency_ms)
+
+    def _build_stage_result(
+        self,
+        stage: Stage,
+        response: GatewayResponse,
+        messages: list[dict[str, str]],
+        start: float,
+        user_prompt: str,
+        dispatch: DispatchResult,
+        dep_results: list[StageResult],
+    ) -> tuple[StageResult, StageSpan]:
+        """Build a (StageResult, StageSpan) pair for a successful stage call."""
+        latency_ms = int((time.monotonic() - start) * 1000)
         prompt_text = _last_user_content(messages) if messages else _aggregator_prompt_summary(
             stage, dispatch, dep_results
         )

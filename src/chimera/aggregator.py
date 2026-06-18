@@ -86,6 +86,7 @@ def build_merge_prompt(
         "## Your job\n"
         "Following the instructions above, combine these into the final answer "
         "for the user. Output only the final answer."
+        " Respond in valid JSON format."
     )
     return [
         {"role": "system", "content": system},
