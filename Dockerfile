@@ -32,10 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Install Chimera from local source ────────────────────────────────────
-# (Replace with `pip install chimera-deliberation[full]` for PyPI installs)
-COPY . /src/chimera
-RUN pip install --no-cache-dir "/src/chimera[full]"
+# ── Install Chimera ──────────────────────────────────────────────────────
+RUN pip install --no-cache-dir "chimera-deliberation[full]>=0.2.0"
 
 # ── Runtime setup ────────────────────────────────────────────────────────
 RUN mkdir -p /etc/chimera

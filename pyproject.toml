@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chimera-deliberation"
-version = "0.1.0"
+version = "0.2.0"
 description = "Dynamic multi-model deliberation gateway"
 requires-python = ">=3.11"
 authors = [
@@ -64,6 +64,9 @@ chimera-mcp = "chimera.mcp.server:run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/chimera"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"chimera.yaml.docker" = "chimera/chimera.yaml.docker"
 
 [tool.ruff]
 target-version = "py311"
