@@ -162,9 +162,12 @@ async def session_chat(session_id: str, body: ChatRequest, request: Request) -> 
         }),
     )
 
+    # ── Close all SSE streams for this session ──
+    _sse_broadcaster.unsubscribe_all(session_id)
+
     return ChatResponse(
         answer=answer,
-        trace=trace,
+        trace={**trace, "elapsed_ms": elapsed_ms},
         turn_number=session.turn_count,
         mermaid=mermaid_str,
     )
@@ -248,4 +251,7 @@ async def serve_spa():
             "Run <code>pip install chimera-deliberation[web]</code>.</p>",
             status_code=404,
         )
-    return HTMLResponse(index_path.read_text())
+    return HTMLResponse(
+        content=index_path.read_text(),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )

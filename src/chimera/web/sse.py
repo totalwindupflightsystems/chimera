@@ -58,30 +58,44 @@ class SSEBroadcaster:
     """Manages SSE subscribers and fans out events to all of them."""
 
     def __init__(self) -> None:
-        self._subscribers: dict[str, set[SSESubscriber]] = {}
+        self._subscribers: dict[str, list[SSESubscriber]] = {}
 
     def subscribe(self, session_id: str) -> SSESubscriber:
         """Register a new SSE subscriber for *session_id*."""
         sub = SSESubscriber()
         if session_id not in self._subscribers:
-            self._subscribers[session_id] = set()
-        self._subscribers[session_id].add(sub)
+            self._subscribers[session_id] = []
+        self._subscribers[session_id].append(sub)
         return sub
 
     def unsubscribe(self, session_id: str, sub: SSESubscriber) -> None:
         """Remove a subscriber; signal completion by pushing None."""
         if session_id in self._subscribers:
-            self._subscribers[session_id].discard(sub)
+            try:
+                self._subscribers[session_id].remove(sub)
+            except ValueError:
+                pass
             if not self._subscribers[session_id]:
                 del self._subscribers[session_id]
         # Push sentinel so the generator exits cleanly
         with contextlib.suppress(asyncio.QueueFull):
             sub.queue.put_nowait(None)
 
+    def unsubscribe_all(self, session_id: str) -> None:
+        """Push sentinel to all subscribers of *session_id* and remove them.
+
+        Called after ``deliberation_done`` so all connected SSE clients
+        close their streams cleanly instead of timing out.
+        """
+        subs = self._subscribers.pop(session_id, [])
+        for sub in subs:
+            with contextlib.suppress(asyncio.QueueFull):
+                sub.queue.put_nowait(None)
+
     def broadcast(self, session_id: str, event: SSEEvent) -> None:
         """Send an event to every subscriber of *session_id*."""
-        subs = self._subscribers.get(session_id, set())
-        for sub in list(subs):
+        subs = self._subscribers.get(session_id, [])
+        for sub in subs[:]:
             # Client can't keep up — drop the event rather than block.
             with contextlib.suppress(asyncio.QueueFull):
                 sub.queue.put_nowait(event)
