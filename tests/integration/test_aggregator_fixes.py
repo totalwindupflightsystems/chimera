@@ -111,6 +111,8 @@ async def test_json_object_works_on_deepseek_simple_aggregator(live_server: str)
     Tests the aggregator json_object fix.  The ``simple`` formation provides
     a preset DAG so the dispatcher doesn't choose models outside budget.
     """
+    import httpx
+
     payload = {
         "prompt": "What is 2+2? Reply with just the number, nothing else.",
         "formation": "simple",

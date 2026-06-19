@@ -20,9 +20,9 @@ import pytest
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
-TIMEOUT = 180.0  # These are complex tasks — allow 3 min
-
 from tests.integration.conftest import BUDGET_MODELS
+
+TIMEOUT = 180.0  # These are complex tasks — allow 3 min
 
 
 def _assert_valid_html(html: str) -> None:
