@@ -1096,17 +1096,19 @@ async def test_sse_response_headers(live_server: str) -> None:
     """
     async with httpx.AsyncClient() as client:
         sid = _create_session(live_server)
-        r = await client.get(
+        # Stream with a short read timeout — we only need headers
+        async with client.stream(
+            "GET",
             f"{live_server}/web/sse/{sid}",
-            timeout=httpx.Timeout(20.0, read=20.0),
-        )
-        assert r.status_code == 200
-        content_type = r.headers.get("content-type", "")
-        assert "text/event-stream" in content_type, (
-            f"Wrong Content-Type: {content_type}"
-        )
-        cache_control = r.headers.get("cache-control", "")
-        assert "no-cache" in cache_control.lower(), (
-            f"Missing no-cache in SSE Cache-Control: {cache_control}"
-        )
+            timeout=httpx.Timeout(10.0, read=2.0),
+        ) as r:
+            assert r.status_code == 200
+            content_type = r.headers.get("content-type", "")
+            assert "text/event-stream" in content_type, (
+                f"Wrong Content-Type: {content_type}"
+            )
+            cache_control = r.headers.get("cache-control", "")
+            assert "no-cache" in cache_control.lower(), (
+                f"Missing no-cache in SSE Cache-Control: {cache_control}"
+            )
 

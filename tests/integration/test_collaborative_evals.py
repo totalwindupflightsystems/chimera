@@ -22,6 +22,8 @@ pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 TIMEOUT = 180.0  # These are complex tasks — allow 3 min
 
+from tests.integration.conftest import BUDGET_MODELS
+
 
 def _assert_valid_html(html: str) -> None:
     """Basic HTML validity: doctype or html tag, balanced tags, non-empty body."""
@@ -98,6 +100,7 @@ async def test_collaborative_static_website(live_server: str) -> None:
             "must merge them into one valid HTML document."
         ),
         "formation": "auto",
+        "allowed_models": BUDGET_MODELS,
     }
 
     async with httpx.AsyncClient() as client:
@@ -168,6 +171,7 @@ async def test_collaborative_math_proof(live_server: str) -> None:
             "Output the complete proof."
         ),
         "formation": "auto",
+        "allowed_models": BUDGET_MODELS,
     }
 
     async with httpx.AsyncClient() as client:
@@ -267,6 +271,7 @@ async def test_website_with_structured_output(live_server: str) -> None:
             "Use dark theme styling."
         ),
         "formation": "auto",
+        "allowed_models": BUDGET_MODELS,
         "output_schema": schema,
     }
 

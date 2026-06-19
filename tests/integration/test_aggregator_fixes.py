@@ -105,18 +105,15 @@ async def test_json_object_works_on_deepseek_simple(live_server: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_json_object_works_on_deepseek_auto(live_server: str) -> None:
-    """``auto`` formation on pure DeepSeek — aggregator must NOT degrade.
+async def test_json_object_works_on_deepseek_simple_aggregator(live_server: str) -> None:
+    """``simple`` formation on pure DeepSeek — aggregator must NOT degrade.
 
-    The dispatcher designes a DAG and the aggregator runs with structured
-    output.  With the fix, DeepSeek json_object calls succeed because the
-    prompt now contains "json".
+    Tests the aggregator json_object fix.  The ``simple`` formation provides
+    a preset DAG so the dispatcher doesn't choose models outside budget.
     """
-    import httpx
-
     payload = {
         "prompt": "What is 2+2? Reply with just the number, nothing else.",
-        "formation": "auto",
+        "formation": "simple",
         "allowed_models": BUDGET_MODELS,
     }
 
