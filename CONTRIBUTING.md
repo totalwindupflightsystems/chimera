@@ -16,18 +16,29 @@ pip install -e ".[full]"
 ## Running Tests
 
 ```bash
-# Unit tests (fast, offline)
-pytest tests/ -q
+# Unit tests (fast, offline — 322 tests, no API keys needed)
+pytest tests/ --ignore=tests/integration --ignore=tests/compat -W error
 
-# Integration tests (real API calls — needs --run-integration flag)
+# Integration tests (real API calls — needs --run-integration flag + API key)
+# Set DEEPSEEK_API_KEY in your environment first, then:
 pytest tests/integration/ --run-integration -v
 
 # Compatibility smoke tests (needs --run-compat flag)
 pytest tests/compat/ --run-compat -v
 
 # Coverage
-pytest tests/ --cov=src/chimera --cov-report=html
+pytest tests/ --ignore=tests/integration --cov=src/chimera --cov-report=html
 ```
+
+**Required environment variables for integration tests:**
+
+| Variable | Provider | Required |
+|---|---|---|
+| `DEEPSEEK_API_KEY` | DeepSeek | Yes |
+| `OPENROUTER_API_KEY` | OpenRouter | For multi-provider tests |
+
+CI runs unit tests on every push/PR (Python 3.11/3.12/3.13 matrix).
+Integration tests run on push to `main` using a dedicated CI API key.
 
 ## Configuration
 

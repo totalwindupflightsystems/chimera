@@ -48,13 +48,31 @@ jobs:
           .venv/bin/pip install --upgrade pip
           .venv/bin/pip install -e ".[full]"
 
-      - name: Run tests
-        run: .venv/bin/python -m pytest tests/ -q
+      - name: Run unit tests
+        run: .venv/bin/python -m pytest tests/ --ignore=tests/integration --ignore=tests/compat -q
 
-      - name: Report test count
-        if: always()
+  integration:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Create venv and install project
         run: |
-          .venv/bin/python -m pytest tests/ --collect-only -q 2>&1 | tail -5
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e ".[full]"
+
+      - name: Run integration tests
+        run: .venv/bin/python -m pytest tests/integration/ --run-integration -v --tb=long
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   publish:
     needs: [lint, test]
