@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import time
 
 import httpx
 import pytest
@@ -363,10 +362,9 @@ async def test_sse_deliberation_done_has_all_metrics(live_server: str) -> None:
 @pytest.mark.asyncio
 async def test_session_create_returns_valid_id(live_server: str) -> None:
     """``POST /web/sessions`` returns a non-empty session_id."""
-    async with httpx.AsyncClient() as client:
-        sid = _create_session(live_server)
-        assert len(sid) >= 8, f"session_id too short: {sid}"
-        assert re.match(r"^[a-f0-9]+$", sid), f"session_id not hex: {sid}"
+    sid = _create_session(live_server)
+    assert len(sid) >= 8, f"session_id too short: {sid}"
+    assert re.match(r"^[a-f0-9]+$", sid), f"session_id not hex: {sid}"
 
 
 @pytest.mark.asyncio
@@ -436,7 +434,6 @@ async def test_multi_turn_context_accumulates(live_server: str) -> None:
 async def test_multi_turn_chat_response_includes_turn_number(live_server: str) -> None:
     """Each ``POST /web/sessions/{id}/chat`` response includes the correct
     incrementing turn_number."""
-    import httpx as sync_httpx
 
     async with httpx.AsyncClient() as client:
         sid = _create_session(live_server)
@@ -889,7 +886,6 @@ async def test_sse_two_consecutive_deliberations(live_server: str) -> None:
     REGRESSION: The SSE broadcaster's subscriber list survives between
     deliberations without cleanup, causing stale subscribers to accumulate.
     """
-    import httpx as sync_httpx
 
     async with httpx.AsyncClient() as client:
         sid = _create_session(live_server)

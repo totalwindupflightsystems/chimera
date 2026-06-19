@@ -126,7 +126,7 @@ class SSEBroadcaster:
             while True:
                 try:
                     event = await asyncio.wait_for(sub.queue.get(), timeout=idle_timeout)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     break  # No events within timeout — close cleanly
                 if event is None:
                     break

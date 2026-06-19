@@ -104,7 +104,7 @@ async def session_chat(session_id: str, body: ChatRequest, request: Request) -> 
     try:
         ready = _sse_broadcaster.ensure_ready(session_id)
         await _asyncio.wait_for(ready.wait(), timeout=2.0)
-    except _asyncio.TimeoutError:
+    except TimeoutError:
         pass  # No SSE subscriber within 2s — proceed anyway
 
     # ── SSE: deliberation started ──

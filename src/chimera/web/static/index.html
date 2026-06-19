@@ -550,6 +550,8 @@ let eventSource = null;
 let traceData = null; // Full trace for node click lookups
 let dagZoomLevel = 1;
 let dagPanelCollapsed = false;
+let deliberationComplete = false; // True after deliberation_done — prevents SSE reconnect
+let currentMermaid = null; // Saved from dag_designed for use in message bubble
 
 // ═══════════════════════════════════════════
 // Mermaid Init
@@ -618,6 +620,8 @@ function connectSSE() {
 
   eventSource.addEventListener('deliberation_started', (e) => {
     const data = JSON.parse(e.data);
+    deliberationComplete = false;
+    currentMermaid = null;
     setStatus('live', 'Dispatching…');
     document.getElementById('send-btn').disabled = true;
     document.getElementById('dag-live-indicator').style.display = 'flex';
@@ -628,6 +632,7 @@ function connectSSE() {
 
   eventSource.addEventListener('dag_designed', (e) => {
     const data = JSON.parse(e.data);
+    currentMermaid = data.mermaid;
     document.getElementById('dag-viz').textContent = data.mermaid;
     document.getElementById('stat-stages').textContent = data.stage_count;
     // Animate DAG fade-in
@@ -642,6 +647,7 @@ function connectSSE() {
 
   eventSource.addEventListener('deliberation_done', (e) => {
     const data = JSON.parse(e.data);
+    deliberationComplete = true;
     animateValue('stat-tokens', data.total_tokens);
     document.getElementById('stat-cost').textContent = '$' + data.total_cost.toFixed(6);
     document.getElementById('stat-time').textContent = fmtMs(data.elapsed_ms);
@@ -650,14 +656,23 @@ function connectSSE() {
     document.getElementById('prompt-input').focus();
     setStatus('', `Done — turn ${data.turn_number}`);
     loadHistory();
-    // Add message bubble for this turn
-    addMessageBubble(data.answer, data.turn_number);
+    // Add message bubble with mermaid + stats
+    addMessageBubble(data.answer, data.turn_number, currentMermaid, {
+      total_tokens: data.total_tokens,
+      total_cost: data.total_cost,
+      stages: new Array(data.stage_count || 1).fill({}),
+    });
   });
 
   eventSource.onerror = () => {
+    if (deliberationComplete) {
+      // Clean close after deliberation_done — don't reconnect
+      setStatus('', 'Ready — send a prompt to begin');
+      return;
+    }
     setStatus('warn', 'SSE reconnecting…');
     setTimeout(() => {
-      if (sessionId) connectSSE();
+      if (sessionId && !deliberationComplete) connectSSE();
     }, 3000);
   };
 }
@@ -671,6 +686,7 @@ async function sendMessage() {
   if (!prompt || !sessionId) return;
   input.value = '';
   autoResize(input);
+  deliberationComplete = false; // New deliberation starting — allow SSE reconnect
 
   const formation = document.getElementById('formation-select').value;
   const aggModel = document.getElementById('aggregator-model').value.trim();
@@ -712,6 +728,7 @@ async function sendMessage() {
     if (data.trace) {
       animateValue('stat-tokens', data.trace.total_tokens || 0);
       document.getElementById('stat-cost').textContent = '$' + (data.trace.total_cost || 0).toFixed(6);
+      document.getElementById('stat-time').textContent = fmtMs(data.trace.elapsed_ms || data.elapsed_ms || 0);
       document.getElementById('stat-stages').textContent = (data.trace.stages || []).length;
     }
 

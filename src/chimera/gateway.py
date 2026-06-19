@@ -186,6 +186,11 @@ def resolve_litellm_model(
             return model_name, kwargs
         return f"anthropic/{model_name}", kwargs
 
+    if provider == "google":
+        if model_name.startswith("gemini/"):
+            return model_name, kwargs
+        return f"gemini/{model_name}", kwargs
+
     if provider == "deepseek":
         # Route through LiteLLM's OpenAI provider to avoid DeepSeek-specific
         # cost calculator that doesn't know about v4-flash/v4-pro model names.

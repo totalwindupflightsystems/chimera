@@ -281,8 +281,9 @@ def test_formation_models_exist_in_catalog() -> None:
     and ``debate`` had ``claude-sonnet-4`` — neither existed in the model catalog,
     causing 500 errors.  The fix changed them to ``default``.
     """
-    import yaml
     from pathlib import Path
+
+    import yaml
 
     config_path = Path(__file__).parent.parent / "chimera.yaml"
     if not config_path.exists():
