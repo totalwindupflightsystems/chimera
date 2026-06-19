@@ -101,10 +101,13 @@ class SSEBroadcaster:
         self._ready.pop(session_id, None)
 
     def broadcast(self, session_id: str, event: SSEEvent) -> None:
-        """Send an event to every subscriber of *session_id*."""
-        subs = self._subscribers.get(session_id, [])
-        for sub in subs[:]:
-            # Client can't keep up — drop the event rather than block.
+        """Send an event to every subscriber of *session_id*.
+
+        Iterates over a snapshot so concurrent unsubscribe during broadcast
+        is safe.  Silently drops events when a subscriber's queue is full.
+        """
+        subs = self._subscribers.get(session_id, ())
+        for sub in tuple(subs):
             with contextlib.suppress(asyncio.QueueFull):
                 sub.queue.put_nowait(event)
 
@@ -112,13 +115,13 @@ class SSEBroadcaster:
         """Async generator yielding SSE-formatted strings.
 
         Yields events until the subscriber is unsubscribed (sentinel None),
-        the client disconnects, or 5 seconds pass with no events (idle timeout).
+        the client disconnects, or the idle timeout expires with no events.
         """
         # Signal that at least one subscriber is live and ready to receive.
         ready = self._ready.get(session_id)
         if ready is not None:
             ready.set()
-        idle_timeout = 15.0  # Close idle connections after 15s of no events
+        idle_timeout = 30.0  # Generous initial timeout for slow dispatchers
         try:
             while True:
                 try:
@@ -127,7 +130,11 @@ class SSEBroadcaster:
                     break  # No events within timeout — close cleanly
                 if event is None:
                     break
-                yield event.format()
+                try:
+                    yield event.format()
+                except Exception:
+                    # Malformed event — skip it rather than crash the stream
+                    continue
                 idle_timeout = 120.0  # Reset to long timeout after first event
         except asyncio.CancelledError:
             pass

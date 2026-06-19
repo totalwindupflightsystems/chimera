@@ -200,6 +200,8 @@ async def test_sse_multiple_clients_no_crash(live_server: str) -> None:
 
     REGRESSION: The set-based subscriber storage threw ``TypeError:
     unhashable type: 'SSESubscriber'`` on the **second** subscriber.
+
+    Also validates that the server remains stable under concurrent SSE load.
     """
     async with httpx.AsyncClient() as client:
         sid = _create_session(live_server)
@@ -211,7 +213,7 @@ async def test_sse_multiple_clients_no_crash(live_server: str) -> None:
             )
             return r.text
 
-        # Start two SSE listeners and one deliberation
+        # Start two SSE listeners and one deliberation concurrently
         async with asyncio.TaskGroup() as tg:
             sse1 = tg.create_task(sse_listener())
             sse2 = tg.create_task(sse_listener())
@@ -238,7 +240,8 @@ async def test_sse_multiple_clients_no_crash(live_server: str) -> None:
             events = _parse_sse_events(raw)
             event_types = [e["event"] for e in events]
             assert "deliberation_done" in event_types, (
-                f"Subscriber missed deliberation_done.\nEvents: {event_types}"
+                f"Subscriber missed deliberation_done.\nEvents: {event_types}\n"
+                f"Raw (first 500): {raw[:500]}"
             )
 
 
