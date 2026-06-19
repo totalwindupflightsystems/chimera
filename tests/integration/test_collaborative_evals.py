@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import pytest
 
-pytestmark = [pytest.mark.integration, pytest.mark.slow]
-
 from tests.integration.conftest import BUDGET_MODELS
+
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 TIMEOUT = 180.0  # These are complex tasks — allow 3 min
 
