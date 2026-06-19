@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# GitReins Tier 1 — pre-commit guards (secrets + lint + tests)
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$STAGED" ] && exit 0
+
+FAILED=0
+
+# ── 1. Secrets Scan ──────────────────────────────────────
+SECRET_PATTERNS='sk-[a-zA-Z0-9_-]{20,}|ghp_[a-zA-Z0-9]{36}|-----BEGIN (RSA |EC |OPENSSH )PRIVATE KEY-----|(OPENROUTER|DEEPSEEK|ZAI|ANTHROPIC)_API_KEY\s*=\s*\S'
+while IFS= read -r file; do
+  [ ! -f "$file" ] && continue
+  git check-ignore -q "$file" 2>/dev/null && continue
+  if grep -Pn "$SECRET_PATTERNS" "$file" 2>/dev/null; then
+    echo "⚠ SECRET DETECTED in $file" >&2
+    FAILED=1
+  fi
+done <<< "$STAGED"
+
+if [ $FAILED -eq 1 ]; then
+  echo "" >&2
+  echo "COMMIT BLOCKED: secrets found in staged files" >&2
+  exit 1
+fi
+echo "✓ GitReins Tier 1: Secrets scan — PASS"
+
+# ── 2. Lint (Python files only) ──────────────────────────
+PY_FILES=$(echo "$STAGED" | grep '\.py$' || true)
+if [ -n "$PY_FILES" ] && command -v ruff &>/dev/null; then
+  if ! ruff check $PY_FILES --quiet 2>/dev/null; then
+    echo "⚠ GitReins Tier 1: Lint — ISSUES FOUND (non-blocking)" >&2
+  else
+    echo "✓ GitReins Tier 1: Lint — PASS"
+  fi
+fi
+
+# ── 3. Tests ─────────────────────────────────────────────
+# Auto-detect Python: prefer .venv → venv → system python3
+if [ -x .venv/bin/python ]; then
+  PYTHON=.venv/bin/python
+elif [ -x venv/bin/python ]; then
+  PYTHON=venv/bin/python
+else
+  PYTHON=python3
+fi
+if [ -x "$PYTHON" ] && [ -d tests ]; then
+  if $PYTHON -m pytest tests/ -x -q 2>&1 >/dev/null; then
+    echo "✓ GitReins Tier 1: Tests — PASS"
+  else
+    echo "⚠ GitReins Tier 1: Tests — FAILED" >&2
+  fi
+fi
+
+exit 0
