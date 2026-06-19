@@ -5,6 +5,8 @@ guards:
   lint: true
   tests: true
   test_command: "pytest -x --tb=short -q"
+  dead_code: true
+  skylos: false
 
 pipeline:
   stages:
