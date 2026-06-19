@@ -127,6 +127,33 @@ def _apply_stage_models(
                 wp.model = model
 
 
+def _apply_allowed_models(
+    dispatch: DispatchResult,
+    allowed_models: list[str] | None,
+    config: ChimeraConfig,
+) -> None:
+    """Remap worker models to only use models from ``allowed_models`` list.
+
+    Runs after dispatch so it applies uniformly to ``auto``, preset, and
+    custom DAGs.  Workers whose model falls outside the allowed list are
+    remapped to the first entry in ``allowed_models``.
+    """
+    if not allowed_models:
+        return
+    allowed_set = set(allowed_models)
+    default = allowed_models[0]
+    for stage in dispatch.formation.stages:
+        if stage.kind == "worker" and stage.model not in allowed_set:
+            log.info(
+                "engine_allowed_models_remap",
+                stage=stage.id, original=stage.model, remapped=default,
+            )
+            stage.model = default
+            wp = dispatch.worker_prompt_for(stage.id)
+            if wp is not None:
+                wp.model = default
+
+
 class Engine:
     """Runs the full pipeline: dispatcher → workers → aggregator → (merge/audit).
 
@@ -236,6 +263,8 @@ class Engine:
         # auto, preset, and custom DAGs alike.
         stage_models = overrides.stage_models if overrides else None
         _apply_stage_models(outcome.result, stage_models, self.config)
+        if overrides:
+            _apply_allowed_models(outcome.result, overrides.allowed_models, self.config)
 
         log.info(
             "engine_dispatched",
