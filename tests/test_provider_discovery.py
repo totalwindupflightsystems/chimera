@@ -2,21 +2,16 @@
 
 from __future__ import annotations
 
-import json
-import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
+from chimera.config import load_config
 from chimera.provider_discovery import (
-    MODEL_ID_MAP,
-    PROVIDER_ID_MAP,
     _mtok_to_per_1k,
     _resolve_model_id,
     discover_providers,
 )
-from chimera.config import load_config
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Unit: helpers

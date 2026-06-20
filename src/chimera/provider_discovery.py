@@ -208,9 +208,8 @@ def discover_providers(
 
         chimera_name = PROVIDER_ID_MAP.get(md_id, md_id)
         base_url = md_provider.get("api", "")
-        if base_url and not base_url.endswith("/v1"):
-            if "/v1" not in base_url:
-                base_url = base_url.rstrip("/") + "/v1"
+        if base_url and not base_url.endswith("/v1") and "/v1" not in base_url:
+            base_url = base_url.rstrip("/") + "/v1"
 
         providers[chimera_name] = {
             "base_url": base_url,
