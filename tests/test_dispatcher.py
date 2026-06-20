@@ -621,7 +621,7 @@ def test_aggregator_choice_honored_when_unlocked(config) -> None:  # type: ignor
 
 def test_validate_dag_rejects_disabled_model(config) -> None:  # type: ignore[no-untyped-def]
     """_validate_dag must raise ValueError when a stage uses a disabled model."""
-    from chimera.dispatcher import _validate_dag, Stage, FormationDAG
+    from chimera.dispatcher import FormationDAG, Stage, _validate_dag
 
     # Disable a model in the config
     cfg = config.model_copy(deep=True)
@@ -640,7 +640,7 @@ def test_validate_dag_rejects_disabled_model(config) -> None:  # type: ignore[no
 
 def test_validate_dag_allows_enabled_model(config) -> None:  # type: ignore[no-untyped-def]
     """_validate_dag should succeed when all models are enabled."""
-    from chimera.dispatcher import _validate_dag, Stage, FormationDAG
+    from chimera.dispatcher import FormationDAG, Stage, _validate_dag
 
     dag = FormationDAG(
         stages=[
@@ -655,8 +655,7 @@ def test_validate_dag_allows_enabled_model(config) -> None:  # type: ignore[no-u
 
 def test_normalize_result_uses_only_enabled_models(config) -> None:  # type: ignore[no-untyped-def]
     """_normalize_result's valid_models should be limited to enabled models."""
-    from chimera.dispatcher import _normalize_result
-    from chimera.dispatcher import DispatchResult, WorkerPrompt, Stage, FormationDAG
+    from chimera.dispatcher import DispatchResult, FormationDAG, Stage, WorkerPrompt, _normalize_result
 
     cfg = config.model_copy(deep=True)
     # Disable the worker model
