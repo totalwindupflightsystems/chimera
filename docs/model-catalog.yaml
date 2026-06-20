@@ -1,0 +1,430 @@
+# Chimera Model Catalog — Generated 2026-06-20
+# Research-based category weights (0.0-1.0) using latest benchmarks:
+#   SWE-bench Verified/Pro, AIME 2025/2026, GPQA Diamond, MMLU-Pro,
+#   Terminal-Bench, LiveCodeBench, HumanEval, Chatbot Arena ELO.
+#
+# Cost tiers: budget (<$1/Mtok input), standard ($1-10/Mtok), premium (>$10/Mtok)
+# Pricing source: OpenRouter, provider API docs, Artificial Analysis (May–Jun 2026)
+#
+# NOTE: "GPT-5.5 Instant" exists (ChatGPT default since May 5, 2026) but
+# is NOT yet listed on OpenRouter as a separate model ID. It may appear as
+# "openai/gpt-5.5-chat" in future. Included below with estimated pricing.
+
+models:
+
+  # =========================================================================
+  # DeepSeek (already in chimera — updated pricing)
+  # =========================================================================
+
+  "deepseek/deepseek-v4-flash":
+    categories:
+      code: 0.88
+      analysis: 0.80
+      reasoning: 0.75
+      design: 0.35
+      audit: 0.55
+    cost_tier: budget
+    provider: deepseek
+    # $0.09/$0.18 per MTok, 284B MoE (13B active), 1M ctx
+    # SWE-bench Verified ~73-75%. Great value coding model.
+
+  "deepseek/deepseek-v4-pro":
+    categories:
+      code: 0.92
+      analysis: 0.85
+      reasoning: 0.82
+      design: 0.40
+      audit: 0.60
+    cost_tier: budget
+    provider: deepseek
+    # $0.435/$0.87 per MTok, 1.6T MoE (49B active), 1M ctx
+    # SWE-bench Verified ~76.4%. Strong coding, near-Sonnet at fraction of cost.
+
+  # =========================================================================
+  # Qwen3.7 Series (Alibaba)
+  # =========================================================================
+
+  "qwen/qwen3.7-max":
+    categories:
+      code: 0.90
+      analysis: 0.87
+      reasoning: 0.92
+      design: 0.72
+      audit: 0.78
+    cost_tier: standard
+    provider: qwen
+    # $1.25/$3.75 per MTok, 1M ctx, 65K output
+    # SWE-bench Verified 80.4%, SWE-bench Pro 60.6%, GPQA Diamond 92.4%
+    # AIME 2025 ~97%. Terminal-Bench 2.0 69.7. Flagship, near-Opus-level reasoning.
+
+  "qwen/qwen3.7-plus":
+    categories:
+      code: 0.87
+      analysis: 0.83
+      reasoning: 0.88
+      design: 0.68
+      audit: 0.72
+    cost_tier: budget
+    provider: qwen
+    # $0.32/$1.28 per MTok, 1M ctx, 65K output
+    # Matches Max on AIME math, SWE-bench Pro ~60%, 3x faster than Max.
+    # Best value in Qwen3.7 series for cost-sensitive coding.
+
+  "qwen/qwen3-coder":
+    categories:
+      code: 0.91
+      analysis: 0.72
+      reasoning: 0.80
+      design: 0.40
+      audit: 0.68
+    cost_tier: budget
+    provider: qwen
+    # $0.22/$1.80 per MTok, 480B MoE (35B active), 1M ctx
+    # Code-specialized MoE. Strong for coding agents and development workflows.
+
+  "qwen/qwen3-coder-next":
+    categories:
+      code: 0.82
+      analysis: 0.65
+      reasoning: 0.70
+      design: 0.35
+      audit: 0.60
+    cost_tier: budget
+    provider: qwen
+    # $0.11/$0.80 per MTok, 80B MoE (3B active), 1M ctx
+    # Lightweight coder for local dev. Fast, cheap, good for simple tasks.
+
+  # =========================================================================
+  # OpenAI GPT-5.5 Series
+  # =========================================================================
+
+  "openai/gpt-5.5":
+    categories:
+      code: 0.93
+      analysis: 0.94
+      reasoning: 0.95
+      design: 0.88
+      audit: 0.85
+    cost_tier: premium
+    provider: openai
+    # $5/$30 per MTok, 1.05M ctx, 128K output
+    # Terminal-Bench 82.7%, GPQA Diamond 93.6%, AIME 2025 81.2%.
+    # Frontier model. Strongest all-around, excellent for complex reasoning.
+
+  "openai/gpt-5.5-pro":
+    categories:
+      code: 0.94
+      analysis: 0.96
+      reasoning: 0.97
+      design: 0.90
+      audit: 0.88
+    cost_tier: premium
+    provider: openai
+    # $30/$180 per MTok, deep reasoning variant
+    # Higher-capability tier for high-stakes workloads. Best reasoning scores.
+
+  "openai/gpt-5.5-instant":
+    categories:
+      code: 0.80
+      analysis: 0.82
+      reasoning: 0.78
+      design: 0.85
+      audit: 0.65
+    cost_tier: standard
+    provider: openai
+    # NOTE: Released May 5, 2026 as ChatGPT default. NOT yet on OpenRouter as
+    # separate model; may appear as "openai/gpt-5.5-chat". Pricing estimated
+    # ~$1.75–$2.50/$10–$14 per MTok (based on GPT-5.3/5.4 Chat pricing).
+    # AIME 2025 81.2%. Fast, cost-efficient, good for everyday tasks.
+    # MODEL ID IS TENTATIVE — confirm before deploying.
+
+  # =========================================================================
+  # Anthropic Claude
+  # =========================================================================
+
+  "anthropic/claude-opus-4.8":
+    categories:
+      code: 0.95
+      analysis: 0.94
+      reasoning: 0.96
+      design: 0.90
+      audit: 0.92
+    cost_tier: premium
+    provider: anthropic
+    # $5/$25 per MTok (Fast Mode $10/$50), 1M ctx
+    # SWE-bench Verified 88.6%, SWE-bench Pro 69.2%, GPQA Diamond ~91%.
+    # Anthropic's most capable Opus. Complex reasoning, long-horizon agentic coding.
+
+  "anthropic/claude-sonnet-4.6":
+    categories:
+      code: 0.92
+      analysis: 0.90
+      reasoning: 0.91
+      design: 0.88
+      audit: 0.85
+    cost_tier: premium
+    provider: anthropic
+    # $3/$15 per MTok, 200K ctx
+    # SWE-bench Verified 79.6%, near-Opus coding at lower price.
+    # Best daily-driver for serious coding. GPQA Diamond ~74%.
+
+  "anthropic/claude-haiku-4.5":
+    categories:
+      code: 0.85
+      analysis: 0.82
+      reasoning: 0.80
+      design: 0.78
+      audit: 0.72
+    cost_tier: standard
+    provider: anthropic
+    # $1/$5 per MTok, 200K ctx
+    # SWE-bench Verified 73.3%. Fastest Claude, near-frontier at low cost.
+    # Great for subagent work, high-volume review.
+
+  "anthropic/claude-fable-5":
+    categories:
+      code: 0.97
+      analysis: 0.96
+      reasoning: 0.98
+      design: 0.93
+      audit: 0.96
+    cost_tier: premium
+    provider: anthropic
+    # $10/$50 per MTok, 1M ctx, 128K output
+    # SWE-bench Verified 95.0%, SWE-bench Pro 80.3%, FrontierCode Diamond 29.3%.
+    # Mythos-class, superhuman cybersecurity. Most capable widely-released model.
+    # NOTE: Suspended as of June 12, 2026 per Anthropic safety review. Check status.
+
+  # =========================================================================
+  # Google Gemini
+  # =========================================================================
+
+  "google/gemini-3.1-pro-preview":
+    categories:
+      code: 0.90
+      analysis: 0.92
+      reasoning: 0.93
+      design: 0.85
+      audit: 0.82
+    cost_tier: premium
+    provider: google
+    # $2/$12 per MTok (<=200K ctx, doubles above), 1M ctx
+    # SWE-bench Verified 80.6%, GPQA Diamond 94.3%, MATH 95.1%.
+    # Strong multimodal reasoning, leads LiveCodeBench Pro (2,439 Elo).
+
+  "google/gemini-3.5-flash":
+    categories:
+      code: 0.87
+      analysis: 0.88
+      reasoning: 0.85
+      design: 0.82
+      audit: 0.75
+    cost_tier: standard
+    provider: google
+    # $1.50/$9 per MTok, 1M ctx, 65K output
+    # Near-Pro coding/reasoning at Flash cost. SWE-bench ~78-79%.
+    # 10-15 point gains over Gemini 3.0 Flash on SWE-bench.
+
+  "google/gemini-3.1-flash-lite-preview":
+    categories:
+      code: 0.72
+      analysis: 0.75
+      reasoning: 0.70
+      design: 0.68
+      audit: 0.55
+    cost_tier: budget
+    provider: google
+    # $0.25/$1.50 per MTok, 1M ctx, 65K output
+    # Ultra-low-cost for high-volume use cases. Good for classification, extraction.
+
+  "google/gemini-3-flash-preview":
+    categories:
+      code: 0.78
+      analysis: 0.85
+      reasoning: 0.82
+      design: 0.75
+      audit: 0.60
+    cost_tier: budget
+    provider: google
+    # $0.50/$3.00 per MTok, 1M ctx. GPQA Diamond 90.4%.
+    # Already in chimera. Good budget option for analysis tasks.
+
+  "google/gemini-3-pro-preview":
+    categories:
+      code: 0.85
+      analysis: 0.88
+      reasoning: 0.90
+      design: 0.83
+      audit: 0.82
+    cost_tier: premium
+    provider: google
+    # Already in chimera. Strong multimodal reasoning, 1M ctx.
+
+  # =========================================================================
+  # xAI Grok
+  # =========================================================================
+
+  "x-ai/grok-4.20":
+    categories:
+      code: 0.85
+      analysis: 0.82
+      reasoning: 0.88
+      design: 0.70
+      audit: 0.72
+    cost_tier: standard
+    provider: xai
+    # $1.25/$2.50 per MTok (stable), $2/$6 (beta), 2M ctx
+    # Reasoning model with agentic tool calling. 2M context on beta.
+    # Industry-leading speed. AIME near-perfect (95-100% on Grok 4 Heavy).
+
+  "x-ai/grok-4.20-multi-agent":
+    categories:
+      code: 0.87
+      analysis: 0.84
+      reasoning: 0.90
+      design: 0.72
+      audit: 0.75
+    cost_tier: standard
+    provider: xai
+    # $1.25/$2.50 per MTok, 2M ctx
+    # Multi-agent variant: up to 16 agents at xhigh reasoning effort.
+    # Good for complex multi-step agentic workflows.
+
+  "x-ai/grok-4.3":
+    categories:
+      code: 0.86
+      analysis: 0.84
+      reasoning: 0.89
+      design: 0.72
+      audit: 0.74
+    cost_tier: standard
+    provider: xai
+    # $1.25/$2.50 per MTok, 1M ctx
+    # Latest flagship (April 30, 2026). Strong coding and reasoning.
+
+  # =========================================================================
+  # GLM (Z.AI / Zhipu AI)
+  # =========================================================================
+
+  "z-ai/glm-5.2":
+    categories:
+      code: 0.94
+      analysis: 0.90
+      reasoning: 0.93
+      design: 0.85
+      audit: 0.88
+    cost_tier: premium
+    provider: zai
+    # $1.20/$4.10 per MTok (OpenRouter), $1.40/$4.40 (Artificial Analysis median)
+    # 753B params, 1M ctx. SWE-bench Pro 62.1% (beats GPT-5.5 at 58.6%).
+    # #2 on blind Code Arena. Already in chimera as zai-coding-plan/glm-5.2.
+
+  "z-ai/glm-5-turbo":
+    categories:
+      code: 0.85
+      analysis: 0.82
+      reasoning: 0.84
+      design: 0.72
+      audit: 0.76
+    cost_tier: standard
+    provider: zai
+    # $1.20/$4.00 per MTok, 262K ctx
+    # Fast inference for agent-driven environments. Good for multi-step workflows.
+
+  "z-ai/glm-5":
+    categories:
+      code: 0.80
+      analysis: 0.78
+      reasoning: 0.82
+      design: 0.68
+      audit: 0.70
+    cost_tier: budget
+    provider: zai
+    # $0.60/$1.92 per MTok, 203K ctx
+    # Base GLM-5 model. Good budget agent option.
+
+  # =========================================================================
+  # Kimi / Moonshot AI
+  # =========================================================================
+
+  "moonshotai/kimi-k2.7-code":
+    categories:
+      code: 0.95
+      analysis: 0.82
+      reasoning: 0.87
+      design: 0.70
+      audit: 0.65
+    cost_tier: standard
+    provider: moonshot
+    # $0.74/$3.50 per MTok (OpenRouter), $0.95/$4.00 (Moonshot direct)
+    # 1T params (32B active), 256K ctx. ~30% fewer thinking tokens vs K2.6.
+    # Top-tier open-weight coding model. Native multimodality.
+    # Already in chimera as openrouter/moonshotai/kimi-k2.7-code.
+
+  "moonshotai/kimi-k2.6":
+    categories:
+      code: 0.92
+      analysis: 0.80
+      reasoning: 0.85
+      design: 0.72
+      audit: 0.60
+    cost_tier: standard
+    provider: moonshot
+    # $0.67/$3.50 per MTok (OpenRouter), 262K ctx
+    # Multimodal, long-horizon coding, agent swarm (up to 300 sub-agents).
+    # SWE-bench Verified ~76.8%+ (K2.5 baseline, K2.6 higher).
+
+  # =========================================================================
+  # MiniMax
+  # =========================================================================
+
+  "minimax/minimax-m3":
+    categories:
+      code: 0.88
+      analysis: 0.80
+      reasoning: 0.82
+      design: 0.82
+      audit: 0.62
+    cost_tier: budget
+    provider: minimax
+    # $0.30/$1.20 per MTok (promo pricing), 1M ctx, 512K output
+    # SWE-bench Pro 59.0%, BrowseComp 83.5. MSA sparse attention architecture.
+    # Beats GPT-5.5 and Gemini 3.1 Pro on some coding benchmarks.
+    # NOTE: promo pricing may increase. Already in chimera.
+
+
+# =========================================================================
+# SOURCES & METHODOLOGY
+# =========================================================================
+#
+# Pricing:
+#   - OpenRouter model pages (openrouter.ai)
+#   - Provider API docs (platform.claude.com, api-docs.deepseek.com, etc.)
+#   - Artificial Analysis (artificialanalysis.ai)
+#   - llm-stats.com, felloai.com, costgoat.com
+#
+# Benchmarks:
+#   - SWE-bench Verified / Pro: Anthropic, Google, Qwen official model cards
+#   - AIME 2025/2026: Together AI model cards, DataCamp reviews
+#   - GPQA Diamond: Official model cards, BenchLM.ai
+#   - Terminal-Bench 2.0: DataCamp, Together AI
+#   - Code Arena / LiveCodeBench: LMArena, BenchLM.ai
+#   - Claude benchmarks: morphllm.com/claude-benchmarks (comprehensive)
+#
+# Category Weight Methodology:
+#   - code: Primarily SWE-bench Verified + LiveCodeBench + Code Arena ELO
+#   - analysis: GPQA Diamond + MMLU-Pro + document understanding benchmarks
+#   - reasoning: AIME + MATH + FrontierMath + multi-step reasoning scores
+#   - design: Chatbot Arena ELO + creative writing benchmarks + UI/UX eval
+#   - audit: Code review ability + security analysis + SWE-bench debugging
+#
+# Models NOT found / uncertain:
+#   - "GPT-5.5-mini": does not exist; closest is GPT-5.5 Instant (May 2026)
+#   - "Gemini 3.5 Flash Lite": does not exist; closest is Gemini 3.1 Flash Lite
+#   - "Qwen3.7 Turbo": does not exist as separate model; Qwen3.7-Plus is the "fast" tier
+#   - "Fable 5": confirmed as "anthropic/claude-fable-5" but suspended June 12, 2026
+#
+# Key model ID formats (for OpenRouter / direct API):
+#   OpenRouter:  provider/model-id  (e.g., openai/gpt-5.5, anthropic/claude-opus-4.8)
+#   Direct:      just model-id        (e.g., gpt-5.5, claude-opus-4-8)
+#   Z.AI:        zai-coding-plan/glm-5.2 (existing chimera format, keep for now)

@@ -1,211 +1,319 @@
-# Chimera Configuration
-# Copy to chimera.yaml and fill in your API keys.
-#
-# ENVIRONMENT VARIABLE OVERRIDES (Docker / CI friendly):
-# Every commonly-tweaked knob can be set via env vars — no YAML editing needed.
-#
-#   CHIMERA_CONFIG=path/chimera.yaml   # custom config path
-#   CHIMERA_HOST=0.0.0.0               # bind address
-#   CHIMERA_PORT=8765                  # bind port
-#   CHIMERA_DISPATCHER=deepseek/...    # override dispatcher model
-#   CHIMERA_WORKER=deepseek/...        # override default worker model
-#   CHIMERA_AGGREGATOR=deepseek/...    # override default aggregator model
-#   CHIMERA_LOG_LEVEL=debug            # log level (debug/info/warning/error)
-#   CHIMERA_AUTH_ENABLED=true          # enable API key auth
-#   CHIMERA_RATE_LIMIT_ENABLED=true    # enable rate limiting
-#
-# API KEY SHORTCUTS (use these in Docker env):
-#   DEEPSEEK_KEY=sk-...                # → api_keys.deepseek
-#   OPENROUTER_KEY=sk-or-v1-...        # → api_keys.openrouter
-#   ZAI_KEY=sk-...                     # → api_keys.zai
-#   (These are the same keys listed under api_keys: below, just env-friendly)
-
-# --------------------------------------------------------------------------- #
-# API Authentication (F1)
-# --------------------------------------------------------------------------- #
-auth:
-  # Set enabled: true to require API keys on protected endpoints
-  enabled: false
-  # mode: "env" — single key from CHIMERA_API_KEY environment variable
-  # mode: "list" — multiple named keys from the keys list below
-  mode: env
-  keys: []
-  #   - key: "your-api-key-here"
-  #     name: "admin"
-
-# --------------------------------------------------------------------------- #
-# Rate Limiting (F2)
-# --------------------------------------------------------------------------- #
-rate_limit:
-  enabled: false
-  requests_per_minute: 60
-  burst_size: 10
-
-# --------------------------------------------------------------------------- #
-# Circuit Breakers (F3)
-# --------------------------------------------------------------------------- #
-circuit_breakers:
-  # Default configuration applied to all providers unless overridden
-  default:
-    failure_threshold: 5       # consecutive failures before opening
-    recovery_timeout_s: 30     # seconds to wait before testing recovery
-    half_open_max_requests: 1  # test requests allowed in half-open state
-
-# --------------------------------------------------------------------------- #
-# Retry / Backoff (F7)
-# --------------------------------------------------------------------------- #
-retry:
-  max_attempts: 3
-  base_delay_ms: 500
-  max_delay_ms: 10000
-  backoff_multiplier: 2.0
-
-# --------------------------------------------------------------------------- #
-# Request Queue / Backpressure (F5)
-# --------------------------------------------------------------------------- #
-queue:
-  max_concurrent: 10
-  max_queue_depth: 100
-
 api_keys:
   deepseek: ${DEEPSEEK_API_KEY}
   openrouter: ${OPENROUTER_API_KEY}
   zai: ${ZAI_API_KEY}
+  anthropic: ${ANTHROPIC_API_KEY}
+  google: ${GEMINI_API_KEY}
 
-# Budget-first defaults — cheap models for dispatch/aggregation.
-# Every request can override ANY of these via API params.
 defaults:
-  dispatcher: deepseek/deepseek-v4-pro           # Budget dispatcher (V4 class)
-  default_worker: deepseek/deepseek-v4-pro        # Budget worker
-  default_aggregator: deepseek/deepseek-v4-pro         # Budget aggregator
-  # Lock a role's model so the dispatcher CANNOT override it (uses the default above):
-  lock_dispatcher: false   # force `dispatcher` model for any dispatcher-kind stage
-  lock_aggregator: false   # force `default_aggregator` for aggregator/merge/audit stages
-  # Premium alternatives available as overrides:
-  #   zai-coding-plan/glm-5.2, openrouter/anthropic/claude-sonnet-4
+  dispatcher: deepseek/deepseek-v4-flash
+  default_worker: deepseek/deepseek-v4-pro
+  default_aggregator: deepseek/deepseek-v4-flash
+  lock_dispatcher: false
+  lock_aggregator: true
 
 formations:
+  audit:
+    audit: default
+    aggregator: default
+    workers: 2
   auto:
     mode: auto
-  simple:
-    workers: 2
-    aggregator: default
   debate:
-    workers: 3
     aggregators:
-      - default
-      - openrouter/anthropic/claude-sonnet-4
+    - default
+    - default
     merge: best_of_n
-  audit:
     workers: 2
+  simple:
     aggregator: default
-    audit: openrouter/anthropic/claude-haiku-4.5
-  # Config-defined custom formation — arbitrary DAG (Feature 3).
-  # `dag` wins over `workers`/`aggregator`. The dispatcher still writes a
-  # custom prompt per worker and merge instructions per aggregator (FILL-IN).
-  # Any preset (including simple/debate/audit above) may be redefined this way.
-  my-custom-chain:
-    dag:
-      stages:
-        - id: analyzer
-          kind: worker
-          model: deepseek/deepseek-v4-pro
-        - id: reviewer
-          kind: aggregator
-          model: zai-coding-plan/glm-5.2
-          depends_on: [analyzer]
-        - id: implementer
-          kind: worker
-          model: openrouter/anthropic/claude-sonnet-4
-          depends_on: [reviewer]
-        - id: verifier
-          kind: aggregator
-          model: zai-coding-plan/glm-5.2
-          depends_on: [implementer]
-        - id: finalizer
-          kind: merge
-          model: deepseek/deepseek-v4-pro
-          depends_on: [verifier]
-      edges:
-        - [analyzer, reviewer]
-        - [reviewer, implementer]
-        - [implementer, verifier]
-        - [verifier, finalizer]
+    workers: 2
+
+# ── Model Catalog (27 models, 9 providers) ──────────────────────────────────
+# Category weights: code | analysis | reasoning | design | audit  (0.0-1.0)
+# Cost tiers: budget (<$1/Mtok) | standard ($1-10) | premium (>$10)
+# Updated 2026-06-20 — research-backed from SWE-bench, AIME, GPQA, LiveCodeBench
 
 models:
+
+  # ═══ DeepSeek ═══
+  deepseek/deepseek-v4-flash:
+    categories:
+      code: 0.88
+      analysis: 0.80
+      reasoning: 0.75
+      design: 0.35
+      audit: 0.55
+    cost_tier: budget
+    provider: deepseek
+
   deepseek/deepseek-v4-pro:
     categories:
+      code: 0.92
       analysis: 0.85
-      audit: 0.6
-      code: 0.95
-      design: 0.4
-      reasoning: 0.8
+      reasoning: 0.82
+      design: 0.40
+      audit: 0.60
     cost_tier: budget
-    provider: deepseek                               # Direct API (set DEEPSEEK_API_KEY)
+    provider: deepseek
 
-  openrouter/anthropic/claude-sonnet-4:
+  # ═══ Qwen3.7 ═══
+  openrouter/qwen/qwen3.7-max:
     categories:
-      analysis: 0.92
-      audit: 0.85
-      code: 0.9
-      design: 0.88
-      reasoning: 0.93
-    cost_tier: premium
-    provider: openrouter                             # Via OpenRouter (set OPENROUTER_API_KEY)
+      code: 0.90
+      analysis: 0.87
+      reasoning: 0.92
+      design: 0.72
+      audit: 0.78
+    cost_tier: standard
+    provider: openrouter
 
-  openrouter/google/gemini-2.5-flash:
+  openrouter/qwen/qwen3.7-plus:
     categories:
-      analysis: 0.75
-      audit: 0.5
-      code: 0.7
-      design: 0.9
-      reasoning: 0.65
+      code: 0.87
+      analysis: 0.83
+      reasoning: 0.88
+      design: 0.68
+      audit: 0.72
     cost_tier: budget
     provider: openrouter
 
+  openrouter/qwen/qwen3-coder:
+    categories:
+      code: 0.91
+      analysis: 0.72
+      reasoning: 0.80
+      design: 0.40
+      audit: 0.68
+    cost_tier: budget
+    provider: openrouter
+
+  # ═══ OpenAI GPT-5.5 ═══
+  openrouter/openai/gpt-5.5:
+    categories:
+      code: 0.93
+      analysis: 0.94
+      reasoning: 0.95
+      design: 0.88
+      audit: 0.85
+    cost_tier: premium
+    provider: openrouter
+
+  openrouter/openai/gpt-5.5-pro:
+    categories:
+      code: 0.94
+      analysis: 0.96
+      reasoning: 0.97
+      design: 0.90
+      audit: 0.88
+    cost_tier: premium
+    provider: openrouter
+
+  # ═══ Anthropic Claude ═══
+  anthropic/claude-opus-4.8:
+    categories:
+      code: 0.95
+      analysis: 0.94
+      reasoning: 0.96
+      design: 0.90
+      audit: 0.92
+    cost_tier: premium
+    provider: anthropic
+
+  anthropic/claude-sonnet-4.6:
+    categories:
+      code: 0.92
+      analysis: 0.90
+      reasoning: 0.91
+      design: 0.88
+      audit: 0.85
+    cost_tier: premium
+    provider: anthropic
+
+  anthropic/claude-haiku-4.5:
+    categories:
+      code: 0.85
+      analysis: 0.82
+      reasoning: 0.80
+      design: 0.78
+      audit: 0.72
+    cost_tier: standard
+    provider: anthropic
+
+  openrouter/anthropic/claude-fable-5:
+    categories:
+      code: 0.97
+      analysis: 0.96
+      reasoning: 0.98
+      design: 0.93
+      audit: 0.96
+    cost_tier: premium
+    provider: openrouter
+    # SUSPENDED June 12, 2026 — check status before using
+
+  # ═══ Google Gemini ═══
+  google/gemini-3.1-pro-preview:
+    categories:
+      code: 0.90
+      analysis: 0.92
+      reasoning: 0.93
+      design: 0.85
+      audit: 0.82
+    cost_tier: premium
+    provider: google
+
+  google/gemini-3.5-flash:
+    categories:
+      code: 0.87
+      analysis: 0.88
+      reasoning: 0.85
+      design: 0.82
+      audit: 0.75
+    cost_tier: standard
+    provider: google
+
+  google/gemini-3.1-flash-lite-preview:
+    categories:
+      code: 0.72
+      analysis: 0.75
+      reasoning: 0.70
+      design: 0.68
+      audit: 0.55
+    cost_tier: budget
+    provider: google
+
+  google/gemini-3-flash-preview:
+    categories:
+      code: 0.78
+      analysis: 0.85
+      reasoning: 0.82
+      design: 0.75
+      audit: 0.60
+    cost_tier: budget
+    provider: google
+
+  google/gemini-3-pro-preview:
+    categories:
+      code: 0.85
+      analysis: 0.88
+      reasoning: 0.90
+      design: 0.83
+      audit: 0.82
+    cost_tier: premium
+    provider: google
+
+  # ═══ xAI Grok ═══
+  openrouter/x-ai/grok-4.20:
+    categories:
+      code: 0.85
+      analysis: 0.82
+      reasoning: 0.88
+      design: 0.70
+      audit: 0.72
+    cost_tier: standard
+    provider: openrouter
+
+  openrouter/x-ai/grok-4.20-multi-agent:
+    categories:
+      code: 0.87
+      analysis: 0.84
+      reasoning: 0.90
+      design: 0.72
+      audit: 0.75
+    cost_tier: standard
+    provider: openrouter
+
+  openrouter/x-ai/grok-4.3:
+    categories:
+      code: 0.86
+      analysis: 0.84
+      reasoning: 0.89
+      design: 0.72
+      audit: 0.74
+    cost_tier: standard
+    provider: openrouter
+
+  # ═══ GLM (Z.AI) ═══
   zai-coding-plan/glm-5.2:
     categories:
-      analysis: 0.9
-      audit: 0.88
-      code: 0.92
+      code: 0.94
+      analysis: 0.90
+      reasoning: 0.93
       design: 0.85
-      reasoning: 0.95
+      audit: 0.88
     cost_tier: premium
     provider: zai
+
+  z-ai/glm-5-turbo:
+    categories:
+      code: 0.85
+      analysis: 0.82
+      reasoning: 0.84
+      design: 0.72
+      audit: 0.76
+    cost_tier: standard
+    provider: zai
+
+  z-ai/glm-5:
+    categories:
+      code: 0.80
+      analysis: 0.78
+      reasoning: 0.82
+      design: 0.68
+      audit: 0.70
+    cost_tier: budget
+    provider: zai
+
+  # ═══ Kimi / Moonshot ═══
+  openrouter/moonshotai/kimi-k2.7-code:
+    categories:
+      code: 0.95
+      analysis: 0.82
+      reasoning: 0.87
+      design: 0.70
+      audit: 0.65
+    cost_tier: standard
+    provider: openrouter
+
+  openrouter/moonshotai/kimi-k2.6:
+    categories:
+      code: 0.92
+      analysis: 0.80
+      reasoning: 0.85
+      design: 0.72
+      audit: 0.60
+    cost_tier: standard
+    provider: openrouter
+
+  # ═══ MiniMax ═══
+  openrouter/minimax/minimax-m3:
+    categories:
+      code: 0.88
+      analysis: 0.80
+      reasoning: 0.82
+      design: 0.82
+      audit: 0.62
+    cost_tier: budget
+    provider: openrouter
 
 providers:
   deepseek:
     base_url: https://api.deepseek.com/v1
-  anthropic:
-    base_url: https://api.anthropic.com/v1
   openrouter:
     base_url: https://openrouter.ai/api/v1
   zai:
     base_url: https://api.z.ai/api/coding/paas/v4
+  anthropic:
+    base_url: https://api.anthropic.com/v1
+  google:
+    base_url: https://generativelanguage.googleapis.com/v1beta
 
 server:
   host: 0.0.0.0
-  port: 8765
-
-# ------------------------------------------------------------------ #
-# Resilience configuration (F5–F8)
-# ------------------------------------------------------------------ #
-
-# F7: Retry with exponential backoff for transient provider failures
-retry:
-  max_attempts: 3          # Total attempts (including the first)
-  base_delay_ms: 500       # Initial delay in milliseconds
-  max_delay_ms: 10000      # Maximum delay cap (10 seconds)
-  backoff_multiplier: 2.0  # Multiply delay each attempt
-
-# F5: Request queue / backpressure
-queue:
-  max_concurrent: 10       # Maximum simultaneously executing requests
-  max_queue_depth: 100     # Maximum waiting requests (503 when full)
+  port: 8000
 
 observability:
-  log_level: info
+  log_level: debug
   trace_enabled: true
-  use_stdout: true          # emit structlog JSON to stdout (default) instead of stderr
   langfuse:
     enabled: false
