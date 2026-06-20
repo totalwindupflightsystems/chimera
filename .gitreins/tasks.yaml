@@ -1,0 +1,11 @@
+tasks:
+- id: allowed-models-v4
+  title: Enforce allowed_models on auto formation
+  criteria:
+  - 'C1: _apply_allowed_models function exists in engine.py and remaps worker models
+    outside allowed_models list'
+  - 'C2: Function is called from Engine.deliberate() after _apply_stage_models'
+  - 'C3: Collaborative eval tests use worker_count >= 1'
+  status: complete
+  created_at: '2026-06-20T08:28:54.754338+00:00'
+  completed_at: '2026-06-20T08:28:59.393960+00:00'

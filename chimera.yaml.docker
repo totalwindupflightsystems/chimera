@@ -4,14 +4,12 @@ api_keys:
   zai: ${ZAI_API_KEY}
   anthropic: ${ANTHROPIC_API_KEY}
   google: ${GEMINI_API_KEY}
-
 defaults:
   dispatcher: deepseek/deepseek-v4-flash
   default_worker: deepseek/deepseek-v4-pro
   default_aggregator: deepseek/deepseek-v4-flash
   lock_dispatcher: false
   lock_aggregator: true
-
 formations:
   audit:
     audit: default
@@ -28,274 +26,848 @@ formations:
   simple:
     aggregator: default
     workers: 2
-
-# ── Model Catalog (27 models, 9 providers) ──────────────────────────────────
-# Category weights: code | analysis | reasoning | design | audit  (0.0-1.0)
-# Cost tiers: budget (<$1/Mtok) | standard ($1-10) | premium (>$10)
-# Updated 2026-06-20 — research-backed from SWE-bench, AIME, GPQA, LiveCodeBench
-
 models:
-
-  # ═══ DeepSeek ═══
   deepseek/deepseek-v4-flash:
     categories:
-      code: 0.88
-      analysis: 0.80
-      reasoning: 0.75
-      design: 0.35
-      audit: 0.55
+      technology_code/code_generation/python: 88
+      technology_code/code_generation/javascript: 85
+      technology_code/code_generation/sql: 80
+      technology_code/code_generation/shell: 80
+      technology_code/testing_debugging/unit_tests: 75
+      technology_code/testing_debugging/error_analysis: 70
+      technology_code/data_science/analysis: 80
+      technology_code/data_science/modeling: 72
+      technology_code/data_interaction/database/sql: 80
+      technology_code/data_interaction/file_based/json: 82
+      complex_reasoning_agency/tool_use/code_execution: 78
+      complex_reasoning_agency/self_correction/debugging: 72
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 68
+      general_knowledge/reasoning/explanation: 75
+      general_knowledge/reasoning/logic_puzzle: 68
+      general_knowledge/fact_retrieval/definitions: 72
+      language_translation/summarization/abstractive: 70
+      language_translation/translation/language_to_language: 65
+      language_translation/linguistic_analysis/sentiment: 65
+      creative_conversational/ux_writing/interface_copy: 60
+      creative_conversational/creative_writing/storytelling: 60
     cost_tier: budget
     provider: deepseek
-
   deepseek/deepseek-v4-pro:
     categories:
-      code: 0.92
-      analysis: 0.85
-      reasoning: 0.82
-      design: 0.40
-      audit: 0.60
+      technology_code/code_generation/python: 92
+      technology_code/code_generation/javascript: 90
+      technology_code/code_generation/sql: 87
+      technology_code/code_generation/shell: 85
+      technology_code/system_design/architecture: 60
+      technology_code/system_design/devops: 65
+      technology_code/testing_debugging/unit_tests: 80
+      technology_code/testing_debugging/error_analysis: 78
+      technology_code/data_science/analysis: 85
+      technology_code/data_science/modeling: 80
+      technology_code/data_interaction/database/sql: 85
+      technology_code/data_interaction/file_based/json: 85
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 75
+      complex_reasoning_agency/tool_use/code_execution: 82
+      complex_reasoning_agency/self_correction/debugging: 80
+      academic_scientific/formal_writing/research_paper: 65
+      academic_scientific/mathematics/statistics: 78
+      academic_scientific/mathematics/algebra: 72
+      academic_scientific/mathematics/calculus: 70
+      general_knowledge/reasoning/explanation: 80
+      general_knowledge/reasoning/logic_puzzle: 72
+      general_knowledge/fact_retrieval/definitions: 75
+      general_knowledge/fact_retrieval/historical_events: 70
+      language_translation/summarization/abstractive: 72
+      language_translation/translation/language_to_language: 68
+      language_translation/linguistic_analysis/sentiment: 65
+      business_finance/marketing/copywriting: 60
+      business_finance/legal_document/analysis: 62
+      creative_conversational/creative_writing/storytelling: 60
+      creative_conversational/ux_writing/interface_copy: 60
     cost_tier: budget
     provider: deepseek
-
-  # ═══ Qwen3.7 ═══
   openrouter/qwen/qwen3.7-max:
     categories:
-      code: 0.90
-      analysis: 0.87
-      reasoning: 0.92
-      design: 0.72
-      audit: 0.78
+      technology_code/code_generation/python: 90
+      technology_code/code_generation/javascript: 88
+      technology_code/code_generation/sql: 87
+      technology_code/code_generation/shell: 85
+      technology_code/system_design/architecture: 75
+      technology_code/system_design/devops: 72
+      technology_code/testing_debugging/unit_tests: 82
+      technology_code/testing_debugging/error_analysis: 80
+      technology_code/data_science/analysis: 87
+      technology_code/data_science/modeling: 85
+      technology_code/data_interaction/database/sql: 85
+      technology_code/data_interaction/file_based/json: 85
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 88
+      complex_reasoning_agency/tool_use/code_execution: 85
+      complex_reasoning_agency/self_correction/debugging: 82
+      academic_scientific/formal_writing/research_paper: 78
+      academic_scientific/mathematics/statistics: 92
+      academic_scientific/mathematics/algebra: 90
+      academic_scientific/mathematics/calculus: 88
+      general_knowledge/reasoning/explanation: 90
+      general_knowledge/reasoning/logic_puzzle: 88
+      general_knowledge/fact_retrieval/definitions: 85
+      general_knowledge/fact_retrieval/historical_events: 82
+      language_translation/summarization/abstractive: 78
+      language_translation/translation/language_to_language: 75
+      language_translation/linguistic_analysis/sentiment: 72
+      business_finance/marketing/copywriting: 70
+      business_finance/legal_document/analysis: 78
+      creative_conversational/creative_writing/storytelling: 68
+      creative_conversational/ux_writing/interface_copy: 72
     cost_tier: standard
     provider: openrouter
-
   openrouter/qwen/qwen3.7-plus:
     categories:
-      code: 0.87
-      analysis: 0.83
-      reasoning: 0.88
-      design: 0.68
-      audit: 0.72
+      technology_code/code_generation/python: 87
+      technology_code/code_generation/javascript: 85
+      technology_code/code_generation/sql: 84
+      technology_code/code_generation/shell: 82
+      technology_code/system_design/architecture: 68
+      technology_code/system_design/devops: 66
+      technology_code/testing_debugging/unit_tests: 80
+      technology_code/testing_debugging/error_analysis: 78
+      technology_code/data_science/analysis: 83
+      technology_code/data_science/modeling: 80
+      technology_code/data_interaction/database/sql: 83
+      technology_code/data_interaction/file_based/json: 83
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 84
+      complex_reasoning_agency/tool_use/code_execution: 82
+      complex_reasoning_agency/self_correction/debugging: 78
+      academic_scientific/formal_writing/research_paper: 70
+      academic_scientific/mathematics/statistics: 88
+      academic_scientific/mathematics/algebra: 86
+      academic_scientific/mathematics/calculus: 84
+      general_knowledge/reasoning/explanation: 86
+      general_knowledge/reasoning/logic_puzzle: 84
+      general_knowledge/fact_retrieval/definitions: 82
+      general_knowledge/fact_retrieval/historical_events: 78
+      language_translation/summarization/abstractive: 75
+      language_translation/translation/language_to_language: 72
+      language_translation/linguistic_analysis/sentiment: 70
+      business_finance/marketing/copywriting: 65
+      business_finance/legal_document/analysis: 68
+      creative_conversational/creative_writing/storytelling: 62
     cost_tier: budget
     provider: openrouter
-
   openrouter/qwen/qwen3-coder:
     categories:
-      code: 0.91
-      analysis: 0.72
-      reasoning: 0.80
-      design: 0.40
-      audit: 0.68
+      technology_code/code_generation/python: 91
+      technology_code/code_generation/javascript: 90
+      technology_code/code_generation/sql: 88
+      technology_code/code_generation/shell: 87
+      technology_code/system_design/architecture: 65
+      technology_code/system_design/devops: 62
+      technology_code/testing_debugging/unit_tests: 85
+      technology_code/testing_debugging/error_analysis: 82
+      technology_code/data_science/analysis: 72
+      technology_code/data_science/modeling: 68
+      technology_code/data_interaction/database/sql: 86
+      technology_code/data_interaction/file_based/json: 87
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 70
+      complex_reasoning_agency/tool_use/code_execution: 82
+      complex_reasoning_agency/self_correction/debugging: 80
+      academic_scientific/mathematics/statistics: 65
+      academic_scientific/mathematics/algebra: 62
+      general_knowledge/reasoning/explanation: 75
+      general_knowledge/reasoning/logic_puzzle: 68
+      general_knowledge/fact_retrieval/definitions: 70
+      language_translation/summarization/abstractive: 62
+      language_translation/translation/language_to_language: 60
     cost_tier: budget
     provider: openrouter
-
-  # ═══ OpenAI GPT-5.5 ═══
   openrouter/openai/gpt-5.5:
     categories:
-      code: 0.93
-      analysis: 0.94
-      reasoning: 0.95
-      design: 0.88
-      audit: 0.85
+      technology_code/code_generation/python: 93
+      technology_code/code_generation/javascript: 92
+      technology_code/code_generation/sql: 91
+      technology_code/code_generation/shell: 90
+      technology_code/system_design/architecture: 88
+      technology_code/system_design/devops: 87
+      technology_code/testing_debugging/unit_tests: 88
+      technology_code/testing_debugging/error_analysis: 87
+      technology_code/data_science/analysis: 94
+      technology_code/data_science/modeling: 92
+      technology_code/data_interaction/database/sql: 91
+      technology_code/data_interaction/file_based/json: 92
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 93
+      complex_reasoning_agency/tool_use/code_execution: 90
+      complex_reasoning_agency/self_correction/debugging: 88
+      academic_scientific/formal_writing/research_paper: 90
+      academic_scientific/mathematics/statistics: 92
+      academic_scientific/mathematics/algebra: 90
+      academic_scientific/mathematics/calculus: 88
+      general_knowledge/reasoning/explanation: 94
+      general_knowledge/reasoning/logic_puzzle: 92
+      general_knowledge/fact_retrieval/definitions: 93
+      general_knowledge/fact_retrieval/historical_events: 90
+      language_translation/summarization/abstractive: 88
+      language_translation/translation/language_to_language: 85
+      language_translation/linguistic_analysis/sentiment: 86
+      business_finance/marketing/copywriting: 87
+      business_finance/legal_document/analysis: 86
+      creative_conversational/creative_writing/storytelling: 85
+      creative_conversational/ux_writing/interface_copy: 88
+      multimedia_processing/image/analysis: 82
+      multimedia_processing/image/generation: 75
     cost_tier: premium
     provider: openrouter
-
   openrouter/openai/gpt-5.5-pro:
     categories:
-      code: 0.94
-      analysis: 0.96
-      reasoning: 0.97
-      design: 0.90
-      audit: 0.88
+      technology_code/code_generation/python: 94
+      technology_code/code_generation/javascript: 93
+      technology_code/code_generation/sql: 92
+      technology_code/code_generation/shell: 91
+      technology_code/system_design/architecture: 90
+      technology_code/system_design/devops: 89
+      technology_code/testing_debugging/unit_tests: 90
+      technology_code/testing_debugging/error_analysis: 90
+      technology_code/data_science/analysis: 96
+      technology_code/data_science/modeling: 95
+      technology_code/data_interaction/database/sql: 92
+      technology_code/data_interaction/file_based/json: 93
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 96
+      complex_reasoning_agency/tool_use/code_execution: 93
+      complex_reasoning_agency/self_correction/debugging: 91
+      academic_scientific/formal_writing/research_paper: 93
+      academic_scientific/mathematics/statistics: 95
+      academic_scientific/mathematics/algebra: 93
+      academic_scientific/mathematics/calculus: 91
+      general_knowledge/reasoning/explanation: 96
+      general_knowledge/reasoning/logic_puzzle: 95
+      general_knowledge/fact_retrieval/definitions: 94
+      general_knowledge/fact_retrieval/historical_events: 92
+      language_translation/summarization/abstractive: 90
+      language_translation/translation/language_to_language: 87
+      language_translation/linguistic_analysis/sentiment: 88
+      business_finance/marketing/copywriting: 89
+      business_finance/legal_document/analysis: 90
+      creative_conversational/creative_writing/storytelling: 88
+      creative_conversational/ux_writing/interface_copy: 90
+      multimedia_processing/image/analysis: 85
+      multimedia_processing/image/generation: 78
     cost_tier: premium
     provider: openrouter
-
-  # ═══ Anthropic Claude ═══
   anthropic/claude-opus-4.8:
     categories:
-      code: 0.95
-      analysis: 0.94
-      reasoning: 0.96
-      design: 0.90
-      audit: 0.92
+      technology_code/code_generation/python: 95
+      technology_code/code_generation/javascript: 94
+      technology_code/code_generation/sql: 93
+      technology_code/code_generation/shell: 92
+      technology_code/system_design/architecture: 91
+      technology_code/system_design/devops: 90
+      technology_code/testing_debugging/unit_tests: 93
+      technology_code/testing_debugging/error_analysis: 92
+      technology_code/data_science/analysis: 94
+      technology_code/data_science/modeling: 92
+      technology_code/data_interaction/database/sql: 93
+      technology_code/data_interaction/file_based/json: 93
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 95
+      complex_reasoning_agency/tool_use/code_execution: 94
+      complex_reasoning_agency/self_correction/debugging: 93
+      academic_scientific/formal_writing/research_paper: 92
+      academic_scientific/mathematics/statistics: 93
+      academic_scientific/mathematics/algebra: 91
+      academic_scientific/mathematics/calculus: 89
+      general_knowledge/reasoning/explanation: 95
+      general_knowledge/reasoning/logic_puzzle: 93
+      general_knowledge/fact_retrieval/definitions: 92
+      general_knowledge/fact_retrieval/historical_events: 90
+      language_translation/summarization/abstractive: 88
+      language_translation/translation/language_to_language: 85
+      language_translation/linguistic_analysis/sentiment: 86
+      business_finance/marketing/copywriting: 88
+      business_finance/legal_document/analysis: 91
+      creative_conversational/creative_writing/storytelling: 88
+      creative_conversational/ux_writing/interface_copy: 90
+      multimedia_processing/image/analysis: 82
+      multimedia_processing/image/generation: 72
     cost_tier: premium
     provider: anthropic
-
   anthropic/claude-sonnet-4.6:
     categories:
-      code: 0.92
-      analysis: 0.90
-      reasoning: 0.91
-      design: 0.88
-      audit: 0.85
+      technology_code/code_generation/python: 92
+      technology_code/code_generation/javascript: 91
+      technology_code/code_generation/sql: 90
+      technology_code/code_generation/shell: 89
+      technology_code/system_design/architecture: 88
+      technology_code/system_design/devops: 87
+      technology_code/testing_debugging/unit_tests: 88
+      technology_code/testing_debugging/error_analysis: 86
+      technology_code/data_science/analysis: 90
+      technology_code/data_science/modeling: 88
+      technology_code/data_interaction/database/sql: 90
+      technology_code/data_interaction/file_based/json: 91
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 89
+      complex_reasoning_agency/tool_use/code_execution: 90
+      complex_reasoning_agency/self_correction/debugging: 87
+      academic_scientific/formal_writing/research_paper: 85
+      academic_scientific/mathematics/statistics: 86
+      academic_scientific/mathematics/algebra: 84
+      academic_scientific/mathematics/calculus: 82
+      general_knowledge/reasoning/explanation: 90
+      general_knowledge/reasoning/logic_puzzle: 87
+      general_knowledge/fact_retrieval/definitions: 88
+      general_knowledge/fact_retrieval/historical_events: 85
+      language_translation/summarization/abstractive: 86
+      language_translation/translation/language_to_language: 83
+      language_translation/linguistic_analysis/sentiment: 84
+      business_finance/marketing/copywriting: 86
+      business_finance/legal_document/analysis: 84
+      creative_conversational/creative_writing/storytelling: 86
+      creative_conversational/ux_writing/interface_copy: 88
     cost_tier: premium
     provider: anthropic
-
   anthropic/claude-haiku-4.5:
     categories:
-      code: 0.85
-      analysis: 0.82
-      reasoning: 0.80
-      design: 0.78
-      audit: 0.72
+      technology_code/code_generation/python: 85
+      technology_code/code_generation/javascript: 84
+      technology_code/code_generation/sql: 83
+      technology_code/code_generation/shell: 82
+      technology_code/system_design/architecture: 78
+      technology_code/system_design/devops: 76
+      technology_code/testing_debugging/unit_tests: 82
+      technology_code/testing_debugging/error_analysis: 78
+      technology_code/data_science/analysis: 82
+      technology_code/data_science/modeling: 78
+      technology_code/data_interaction/database/sql: 83
+      technology_code/data_interaction/file_based/json: 84
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 76
+      complex_reasoning_agency/tool_use/code_execution: 80
+      complex_reasoning_agency/self_correction/debugging: 75
+      academic_scientific/formal_writing/research_paper: 72
+      academic_scientific/mathematics/statistics: 75
+      academic_scientific/mathematics/algebra: 72
+      academic_scientific/mathematics/calculus: 68
+      general_knowledge/reasoning/explanation: 82
+      general_knowledge/reasoning/logic_puzzle: 76
+      general_knowledge/fact_retrieval/definitions: 80
+      general_knowledge/fact_retrieval/historical_events: 76
+      language_translation/summarization/abstractive: 78
+      language_translation/translation/language_to_language: 74
+      language_translation/linguistic_analysis/sentiment: 72
+      business_finance/marketing/copywriting: 76
+      business_finance/legal_document/analysis: 68
+      creative_conversational/creative_writing/storytelling: 76
+      creative_conversational/ux_writing/interface_copy: 78
     cost_tier: standard
     provider: anthropic
-
   openrouter/anthropic/claude-fable-5:
     categories:
-      code: 0.97
-      analysis: 0.96
-      reasoning: 0.98
-      design: 0.93
-      audit: 0.96
+      technology_code/code_generation/python: 97
+      technology_code/code_generation/javascript: 96
+      technology_code/code_generation/sql: 95
+      technology_code/code_generation/shell: 94
+      technology_code/system_design/architecture: 94
+      technology_code/system_design/devops: 93
+      technology_code/testing_debugging/unit_tests: 96
+      technology_code/testing_debugging/error_analysis: 95
+      technology_code/data_science/analysis: 96
+      technology_code/data_science/modeling: 95
+      technology_code/data_interaction/database/sql: 95
+      technology_code/data_interaction/file_based/json: 95
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 98
+      complex_reasoning_agency/tool_use/code_execution: 97
+      complex_reasoning_agency/self_correction/debugging: 97
+      academic_scientific/formal_writing/research_paper: 95
+      academic_scientific/mathematics/statistics: 96
+      academic_scientific/mathematics/algebra: 95
+      academic_scientific/mathematics/calculus: 94
+      general_knowledge/reasoning/explanation: 97
+      general_knowledge/reasoning/logic_puzzle: 96
+      general_knowledge/fact_retrieval/definitions: 95
+      general_knowledge/fact_retrieval/historical_events: 93
+      language_translation/summarization/abstractive: 92
+      language_translation/translation/language_to_language: 88
+      language_translation/linguistic_analysis/sentiment: 90
+      business_finance/marketing/copywriting: 91
+      business_finance/legal_document/analysis: 94
+      creative_conversational/creative_writing/storytelling: 92
+      creative_conversational/ux_writing/interface_copy: 93
+      multimedia_processing/image/analysis: 88
+      multimedia_processing/image/generation: 82
     cost_tier: premium
     provider: openrouter
-    # SUSPENDED June 12, 2026 — check status before using
-
-  # ═══ Google Gemini ═══
   google/gemini-3.1-pro-preview:
     categories:
-      code: 0.90
-      analysis: 0.92
-      reasoning: 0.93
-      design: 0.85
-      audit: 0.82
+      technology_code/code_generation/python: 90
+      technology_code/code_generation/javascript: 89
+      technology_code/code_generation/sql: 88
+      technology_code/code_generation/shell: 87
+      technology_code/system_design/architecture: 86
+      technology_code/system_design/devops: 84
+      technology_code/testing_debugging/unit_tests: 86
+      technology_code/testing_debugging/error_analysis: 84
+      technology_code/data_science/analysis: 92
+      technology_code/data_science/modeling: 90
+      technology_code/data_interaction/database/sql: 88
+      technology_code/data_interaction/file_based/json: 89
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 90
+      complex_reasoning_agency/tool_use/code_execution: 87
+      complex_reasoning_agency/self_correction/debugging: 85
+      academic_scientific/formal_writing/research_paper: 88
+      academic_scientific/mathematics/statistics: 92
+      academic_scientific/mathematics/algebra: 90
+      academic_scientific/mathematics/calculus: 88
+      general_knowledge/reasoning/explanation: 92
+      general_knowledge/reasoning/logic_puzzle: 88
+      general_knowledge/fact_retrieval/definitions: 90
+      general_knowledge/fact_retrieval/historical_events: 87
+      language_translation/summarization/abstractive: 85
+      language_translation/translation/language_to_language: 83
+      language_translation/linguistic_analysis/sentiment: 84
+      business_finance/marketing/copywriting: 84
+      business_finance/legal_document/analysis: 82
+      creative_conversational/creative_writing/storytelling: 83
+      creative_conversational/ux_writing/interface_copy: 85
+      multimedia_processing/image/analysis: 92
+      multimedia_processing/image/generation: 88
     cost_tier: premium
     provider: google
-
   google/gemini-3.5-flash:
     categories:
-      code: 0.87
-      analysis: 0.88
-      reasoning: 0.85
-      design: 0.82
-      audit: 0.75
+      technology_code/code_generation/python: 87
+      technology_code/code_generation/javascript: 86
+      technology_code/code_generation/sql: 85
+      technology_code/code_generation/shell: 84
+      technology_code/system_design/architecture: 82
+      technology_code/system_design/devops: 80
+      technology_code/testing_debugging/unit_tests: 84
+      technology_code/testing_debugging/error_analysis: 80
+      technology_code/data_science/analysis: 88
+      technology_code/data_science/modeling: 85
+      technology_code/data_interaction/database/sql: 85
+      technology_code/data_interaction/file_based/json: 86
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 82
+      complex_reasoning_agency/tool_use/code_execution: 84
+      complex_reasoning_agency/self_correction/debugging: 78
+      academic_scientific/formal_writing/research_paper: 80
+      academic_scientific/mathematics/statistics: 83
+      academic_scientific/mathematics/algebra: 81
+      academic_scientific/mathematics/calculus: 78
+      general_knowledge/reasoning/explanation: 86
+      general_knowledge/reasoning/logic_puzzle: 82
+      general_knowledge/fact_retrieval/definitions: 85
+      general_knowledge/fact_retrieval/historical_events: 82
+      language_translation/summarization/abstractive: 82
+      language_translation/translation/language_to_language: 80
+      language_translation/linguistic_analysis/sentiment: 80
+      business_finance/marketing/copywriting: 80
+      business_finance/legal_document/analysis: 75
+      creative_conversational/creative_writing/storytelling: 80
+      creative_conversational/ux_writing/interface_copy: 82
+      multimedia_processing/image/analysis: 88
+      multimedia_processing/image/generation: 83
     cost_tier: standard
     provider: google
-
   google/gemini-3.1-flash-lite-preview:
     categories:
-      code: 0.72
-      analysis: 0.75
-      reasoning: 0.70
-      design: 0.68
-      audit: 0.55
+      technology_code/code_generation/python: 72
+      technology_code/code_generation/javascript: 70
+      technology_code/code_generation/sql: 68
+      technology_code/code_generation/shell: 66
+      technology_code/testing_debugging/unit_tests: 66
+      technology_code/data_science/analysis: 75
+      technology_code/data_interaction/database/sql: 68
+      technology_code/data_interaction/file_based/json: 72
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 62
+      complex_reasoning_agency/tool_use/code_execution: 65
+      general_knowledge/reasoning/explanation: 70
+      general_knowledge/reasoning/logic_puzzle: 64
+      general_knowledge/fact_retrieval/definitions: 72
+      language_translation/summarization/abstractive: 68
+      language_translation/translation/language_to_language: 65
+      language_translation/linguistic_analysis/sentiment: 66
+      creative_conversational/ux_writing/interface_copy: 68
+      creative_conversational/creative_writing/storytelling: 65
     cost_tier: budget
     provider: google
-
   google/gemini-3-flash-preview:
     categories:
-      code: 0.78
-      analysis: 0.85
-      reasoning: 0.82
-      design: 0.75
-      audit: 0.60
+      technology_code/code_generation/python: 78
+      technology_code/code_generation/javascript: 76
+      technology_code/code_generation/sql: 75
+      technology_code/code_generation/shell: 74
+      technology_code/system_design/architecture: 70
+      technology_code/system_design/devops: 68
+      technology_code/testing_debugging/unit_tests: 74
+      technology_code/testing_debugging/error_analysis: 72
+      technology_code/data_science/analysis: 85
+      technology_code/data_science/modeling: 80
+      technology_code/data_interaction/database/sql: 76
+      technology_code/data_interaction/file_based/json: 78
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 78
+      complex_reasoning_agency/tool_use/code_execution: 75
+      complex_reasoning_agency/self_correction/debugging: 70
+      academic_scientific/formal_writing/research_paper: 72
+      academic_scientific/mathematics/statistics: 80
+      academic_scientific/mathematics/algebra: 76
+      academic_scientific/mathematics/calculus: 72
+      general_knowledge/reasoning/explanation: 82
+      general_knowledge/reasoning/logic_puzzle: 76
+      general_knowledge/fact_retrieval/definitions: 80
+      general_knowledge/fact_retrieval/historical_events: 76
+      language_translation/summarization/abstractive: 75
+      language_translation/translation/language_to_language: 72
+      language_translation/linguistic_analysis/sentiment: 74
+      business_finance/marketing/copywriting: 72
+      business_finance/legal_document/analysis: 65
+      creative_conversational/creative_writing/storytelling: 72
+      creative_conversational/ux_writing/interface_copy: 75
+      multimedia_processing/image/analysis: 82
+      multimedia_processing/image/generation: 72
     cost_tier: budget
     provider: google
-
   google/gemini-3-pro-preview:
     categories:
-      code: 0.85
-      analysis: 0.88
-      reasoning: 0.90
-      design: 0.83
-      audit: 0.82
+      technology_code/code_generation/python: 85
+      technology_code/code_generation/javascript: 84
+      technology_code/code_generation/sql: 83
+      technology_code/code_generation/shell: 82
+      technology_code/system_design/architecture: 84
+      technology_code/system_design/devops: 82
+      technology_code/testing_debugging/unit_tests: 83
+      technology_code/testing_debugging/error_analysis: 82
+      technology_code/data_science/analysis: 88
+      technology_code/data_science/modeling: 86
+      technology_code/data_interaction/database/sql: 83
+      technology_code/data_interaction/file_based/json: 84
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 87
+      complex_reasoning_agency/tool_use/code_execution: 84
+      complex_reasoning_agency/self_correction/debugging: 82
+      academic_scientific/formal_writing/research_paper: 85
+      academic_scientific/mathematics/statistics: 88
+      academic_scientific/mathematics/algebra: 86
+      academic_scientific/mathematics/calculus: 84
+      general_knowledge/reasoning/explanation: 89
+      general_knowledge/reasoning/logic_puzzle: 86
+      general_knowledge/fact_retrieval/definitions: 87
+      general_knowledge/fact_retrieval/historical_events: 84
+      language_translation/summarization/abstractive: 84
+      language_translation/translation/language_to_language: 82
+      language_translation/linguistic_analysis/sentiment: 82
+      business_finance/marketing/copywriting: 82
+      business_finance/legal_document/analysis: 80
+      creative_conversational/creative_writing/storytelling: 81
+      creative_conversational/ux_writing/interface_copy: 83
+      multimedia_processing/image/analysis: 90
+      multimedia_processing/image/generation: 85
     cost_tier: premium
     provider: google
-
-  # ═══ xAI Grok ═══
   openrouter/x-ai/grok-4.20:
     categories:
-      code: 0.85
-      analysis: 0.82
-      reasoning: 0.88
-      design: 0.70
-      audit: 0.72
+      technology_code/code_generation/python: 85
+      technology_code/code_generation/javascript: 83
+      technology_code/code_generation/sql: 82
+      technology_code/code_generation/shell: 81
+      technology_code/system_design/architecture: 72
+      technology_code/system_design/devops: 70
+      technology_code/testing_debugging/unit_tests: 78
+      technology_code/testing_debugging/error_analysis: 76
+      technology_code/data_science/analysis: 82
+      technology_code/data_science/modeling: 80
+      technology_code/data_interaction/database/sql: 82
+      technology_code/data_interaction/file_based/json: 83
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 84
+      complex_reasoning_agency/tool_use/code_execution: 82
+      complex_reasoning_agency/self_correction/debugging: 76
+      academic_scientific/formal_writing/research_paper: 72
+      academic_scientific/mathematics/statistics: 88
+      academic_scientific/mathematics/algebra: 87
+      academic_scientific/mathematics/calculus: 85
+      general_knowledge/reasoning/explanation: 85
+      general_knowledge/reasoning/logic_puzzle: 86
+      general_knowledge/fact_retrieval/definitions: 82
+      general_knowledge/fact_retrieval/historical_events: 78
+      language_translation/summarization/abstractive: 75
+      language_translation/translation/language_to_language: 70
+      language_translation/linguistic_analysis/sentiment: 72
+      business_finance/marketing/copywriting: 68
+      business_finance/legal_document/analysis: 66
+      creative_conversational/creative_writing/storytelling: 65
+      creative_conversational/ux_writing/interface_copy: 70
     cost_tier: standard
     provider: openrouter
-
   openrouter/x-ai/grok-4.20-multi-agent:
     categories:
-      code: 0.87
-      analysis: 0.84
-      reasoning: 0.90
-      design: 0.72
-      audit: 0.75
+      technology_code/code_generation/python: 87
+      technology_code/code_generation/javascript: 85
+      technology_code/code_generation/sql: 84
+      technology_code/code_generation/shell: 83
+      technology_code/system_design/architecture: 74
+      technology_code/system_design/devops: 72
+      technology_code/testing_debugging/unit_tests: 80
+      technology_code/testing_debugging/error_analysis: 78
+      technology_code/data_science/analysis: 84
+      technology_code/data_science/modeling: 82
+      technology_code/data_interaction/database/sql: 84
+      technology_code/data_interaction/file_based/json: 85
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 88
+      complex_reasoning_agency/tool_use/code_execution: 85
+      complex_reasoning_agency/self_correction/debugging: 78
+      academic_scientific/formal_writing/research_paper: 74
+      academic_scientific/mathematics/statistics: 90
+      academic_scientific/mathematics/algebra: 88
+      academic_scientific/mathematics/calculus: 86
+      general_knowledge/reasoning/explanation: 87
+      general_knowledge/reasoning/logic_puzzle: 88
+      general_knowledge/fact_retrieval/definitions: 84
+      general_knowledge/fact_retrieval/historical_events: 80
+      language_translation/summarization/abstractive: 78
+      language_translation/translation/language_to_language: 72
+      language_translation/linguistic_analysis/sentiment: 74
+      business_finance/marketing/copywriting: 70
+      business_finance/legal_document/analysis: 68
+      creative_conversational/creative_writing/storytelling: 66
+      creative_conversational/ux_writing/interface_copy: 72
     cost_tier: standard
     provider: openrouter
-
   openrouter/x-ai/grok-4.3:
     categories:
-      code: 0.86
-      analysis: 0.84
-      reasoning: 0.89
-      design: 0.72
-      audit: 0.74
+      technology_code/code_generation/python: 86
+      technology_code/code_generation/javascript: 84
+      technology_code/code_generation/sql: 83
+      technology_code/code_generation/shell: 82
+      technology_code/system_design/architecture: 74
+      technology_code/system_design/devops: 72
+      technology_code/testing_debugging/unit_tests: 79
+      technology_code/testing_debugging/error_analysis: 77
+      technology_code/data_science/analysis: 84
+      technology_code/data_science/modeling: 82
+      technology_code/data_interaction/database/sql: 83
+      technology_code/data_interaction/file_based/json: 84
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 86
+      complex_reasoning_agency/tool_use/code_execution: 83
+      complex_reasoning_agency/self_correction/debugging: 77
+      academic_scientific/formal_writing/research_paper: 73
+      academic_scientific/mathematics/statistics: 89
+      academic_scientific/mathematics/algebra: 87
+      academic_scientific/mathematics/calculus: 85
+      general_knowledge/reasoning/explanation: 86
+      general_knowledge/reasoning/logic_puzzle: 87
+      general_knowledge/fact_retrieval/definitions: 83
+      general_knowledge/fact_retrieval/historical_events: 79
+      language_translation/summarization/abstractive: 76
+      language_translation/translation/language_to_language: 71
+      language_translation/linguistic_analysis/sentiment: 73
+      business_finance/marketing/copywriting: 69
+      business_finance/legal_document/analysis: 67
+      creative_conversational/creative_writing/storytelling: 66
+      creative_conversational/ux_writing/interface_copy: 72
     cost_tier: standard
     provider: openrouter
-
-  # ═══ GLM (Z.AI) ═══
   zai-coding-plan/glm-5.2:
     categories:
-      code: 0.94
-      analysis: 0.90
-      reasoning: 0.93
-      design: 0.85
-      audit: 0.88
+      technology_code/code_generation/python: 94
+      technology_code/code_generation/javascript: 93
+      technology_code/code_generation/sql: 92
+      technology_code/code_generation/shell: 91
+      technology_code/system_design/architecture: 86
+      technology_code/system_design/devops: 85
+      technology_code/testing_debugging/unit_tests: 90
+      technology_code/testing_debugging/error_analysis: 89
+      technology_code/data_science/analysis: 90
+      technology_code/data_science/modeling: 88
+      technology_code/data_interaction/database/sql: 92
+      technology_code/data_interaction/file_based/json: 92
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 90
+      complex_reasoning_agency/tool_use/code_execution: 92
+      complex_reasoning_agency/self_correction/debugging: 90
+      academic_scientific/formal_writing/research_paper: 84
+      academic_scientific/mathematics/statistics: 89
+      academic_scientific/mathematics/algebra: 87
+      academic_scientific/mathematics/calculus: 85
+      general_knowledge/reasoning/explanation: 90
+      general_knowledge/reasoning/logic_puzzle: 87
+      general_knowledge/fact_retrieval/definitions: 88
+      general_knowledge/fact_retrieval/historical_events: 84
+      language_translation/summarization/abstractive: 84
+      language_translation/translation/language_to_language: 80
+      language_translation/linguistic_analysis/sentiment: 82
+      business_finance/marketing/copywriting: 83
+      business_finance/legal_document/analysis: 85
+      creative_conversational/creative_writing/storytelling: 82
+      creative_conversational/ux_writing/interface_copy: 85
     cost_tier: premium
     provider: zai
-
   z-ai/glm-5-turbo:
     categories:
-      code: 0.85
-      analysis: 0.82
-      reasoning: 0.84
-      design: 0.72
-      audit: 0.76
+      technology_code/code_generation/python: 85
+      technology_code/code_generation/javascript: 83
+      technology_code/code_generation/sql: 82
+      technology_code/code_generation/shell: 81
+      technology_code/system_design/architecture: 72
+      technology_code/system_design/devops: 70
+      technology_code/testing_debugging/unit_tests: 80
+      technology_code/testing_debugging/error_analysis: 78
+      technology_code/data_science/analysis: 82
+      technology_code/data_science/modeling: 78
+      technology_code/data_interaction/database/sql: 82
+      technology_code/data_interaction/file_based/json: 84
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 80
+      complex_reasoning_agency/tool_use/code_execution: 83
+      complex_reasoning_agency/self_correction/debugging: 78
+      academic_scientific/formal_writing/research_paper: 70
+      academic_scientific/mathematics/statistics: 80
+      academic_scientific/mathematics/algebra: 76
+      academic_scientific/mathematics/calculus: 72
+      general_knowledge/reasoning/explanation: 83
+      general_knowledge/reasoning/logic_puzzle: 78
+      general_knowledge/fact_retrieval/definitions: 80
+      general_knowledge/fact_retrieval/historical_events: 75
+      language_translation/summarization/abstractive: 76
+      language_translation/translation/language_to_language: 72
+      language_translation/linguistic_analysis/sentiment: 70
+      business_finance/marketing/copywriting: 69
+      business_finance/legal_document/analysis: 67
+      creative_conversational/creative_writing/storytelling: 66
+      creative_conversational/ux_writing/interface_copy: 72
     cost_tier: standard
     provider: zai
-
   z-ai/glm-5:
     categories:
-      code: 0.80
-      analysis: 0.78
-      reasoning: 0.82
-      design: 0.68
-      audit: 0.70
+      technology_code/code_generation/python: 80
+      technology_code/code_generation/javascript: 78
+      technology_code/code_generation/sql: 77
+      technology_code/code_generation/shell: 76
+      technology_code/system_design/architecture: 65
+      technology_code/system_design/devops: 64
+      technology_code/testing_debugging/unit_tests: 75
+      technology_code/testing_debugging/error_analysis: 72
+      technology_code/data_science/analysis: 78
+      technology_code/data_science/modeling: 75
+      technology_code/data_interaction/database/sql: 78
+      technology_code/data_interaction/file_based/json: 80
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 76
+      complex_reasoning_agency/tool_use/code_execution: 78
+      complex_reasoning_agency/self_correction/debugging: 72
+      academic_scientific/formal_writing/research_paper: 65
+      academic_scientific/mathematics/statistics: 78
+      academic_scientific/mathematics/algebra: 74
+      academic_scientific/mathematics/calculus: 70
+      general_knowledge/reasoning/explanation: 80
+      general_knowledge/reasoning/logic_puzzle: 74
+      general_knowledge/fact_retrieval/definitions: 78
+      general_knowledge/fact_retrieval/historical_events: 72
+      language_translation/summarization/abstractive: 72
+      language_translation/translation/language_to_language: 68
+      language_translation/linguistic_analysis/sentiment: 66
+      business_finance/marketing/copywriting: 64
+      creative_conversational/creative_writing/storytelling: 62
+      creative_conversational/ux_writing/interface_copy: 68
     cost_tier: budget
     provider: zai
-
-  # ═══ Kimi / Moonshot ═══
   openrouter/moonshotai/kimi-k2.7-code:
     categories:
-      code: 0.95
-      analysis: 0.82
-      reasoning: 0.87
-      design: 0.70
-      audit: 0.65
+      technology_code/code_generation/python: 95
+      technology_code/code_generation/javascript: 94
+      technology_code/code_generation/sql: 93
+      technology_code/code_generation/shell: 92
+      technology_code/system_design/architecture: 75
+      technology_code/system_design/devops: 72
+      technology_code/testing_debugging/unit_tests: 88
+      technology_code/testing_debugging/error_analysis: 85
+      technology_code/data_science/analysis: 82
+      technology_code/data_science/modeling: 78
+      technology_code/data_interaction/database/sql: 92
+      technology_code/data_interaction/file_based/json: 93
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 80
+      complex_reasoning_agency/tool_use/code_execution: 88
+      complex_reasoning_agency/self_correction/debugging: 82
+      academic_scientific/formal_writing/research_paper: 68
+      academic_scientific/mathematics/statistics: 80
+      academic_scientific/mathematics/algebra: 76
+      academic_scientific/mathematics/calculus: 72
+      general_knowledge/reasoning/explanation: 84
+      general_knowledge/reasoning/logic_puzzle: 78
+      general_knowledge/fact_retrieval/definitions: 80
+      general_knowledge/fact_retrieval/historical_events: 72
+      language_translation/summarization/abstractive: 72
+      language_translation/translation/language_to_language: 66
+      language_translation/linguistic_analysis/sentiment: 64
+      business_finance/marketing/copywriting: 65
+      business_finance/legal_document/analysis: 62
+      creative_conversational/ux_writing/interface_copy: 70
+      creative_conversational/creative_writing/storytelling: 64
+      multimedia_processing/image/analysis: 72
+      multimedia_processing/image/generation: 65
     cost_tier: standard
     provider: openrouter
-
   openrouter/moonshotai/kimi-k2.6:
     categories:
-      code: 0.92
-      analysis: 0.80
-      reasoning: 0.85
-      design: 0.72
-      audit: 0.60
+      technology_code/code_generation/python: 92
+      technology_code/code_generation/javascript: 91
+      technology_code/code_generation/sql: 90
+      technology_code/code_generation/shell: 89
+      technology_code/system_design/architecture: 76
+      technology_code/system_design/devops: 74
+      technology_code/testing_debugging/unit_tests: 85
+      technology_code/testing_debugging/error_analysis: 82
+      technology_code/data_science/analysis: 80
+      technology_code/data_science/modeling: 76
+      technology_code/data_interaction/database/sql: 90
+      technology_code/data_interaction/file_based/json: 91
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 84
+      complex_reasoning_agency/tool_use/code_execution: 86
+      complex_reasoning_agency/self_correction/debugging: 78
+      academic_scientific/formal_writing/research_paper: 70
+      academic_scientific/mathematics/statistics: 78
+      academic_scientific/mathematics/algebra: 74
+      academic_scientific/mathematics/calculus: 70
+      general_knowledge/reasoning/explanation: 82
+      general_knowledge/reasoning/logic_puzzle: 76
+      general_knowledge/fact_retrieval/definitions: 78
+      general_knowledge/fact_retrieval/historical_events: 72
+      language_translation/summarization/abstractive: 72
+      language_translation/translation/language_to_language: 66
+      language_translation/linguistic_analysis/sentiment: 64
+      business_finance/marketing/copywriting: 65
+      business_finance/legal_document/analysis: 62
+      creative_conversational/ux_writing/interface_copy: 72
+      creative_conversational/creative_writing/storytelling: 66
+      multimedia_processing/image/analysis: 75
+      multimedia_processing/image/generation: 68
     cost_tier: standard
     provider: openrouter
-
-  # ═══ MiniMax ═══
   openrouter/minimax/minimax-m3:
     categories:
-      code: 0.88
-      analysis: 0.80
-      reasoning: 0.82
-      design: 0.82
-      audit: 0.62
+      technology_code/code_generation/python: 88
+      technology_code/code_generation/javascript: 87
+      technology_code/code_generation/sql: 86
+      technology_code/code_generation/shell: 85
+      technology_code/system_design/architecture: 83
+      technology_code/system_design/devops: 81
+      technology_code/testing_debugging/unit_tests: 82
+      technology_code/testing_debugging/error_analysis: 78
+      technology_code/data_science/analysis: 80
+      technology_code/data_science/modeling: 76
+      technology_code/data_interaction/database/sql: 86
+      technology_code/data_interaction/file_based/json: 87
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 78
+      complex_reasoning_agency/tool_use/code_execution: 82
+      complex_reasoning_agency/self_correction/debugging: 73
+      academic_scientific/formal_writing/research_paper: 74
+      academic_scientific/mathematics/statistics: 76
+      academic_scientific/mathematics/algebra: 72
+      academic_scientific/mathematics/calculus: 68
+      general_knowledge/reasoning/explanation: 80
+      general_knowledge/reasoning/logic_puzzle: 74
+      general_knowledge/fact_retrieval/definitions: 78
+      general_knowledge/fact_retrieval/historical_events: 74
+      language_translation/summarization/abstractive: 78
+      language_translation/translation/language_to_language: 74
+      language_translation/linguistic_analysis/sentiment: 72
+      business_finance/marketing/copywriting: 80
+      business_finance/legal_document/analysis: 70
+      creative_conversational/creative_writing/storytelling: 80
+      creative_conversational/ux_writing/interface_copy: 82
+      multimedia_processing/image/analysis: 72
+      multimedia_processing/image/generation: 68
     cost_tier: budget
     provider: openrouter
-
 providers:
   deepseek:
     base_url: https://api.deepseek.com/v1
@@ -307,11 +879,9 @@ providers:
     base_url: https://api.anthropic.com/v1
   google:
     base_url: https://generativelanguage.googleapis.com/v1beta
-
 server:
   host: 0.0.0.0
   port: 8000
-
 observability:
   log_level: debug
   trace_enabled: true
