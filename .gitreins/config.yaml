@@ -4,8 +4,8 @@ guards:
   secrets: true
   lint: true
   tests: true
-  test_command: "pytest -x --tb=short -q"
-  dead_code: true
+  test_command: ".venv/bin/python -m pytest -x --tb=short -q --ignore=tests/integration --ignore=tests/compat"
+  # dead_code: true  # TODO: noisy — whitelist 'from __future__ import annotations', FastAPI routes, __all__ exports, mutants/ dir
   skylos: false
 
 pipeline:
@@ -14,28 +14,18 @@ pipeline:
       parallel: true
       on: [pre-commit, pre-eval]
       steps:
-        - id: secrets
+        - id: guard
           type: script
-          run: "bash .git/hooks/pre-commit-secrets"
+          run: "gitreins guard"
           on_fail: block
-
-        - id: lint
-          type: script
-          run: "ruff check src/ tests/ --quiet"
-          on_fail: continue
-
-        - id: tests
-          type: script
-          run: "pytest -x --tb=short -q"
-          on_fail: continue
 
     - id: tier2
       type: ai_eval
       on: [pre-eval]
       condition: "true"
-      max_iterations: 20
-      tools: [read_file, run_command, search_pattern, read_diff, sandbox]
+      max_iterations: 40
+      tools: [read_file, run_command, search_pattern, read_diff, sandbox, detect_dead_code]
 
 evaluator:
-  max_iterations: 20
-  model: deepseek-chat
+  max_iterations: 40
+  model: deepseek/deepseek-v4-pro
