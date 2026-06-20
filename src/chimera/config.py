@@ -211,6 +211,7 @@ class ChimeraConfig(BaseModel):
     circuit_breakers: dict[str, CircuitBreakerConfig] = Field(default_factory=dict)
     api_keys: dict[str, str] = Field(default_factory=dict)
     selector: SelectorConfig = Field(default_factory=SelectorConfig)
+    provider_discovery: bool = True  # auto-discover providers from models.dev
 
     @model_validator(mode="after")
     def _resolve_provider_api_keys(self) -> ChimeraConfig:
@@ -328,6 +329,10 @@ def _apply_env_overrides(config: ChimeraConfig) -> None:
     This is the bridge between ``chimera.yaml`` and Docker-style
     12-factor config: every commonly-tweaked knob has a
     ``CHIMERA_*`` env var that takes precedence over the file.
+
+    Also auto-discovers providers from models.dev when
+    ``provider_discovery`` is enabled and providers are not
+    explicitly configured.
     """
     import os as _os
 
@@ -366,6 +371,33 @@ def _apply_env_overrides(config: ChimeraConfig) -> None:
     ):
         if _os.environ.get(env_var):
             config.api_keys[key_name] = _os.environ[env_var]
+
+    # ── Provider auto-discovery (models.dev) ──
+    if config.provider_discovery:
+        try:
+            from chimera.provider_discovery import discover_providers
+
+            discovered_providers, model_pricing = discover_providers()
+            # Only add providers that aren't already configured
+            for name, pdata in discovered_providers.items():
+                if name not in config.providers:
+                    from chimera.config import Provider as _Provider
+                    config.providers[name] = _Provider(
+                        base_url=pdata["base_url"],
+                        api_key_env=pdata.get("api_key_env"),
+                    )
+
+            # Apply model pricing to existing models
+            for model_id, pricing in model_pricing.items():
+                entry = config.models.get(model_id)
+                if entry is not None:
+                    if entry.cost_per_1k_input is None:
+                        entry.cost_per_1k_input = pricing["input"]
+                    if entry.cost_per_1k_output is None:
+                        entry.cost_per_1k_output = pricing["output"]
+        except Exception:
+            # Discovery is best-effort — never crash on network issues
+            pass
 
 
 __all__ = [

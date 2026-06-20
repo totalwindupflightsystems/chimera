@@ -914,3 +914,5 @@ observability:
     enabled: false
 selector:
   price_sensitivity: 0.0
+
+provider_discovery: true
