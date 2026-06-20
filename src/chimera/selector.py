@@ -145,11 +145,28 @@ class CategorySelector:
     The selector matches task keywords against these paths, then ranks
     models by a weighted sum: for each task-relevant path, multiply the
     task weight by the model's score on that path (or a parent path).
+
+    When ``price_sensitivity`` > 0, the selector applies a cost-weighted
+    formula: ``effectiveness = quality_score / (relative_cost ^ sensitivity)``.
+    At sensitivity=0, cost is ignored (pure quality). At 1.0, the cheapest
+    model that can do the job wins (pure bang-for-buck).
     """
 
-    def __init__(self, models: dict[str, Any]) -> None:
-        """*models* is ``config.models`` — a dict of model_id → ModelEntry."""
+    #: Default cost rates per tier (input, output) per 1k tokens — fallback
+    #: when a model entry doesn't have explicit cost_per_1k_* fields.
+    _DEFAULT_TIER_COSTS: dict[str, float] = {
+        "budget": 0.00021,    # avg of (0.00014, 0.00028)
+        "standard": 0.001,     # avg of (0.0005, 0.0015)
+        "premium": 0.009,      # avg of (0.003, 0.015)
+    }
+
+    def __init__(self, models: dict[str, Any], price_sensitivity: float = 0.0) -> None:
+        """*models* is ``config.models`` — a dict of model_id → ModelEntry.
+
+        *price_sensitivity* controls cost weighting in ``select()``.
+        """
         self._models = models
+        self.price_sensitivity = max(0.0, min(1.0, price_sensitivity))
 
     def score(self, task: str) -> dict[str, float]:
         """Return ``{model_id: score, ...}`` for every enabled model in the catalog.
@@ -200,6 +217,57 @@ class CategorySelector:
 
         return 0.0
 
+    def _model_cost_rate(self, model_id: str) -> float:
+        """Return the average cost per 1k tokens for *model_id*.
+
+        Uses explicit ``cost_per_1k_*`` fields if set, otherwise falls
+        back to the tier-based default from ``_DEFAULT_TIER_COSTS``.
+        """
+        entry = self._models.get(model_id)
+        if entry is None:
+            return 0.001  # unknown → assume standard
+        # Explicit per-model costs win
+        cost_in = getattr(entry, "cost_per_1k_input", None)
+        cost_out = getattr(entry, "cost_per_1k_output", None)
+        if cost_in is not None and cost_out is not None:
+            return (cost_in + cost_out) / 2.0
+        # Fall back to tier
+        tier = getattr(entry, "cost_tier", "standard")
+        return self._DEFAULT_TIER_COSTS.get(tier, 0.001)
+
+    def _apply_cost_weighting(
+        self, quality_scores: dict[str, float]
+    ) -> dict[str, float]:
+        """Transform quality scores into cost-effectiveness scores.
+
+        Formula: ``ce = quality / (relative_cost ^ sensitivity)``
+
+        *relative_cost* is the model's cost rate divided by the cheapest
+        enabled model's cost rate (so cheapest = 1.0).
+        At sensitivity=0, ce = quality. At sensitivity=1, ce = quality/cost.
+        """
+        if self.price_sensitivity <= 0.0 or not quality_scores:
+            return quality_scores
+
+        # Find the cheapest enabled model for normalization
+        min_cost = min(
+            self._model_cost_rate(mid)
+            for mid in quality_scores
+        )
+        if min_cost <= 0:
+            min_cost = 0.000001  # avoid division by zero
+
+        result: dict[str, float] = {}
+        for mid, quality in quality_scores.items():
+            cost = self._model_cost_rate(mid)
+            relative_cost = cost / min_cost
+            # At sensitivity=1: ce = quality / relative_cost
+            # At sensitivity=0: ce = quality / 1 = quality
+            penalty = relative_cost ** self.price_sensitivity
+            result[mid] = quality / penalty if penalty > 0 else quality
+
+        return result
+
     def select(
         self,
         task: str,
@@ -207,21 +275,38 @@ class CategorySelector:
         *,
         exclude: list[str] | None = None,
         prefer_budget: bool = False,
+        price_sensitivity: float | None = None,
     ) -> list[str]:
         """Return the top *count* model IDs for *task*.
 
         *count* — how many models to return (default 3 for a typical panel).
         *exclude* — model IDs to skip (e.g. dispatcher model, aggregator model).
-        *prefer_budget* — when True, budget-tier models get a +15% boost.
+        *prefer_budget* — (deprecated) when True, budget-tier models get a +15%
+          boost. Use *price_sensitivity* instead for continuous control.
+        *price_sensitivity* — overrides the instance default. 0.0 = pure quality,
+          1.0 = pure cheapest-that-works. Falls back to ``self.price_sensitivity``.
         """
         exclude_set = set(exclude or [])
         scores = self.score(task)
 
-        # Apply budget preference if requested
+        # Legacy prefer_budget: boost budget-tier models by 15%
         if prefer_budget:
             for mid, entry in self._models.items():
                 if getattr(entry, "cost_tier", "") == "budget":
                     scores[mid] = scores.get(mid, 0.0) * 1.15
+
+        # Cost-weighted effectiveness (only if sensitivity > 0)
+        sensitivity = (
+            price_sensitivity
+            if price_sensitivity is not None
+            else self.price_sensitivity
+        )
+        if sensitivity > 0.0:
+            # Temporarily set sensitivity for cost weighting
+            saved = self.price_sensitivity
+            self.price_sensitivity = sensitivity
+            scores = self._apply_cost_weighting(scores)
+            self.price_sensitivity = saved
 
         # Sort descending by score, filter excluded and zero-score models
         ranked = sorted(
@@ -238,12 +323,25 @@ class CategorySelector:
         count: int = 3,
         *,
         exclude: list[str] | None = None,
+        price_sensitivity: float | None = None,
     ) -> list[str]:
         """Like ``select()`` but enforces provider diversity — at most one
         model per provider in the result. Disabled models are skipped.
         """
         exclude_set = set(exclude or [])
         scores = self.score(task)
+
+        # Cost weighting
+        sensitivity = (
+            price_sensitivity
+            if price_sensitivity is not None
+            else self.price_sensitivity
+        )
+        if sensitivity > 0.0:
+            saved = self.price_sensitivity
+            self.price_sensitivity = sensitivity
+            scores = self._apply_cost_weighting(scores)
+            self.price_sensitivity = saved
 
         # Group by provider (score() already skipped disabled models)
         by_provider: dict[str, list[tuple[str, float]]] = {}

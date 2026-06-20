@@ -176,6 +176,25 @@ class DeliberationOverrides(BaseModel):
     stage_models: dict[str, str] | None = None   # Per-stage model overrides (stage_id → model)
 
 
+class SelectorConfig(BaseModel):
+    """Model selection strategy configuration.
+
+    Controls how the category-weighted selector balances quality vs cost.
+    """
+
+    price_sensitivity: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "How much cost influences model selection. "
+            "0.0 = pure quality (cost ignored). "
+            "0.5 = balanced. "
+            "1.0 = pure cheapest-that-works."
+        ),
+    )
+
+
 class ChimeraConfig(BaseModel):
     """The full parsed chimera.yaml document."""
 
@@ -191,6 +210,7 @@ class ChimeraConfig(BaseModel):
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     circuit_breakers: dict[str, CircuitBreakerConfig] = Field(default_factory=dict)
     api_keys: dict[str, str] = Field(default_factory=dict)
+    selector: SelectorConfig = Field(default_factory=SelectorConfig)
 
     @model_validator(mode="after")
     def _resolve_provider_api_keys(self) -> ChimeraConfig:
@@ -362,6 +382,7 @@ __all__ = [
     "QueueConfig",
     "RateLimitConfig",
     "RetryConfig",
+    "SelectorConfig",
     "ServerConfig",
     "DEFAULT_COST_RATES",
     "find_config_path",

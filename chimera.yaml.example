@@ -912,3 +912,6 @@ observability:
   trace_enabled: true
   langfuse:
     enabled: false
+
+selector:
+  price_sensitivity: 0.0

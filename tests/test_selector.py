@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from chimera.selector import (
     PATH_PATTERNS,
     CategorySelector,
@@ -16,11 +18,14 @@ from chimera.selector import (
 class _FakeEntry:
     """Minimal model entry for testing."""
 
-    def __init__(self, categories: dict[str, float], provider: str, cost_tier: str = "standard"):
+    def __init__(self, categories: dict[str, float], provider: str, cost_tier: str = "standard",
+                 cost_per_1k_input: float | None = None, cost_per_1k_output: float | None = None):
         self.categories = categories
         self.provider = provider
         self.cost_tier = cost_tier
         self.enabled: bool = True
+        self.cost_per_1k_input = cost_per_1k_input
+        self.cost_per_1k_output = cost_per_1k_output
 
 
 SAMPLE_MODELS = {
@@ -28,11 +33,13 @@ SAMPLE_MODELS = {
         {"technology_code/code_generation/python": 88, "technology_code/code_generation/sql": 80,
          "technology_code/data_science/analysis": 80},
         "deepseek", "budget",
+        cost_per_1k_input=0.00014, cost_per_1k_output=0.00028,
     ),
     "deepseek/deepseek-v4-pro": _FakeEntry(
         {"technology_code/code_generation/python": 92, "technology_code/code_generation/sql": 87,
          "technology_code/data_science/analysis": 85, "academic_scientific/mathematics/algebra": 72},
         "deepseek", "budget",
+        cost_per_1k_input=0.00055, cost_per_1k_output=0.00219,
     ),
     "google/gemini-3-flash-preview": _FakeEntry(
         {"technology_code/code_generation/python": 78, "technology_code/data_science/analysis": 85,
@@ -43,11 +50,13 @@ SAMPLE_MODELS = {
         {"technology_code/code_generation/python": 90, "technology_code/data_science/analysis": 92,
          "creative_conversational/ux_writing/interface_copy": 88, "general_knowledge/reasoning/explanation": 93},
         "anthropic", "premium",
+        cost_per_1k_input=0.003, cost_per_1k_output=0.015,
     ),
     "openrouter/moonshotai/kimi-k2.7-code": _FakeEntry(
         {"technology_code/code_generation/python": 95, "technology_code/code_generation/sql": 88,
          "technology_code/testing_debugging/error_analysis": 80},
         "openrouter", "standard",
+        cost_per_1k_input=0.0004, cost_per_1k_output=0.001,
     ),
     "zai-coding-plan/glm-5.2": _FakeEntry(
         {"technology_code/code_generation/python": 94, "technology_code/data_science/analysis": 90,
@@ -280,3 +289,105 @@ class TestDisabledModelFiltering:
         sel = CategorySelector(models)
         result = sel.select("code task", count=3)
         assert result == [], f"All disabled should return empty: {result}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Selector: cost-weighted selection
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestCostWeightedSelection:
+    """Tests for the cost-effectiveness formula: ce = quality / (relative_cost ^ sensitivity)."""
+
+    def test_sensitivity_zero_same_as_pure_quality(self):
+        """At price_sensitivity=0, results should match pure quality ranking."""
+        sel_quality = CategorySelector(SAMPLE_MODELS, price_sensitivity=0.0)
+        sel_default = CategorySelector(SAMPLE_MODELS)  # defaults to 0.0
+        result_q = sel_quality.select("Write Python code", count=5)
+        result_d = sel_default.select("Write Python code", count=5)
+        assert result_q == result_d, f"0.0 vs default mismatch: {result_q} vs {result_d}"
+
+    def test_sensitivity_one_boosts_cheapest(self):
+        """At price_sensitivity=1.0, the cheapest model should rank higher."""
+        sel = CategorySelector(SAMPLE_MODELS, price_sensitivity=1.0)
+        result = sel.select("Write Python code", count=3)
+        # v4-flash is cheapest (0.00021 avg cost) with Python=88
+        # v4-pro is more expensive (0.00137 avg cost) with Python=92
+        # At sensitivity=1.0, flash's cost advantage should overcome the 4-pt quality gap
+        assert "deepseek/deepseek-v4-flash" in result, (
+            f"Cheapest model should appear: {result}"
+        )
+
+    def test_sensitivity_half_balances_cost_and_quality(self):
+        """At price_sensitivity=0.5, results should be a mix of quality and budget."""
+        sel = CategorySelector(SAMPLE_MODELS, price_sensitivity=0.5)
+        result = sel.select("Write Python code", count=3)
+        assert len(result) == 3
+        # Should include at least one budget model
+        tiers = [
+            getattr(SAMPLE_MODELS.get(m), "cost_tier", "") for m in result
+        ]
+        assert "budget" in tiers, f"No budget models at sensitivity=0.5: {tiers}"
+
+    def test_per_call_sensitivity_overrides_instance(self):
+        """Passing price_sensitivity to select() overrides the instance default."""
+        sel = CategorySelector(SAMPLE_MODELS, price_sensitivity=0.0)
+        result_override = sel.select("Write Python code", count=3, price_sensitivity=1.0)
+        result_default = sel.select("Write Python code", count=3)
+        # At 1.0, cheapest should appear; at 0.0, pure quality
+        assert result_override != result_default, (
+            f"Override should differ from default: {result_override} vs {result_default}"
+        )
+
+    def test_model_cost_rate_falls_back_to_tier(self):
+        """Models without explicit cost_per_1k should use tier defaults."""
+        sel = CategorySelector(SAMPLE_MODELS)
+        # gemini-3-flash has no explicit cost, tier=budget
+        cost = sel._model_cost_rate("google/gemini-3-flash-preview")
+        assert cost == CategorySelector._DEFAULT_TIER_COSTS["budget"], (
+            f"Tier fallback failed: {cost}"
+        )
+
+    def test_model_cost_rate_uses_explicit(self):
+        """Models with explicit cost_per_1k should use those values."""
+        sel = CategorySelector(SAMPLE_MODELS)
+        # v4-flash: 0.00014 in, 0.00028 out → avg = 0.00021
+        cost = sel._model_cost_rate("deepseek/deepseek-v4-flash")
+        assert cost == pytest.approx(0.00021), f"Explicit cost mismatch: {cost}"
+
+    def test_high_cost_premium_penalized_at_sensitivity_one(self):
+        """At sensitivity=1.0, a premium model should NOT be #1 for a simple task."""
+        sel = CategorySelector(SAMPLE_MODELS, price_sensitivity=1.0)
+        result = sel.select("Write Python code", count=5)
+        # Claude Sonnet is premium (0.009 avg) — should be penalized
+        top = result[0]
+        tier = getattr(SAMPLE_MODELS.get(top), "cost_tier", "")
+        assert tier != "premium", (
+            f"Premium model {top} should not be #1 at sensitivity=1.0"
+        )
+
+    def test_select_diverse_respects_cost_weighting(self):
+        """select_diverse with price_sensitivity should apply cost weighting."""
+        sel = CategorySelector(SAMPLE_MODELS, price_sensitivity=1.0)
+        result = sel.select_diverse("Write Python code", count=3, price_sensitivity=1.0)
+        providers = [getattr(SAMPLE_MODELS.get(m), "provider", "") for m in result]
+        assert len(providers) == len(set(providers)), f"Duplicate providers: {providers}"
+        # Cheapest model should be in results
+        assert "deepseek/deepseek-v4-flash" in result, (
+            f"Cheapest should appear in diverse result: {result}"
+        )
+
+    def test_cost_weighting_skips_disabled_models(self):
+        """Cost weighting must not consider disabled models."""
+        models = dict(SAMPLE_MODELS)
+        models["openrouter/disabled-coder"] = _FakeEntry(
+            {"technology_code/code_generation/python": 99},
+            "openrouter", "budget",
+            cost_per_1k_input=0.00001, cost_per_1k_output=0.00001,
+        )
+        models["openrouter/disabled-coder"].enabled = False
+        sel = CategorySelector(models, price_sensitivity=1.0)
+        result = sel.select("Write Python code", count=5)
+        assert "openrouter/disabled-coder" not in result, (
+            f"Disabled model should not appear: {result}"
+        )

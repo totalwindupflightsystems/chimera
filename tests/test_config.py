@@ -436,3 +436,11 @@ class TestModelEnabled:
                 f"Model {name!r} has enabled={entry.enabled}. "
                 f"All models in chimera.yaml must have enabled: true by default."
             )
+
+    def test_selector_section_loads_with_defaults(self):
+        """Regression: chimera.yaml must have a selector section with price_sensitivity."""
+        cfg = load_config()
+        assert cfg.selector is not None, "selector section missing from config"
+        assert 0.0 <= cfg.selector.price_sensitivity <= 1.0, (
+            f"price_sensitivity out of range: {cfg.selector.price_sensitivity}"
+        )
