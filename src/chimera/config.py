@@ -38,6 +38,7 @@ class ModelEntry(BaseModel):
     categories: dict[str, float] = Field(default_factory=dict)
     cost_tier: str = "standard"
     provider: str
+    enabled: bool = True
     cost_per_1k_input: float | None = None
     cost_per_1k_output: float | None = None
     litellm_model: str | None = None
@@ -204,6 +205,11 @@ class ChimeraConfig(BaseModel):
             raise KeyError(f"Unknown model: {name!r}")
         return self.models[name]
 
+    @property
+    def enabled_models(self) -> dict[str, ModelEntry]:
+        """Return only enabled models from the catalog."""
+        return {k: v for k, v in self.models.items() if v.enabled}
+
     def resolve_model_alias(self, name: str) -> str:
         """Resolve ``"default"`` aliases for aggregator/worker to real model names."""
         if name == "default":
@@ -213,9 +219,12 @@ class ChimeraConfig(BaseModel):
         return name
 
     def catalog_description(self) -> str:
-        """Human-readable model catalog for the dispatcher prompt."""
+        """Human-readable model catalog for the dispatcher prompt.
+
+        Disabled models are excluded so the dispatcher never sees them.
+        """
         lines: list[str] = []
-        for name, entry in self.models.items():
+        for name, entry in self.enabled_models.items():
             cats = ", ".join(
                 f"{cat}={score:.2f}"
                 for cat, score in sorted(entry.categories.items(), key=lambda kv: -kv[1])

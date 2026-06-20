@@ -152,15 +152,18 @@ class CategorySelector:
         self._models = models
 
     def score(self, task: str) -> dict[str, float]:
-        """Return ``{model_id: score, ...}`` for every model in the catalog.
+        """Return ``{model_id: score, ...}`` for every enabled model in the catalog.
 
         Score = sum over matched paths of ``task_weight[path] * model_score[path]``.
         Falls back to parent-path matching when the exact path isn't scored.
+        Disabled models are skipped (not scored).
         """
         task_weights = task_to_paths(task)
         results: dict[str, float] = {}
 
         for model_id, entry in self._models.items():
+            if not getattr(entry, "enabled", True):
+                continue
             model_cats = getattr(entry, "categories", {})
             if not model_cats:
                 results[model_id] = 0.0
@@ -237,12 +240,12 @@ class CategorySelector:
         exclude: list[str] | None = None,
     ) -> list[str]:
         """Like ``select()`` but enforces provider diversity — at most one
-        model per provider in the result.
+        model per provider in the result. Disabled models are skipped.
         """
         exclude_set = set(exclude or [])
         scores = self.score(task)
 
-        # Group by provider
+        # Group by provider (score() already skipped disabled models)
         by_provider: dict[str, list[tuple[str, float]]] = {}
         for mid, s in scores.items():
             if mid in exclude_set:

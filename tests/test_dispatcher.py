@@ -612,3 +612,74 @@ def test_aggregator_choice_honored_when_unlocked(config) -> None:  # type: ignor
     payload = _dispatch_payload(aggregator_model="openrouter/anthropic/claude-sonnet-4")
     result = parse_dispatch_result(payload, config)
     assert result.formation.stage("aggregator").model == "openrouter/anthropic/claude-sonnet-4"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Disabled model validation
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_validate_dag_rejects_disabled_model(config) -> None:  # type: ignore[no-untyped-def]
+    """_validate_dag must raise ValueError when a stage uses a disabled model."""
+    from chimera.dispatcher import _validate_dag, Stage, FormationDAG
+
+    # Disable a model in the config
+    cfg = config.model_copy(deep=True)
+    cfg.models["deepseek/deepseek-chat"].enabled = False
+
+    dag = FormationDAG(
+        stages=[
+            Stage(id="worker_1", kind="worker", model="deepseek/deepseek-chat", depends_on=[]),
+            Stage(id="aggregator", kind="aggregator", model="zai-coding-plan/glm-5.2", depends_on=["worker_1"]),
+        ],
+        edges=[("worker_1", "aggregator")],
+    )
+    with pytest.raises(ValueError, match="disabled model"):
+        _validate_dag(dag, cfg)
+
+
+def test_validate_dag_allows_enabled_model(config) -> None:  # type: ignore[no-untyped-def]
+    """_validate_dag should succeed when all models are enabled."""
+    from chimera.dispatcher import _validate_dag, Stage, FormationDAG
+
+    dag = FormationDAG(
+        stages=[
+            Stage(id="worker_1", kind="worker", model="deepseek/deepseek-chat", depends_on=[]),
+            Stage(id="aggregator", kind="aggregator", model="zai-coding-plan/glm-5.2", depends_on=["worker_1"]),
+        ],
+        edges=[("worker_1", "aggregator")],
+    )
+    # Should not raise
+    _validate_dag(dag, config)
+
+
+def test_normalize_result_uses_only_enabled_models(config) -> None:  # type: ignore[no-untyped-def]
+    """_normalize_result's valid_models should be limited to enabled models."""
+    from chimera.dispatcher import _normalize_result
+    from chimera.dispatcher import DispatchResult, WorkerPrompt, Stage, FormationDAG
+
+    cfg = config.model_copy(deep=True)
+    # Disable the worker model
+    cfg.models["deepseek/deepseek-chat"].enabled = False
+
+    result = DispatchResult(
+        formation=FormationDAG(
+            stages=[
+                Stage(id="worker_1", kind="worker", model="deepseek/deepseek-chat", depends_on=[]),
+                Stage(id="aggregator", kind="aggregator", model="zai-coding-plan/glm-5.2", depends_on=["worker_1"]),
+            ],
+            edges=[("worker_1", "aggregator")],
+        ),
+        worker_prompts=[
+            WorkerPrompt(stage_id="worker_1", model="deepseek/deepseek-chat", prompt="test"),
+        ],
+        aggregator_instructions="merge",
+        stage_instructions={},
+        output_schema=None,
+        source="auto",
+    )
+    _normalize_result(result, cfg)
+    # Worker model should be remapped to default_worker since v4-chat is disabled
+    assert result.formation.stage("worker_1").model == cfg.defaults.default_worker, (
+        f"Disabled model should be remapped to default: {result.formation.stage('worker_1').model}"
+    )

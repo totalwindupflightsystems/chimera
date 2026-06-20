@@ -119,6 +119,13 @@ def _apply_stage_models(
                 f"stage_models references unknown model for stage "
                 f"{stage_id!r}: {model!r}"
             )
+        entry = config.models[model]
+        if not entry.enabled:
+            raise ValueError(
+                f"stage_models references disabled model for stage "
+                f"{stage_id!r}: {model!r}. "
+                f"Set enabled: true in chimera.yaml to re-enable it."
+            )
         stage = dispatch.formation.stage(stage_id)
         stage.model = model
         if stage.kind == "worker":

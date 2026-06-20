@@ -324,3 +324,115 @@ def test_formation_models_exist_in_catalog() -> None:
                         f"Formation '{name}' aggregators list references "
                         f"unknown model '{agg}'."
                     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Model enabled/disabled
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestModelEnabled:
+    """Tests for per-model enable/disable cost-control feature."""
+
+    def test_enabled_defaults_to_true(self):
+        """When not specified, enabled defaults to True."""
+        entry = ModelEntry(categories={}, cost_tier="budget", provider="test")
+        assert entry.enabled is True
+
+    def test_enabled_false_parsed_from_yaml(self, tmp_path):
+        """YAML with enabled: false should load correctly."""
+        import yaml
+        doc = {
+            "api_keys": {},
+            "providers": {"deepseek": {"base_url": "https://x.com/v1"}},
+            "models": {
+                "deepseek/test": {
+                    "categories": {"code": 90.0},
+                    "cost_tier": "budget",
+                    "provider": "deepseek",
+                    "enabled": False,
+                },
+                "deepseek/enabled-test": {
+                    "categories": {"code": 80.0},
+                    "cost_tier": "budget",
+                    "provider": "deepseek",
+                    "enabled": True,
+                },
+            },
+            "defaults": {
+                "dispatcher": "deepseek/test",
+                "default_worker": "deepseek/test",
+                "default_aggregator": "deepseek/test",
+            },
+            "formations": {"auto": {"mode": "auto"}},
+        }
+        path = tmp_path / "chimera.yaml"
+        path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+        cfg = load_config(path)
+        assert cfg.models["deepseek/test"].enabled is False
+        assert cfg.models["deepseek/enabled-test"].enabled is True
+
+    def test_enabled_models_filters_disabled(self, tmp_path):
+        """enabled_models property should exclude disabled models."""
+        import yaml
+        doc = {
+            "api_keys": {},
+            "providers": {"deepseek": {"base_url": "https://x.com/v1"}},
+            "models": {
+                "deepseek/a": {"categories": {}, "cost_tier": "budget", "provider": "deepseek", "enabled": False},
+                "deepseek/b": {"categories": {}, "cost_tier": "budget", "provider": "deepseek", "enabled": True},
+                "deepseek/c": {"categories": {}, "cost_tier": "budget", "provider": "deepseek"},
+            },
+            "defaults": {
+                "dispatcher": "deepseek/b",
+                "default_worker": "deepseek/b",
+                "default_aggregator": "deepseek/b",
+            },
+            "formations": {"auto": {"mode": "auto"}},
+        }
+        path = tmp_path / "chimera.yaml"
+        path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+        cfg = load_config(path)
+        enabled = cfg.enabled_models
+        assert "deepseek/a" not in enabled, "Disabled model should be excluded"
+        assert "deepseek/b" in enabled, "Enabled model should be included"
+        assert "deepseek/c" in enabled, "Missing enabled should default to true"
+
+    def test_catalog_description_excludes_disabled(self, tmp_path):
+        """catalog_description() must not mention disabled models."""
+        import yaml
+        doc = {
+            "api_keys": {},
+            "providers": {"deepseek": {"base_url": "https://x.com/v1"}},
+            "models": {
+                "deepseek/disabled-one": {
+                    "categories": {"code": 50.0}, "cost_tier": "budget",
+                    "provider": "deepseek", "enabled": False,
+                },
+                "deepseek/enabled-one": {
+                    "categories": {"code": 90.0}, "cost_tier": "budget",
+                    "provider": "deepseek", "enabled": True,
+                },
+            },
+            "defaults": {
+                "dispatcher": "deepseek/enabled-one",
+                "default_worker": "deepseek/enabled-one",
+                "default_aggregator": "deepseek/enabled-one",
+            },
+            "formations": {"auto": {"mode": "auto"}},
+        }
+        path = tmp_path / "chimera.yaml"
+        path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+        cfg = load_config(path)
+        desc = cfg.catalog_description()
+        assert "deepseek/enabled-one" in desc, "Enabled model must appear in catalog"
+        assert "deepseek/disabled-one" not in desc, "Disabled model must NOT appear in catalog"
+
+    def test_all_25_models_have_enabled_true(self):
+        """Regression: every model in the live chimera.yaml must have enabled: true."""
+        cfg = load_config()
+        for name, entry in cfg.models.items():
+            assert entry.enabled is True, (
+                f"Model {name!r} has enabled={entry.enabled}. "
+                f"All models in chimera.yaml must have enabled: true by default."
+            )

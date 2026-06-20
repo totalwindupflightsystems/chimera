@@ -20,6 +20,7 @@ class _FakeEntry:
         self.categories = categories
         self.provider = provider
         self.cost_tier = cost_tier
+        self.enabled: bool = True
 
 
 SAMPLE_MODELS = {
@@ -221,3 +222,61 @@ class TestCostTierAccess:
     def test_fake_entry_has_provider(self):
         entry = _FakeEntry({"technology_code/code_generation/python": 90}, "deepseek")
         assert entry.provider == "deepseek"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Selector: disabled model filtering
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestDisabledModelFiltering:
+    """Selector must skip models with enabled=False."""
+
+    def test_disabled_model_not_scored(self):
+        """A disabled model should get no score (not appear in results)."""
+        models = dict(SAMPLE_MODELS)
+        # Add a disabled clone of the top coder
+        models["openrouter/disabled-coder"] = _FakeEntry(
+            {"technology_code/code_generation/python": 99},
+            "openrouter", "budget",
+        )
+        models["openrouter/disabled-coder"].enabled = False
+        sel = CategorySelector(models)
+        result = sel.select("Write Python code", count=5)
+        assert "openrouter/disabled-coder" not in result, (
+            f"Disabled model should not appear in results: {result}"
+        )
+
+    def test_disabled_model_not_in_select_diverse(self):
+        """select_diverse must also skip disabled models."""
+        models = dict(SAMPLE_MODELS)
+        models["openrouter/disabled-coder"] = _FakeEntry(
+            {"technology_code/code_generation/python": 99},
+            "openrouter", "budget",
+        )
+        models["openrouter/disabled-coder"].enabled = False
+        sel = CategorySelector(models)
+        result = sel.select_diverse("Write Python code", count=5)
+        assert "openrouter/disabled-coder" not in result, (
+            f"Disabled model should not appear in diverse results: {result}"
+        )
+
+    def test_enabled_missing_defaults_to_included(self):
+        """If enabled attribute is missing (not set), model should still be scored."""
+        models = dict(SAMPLE_MODELS)
+        # _FakeEntry doesn't have enabled attribute by default
+        sel = CategorySelector(models)
+        result = sel.select("Write Python code", count=5)
+        assert len(result) > 0, "Models without explicit enabled should still be scored"
+
+    def test_all_disabled_returns_empty(self):
+        """When all models are disabled, select returns empty list."""
+        models = {
+            "a": _FakeEntry({"code": 90.0}, "x", "budget"),
+            "b": _FakeEntry({"code": 80.0}, "y", "budget"),
+        }
+        models["a"].enabled = False
+        models["b"].enabled = False
+        sel = CategorySelector(models)
+        result = sel.select("code task", count=3)
+        assert result == [], f"All disabled should return empty: {result}"

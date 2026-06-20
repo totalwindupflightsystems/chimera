@@ -299,6 +299,12 @@ def _validate_dag(dag: FormationDAG, config: ChimeraConfig) -> None:
                 raise ValueError(f"Stage {stage.id!r} depends on unknown {dep!r}")
         if stage.model not in config.models:
             raise ValueError(f"Stage {stage.id!r} uses unknown model {stage.model!r}")
+        entry = config.models[stage.model]
+        if not entry.enabled:
+            raise ValueError(
+                f"Stage {stage.id!r} uses disabled model {stage.model!r}. "
+                f"Set enabled: true in chimera.yaml to re-enable it."
+            )
     if not any(s.kind == "worker" for s in dag.stages):
         raise ValueError("Formation has no worker stages")
     if not any(s.kind in {"aggregator", "merge", "audit"} for s in dag.stages):
@@ -550,7 +556,7 @@ def _normalize_result(result: DispatchResult, config: ChimeraConfig) -> None:
     * Emits a ``worker_prompt_templated`` WARNING whenever a worker prompt had
       to be filled from the generic template (the dispatcher left it empty).
     """
-    valid_models = set(config.models.keys())
+    valid_models = set(config.enabled_models.keys())
     lock_agg = config.defaults.lock_aggregator
     lock_disp = config.defaults.lock_dispatcher
 

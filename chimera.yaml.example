@@ -52,6 +52,7 @@ models:
       creative_conversational/creative_writing/storytelling: 60
     cost_tier: budget
     provider: deepseek
+    enabled: true
   deepseek/deepseek-v4-pro:
     categories:
       technology_code/code_generation/python: 92
@@ -86,6 +87,7 @@ models:
       creative_conversational/ux_writing/interface_copy: 60
     cost_tier: budget
     provider: deepseek
+    enabled: true
   openrouter/qwen/qwen3.7-max:
     categories:
       technology_code/code_generation/python: 90
@@ -120,6 +122,7 @@ models:
       creative_conversational/ux_writing/interface_copy: 72
     cost_tier: standard
     provider: openrouter
+    enabled: true
   openrouter/qwen/qwen3.7-plus:
     categories:
       technology_code/code_generation/python: 87
@@ -153,6 +156,7 @@ models:
       creative_conversational/creative_writing/storytelling: 62
     cost_tier: budget
     provider: openrouter
+    enabled: true
   openrouter/qwen/qwen3-coder:
     categories:
       technology_code/code_generation/python: 91
@@ -179,6 +183,7 @@ models:
       language_translation/translation/language_to_language: 60
     cost_tier: budget
     provider: openrouter
+    enabled: true
   openrouter/openai/gpt-5.5:
     categories:
       technology_code/code_generation/python: 93
@@ -215,6 +220,7 @@ models:
       multimedia_processing/image/generation: 75
     cost_tier: premium
     provider: openrouter
+    enabled: true
   openrouter/openai/gpt-5.5-pro:
     categories:
       technology_code/code_generation/python: 94
@@ -251,6 +257,7 @@ models:
       multimedia_processing/image/generation: 78
     cost_tier: premium
     provider: openrouter
+    enabled: true
   anthropic/claude-opus-4.8:
     categories:
       technology_code/code_generation/python: 95
@@ -287,6 +294,7 @@ models:
       multimedia_processing/image/generation: 72
     cost_tier: premium
     provider: anthropic
+    enabled: true
   anthropic/claude-sonnet-4.6:
     categories:
       technology_code/code_generation/python: 92
@@ -321,6 +329,7 @@ models:
       creative_conversational/ux_writing/interface_copy: 88
     cost_tier: premium
     provider: anthropic
+    enabled: true
   anthropic/claude-haiku-4.5:
     categories:
       technology_code/code_generation/python: 85
@@ -355,6 +364,7 @@ models:
       creative_conversational/ux_writing/interface_copy: 78
     cost_tier: standard
     provider: anthropic
+    enabled: true
   openrouter/anthropic/claude-fable-5:
     categories:
       technology_code/code_generation/python: 97
@@ -391,6 +401,7 @@ models:
       multimedia_processing/image/generation: 82
     cost_tier: premium
     provider: openrouter
+    enabled: true
   google/gemini-3.1-pro-preview:
     categories:
       technology_code/code_generation/python: 90
@@ -427,6 +438,7 @@ models:
       multimedia_processing/image/generation: 88
     cost_tier: premium
     provider: google
+    enabled: true
   google/gemini-3.5-flash:
     categories:
       technology_code/code_generation/python: 87
@@ -463,6 +475,7 @@ models:
       multimedia_processing/image/generation: 83
     cost_tier: standard
     provider: google
+    enabled: true
   google/gemini-3.1-flash-lite-preview:
     categories:
       technology_code/code_generation/python: 72
@@ -485,6 +498,7 @@ models:
       creative_conversational/creative_writing/storytelling: 65
     cost_tier: budget
     provider: google
+    enabled: true
   google/gemini-3-flash-preview:
     categories:
       technology_code/code_generation/python: 78
@@ -521,6 +535,7 @@ models:
       multimedia_processing/image/generation: 72
     cost_tier: budget
     provider: google
+    enabled: true
   google/gemini-3-pro-preview:
     categories:
       technology_code/code_generation/python: 85
@@ -557,6 +572,7 @@ models:
       multimedia_processing/image/generation: 85
     cost_tier: premium
     provider: google
+    enabled: true
   openrouter/x-ai/grok-4.20:
     categories:
       technology_code/code_generation/python: 85
@@ -591,6 +607,7 @@ models:
       creative_conversational/ux_writing/interface_copy: 70
     cost_tier: standard
     provider: openrouter
+    enabled: true
   openrouter/x-ai/grok-4.20-multi-agent:
     categories:
       technology_code/code_generation/python: 87
@@ -625,6 +642,7 @@ models:
       creative_conversational/ux_writing/interface_copy: 72
     cost_tier: standard
     provider: openrouter
+    enabled: true
   openrouter/x-ai/grok-4.3:
     categories:
       technology_code/code_generation/python: 86
@@ -659,6 +677,7 @@ models:
       creative_conversational/ux_writing/interface_copy: 72
     cost_tier: standard
     provider: openrouter
+    enabled: true
   zai-coding-plan/glm-5.2:
     categories:
       technology_code/code_generation/python: 94
@@ -693,6 +712,7 @@ models:
       creative_conversational/ux_writing/interface_copy: 85
     cost_tier: premium
     provider: zai
+    enabled: true
   z-ai/glm-5-turbo:
     categories:
       technology_code/code_generation/python: 85
@@ -727,6 +747,7 @@ models:
       creative_conversational/ux_writing/interface_copy: 72
     cost_tier: standard
     provider: zai
+    enabled: true
   z-ai/glm-5:
     categories:
       technology_code/code_generation/python: 80
@@ -760,6 +781,7 @@ models:
       creative_conversational/ux_writing/interface_copy: 68
     cost_tier: budget
     provider: zai
+    enabled: true
   openrouter/moonshotai/kimi-k2.7-code:
     categories:
       technology_code/code_generation/python: 95
@@ -796,6 +818,7 @@ models:
       multimedia_processing/image/generation: 65
     cost_tier: standard
     provider: openrouter
+    enabled: true
   openrouter/moonshotai/kimi-k2.6:
     categories:
       technology_code/code_generation/python: 92
@@ -832,6 +855,7 @@ models:
       multimedia_processing/image/generation: 68
     cost_tier: standard
     provider: openrouter
+    enabled: true
   openrouter/minimax/minimax-m3:
     categories:
       technology_code/code_generation/python: 88
@@ -868,6 +892,7 @@ models:
       multimedia_processing/image/generation: 68
     cost_tier: budget
     provider: openrouter
+    enabled: true
 providers:
   deepseek:
     base_url: https://api.deepseek.com/v1
