@@ -4,6 +4,7 @@ guards:
   secrets: true
   lint: true
   tests: true
+  test_mode: "diff"
   test_command: ".venv/bin/python -m pytest -x --tb=short -q --ignore=tests/integration --ignore=tests/compat"
   # dead_code: true  # TODO: noisy — whitelist 'from __future__ import annotations', FastAPI routes, __all__ exports, mutants/ dir
   skylos: false
@@ -28,4 +29,13 @@ pipeline:
 
 evaluator:
   max_iterations: 40
+  max_time: "10m"
+  max_output_tokens: "200k"
+  tool_call_weight: 0.1
   model: deepseek/deepseek-v4-pro
+
+defaults:
+  model: deepseek-v4-flash
+  max_iterations: 100
+  check_for_updates: true
+  update_check_ttl: "24h"
