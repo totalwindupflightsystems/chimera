@@ -4,7 +4,7 @@ guards:
   secrets: true
   lint: true
   tests: true
-  test_mode: "diff"
+  test_mode: "full"
   test_command: ".venv/bin/python -m pytest -x --tb=short -q --ignore=tests/integration --ignore=tests/compat"
   # dead_code: true  # TODO: noisy — whitelist 'from __future__ import annotations', FastAPI routes, __all__ exports, mutants/ dir
   skylos: false
