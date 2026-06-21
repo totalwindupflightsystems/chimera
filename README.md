@@ -252,3 +252,4 @@ Chimera uses LiteLLM under the hood. Supported providers:
 | **MoonshotAI** | — | ✅ | Kimi K2.7 Code, K2.6 |
 | **MiniMax** | — | ✅ | M3 |
 | **Meta** | — | ✅ | Llama 4 Maverick |
+# test comment
