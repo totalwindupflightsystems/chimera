@@ -1,0 +1,13 @@
+# GitLeaks configuration for Chimera
+# Whitelists documentation and test directories to avoid false positives
+# on example keys and placeholder tokens.
+
+[allowlist]
+  description = "Doc and test exclusions"
+  paths = [
+    '''docs/''',
+    '''tests/''',
+    '''chimera.yaml.example''',
+    '''chimera.yaml.docker''',
+    '''README.md''',
+  ]
