@@ -893,6 +893,178 @@ models:
     cost_tier: budget
     provider: openrouter
     enabled: true
+  xiaomi/mimo-v2.5:
+    categories:
+      technology_code/code_generation/python: 82
+      technology_code/code_generation/javascript: 80
+      technology_code/code_generation/sql: 78
+      technology_code/code_generation/shell: 76
+      technology_code/testing_debugging/unit_tests: 74
+      technology_code/testing_debugging/error_analysis: 72
+      technology_code/data_science/analysis: 76
+      technology_code/data_science/modeling: 72
+      technology_code/data_interaction/database/sql: 78
+      technology_code/data_interaction/file_based/json: 80
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 74
+      complex_reasoning_agency/tool_use/code_execution: 76
+      complex_reasoning_agency/self_correction/debugging: 70
+      general_knowledge/reasoning/explanation: 78
+      general_knowledge/reasoning/logic_puzzle: 72
+      general_knowledge/fact_retrieval/definitions: 76
+      language_translation/summarization/abstractive: 74
+      language_translation/translation/language_to_language: 72
+      creative_conversational/creative_writing/storytelling: 74
+      creative_conversational/ux_writing/interface_copy: 76
+    cost_tier: budget
+    provider: openrouter
+    enabled: true
+  xiaomi/mimo-v2.5-pro:
+    categories:
+      technology_code/code_generation/python: 88
+      technology_code/code_generation/javascript: 86
+      technology_code/code_generation/sql: 84
+      technology_code/code_generation/shell: 82
+      technology_code/system_design/architecture: 80
+      technology_code/system_design/devops: 78
+      technology_code/testing_debugging/unit_tests: 82
+      technology_code/testing_debugging/error_analysis: 78
+      technology_code/data_science/analysis: 82
+      technology_code/data_science/modeling: 78
+      technology_code/data_interaction/database/sql: 84
+      technology_code/data_interaction/file_based/json: 85
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 82
+      complex_reasoning_agency/tool_use/code_execution: 84
+      complex_reasoning_agency/self_correction/debugging: 78
+      academic_scientific/formal_writing/research_paper: 76
+      academic_scientific/mathematics/statistics: 78
+      academic_scientific/mathematics/algebra: 74
+      academic_scientific/mathematics/calculus: 70
+      general_knowledge/reasoning/explanation: 82
+      general_knowledge/reasoning/logic_puzzle: 78
+      general_knowledge/fact_retrieval/definitions: 80
+      general_knowledge/fact_retrieval/historical_events: 76
+      language_translation/summarization/abstractive: 80
+      language_translation/translation/language_to_language: 76
+      language_translation/linguistic_analysis/sentiment: 74
+      creative_conversational/creative_writing/storytelling: 76
+      creative_conversational/ux_writing/interface_copy: 78
+    cost_tier: standard
+    provider: openrouter
+    enabled: true
+  qwen/qwen3-coder-next:
+    categories:
+      technology_code/code_generation/python: 90
+      technology_code/code_generation/javascript: 90
+      technology_code/code_generation/sql: 86
+      technology_code/code_generation/shell: 86
+      technology_code/system_design/architecture: 78
+      technology_code/system_design/devops: 76
+      technology_code/testing_debugging/unit_tests: 82
+      technology_code/testing_debugging/error_analysis: 80
+      technology_code/data_science/analysis: 78
+      technology_code/data_science/modeling: 74
+      technology_code/data_interaction/database/sql: 86
+      technology_code/data_interaction/file_based/json: 88
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 78
+      complex_reasoning_agency/tool_use/code_execution: 84
+      complex_reasoning_agency/self_correction/debugging: 80
+      general_knowledge/reasoning/explanation: 76
+      general_knowledge/reasoning/logic_puzzle: 72
+      general_knowledge/fact_retrieval/definitions: 74
+      language_translation/summarization/abstractive: 72
+      language_translation/translation/language_to_language: 68
+      creative_conversational/ux_writing/interface_copy: 70
+    cost_tier: budget
+    provider: openrouter
+    enabled: true
+  stepfun/step-3.7-flash:
+    categories:
+      technology_code/code_generation/python: 80
+      technology_code/code_generation/javascript: 78
+      technology_code/code_generation/sql: 76
+      technology_code/code_generation/shell: 74
+      technology_code/testing_debugging/unit_tests: 72
+      technology_code/testing_debugging/error_analysis: 70
+      technology_code/data_science/analysis: 76
+      technology_code/data_science/modeling: 72
+      technology_code/data_interaction/database/sql: 76
+      technology_code/data_interaction/file_based/json: 78
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 72
+      complex_reasoning_agency/tool_use/code_execution: 74
+      complex_reasoning_agency/self_correction/debugging: 68
+      general_knowledge/reasoning/explanation: 76
+      general_knowledge/reasoning/logic_puzzle: 70
+      general_knowledge/fact_retrieval/definitions: 74
+      language_translation/summarization/abstractive: 74
+      language_translation/translation/language_to_language: 70
+      creative_conversational/creative_writing/storytelling: 72
+      creative_conversational/ux_writing/interface_copy: 74
+      multimedia_processing/image/analysis: 78
+      multimedia_processing/image/generation: 72
+    cost_tier: budget
+    provider: openrouter
+    enabled: true
+  tencent/hy3-preview:
+    categories:
+      technology_code/code_generation/python: 84
+      technology_code/code_generation/javascript: 82
+      technology_code/code_generation/sql: 80
+      technology_code/code_generation/shell: 78
+      technology_code/system_design/architecture: 76
+      technology_code/system_design/devops: 74
+      technology_code/testing_debugging/unit_tests: 78
+      technology_code/testing_debugging/error_analysis: 74
+      technology_code/data_science/analysis: 78
+      technology_code/data_science/modeling: 74
+      technology_code/data_interaction/database/sql: 80
+      technology_code/data_interaction/file_based/json: 82
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 80
+      complex_reasoning_agency/tool_use/code_execution: 82
+      complex_reasoning_agency/self_correction/debugging: 76
+      general_knowledge/reasoning/explanation: 80
+      general_knowledge/reasoning/logic_puzzle: 76
+      general_knowledge/fact_retrieval/definitions: 78
+      language_translation/summarization/abstractive: 78
+      language_translation/translation/language_to_language: 74
+      creative_conversational/ux_writing/interface_copy: 76
+    cost_tier: budget
+    provider: openrouter
+    enabled: true
+  anthropic/claude-opus-4.7:
+    categories:
+      technology_code/code_generation/python: 87
+      technology_code/code_generation/javascript: 86
+      technology_code/code_generation/sql: 85
+      technology_code/code_generation/shell: 84
+      technology_code/system_design/architecture: 88
+      technology_code/system_design/devops: 85
+      technology_code/testing_debugging/unit_tests: 84
+      technology_code/testing_debugging/error_analysis: 86
+      technology_code/data_science/analysis: 85
+      technology_code/data_science/modeling: 82
+      technology_code/data_interaction/database/sql: 85
+      technology_code/data_interaction/file_based/json: 86
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 88
+      complex_reasoning_agency/tool_use/code_execution: 86
+      complex_reasoning_agency/self_correction/debugging: 84
+      academic_scientific/formal_writing/research_paper: 90
+      academic_scientific/mathematics/statistics: 86
+      academic_scientific/mathematics/algebra: 84
+      academic_scientific/mathematics/calculus: 82
+      general_knowledge/reasoning/explanation: 90
+      general_knowledge/reasoning/logic_puzzle: 86
+      general_knowledge/fact_retrieval/definitions: 88
+      general_knowledge/fact_retrieval/historical_events: 86
+      language_translation/summarization/abstractive: 88
+      language_translation/translation/language_to_language: 84
+      language_translation/linguistic_analysis/sentiment: 82
+      business_finance/marketing/copywriting: 86
+      business_finance/legal_document/analysis: 88
+      creative_conversational/creative_writing/storytelling: 88
+      creative_conversational/ux_writing/interface_copy: 86
+    cost_tier: premium
+    provider: openrouter
+    enabled: true
 providers:
   deepseek:
     base_url: https://api.deepseek.com/v1
