@@ -26,6 +26,52 @@ formations:
   simple:
     aggregator: default
     workers: 2
+  spec-writer:
+    dag:
+      stages:
+      - id: structure
+        kind: worker
+        model: deepseek/deepseek-v4-pro
+        depends_on: []
+      - id: write_a
+        kind: worker
+        model: deepseek/deepseek-v4-pro
+        depends_on:
+        - structure
+      - id: write_b
+        kind: worker
+        model: deepseek/deepseek-v4-pro
+        depends_on:
+        - structure
+      - id: merge
+        kind: aggregator
+        model: deepseek/deepseek-v4-flash
+        depends_on:
+        - write_a
+        - write_b
+      - id: audit
+        kind: worker
+        model: deepseek/deepseek-v4-flash
+        depends_on:
+        - merge
+      - id: refine
+        kind: aggregator
+        model: deepseek/deepseek-v4-flash
+        depends_on:
+        - audit
+      edges:
+      - - structure
+        - write_a
+      - - structure
+        - write_b
+      - - write_a
+        - merge
+      - - write_b
+        - merge
+      - - merge
+        - audit
+      - - audit
+        - refine
 models:
   deepseek/deepseek-v4-flash:
     categories:

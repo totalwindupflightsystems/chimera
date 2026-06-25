@@ -69,6 +69,16 @@ class Stage(BaseModel):
     kind: str = "worker"  # worker | aggregator | audit | merge
     model: str
     depends_on: list[str] = Field(default_factory=list)
+    progressive: bool = False
+    """If True, send wait_messages sequentially before the main prompt.
+    The model sees context piece-by-piece and responds to each (responses discarded),
+    then gets the trigger message that requests the real output."""
+    wait_messages: list[str] = Field(default_factory=list)
+    """Context messages fed one-at-a-time before the main prompt. Only used when
+    progressive=True. Each message gets a model response that is discarded."""
+    trigger: str = ""
+    """Final message that requests actual output. If empty, the main task prompt
+    serves as the trigger. Only used when progressive=True."""
 
 
 class FormationDAG(BaseModel):
@@ -251,6 +261,9 @@ def build_dag_from_dict(dag_dict: dict[str, Any], config: ChimeraConfig) -> Form
                 kind=s.get("kind", "worker"),
                 model=config.resolve_model_alias(s.get("model", "")),
                 depends_on=list(s.get("depends_on", [])),
+                progressive=s.get("progressive", False),
+                wait_messages=list(s.get("wait_messages", [])),
+                trigger=s.get("trigger", ""),
             )
         )
     edges = [tuple(e) for e in (dag_dict.get("edges") or [])]

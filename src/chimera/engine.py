@@ -519,6 +519,17 @@ class Engine:
         """Make the actual model call for a stage; returns (messages, response)."""
         if stage.kind == "worker":
             messages = self._worker_messages(stage, dispatch, user_prompt)
+            # Progressive prompting: feed context piece-by-piece before the real call.
+            if stage.progressive and stage.wait_messages:
+                for msg in stage.wait_messages:
+                    await self.gateway.complete(
+                        stage.model,
+                        [{"role": "user", "content": msg}],
+                        temperature=0.3,
+                    )
+                trigger = stage.trigger or messages[-1]["content"]
+                if stage.trigger:
+                    messages = [{"role": "user", "content": trigger}]
             response = await self.gateway.complete(stage.model, messages, temperature=0.3)
             return messages, response
         response = await self.aggregator.execute(
