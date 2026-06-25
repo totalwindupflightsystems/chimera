@@ -174,6 +174,8 @@ class DeliberationOverrides(BaseModel):
     worker_model: str | None = None              # Force default worker model
     output_schema: dict[str, Any] | None = None  # JSON Schema for final answer
     stage_models: dict[str, str] | None = None   # Per-stage model overrides (stage_id → model)
+    timeout_total_s: float | None = None         # Per-request total timeout (≤ admin ceiling)
+    timeout_per_stage_s: float | None = None     # Per-request per-stage timeout
 
 
 class SelectorConfig(BaseModel):
@@ -195,6 +197,41 @@ class SelectorConfig(BaseModel):
     )
 
 
+class StageTimeoutConfig(BaseModel):
+    """Per-stage and end-to-end timeout controls.
+
+    All values in seconds. -1 means unlimited. 0 means use the default.
+
+    Hierarchy:
+        1. Code default (DEFAULT_STAGE_TIMEOUT_S = 120)
+        2. Admin config ceiling (chimera.yaml ``timeout`` section)
+        3. Per-request header (X-Chimera-Timeout), cannot exceed admin ceiling
+    """
+
+    total_s: float = 300.0
+    """End-to-end wall-clock cap for the entire deliberation. -1 = no limit."""
+
+    per_stage_s: float = 120.0
+    """Maximum wall-clock seconds for a single stage (worker/aggregator/auditor)."""
+
+    idle_s: float = 30.0
+    """Maximum seconds between tokens before the connection is considered stalled.
+    Only enforced when min_tokens_per_second is also set."""
+
+    min_tokens_per_second: float = 0.0
+    """If > 0 and a stage hits per_stage_s but is still producing tokens above
+    this rate, the stage is allowed to continue. 0 = disabled (strict timeout)."""
+
+    connect_s: float = 10.0
+    """TCP / HTTP connect timeout for provider API calls."""
+
+    read_s: float = 30.0
+    """Socket read timeout for provider API calls."""
+
+    retry_s: float = 60.0
+    """Total wall-clock budget for retries on a single stage."""
+
+
 class ChimeraConfig(BaseModel):
     """The full parsed chimera.yaml document."""
 
@@ -212,6 +249,7 @@ class ChimeraConfig(BaseModel):
     api_keys: dict[str, str] = Field(default_factory=dict)
     selector: SelectorConfig = Field(default_factory=SelectorConfig)
     provider_discovery: bool = True  # auto-discover providers from models.dev
+    timeout: StageTimeoutConfig = Field(default_factory=StageTimeoutConfig)
 
     @model_validator(mode="after")
     def _resolve_provider_api_keys(self) -> ChimeraConfig:
@@ -363,11 +401,15 @@ def _apply_env_overrides(config: ChimeraConfig) -> None:
     # ── API key shortcuts (Docker-friendly names) ──
     for env_var, key_name in (
         ("DEEPSEEK_KEY", "deepseek"),
+        ("DEEPSEEK_API_KEY", "deepseek"),
         ("OPENROUTER_KEY", "openrouter"),
         ("OPENROUTER_API_KEY", "openrouter"),
         ("ZAI_KEY", "zai"),
+        ("ZAI_API_KEY", "zai"),
         ("ANTHROPIC_KEY", "anthropic"),
+        ("ANTHROPIC_API_KEY", "anthropic"),
         ("GEMINI_KEY", "google"),
+        ("GEMINI_API_KEY", "google"),
     ):
         if _os.environ.get(env_var):
             config.api_keys[key_name] = _os.environ[env_var]

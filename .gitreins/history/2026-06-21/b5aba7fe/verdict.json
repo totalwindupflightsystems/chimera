@@ -1,0 +1,47 @@
+{
+  "task_id": "config-loading",
+  "task_title": "Config loading and env override defense",
+  "task_criteria": [
+    "ChimeraConfig loads chimera.yaml and parses all model entries with scores",
+    "_apply_env_overrides() activates providers from environment variables",
+    "Missing chimera.yaml raises a clear error, not a cryptic KeyError",
+    "Unknown fields in model config log a warning, don't crash",
+    "auto_discover_providers=false skips models.dev fetch entirely"
+  ],
+  "passed": false,
+  "items": [],
+  "stages": {
+    "tier1": {
+      "id": "tier1",
+      "passed": true,
+      "any_failed": false,
+      "summary": "  \u2713 guard: Tier 1 Guards: PASS  (test mode: diff, full suite \u2014 safety trigger)\n  \u2713 secrets \u2014 clean\n  \u2713 lint \u2014 o",
+      "steps": [
+        {
+          "id": "guard",
+          "type": "script",
+          "passed": true,
+          "output": "Tier 1 Guards: PASS  (test mode: diff, full suite \u2014 safety trigger)\n  \u2713 secrets \u2014 clean\n  \u2713 lint \u2014 ok\n  \u2713 tests\n",
+          "error": ""
+        }
+      ]
+    },
+    "tier2": {
+      "id": "tier2",
+      "passed": false,
+      "any_failed": true,
+      "summary": "INCOMPLETE\n  \u2713 ChimeraConfig loads chimera.yaml and parses all model entries with scores: src/chimera/config.py:289-312 \u2014 load_config() reads YAML, substitutes env vars, validates via ChimeraConfig.model_validate(raw). ChimeraConfig (line 198) has models: dict[str, ModelEntry]. ModelEntry (line 30-38) has categories: dict[str, float]. Tests test_config_loads_from_dict and test_load_config_from_file confirm models with category scores are parsed.\n  \u2713 _apply_env_overrides() activates providers from environment variables: src/chimera/config.py:326-396 \u2014 _apply_env_overrides() handles CHIMERA_HOST/PORT, CHIMERA_DISPATCHER/WORKER/AGGREGATOR, CHIMERA_LOG_LEVEL, CHIMERA_AUTH_ENABLED, CHIMERA_RATE_LIMIT_ENABLED, and API key env vars (DEEPSEEK_KEY, OPENROUTER_KEY, ZAI_KEY, ANTHROPIC_KEY, GEMINI_KEY) that set config.api_keys. Also triggers provider auto-discovery from models.dev when provider_discovery=True. TestEnvOverrides class (tests/test_config.py:189+) comprehensively tests all env-to-config bindings.\n  \u2713 Missing chimera.yaml raises a clear error, not a cryptic KeyError: src/chimera/config.py:274-282 \u2014 find_config_path() raises FileNotFoundError('No chimera.yaml found. Copy chimera.yaml.example to chimera.yaml.'). Test test_find_config_path_raises_when_missing (tests/test_config.py:62-64) confirms FileNotFoundError is raised with the clear message.\n  \u2717 Unknown fields in model config log a warning, don't crash: src/chimera/config.py \u2014 No import logging, no model_config with extra field handling, no logger.warn() calls exist anywhere in the file. Pydantic v2 default is extra='ignore' which silently discards unknown fields without logging any warning. The code does not log warnings for unknown fields.\n  \u2713 auto_discover_providers=false skips models.dev fetch entirely: src/chimera/config.py:214 \u2014 ChimeraConfig.provider_discovery: bool = True. Line 376: 'if config.provider_discovery:' gates the entire discover_providers() call. When False, the block is skipped entirely. Test test_discovery_disabled_respected (tests/test_provider_discovery.py:387-408) confirms that provider_discovery=False results in empty providers dict.\n4 of 5 criteria pass \u2014 criterion 4 FAILS because unknown fields in model config are silently ignored (Pydantic v2 default extra='ignore') rather than logged as warnings, as no logging infrastructure exists in config.py.",
+      "steps": [
+        {
+          "id": "tier2",
+          "type": "ai_eval",
+          "passed": false,
+          "output": "INCOMPLETE\n  \u2713 ChimeraConfig loads chimera.yaml and parses all model entries with scores: src/chimera/config.py:289-312 \u2014 load_config() reads YAML, substitutes env vars, validates via ChimeraConfig.model_validate(raw). ChimeraConfig (line 198) has models: dict[str, ModelEntry]. ModelEntry (line 30-38) has categories: dict[str, float]. Tests test_config_loads_from_dict and test_load_config_from_file confirm models with category scores are parsed.\n  \u2713 _apply_env_overrides() activates providers fro",
+          "error": ""
+        }
+      ]
+    }
+  },
+  "summary": "Judge Result: config-loading\n\nStage tier1: PASS\n    \u2713 guard: Tier 1 Guards: PASS  (test mode: diff, full suite \u2014 safety trigger)\n  \u2713 secrets \u2014 clean\n  \u2713 lint \u2014 o\n\nStage tier2: FAIL\n  INCOMPLETE\n  \u2713 ChimeraConfig loads chimera.yaml and parses all model entries with scores: src/chimera/config.py:289-312 \u2014 load_config() reads YAML, substitutes env vars, validates via ChimeraConfig.model_validate(raw). ChimeraConfig (line 198) has models: dict[str, ModelEntry]. ModelEntry (line 30-38) has categories: dict[str, float]. Tests test_config_loads_from_dict and test_load_config_from_file confirm models with category scores are parsed.\n  \u2713 _apply_env_overrides() activates providers from environment variables: src/chimera/config.py:326-396 \u2014 _apply_env_overrides() handles CHIMERA_HOST/PORT, CHIMERA_DISPATCHER/WORKER/AGGREGATOR, CHIMERA_LOG_LEVEL, CHIMERA_AUTH_ENABLED, CHIMERA_RATE_LIMIT_ENABLED, and API key env vars (DEEPSEEK_KEY, OPENROUTER_KEY, ZAI_KEY, ANTHROPIC_KEY, GEMINI_KEY) that set config.api_keys. Also triggers provider auto-discovery from models.dev when provider_discovery=True. TestEnvOverrides class (tests/test_config.py:189+) comprehensively tests all env-to-config bindings.\n  \u2713 Missing chimera.yaml raises a clear error, not a cryptic KeyError: src/chimera/config.py:274-282 \u2014 find_config_path() raises FileNotFoundError('No chimera.yaml found. Copy chimera.yaml.example to chimera.yaml.'). Test test_find_config_path_raises_when_missing (tests/test_config.py:62-64) confirms FileNotFoundError is raised with the clear message.\n  \u2717 Unknown fields in model config log a warning, don't crash: src/chimera/config.py \u2014 No import logging, no model_config with extra field handling, no logger.warn() calls exist anywhere in the file. Pydantic v2 default is extra='ignore' which silently discards unknown fields without logging any warning. The code does not log warnings for unknown fields.\n  \u2713 auto_discover_providers=false skips models.dev fetch entirely: src/chimera/config.py:214 \u2014 ChimeraConfig.provider_discovery: bool = True. Line 376: 'if config.provider_discovery:' gates the entire discover_providers() call. When False, the block is skipped entirely. Test test_discovery_disabled_respected (tests/test_provider_discovery.py:387-408) confirms that provider_discovery=False results in empty providers dict.\n4 of 5 criteria pass \u2014 criterion 4 FAILS because unknown fields in model config are silently ignored (Pydantic v2 default extra='ignore') rather than logged as warnings, as no logging infrastructure exists in config.py.\n\nOverall: FAIL \u2717",
+  "evaluated_at": "2026-06-21T12:12:29.423828"
+}

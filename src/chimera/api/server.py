@@ -359,6 +359,34 @@ def _register_routes(app: FastAPI) -> None:
                 output_schema=body.output_schema,
                 stage_models=body.stage_models,
             )
+            # Per-request timeout overrides via X-Chimera-Timeout header.
+            # Format: "total=300,per_stage=180". Values cannot exceed admin ceiling.
+            timeout_header = request.headers.get("X-Chimera-Timeout", "")
+            if timeout_header:
+                timeout_cfg = request.app.state.config.timeout
+                for part in timeout_header.split(","):
+                    part = part.strip()
+                    if "=" not in part:
+                        continue
+                    key, _, val = part.partition("=")
+                    try:
+                        parsed = float(val.strip())
+                    except ValueError:
+                        continue
+                    if key == "total":
+                        if timeout_cfg.total_s > 0 and parsed > timeout_cfg.total_s:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"total={parsed} exceeds admin ceiling {timeout_cfg.total_s}s",
+                            )
+                        overrides.timeout_total_s = parsed if parsed > 0 else None
+                    elif key == "per_stage":
+                        if timeout_cfg.per_stage_s > 0 and parsed > timeout_cfg.per_stage_s:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"per_stage={parsed} exceeds admin ceiling {timeout_cfg.per_stage_s}s",
+                            )
+                        overrides.timeout_per_stage_s = parsed if parsed > 0 else None
             try:
                 result = await engine.deliberate(
                     body.prompt, body.formation, overrides=overrides,
@@ -478,9 +506,9 @@ async def _check_providers(
                     gateway.complete(
                         test_model,
                         [{"role": "user", "content": "ping"}],
-                        temperature=0.0,
+                        temperature=1,
                     ),
-                    timeout=5.0,
+                    timeout=15.0,
                 )
                 status[provider_name] = {
                     "healthy": True,

@@ -187,9 +187,13 @@ def resolve_litellm_model(
         return f"anthropic/{model_name}", kwargs
 
     if provider == "google":
-        if model_name.startswith("gemini/"):
-            return model_name, kwargs
-        return f"gemini/{model_name}", kwargs
+        # Strip any leading "google/" prefix so the model name is the bare
+        # Gemini id (e.g. "gemini-2.5-pro"). LiteLLM's gemini/ prefix routes
+        # through the Google AI Studio backend.
+        bare = model_name.split("/")[-1]
+        if bare.startswith("gemini/"):
+            return bare, kwargs
+        return f"gemini/{bare}", kwargs
 
     if provider == "deepseek":
         # Route through LiteLLM's OpenAI provider to avoid DeepSeek-specific

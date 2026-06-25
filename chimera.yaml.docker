@@ -1089,3 +1089,12 @@ selector:
   price_sensitivity: 0.0
 
 provider_discovery: true
+
+timeout:
+  total_s: 300.0
+  per_stage_s: 120.0
+  idle_s: 30.0
+  min_tokens_per_second: 0.0
+  connect_s: 10.0
+  read_s: 30.0
+  retry_s: 60.0

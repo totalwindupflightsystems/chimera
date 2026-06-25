@@ -392,7 +392,7 @@ async def test_stage_timeout_produces_degraded_result(config, monkeypatch: pytes
     import chimera.engine as engine_mod
 
     # Shrink the timeout so the test is fast; workers sleep past it.
-    monkeypatch.setattr(engine_mod, "DEFAULT_STAGE_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(config.timeout, "per_stage_s", 0.05)
 
     class SlowWorkerGateway(FakeGateway):
         async def complete(self, model, messages, response_format=None, **kw):

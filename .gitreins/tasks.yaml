@@ -9,3 +9,50 @@ tasks:
   status: complete
   created_at: '2026-06-20T08:28:54.754338+00:00'
   completed_at: '2026-06-20T08:28:59.393960+00:00'
+- id: provider-discovery
+  title: Provider auto-discovery from models.dev
+  criteria:
+  - provider_discovery.py exists in src/chimera/ and imports requests, json, and pathlib
+  - fetch_models_dev() fetches https://models.dev/api.json and returns parsed JSON
+  - Provider cache is written to a local file and reused within TTL
+  - Auto-discovery activates providers when their API key env var is set
+  - "Network failure during fetch does not crash startup \u2014 returns empty gracefully"
+  status: in_progress
+  created_at: '2026-06-21T12:04:20.812836+00:00'
+- id: model-selector
+  title: Model selection with toggle and cost weighting
+  criteria:
+  - CategorySelector.select() skips models with enabled=false
+  - cost_per_1k_input and cost_per_1k_output fields are read from model config
+  - price_sensitivity=0 returns pure quality ranking, sensitivity=1 returns pure cost
+    ranking
+  - select_diverse() returns models from different providers
+  - Per-call price_sensitivity override works without mutating global config
+  status: in_progress
+  created_at: '2026-06-21T12:04:24.978621+00:00'
+- id: deliberation-api
+  title: Deliberation API endpoints
+  criteria:
+  - /v1/models returns JSON array with enabled field on each model
+  - /v1/deliberate accepts prompt and formation, returns merged answer
+  - Health endpoint returns 200 with status ok
+  - Disabled models are excluded from /v1/models when enabled=false
+  - Missing required fields in /v1/deliberate request returns 422 with field names
+  status: in_progress
+  created_at: '2026-06-21T12:04:29.292847+00:00'
+- id: config-loading
+  title: Config loading and env override defense
+  criteria:
+  - ChimeraConfig loads chimera.yaml and parses all model entries with scores
+  - _apply_env_overrides() activates providers from environment variables
+  - Missing chimera.yaml raises a clear error, not a cryptic KeyError
+  - Unknown fields in model config log a warning, don't crash
+  - auto_discover_providers=false skips models.dev fetch entirely
+  status: in_progress
+  created_at: '2026-06-21T12:04:34.070367+00:00'
+- id: smoke-test
+  title: Smoke test
+  criteria:
+  - File README.md exists in the repo root
+  status: pending
+  created_at: '2026-06-22T03:56:20.070273+00:00'

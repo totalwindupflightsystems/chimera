@@ -1,0 +1,47 @@
+{
+  "task_id": "model-selector",
+  "task_title": "Model selection with toggle and cost weighting",
+  "task_criteria": [
+    "CategorySelector.select() skips models with enabled=false",
+    "cost_per_1k_input and cost_per_1k_output fields are read from model config",
+    "price_sensitivity=0 returns pure quality ranking, sensitivity=1 returns pure cost ranking",
+    "select_diverse() returns models from different providers",
+    "Per-call price_sensitivity override works without mutating global config"
+  ],
+  "passed": true,
+  "items": [],
+  "stages": {
+    "tier1": {
+      "id": "tier1",
+      "passed": true,
+      "any_failed": false,
+      "summary": "  \u2713 guard: Tier 1 Guards: PASS  (test mode: diff, full suite \u2014 safety trigger)\n  \u2713 secrets \u2014 clean\n  \u2713 lint \u2014 o",
+      "steps": [
+        {
+          "id": "guard",
+          "type": "script",
+          "passed": true,
+          "output": "Tier 1 Guards: PASS  (test mode: diff, full suite \u2014 safety trigger)\n  \u2713 secrets \u2014 clean\n  \u2713 lint \u2014 ok\n  \u2713 tests\n",
+          "error": ""
+        }
+      ]
+    },
+    "tier2": {
+      "id": "tier2",
+      "passed": true,
+      "any_failed": false,
+      "summary": "COMPLETE\n  \u2713 CategorySelector.select() skips models with enabled=false: src/chimera/selector.py:182 \u2014 `if not getattr(entry, \"enabled\", True): continue` in `score()` (called by `select()`). Tests: test_disabled_model_not_scored, test_all_disabled_returns_empty all PASS.\n  \u2713 cost_per_1k_input and cost_per_1k_output fields are read from model config: src/chimera/config.py:42-43 defines fields; src/chimera/selector.py:230-231 reads via `getattr(entry, \"cost_per_1k_input\", None)`/`cost_per_1k_output`. Tests: test_model_cost_rate_uses_explicit, test_model_cost_rate_falls_back_to_tier PASS.\n  \u2713 price_sensitivity=0 returns pure quality ranking, sensitivity=1 returns pure cost ranking: src/chimera/selector.py:249 \u2014 at sensitivity<=0 returns quality_scores unchanged (pure quality). Line 266 \u2014 `penalty = relative_cost ** self.price_sensitivity`, so at 1.0 penalty = relative_cost (cost-weighted). Tests: test_sensitivity_zero_same_as_pure_quality, test_sensitivity_one_boosts_cheapest PASS.\n  \u2713 select_diverse() returns models from different providers: src/chimera/selector.py:347-362 \u2014 groups scores by provider attribute, takes top model per provider, then sorts globally. Tests: test_select_diverse_no_same_provider_twice PASS (no duplicate providers).\n  \u2713 Per-call price_sensitivity override works without mutating global config: src/chimera/selector.py:296-309 (select) and 331-344 (select_diverse) \u2014 saves `self.price_sensitivity`, temporarily sets override, calls _apply_cost_weighting, then restores saved value. Test: test_per_call_sensitivity_overrides_instance PASS (override differs from instance default).\nAll 5 criteria verified through code inspection and 35 passing tests.",
+      "steps": [
+        {
+          "id": "tier2",
+          "type": "ai_eval",
+          "passed": true,
+          "output": "COMPLETE\n  \u2713 CategorySelector.select() skips models with enabled=false: src/chimera/selector.py:182 \u2014 `if not getattr(entry, \"enabled\", True): continue` in `score()` (called by `select()`). Tests: test_disabled_model_not_scored, test_all_disabled_returns_empty all PASS.\n  \u2713 cost_per_1k_input and cost_per_1k_output fields are read from model config: src/chimera/config.py:42-43 defines fields; src/chimera/selector.py:230-231 reads via `getattr(entry, \"cost_per_1k_input\", None)`/`cost_per_1k_output",
+          "error": ""
+        }
+      ]
+    }
+  },
+  "summary": "Judge Result: model-selector\n\nStage tier1: PASS\n    \u2713 guard: Tier 1 Guards: PASS  (test mode: diff, full suite \u2014 safety trigger)\n  \u2713 secrets \u2014 clean\n  \u2713 lint \u2014 o\n\nStage tier2: PASS\n  COMPLETE\n  \u2713 CategorySelector.select() skips models with enabled=false: src/chimera/selector.py:182 \u2014 `if not getattr(entry, \"enabled\", True): continue` in `score()` (called by `select()`). Tests: test_disabled_model_not_scored, test_all_disabled_returns_empty all PASS.\n  \u2713 cost_per_1k_input and cost_per_1k_output fields are read from model config: src/chimera/config.py:42-43 defines fields; src/chimera/selector.py:230-231 reads via `getattr(entry, \"cost_per_1k_input\", None)`/`cost_per_1k_output`. Tests: test_model_cost_rate_uses_explicit, test_model_cost_rate_falls_back_to_tier PASS.\n  \u2713 price_sensitivity=0 returns pure quality ranking, sensitivity=1 returns pure cost ranking: src/chimera/selector.py:249 \u2014 at sensitivity<=0 returns quality_scores unchanged (pure quality). Line 266 \u2014 `penalty = relative_cost ** self.price_sensitivity`, so at 1.0 penalty = relative_cost (cost-weighted). Tests: test_sensitivity_zero_same_as_pure_quality, test_sensitivity_one_boosts_cheapest PASS.\n  \u2713 select_diverse() returns models from different providers: src/chimera/selector.py:347-362 \u2014 groups scores by provider attribute, takes top model per provider, then sorts globally. Tests: test_select_diverse_no_same_provider_twice PASS (no duplicate providers).\n  \u2713 Per-call price_sensitivity override works without mutating global config: src/chimera/selector.py:296-309 (select) and 331-344 (select_diverse) \u2014 saves `self.price_sensitivity`, temporarily sets override, calls _apply_cost_weighting, then restores saved value. Test: test_per_call_sensitivity_overrides_instance PASS (override differs from instance default).\nAll 5 criteria verified through code inspection and 35 passing tests.\n\nOverall: PASS \u2713",
+  "evaluated_at": "2026-06-21T12:08:07.364096"
+}

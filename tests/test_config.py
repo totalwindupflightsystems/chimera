@@ -197,6 +197,10 @@ class TestEnvOverrides:
         # Clear any real env vars that would conflict with test mocks
         conflicts = {
             "OPENROUTER_API_KEY": _os.environ.get("OPENROUTER_API_KEY"),
+            "DEEPSEEK_API_KEY": _os.environ.get("DEEPSEEK_API_KEY"),
+            "ZAI_API_KEY": _os.environ.get("ZAI_API_KEY"),
+            "ANTHROPIC_API_KEY": _os.environ.get("ANTHROPIC_API_KEY"),
+            "GEMINI_API_KEY": _os.environ.get("GEMINI_API_KEY"),
         }
         for k in conflicts:
             _os.environ.pop(k, None)
@@ -261,6 +265,25 @@ class TestEnvOverrides:
         assert cfg.api_keys["deepseek"] == "sk-ds"
         assert cfg.api_keys["openrouter"] == "sk-or"
         assert cfg.api_keys["zai"] == "sk-z"
+
+    def test_api_key_suffixed_names(self, config: ChimeraConfig) -> None:
+        """_API_KEY variants must also resolve (ZAI_API_KEY, ANTHROPIC_API_KEY, etc.)."""
+        cfg = self._with_env(
+            config,
+            DEEPSEEK_API_KEY="sk-ds-full",
+            ZAI_API_KEY="sk-z-full",
+            ANTHROPIC_API_KEY="sk-an-full",
+            GEMINI_API_KEY="sk-g-full",
+        )
+        assert cfg.api_keys["deepseek"] == "sk-ds-full"
+        assert cfg.api_keys["zai"] == "sk-z-full"
+        assert cfg.api_keys["anthropic"] == "sk-an-full"
+        assert cfg.api_keys["google"] == "sk-g-full"
+
+    def test_openrouter_api_key(self, config: ChimeraConfig) -> None:
+        """OPENROUTER_API_KEY should also populate openrouter."""
+        cfg = self._with_env(config, OPENROUTER_API_KEY="sk-or-full")
+        assert cfg.api_keys["openrouter"] == "sk-or-full"
 
     def test_no_env_vars_leaves_config_unchanged(self, config: ChimeraConfig) -> None:
         cfg = self._with_env(config)

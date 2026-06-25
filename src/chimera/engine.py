@@ -34,7 +34,8 @@ log = structlog.get_logger("chimera.engine")
 
 #: Per-stage wall-clock timeout (seconds). A stage that exceeds this is cancelled
 #: and recorded as degraded so one slow worker cannot block the deliberation.
-#: Tests monkeypatch this module global to exercise the timeout path quickly.
+#: This is the code-level fallback — prefer the config ``timeout.per_stage_s``
+#: or the per-request ``X-Chimera-Timeout`` header.
 DEFAULT_STAGE_TIMEOUT_S: float = 120.0
 
 
@@ -287,7 +288,9 @@ class Engine:
         )
 
         stage_spans, stage_results = await self._run_dag(
-            outcome.result, user_prompt, request_id, effective_schema
+            outcome.result, user_prompt, request_id, effective_schema,
+            timeout_total_s=overrides.timeout_total_s if overrides else None,
+            timeout_per_stage_s=overrides.timeout_per_stage_s if overrides else None,
         )
 
         answer, answer_stage_id = self._select_answer(outcome.result.formation, stage_results)
@@ -330,6 +333,9 @@ class Engine:
         user_prompt: str,
         request_id: str,
         output_schema: dict[str, Any] | None = None,
+        *,
+        timeout_total_s: float | None = None,
+        timeout_per_stage_s: float | None = None,
     ) -> tuple[dict[str, StageSpan], dict[str, StageResult]]:
         dag = dispatch.formation
         topo = dag.topo_order()
@@ -342,7 +348,10 @@ class Engine:
             if not ready:
                 raise RuntimeError("DAG has unresolvable dependencies")
             outcomes = await asyncio.gather(
-                *(self._execute_stage(s, dispatch, results, user_prompt, output_schema) for s in ready)
+                *(self._execute_stage(s, dispatch, results, user_prompt, output_schema,
+                                       timeout_total_s=timeout_total_s,
+                                       timeout_per_stage_s=timeout_per_stage_s)
+                  for s in ready)
             )
             for stage, (result, span) in zip(ready, outcomes, strict=False):
                 results[stage.id] = result
@@ -366,15 +375,31 @@ class Engine:
         results: dict[str, StageResult],
         user_prompt: str,
         output_schema: dict[str, Any] | None = None,
+        *,
+        timeout_total_s: float | None = None,
+        timeout_per_stage_s: float | None = None,
     ) -> tuple[StageResult, StageSpan]:
         dep_results = [results[d] for d in stage.depends_on if d in results]
+
+        # Resolve per-stage timeout: request → config → code default
+        cfg_timeout = self._config.timeout
+        per_stage = (
+            timeout_per_stage_s
+            if timeout_per_stage_s is not None
+            else cfg_timeout.per_stage_s
+        )
+        # Clamp per-stage to total if total is set
+        if timeout_total_s is not None and timeout_total_s > 0:
+            per_stage = min(per_stage, timeout_total_s) if per_stage > 0 else timeout_total_s
+        if per_stage <= 0:
+            per_stage = None  # unlimited
 
         start = time.monotonic()
         messages: list[dict[str, str]] = []
         try:
             messages, response = await asyncio.wait_for(
                 self._call_stage(stage, dispatch, dep_results, user_prompt, output_schema),
-                timeout=DEFAULT_STAGE_TIMEOUT_S,
+                timeout=per_stage,
             )
         except TimeoutError:
             latency_ms = int((time.monotonic() - start) * 1000)
@@ -382,11 +407,11 @@ class Engine:
                 "engine_stage_timeout",
                 stage=stage.id,
                 model=stage.model,
-                timeout=DEFAULT_STAGE_TIMEOUT_S,
+                timeout_s=per_stage or 0,
             )
             return self._degraded_stage(
                 stage,
-                GatewayError(f"timed out after {DEFAULT_STAGE_TIMEOUT_S}s"),
+                GatewayError(f"timed out after {per_stage or 0:.0f}s"),
                 [],
                 latency_ms,
             )

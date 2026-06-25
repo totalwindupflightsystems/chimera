@@ -42,8 +42,6 @@ evaluator:
   max_input_tokens: 0.2M
   max_output_tokens: 0.05M
   tool_call_weight: 0.1
-  code_context_budget: 0.70
-  compaction_threshold: 0.90
   lsp_diagnostics: true
   static_analysis_diagnostics: true
 defaults:
