@@ -107,6 +107,8 @@ class TestDiscoverProviders:
         with patch(
             "chimera.provider_discovery._fetch_models_dev",
             return_value=SAMPLE_API_JSON,
+        ), patch(
+            "chimera.provider_discovery._save_cache",
         ):
             providers, pricing = discover_providers(force_refresh=True)
 
@@ -121,6 +123,8 @@ class TestDiscoverProviders:
         with patch(
             "chimera.provider_discovery._fetch_models_dev",
             return_value=SAMPLE_API_JSON,
+        ), patch(
+            "chimera.provider_discovery._save_cache",
         ):
             providers, _pricing = discover_providers(force_refresh=True)
 
@@ -133,6 +137,8 @@ class TestDiscoverProviders:
         with patch(
             "chimera.provider_discovery._fetch_models_dev",
             return_value=SAMPLE_API_JSON,
+        ), patch(
+            "chimera.provider_discovery._save_cache",
         ):
             _providers, pricing = discover_providers(force_refresh=True)
 
@@ -141,7 +147,7 @@ class TestDiscoverProviders:
         assert v4f["output"] == pytest.approx(0.00028)  # 0.28 / 1000
 
     def test_returns_empty_when_no_keys(self, monkeypatch):
-        """When no API keys are set, returns empty."""
+        """When no API keys are set, providers empty but pricing still extracted."""
         # Ensure no keys
         for v in ["DEEPSEEK_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY"]:
             monkeypatch.delenv(v, raising=False)
@@ -149,11 +155,18 @@ class TestDiscoverProviders:
         with patch(
             "chimera.provider_discovery._fetch_models_dev",
             return_value=SAMPLE_API_JSON,
+        ), patch(
+            "chimera.provider_discovery._save_cache",
         ):
             providers, pricing = discover_providers(force_refresh=True)
 
         assert providers == {}, f"Should be empty: {providers}"
-        assert pricing == {}, f"Should be empty: {pricing}"
+        # Pricing is always extracted — it's public data, no auth needed
+        assert len(pricing) == 4, f"All 4 models should have pricing: {pricing}"
+        assert "deepseek/deepseek-v4-flash" in pricing
+        assert "deepseek/deepseek-v4-pro" in pricing
+        assert "google/gemini-3-flash-preview" in pricing
+        assert "unknown-provider/some-model" in pricing
 
     def test_skips_providers_without_cost_data(self, monkeypatch):
         """Models without cost data are skipped in pricing."""
@@ -176,6 +189,8 @@ class TestDiscoverProviders:
         with patch(
             "chimera.provider_discovery._fetch_models_dev",
             return_value=data,
+        ), patch(
+            "chimera.provider_discovery._save_cache",
         ):
             _providers, pricing = discover_providers(force_refresh=True)
 
@@ -189,6 +204,8 @@ class TestDiscoverProviders:
         with patch(
             "chimera.provider_discovery._fetch_models_dev",
             return_value=SAMPLE_API_JSON,
+        ), patch(
+            "chimera.provider_discovery._save_cache",
         ):
             providers, _pricing = discover_providers(force_refresh=True)
 

@@ -98,6 +98,19 @@ MODEL_ID_MAP: dict[str, str] = {
     "gemini-3-pro-preview": "google/gemini-3-pro-preview",
 }
 
+#: Known base URLs for providers where models.dev doesn't include them.
+#: Populated from official provider docs. Keys are Chimera provider names.
+_PROVIDER_BASE_URLS: dict[str, str] = {
+    "anthropic": "https://api.anthropic.com/v1",
+    "google": "https://generativelanguage.googleapis.com/v1beta",
+    "openai": "https://api.openai.com/v1",
+    "xai": "https://api.x.ai/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "cohere": "https://api.cohere.ai/v1",
+    "perplexity": "https://api.perplexity.ai",
+    "meta": "https://api.meta.ai/v1",
+}
+
 
 def _resolve_model_id(provider_id: str, model_id: str) -> str:
     """Map a models.dev (provider_id, model_id) pair to a Chimera model ID.
@@ -157,8 +170,21 @@ def _fetch_models_dev() -> dict[str, Any]:
 def discover_providers(
     *,
     force_refresh: bool = False,
+    api_keys: dict[str, str] | None = None,
 ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, float]]]:
     """Auto-discover available providers and model pricing from models.dev.
+
+    Pricing data is extracted from ALL providers in the cache regardless of
+    API key availability -- it is public data that does not require auth.
+    Providers are only registered when API keys are actually available.
+
+    Args:
+        force_refresh: If True, skip cache and re-fetch from models.dev.
+        api_keys: Optional dict of ``{chimera_provider_name: api_key}``.
+            When provided, a provider is considered available if its
+            chimera name is in this dict (even if no env var is set).
+            This bridges ``chimera.yaml``'s ``api_keys`` section with
+            the env-var-based discovery from models.dev.
 
     Returns:
         providers: ``{provider_name: {base_url, api_key_env}}``
@@ -181,9 +207,11 @@ def discover_providers(
                 log.warning("provider_no_data")
                 return {}, {}
 
-    # 2. Discover which providers have API keys set
+    # 2. Extract per-model pricing from ALL providers in cache.
+    #    Pricing data does NOT require API keys — it's public data.
     providers: dict[str, dict[str, str]] = {}
     model_pricing: dict[str, dict[str, float]] = {}
+    api_keys = api_keys or {}
 
     for md_id, md_provider in data.items():
         if md_id in ("_fetched_at",):
@@ -191,6 +219,28 @@ def discover_providers(
         if not isinstance(md_provider, dict):
             continue
 
+        chimera_name = PROVIDER_ID_MAP.get(md_id, md_id)
+
+        # ── Pricing extraction (always runs, no auth needed) ──
+        md_models = md_provider.get("models", {})
+        if isinstance(md_models, dict):
+            for md_model_id, md_model in md_models.items():
+                if not isinstance(md_model, dict):
+                    continue
+                cost = md_model.get("cost", {})
+                if not isinstance(cost, dict):
+                    continue
+                cost_input = cost.get("input")
+                cost_output = cost.get("output")
+                if cost_input is None or cost_output is None:
+                    continue
+                chimera_model_id = _resolve_model_id(md_id, md_model_id)
+                model_pricing[chimera_model_id] = {
+                    "input": _mtok_to_per_1k(float(cost_input)),
+                    "output": _mtok_to_per_1k(float(cost_output)),
+                }
+
+        # ── Provider discovery (requires API key) ──
         env_vars = md_provider.get("env", [])
         if not isinstance(env_vars, list):
             env_vars = [env_vars] if env_vars else []
@@ -203,11 +253,23 @@ def discover_providers(
                 api_key = val
                 break
 
-        if api_key is None:
+        # Fall back to config.api_keys — keys stored in chimera.yaml
+        # rather than environment variables.
+        if api_key is None and chimera_name in api_keys:
+            api_key = api_keys[chimera_name]
+
+        # Skip provider registration if no key found, or if key is an
+        # empty/unresolved placeholder.  ``${VAR}`` tokens that didn't
+        # resolve produce empty strings; an empty key means the provider
+        # is not actually available.
+        if not api_key:
             continue
 
-        chimera_name = PROVIDER_ID_MAP.get(md_id, md_id)
         base_url = md_provider.get("api", "")
+        # Fall back to known base URLs for providers where models.dev
+        # doesn't include them (e.g. Anthropic, Google, OpenAI, xAI).
+        if not base_url:
+            base_url = _PROVIDER_BASE_URLS.get(chimera_name, "")
         if base_url and not base_url.endswith("/v1") and "/v1" not in base_url:
             base_url = base_url.rstrip("/") + "/v1"
 
@@ -215,26 +277,6 @@ def discover_providers(
             "base_url": base_url,
             "api_key_env": env_vars[0] if env_vars else "",
         }
-
-        # 3. Extract per-model pricing
-        md_models = md_provider.get("models", {})
-        if not isinstance(md_models, dict):
-            continue
-        for md_model_id, md_model in md_models.items():
-            if not isinstance(md_model, dict):
-                continue
-            cost = md_model.get("cost", {})
-            if not isinstance(cost, dict):
-                continue
-            cost_input = cost.get("input")
-            cost_output = cost.get("output")
-            if cost_input is None or cost_output is None:
-                continue
-            chimera_model_id = _resolve_model_id(md_id, md_model_id)
-            model_pricing[chimera_model_id] = {
-                "input": _mtok_to_per_1k(float(cost_input)),
-                "output": _mtok_to_per_1k(float(cost_output)),
-            }
 
     log.info(
         "provider_discovery_done",
