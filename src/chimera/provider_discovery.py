@@ -131,7 +131,7 @@ def _mtok_to_per_1k(cost_mtok: float) -> float:
 
 
 def _load_cache() -> dict[str, Any] | None:
-    """Load cached models.dev data, returning None if stale or missing."""
+    """Load cached models.dev data, returning None if stale, missing, or corrupt."""
     path = Path(CACHE_PATH).expanduser()
     if not path.is_file():
         return None
@@ -139,20 +139,36 @@ def _load_cache() -> dict[str, Any] | None:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
+    # Validate structure: must be a dict with provider entries and _fetched_at
+    if not isinstance(data, dict):
+        log.warning("provider_cache_invalid", reason="not a dict")
+        return None
     fetched_at = data.get("_fetched_at", 0)
     if time.time() - fetched_at > CACHE_TTL:
         log.info("provider_cache_stale", age_s=int(time.time() - fetched_at))
         return None
-    log.info("provider_cache_hit", age_s=int(time.time() - fetched_at))
+    # Ensure at least one provider entry exists
+    provider_count = sum(1 for k, v in data.items()
+                         if k != "_fetched_at" and isinstance(v, dict) and "models" in v)
+    if provider_count == 0:
+        log.warning("provider_cache_empty", reason="no provider entries with models")
+        return None
+    log.info("provider_cache_hit",
+             age_s=int(time.time() - fetched_at),
+             providers=provider_count)
     return data
 
 
 def _save_cache(data: dict[str, Any]) -> None:
-    """Persist models.dev data to local cache."""
+    """Persist models.dev data to local cache (atomic write)."""
     path = Path(CACHE_PATH).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     data["_fetched_at"] = time.time()
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    # Atomic write: temp file → rename, so concurrent readers never see
+    # a half-written file.
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp.replace(path)
 
 
 def _fetch_models_dev() -> dict[str, Any]:

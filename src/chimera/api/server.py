@@ -319,6 +319,8 @@ def _register_routes(app: FastAPI) -> None:
                 "cost_tier": entry.cost_tier,
                 "provider": entry.provider,
                 "enabled": entry.enabled,
+                "cost_per_1k_input": entry.cost_per_1k_input,
+                "cost_per_1k_output": entry.cost_per_1k_output,
             }
             for name, entry in cfg.models.items()
         }
