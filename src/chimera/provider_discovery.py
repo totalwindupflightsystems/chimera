@@ -70,6 +70,7 @@ MODEL_ID_MAP: dict[str, str] = {
     "gpt-5.5-pro": "openrouter/openai/gpt-5.5-pro",
     # Anthropic
     "claude-opus-4-8": "anthropic/claude-opus-4.8",
+    "claude-opus-4-7": "anthropic/claude-opus-4.7",
     "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
     "claude-haiku-4-5": "anthropic/claude-haiku-4.5",
     "claude-fable-5": "openrouter/anthropic/claude-fable-5",
@@ -85,7 +86,9 @@ MODEL_ID_MAP: dict[str, str] = {
     # Qwen
     "qwen3.7-max": "openrouter/qwen/qwen3.7-max",
     "qwen3.7-plus": "openrouter/qwen/qwen3.7-plus",
-    "qwen3-coder-plus": "openrouter/qwen/qwen3-coder",
+    "qwen3-coder-plus": "openrouter/qwen/qwen3-coder-plus",
+    "qwen3-coder-flash": "openrouter/qwen/qwen3-coder-flash",
+    "qwen3-coder-next": "qwen/qwen3-coder-next",
     # Grok
     "grok-4.20-0309-non-reasoning": "openrouter/x-ai/grok-4.20",
     "grok-4.20-0309-reasoning": "openrouter/x-ai/grok-4.20-multi-agent",
@@ -251,9 +254,17 @@ def discover_providers(
                 if cost_input is None or cost_output is None:
                     continue
                 chimera_model_id = _resolve_model_id(md_id, md_model_id)
+                new_input = _mtok_to_per_1k(float(cost_input))
+                new_output = _mtok_to_per_1k(float(cost_output))
+                # Prefer non-zero pricing: if we already have real pricing,
+                # don't overwrite with zero-cost entries from free-tier providers.
+                existing = model_pricing.get(chimera_model_id)
+                if existing is not None and existing["input"] > 0 and existing["output"] > 0:
+                    if new_input == 0.0 and new_output == 0.0:
+                        continue
                 model_pricing[chimera_model_id] = {
-                    "input": _mtok_to_per_1k(float(cost_input)),
-                    "output": _mtok_to_per_1k(float(cost_output)),
+                    "input": new_input,
+                    "output": new_output,
                 }
 
         # ── Provider discovery (requires API key) ──
