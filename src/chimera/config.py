@@ -295,11 +295,52 @@ class ChimeraConfig(BaseModel):
         return "\n".join(lines)
 
 
+#: Cached contents of ~/.hermes/.env, loaded once as fallback for env-var
+#: substitution when ``os.environ`` does not contain the requested variable.
+#: Hermes stores API keys in this file; the Chimera config uses ``${VAR}``
+#: placeholders that should resolve from it even when the key is not set in
+#: the process environment (e.g. cron sessions).
+_hermes_dotenv_cache: dict[str, str] | None = None
+
+
+def _load_hermes_dotenv() -> dict[str, str]:
+    """Parse ``~/.hermes/.env`` into a dict, caching the result."""
+    global _hermes_dotenv_cache
+    if _hermes_dotenv_cache is not None:
+        return _hermes_dotenv_cache
+    _hermes_dotenv_cache = {}
+    env_path = Path("~/.hermes/.env").expanduser()
+    if not env_path.is_file():
+        return _hermes_dotenv_cache
+    try:
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip()
+            # Strip surrounding quotes
+            if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+                val = val[1:-1]
+            _hermes_dotenv_cache[key] = val
+    except OSError:
+        _hermes_dotenv_cache = {}
+    return _hermes_dotenv_cache
+
+
 def _substitute_env(value: Any) -> Any:
-    """Recursively replace ``${VAR}`` tokens using ``os.environ``."""
+    """Recursively replace ``${VAR}`` tokens using ``os.environ``.
+
+    Falls back to ``~/.hermes/.env`` for variables not found in the
+    process environment (so API keys stored in Hermes' dotenv file
+    resolve correctly even in cron sessions).
+    """
     if isinstance(value, str):
+        dotenv = _load_hermes_dotenv()
         return _ENV_PATTERN.sub(
-            lambda m: os.environ.get(m.group(1), ""), value
+            lambda m: os.environ.get(m.group(1)) or dotenv.get(m.group(1), ""),
+            value,
         )
     if isinstance(value, dict):
         return {k: _substitute_env(v) for k, v in value.items()}
@@ -404,6 +445,10 @@ def _apply_env_overrides(config: ChimeraConfig) -> None:
         ("DEEPSEEK_API_KEY", "deepseek"),
         ("OPENROUTER_KEY", "openrouter"),
         ("OPENROUTER_API_KEY", "openrouter"),
+        ("OPENAI_KEY", "openai"),
+        ("OPENAI_API_KEY", "openai"),
+        ("XAI_KEY", "xai"),
+        ("XAI_API_KEY", "xai"),
         ("ZAI_KEY", "zai"),
         ("ZAI_API_KEY", "zai"),
         ("ANTHROPIC_KEY", "anthropic"),
@@ -419,7 +464,9 @@ def _apply_env_overrides(config: ChimeraConfig) -> None:
         try:
             from chimera.provider_discovery import discover_providers
 
-            discovered_providers, model_pricing = discover_providers()
+            discovered_providers, model_pricing = discover_providers(
+                api_keys=dict(config.api_keys),
+            )
             # Only add providers that aren't already configured
             for name, pdata in discovered_providers.items():
                 if name not in config.providers:
