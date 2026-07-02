@@ -1,6 +1,8 @@
 api_keys:
   deepseek: ${DEEPSEEK_API_KEY}
   openrouter: ${OPENROUTER_API_KEY}
+  openai: ${OPENAI_API_KEY}
+  xai: ${XAI_API_KEY}
   zai: ${ZAI_API_KEY}
   anthropic: ${ANTHROPIC_API_KEY}
   google: ${GEMINI_API_KEY}
@@ -33,16 +35,30 @@ formations:
         kind: worker
         model: deepseek/deepseek-v4-pro
         depends_on: []
+        progressive: true
+        wait_messages:
+        - "You are planning a UI specification document. Read the user's request carefully. Identify all subsections, components, states, and interaction paths that need to be specified. Do NOT write the spec yet — just plan the structure. Respond with 'Structure planned.' when ready."
+        trigger: "SIMON SAYS: Output the complete outline. List every subsection with its component inventory, every state to be specified per component, and the exact assignment of subsections to workers. Format as a structured outline."
       - id: write_a
         kind: worker
         model: deepseek/deepseek-v4-pro
         depends_on:
         - structure
+        progressive: true
+        wait_messages:
+        - "STUDY THIS — do not write yet. CSS token system: --color-bg-canvas:#0d1117, --color-bg-surface:#161b22, --color-bg-surface-raised:#1c2128, --color-bg-input:#0a0e14, --color-text-primary:#e6edf3, --color-text-secondary:#8b949e, --color-text-tertiary:#484f58, --color-text-link:#58a6ff, --color-accent-primary:#388bfd, --color-accent-success:#238636, --color-accent-warning:#d29922, --color-accent-error:#da3633. Borders: --color-border-default:rgba(48,54,61,0.6), --color-border-hover:rgba(68,77,87,0.8). Spacing: --space-0(0px) through --space-20(80px) in 4px increments. Radius: --radius-sm(3px), --radius-md(6px), --radius-lg(10px), --radius-full(9999px). Duration: --duration-micro(80ms), --duration-quick(150ms), --duration-standard(250ms), --duration-slow(400ms). Easing: --ease-out-quint(0.22,1,0.36,1), --ease-out-expo(0.16,1,0.3,1), --ease-spring(0.34,1.56,0.64,1). Respond with 'Tokens absorbed.'"
+        - "OUTPUT RULES — study, do not write. Every element must have all 7 states: DEFAULT, HOVER, ACTIVE, DISABLED, LOADING, ERROR, EMPTY — each with exact CSS values using ONLY the token system. Every animation must specify cubic-bezier curve + duration in ms + property. Every component needs aria attributes and keyboard shortcuts. Use ASCII diagrams for layouts. Zero prose filler — every sentence is a specification. Respond with 'Rules understood.'"
+        trigger: "SIMON SAYS: Write your assigned subsections. Use only the token system. Specify all 7 states per element. Include ASCII diagrams, keyboard shortcuts, and aria attributes. Target 800+ lines of blind-developer density."
       - id: write_b
         kind: worker
         model: deepseek/deepseek-v4-pro
         depends_on:
         - structure
+        progressive: true
+        wait_messages:
+        - "STUDY THIS — do not write yet. CSS token system: --color-bg-canvas:#0d1117, --color-bg-surface:#161b22, --color-bg-surface-raised:#1c2128, --color-bg-input:#0a0e14, --color-text-primary:#e6edf3, --color-text-secondary:#8b949e, --color-text-tertiary:#484f58, --color-text-link:#58a6ff, --color-accent-primary:#388bfd, --color-accent-success:#238636, --color-accent-warning:#d29922, --color-accent-error:#da3633. Borders: --color-border-default:rgba(48,54,61,0.6), --color-border-hover:rgba(68,77,87,0.8). Spacing: --space-0(0px) through --space-20(80px) in 4px increments. Radius: --radius-sm(3px), --radius-md(6px), --radius-lg(10px), --radius-full(9999px). Duration: --duration-micro(80ms), --duration-quick(150ms), --duration-standard(250ms), --duration-slow(400ms). Easing: --ease-out-quint(0.22,1,0.36,1), --ease-out-expo(0.16,1,0.3,1), --ease-spring(0.34,1.56,0.64,1). Respond with 'Tokens absorbed.'"
+        - "OUTPUT RULES — study, do not write. Every element must have all 7 states: DEFAULT, HOVER, ACTIVE, DISABLED, LOADING, ERROR, EMPTY — each with exact CSS values using ONLY the token system. Every animation must specify cubic-bezier curve + duration in ms + property. Every component needs aria attributes and keyboard shortcuts. Use ASCII diagrams for layouts. Zero prose filler — every sentence is a specification. Respond with 'Rules understood.'"
+        trigger: "SIMON SAYS: Write your assigned subsections. Use only the token system. Specify all 7 states per element. Include ASCII diagrams, keyboard shortcuts, and aria attributes. Target 800+ lines of blind-developer density."
       - id: merge
         kind: aggregator
         model: deepseek/deepseek-v4-flash
@@ -1126,19 +1142,19 @@ server:
   host: 0.0.0.0
   port: 8000
 observability:
-  log_level: debug
+  log_level: warning
+  use_stdout: false
   trace_enabled: true
   langfuse:
     enabled: false
-
 selector:
   price_sensitivity: 0.0
 
 provider_discovery: true
 
 timeout:
-  total_s: 300.0
-  per_stage_s: 120.0
+  total_s: 600.0
+  per_stage_s: 300.0
   idle_s: 30.0
   min_tokens_per_second: 0.0
   connect_s: 10.0

@@ -514,3 +514,168 @@ async def test_three_of_three_workers_fail_clear_error(config) -> None:
     # All 3 workers are degraded
     assert all("unavailable" in w.response for w in result.trace.workers)
     assert result.trace.aggregator is not None
+
+
+# --------------------------------------------------------------------------- #
+# Progressive prompting tests
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_progressive_worker_sends_wait_messages_then_trigger(config) -> None:
+    """Progressive worker: wait_messages sent first, then trigger replaces prompt."""
+    gw = FakeGateway(None)  # default responder, no custom logic needed
+
+    dag = {
+        "stages": [
+            {
+                "id": "thinker",
+                "kind": "worker",
+                "model": "deepseek/deepseek-chat",
+                "depends_on": [],
+                "progressive": True,
+                "wait_messages": ["MSG-A: study this context", "MSG-B: absorb rules"],
+                "trigger": "SIMON SAYS: now produce output",
+            },
+            {
+                "id": "agg",
+                "kind": "aggregator",
+                "model": "zai-coding-plan/glm-5.2",
+                "depends_on": ["thinker"],
+            },
+        ],
+        "edges": [["thinker", "agg"]],
+    }
+
+    result = await Engine(config, gw).deliberate(
+        "a test task", "auto", dag=dag, allow_custom_dag=True,
+    )
+
+    assert result.answer is not None
+
+    # Calls: dispatcher + wait_msg_A + wait_msg_B + trigger_worker + aggregator
+    # The dispatcher call has response_format, progressive calls have temperature=0.3
+    all_calls = gw.calls
+    assert len(all_calls) >= 5, f"Expected 5+ calls (dispatch + 2 wait + trigger + agg), got {len(all_calls)}"
+
+    # Find all progressive/worker calls with temperature=0.3 (wait + trigger)
+    temp03_calls = [
+        c for c in all_calls
+        if c[2].get("temperature") == 0.3
+    ]
+    # 2 wait calls + 1 trigger call = 3
+    assert len(temp03_calls) == 3, f"Expected 3 temp=0.3 calls (2 wait + 1 trigger), got {len(temp03_calls)}"
+
+    # Distinguish: wait-message calls have content matching wait_messages
+    wait_calls = [
+        c for c in temp03_calls
+        if c[1] == [{"role": "user", "content": "MSG-A: study this context"}]
+        or c[1] == [{"role": "user", "content": "MSG-B: absorb rules"}]
+    ]
+    assert len(wait_calls) == 2, f"Expected 2 wait-message calls, got {len(wait_calls)}"
+
+    # The trigger call has the SIMON SAYS content
+    trigger_calls = [
+        c for c in temp03_calls
+        if c[1] == [{"role": "user", "content": "SIMON SAYS: now produce output"}]
+    ]
+    assert len(trigger_calls) == 1, "Expected exactly 1 trigger call with SIMON SAYS message"
+
+
+@pytest.mark.asyncio
+async def test_progressive_without_trigger_keeps_original_prompt(config) -> None:
+    """Progressive without trigger: wait_messages sent, original prompt kept."""
+    gw = FakeGateway(None)
+
+    dag = {
+        "stages": [
+            {
+                "id": "thinker",
+                "kind": "worker",
+                "model": "deepseek/deepseek-chat",
+                "depends_on": [],
+                "progressive": True,
+                "wait_messages": ["STEP 1: load context"],
+                "trigger": "",  # empty — use original prompt
+            },
+            {
+                "id": "agg",
+                "kind": "aggregator",
+                "model": "zai-coding-plan/glm-5.2",
+                "depends_on": ["thinker"],
+            },
+        ],
+        "edges": [["thinker", "agg"]],
+    }
+
+    result = await Engine(config, gw).deliberate(
+        "test task", "auto", dag=dag, allow_custom_dag=True,
+    )
+
+    assert result.answer is not None
+
+    # One wait call (temp=0.3) + one real worker call (temp=0.3)
+    temp03_calls = [c for c in gw.calls if c[2].get("temperature") == 0.3]
+    assert len(temp03_calls) == 2, f"Expected 2 temp=0.3 calls (1 wait + 1 real), got {len(temp03_calls)}"
+
+    # Wait call has the STEP 1 content
+    wait_calls = [c for c in temp03_calls if c[1] == [{"role": "user", "content": "STEP 1: load context"}]]
+    assert len(wait_calls) == 1
+    assert wait_calls[0][1] == [{"role": "user", "content": "STEP 1: load context"}]
+
+    # The real worker call should have the dispatcher-assigned prompt, not just the trigger
+    real_calls = [c for c in temp03_calls if c[1] != [{"role": "user", "content": "STEP 1: load context"}]]
+    assert len(real_calls) == 1
+    # Should contain the user's task, not just an empty trigger
+    real_msgs = real_calls[0][1]
+    assert len(real_msgs) >= 1
+    user_content = " ".join(m["content"] for m in real_msgs if m["role"] == "user")
+    assert "test task" in user_content, f"Expected user task in prompt, got: {user_content[:100]}"
+
+
+@pytest.mark.asyncio
+async def test_non_progressive_worker_skips_wait_messages(config) -> None:
+    """Worker without progressive flag: no wait messages, no trigger substitution."""
+    gw = FakeGateway(None)
+
+    dag = {
+        "stages": [
+            {
+                "id": "worker_1",
+                "kind": "worker",
+                "model": "deepseek/deepseek-chat",
+                "depends_on": [],
+                "progressive": False,
+                "wait_messages": ["SHOULD NOT BE SENT"],
+                "trigger": "SHOULD NOT BE USED",
+            },
+            {
+                "id": "agg",
+                "kind": "aggregator",
+                "model": "zai-coding-plan/glm-5.2",
+                "depends_on": ["worker_1"],
+            },
+        ],
+        "edges": [["worker_1", "agg"]],
+    }
+
+    result = await Engine(config, gw).deliberate(
+        "test", "auto", dag=dag, allow_custom_dag=True,
+    )
+
+    assert result.answer is not None
+
+    # For non-progressive workers, the real call still uses temperature=0.3
+    # But there should be NO calls matching wait_messages or trigger content
+    temp03_calls = [c for c in gw.calls if c[2].get("temperature") == 0.3]
+
+    # None of the calls should have wait_message or trigger content
+    for call in temp03_calls:
+        for msg in call[1]:
+            if msg["role"] == "user":
+                assert "SHOULD NOT BE SENT" not in msg["content"], (
+                    f"Wait message leaked into non-progressive call: {msg['content'][:80]}"
+                )
+                assert "SHOULD NOT BE USED" not in msg["content"], (
+                    f"Trigger leaked into non-progressive call: {msg['content'][:80]}"
+                )

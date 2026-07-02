@@ -33,7 +33,15 @@ log = structlog.get_logger("chimera.dispatcher")
 DISPATCH_SCHEMA_HINT = {
     "formation": {
         "stages": [
-            {"id": "worker_1", "kind": "worker", "model": "<model name>", "depends_on": []}
+            {
+                "id": "worker_1",
+                "kind": "worker",
+                "model": "<model name>",
+                "depends_on": [],
+                "progressive": False,
+                "wait_messages": [],
+                "trigger": "",
+            }
         ],
         "edges": [["worker_1", "aggregator"]],
     },

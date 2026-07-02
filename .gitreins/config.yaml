@@ -3,7 +3,7 @@ guards:
   lint: true
   tests: true
   test_mode: diff
-  test_command: pytest -x --tb=short
+  test_command: uv run pytest -x --tb=short
   dead_code: false
   skylos: false
   lsp: true
