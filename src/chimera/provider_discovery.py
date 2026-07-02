@@ -52,6 +52,7 @@ PROVIDER_ID_MAP: dict[str, str] = {
     "cohere": "cohere",
     "perplexity": "perplexity",
     "tencent": "tencent",
+    "tencent-tokenhub": "tencent",
     "sarvam": "sarvam",
     "stepfun": "stepfun",
     "xiaomi": "xiaomi",
@@ -99,6 +100,10 @@ MODEL_ID_MAP: dict[str, str] = {
     "gemini-3.1-flash-lite-preview": "google/gemini-3.1-flash-lite-preview",
     "gemini-3-flash-preview": "google/gemini-3-flash-preview",
     "gemini-3-pro-preview": "google/gemini-3-pro-preview",
+    # Tencent HY (unified to tencent/hy3-preview)
+    "hy3-preview": "tencent/hy3-preview",
+    "tencent/hy3-preview": "tencent/hy3-preview",
+    "tencent/Hy3-preview": "tencent/hy3-preview",
 }
 
 #: Known base URLs for providers where models.dev doesn't include them.
