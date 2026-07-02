@@ -10,3 +10,4 @@ chimera.yaml
 mutants/
 .coverage
 htmlcov/
+reports/
