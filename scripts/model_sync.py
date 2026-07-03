@@ -11,6 +11,7 @@ Cache TTL: 24h (re-fetches if stale), same as provider_discovery.py.
 """
 
 import json
+import os
 import sys
 import time
 from datetime import datetime
@@ -331,6 +332,213 @@ def format_report(results: dict) -> str:
     return "\n".join(lines)
 
 
+# ── LLM Scoring ───────────────────────────────────────────────────────────────
+
+# 32 hierarchical category paths from Chimera's PATH_PATTERNS (selector.py)
+CATEGORY_PATHS = [
+    "technology_code/code_generation/python",
+    "technology_code/code_generation/javascript",
+    "technology_code/code_generation/sql",
+    "technology_code/code_generation/shell",
+    "technology_code/system_design/architecture",
+    "technology_code/system_design/devops",
+    "technology_code/testing_debugging/unit_tests",
+    "technology_code/testing_debugging/error_analysis",
+    "technology_code/data_science/analysis",
+    "technology_code/data_science/modeling",
+    "technology_code/data_interaction/database/sql",
+    "technology_code/data_interaction/file_based/json",
+    "complex_reasoning_agency/multi_step_planning/task_decomposition",
+    "complex_reasoning_agency/tool_use/code_execution",
+    "complex_reasoning_agency/self_correction/debugging",
+    "academic_scientific/formal_writing/research_paper",
+    "academic_scientific/mathematics/statistics",
+    "academic_scientific/mathematics/algebra",
+    "academic_scientific/mathematics/calculus",
+    "creative_conversational/creative_writing/storytelling",
+    "creative_conversational/ux_writing/interface_copy",
+    "general_knowledge/reasoning/explanation",
+    "general_knowledge/reasoning/logic_puzzle",
+    "general_knowledge/fact_retrieval/definitions",
+    "general_knowledge/fact_retrieval/historical_events",
+    "business_finance/marketing/copywriting",
+    "business_finance/legal_document/analysis",
+    "language_translation/translation/language_to_language",
+    "language_translation/summarization/abstractive",
+    "language_translation/linguistic_analysis/sentiment",
+    "multimedia_processing/image/analysis",
+    "multimedia_processing/image/generation",
+]
+
+SCORING_PROMPT = """You are a model evaluator for the Chimera multi-model deliberation system.
+Below are the 32 hierarchical category paths used by the system. Score this
+model on each path where it has genuine capability. Scores are whole numbers
+60-100, where 60 = basic competence and 100 = best-in-class. Only include
+paths where score ≥ 60. Omit paths where the model is weak.
+
+CATEGORY PATHS (use these EXACT strings):
+  technology_code/code_generation/python
+  technology_code/code_generation/javascript
+  technology_code/code_generation/sql
+  technology_code/code_generation/shell
+  technology_code/system_design/architecture
+  technology_code/system_design/devops
+  technology_code/testing_debugging/unit_tests
+  technology_code/testing_debugging/error_analysis
+  technology_code/data_science/analysis
+  technology_code/data_science/modeling
+  technology_code/data_interaction/database/sql
+  technology_code/data_interaction/file_based/json
+  complex_reasoning_agency/multi_step_planning/task_decomposition
+  complex_reasoning_agency/tool_use/code_execution
+  complex_reasoning_agency/self_correction/debugging
+  academic_scientific/formal_writing/research_paper
+  academic_scientific/mathematics/statistics
+  academic_scientific/mathematics/algebra
+  academic_scientific/mathematics/calculus
+  creative_conversational/creative_writing/storytelling
+  creative_conversational/ux_writing/interface_copy
+  general_knowledge/reasoning/explanation
+  general_knowledge/reasoning/logic_puzzle
+  general_knowledge/fact_retrieval/definitions
+  general_knowledge/fact_retrieval/historical_events
+  business_finance/marketing/copywriting
+  business_finance/legal_document/analysis
+  language_translation/translation/language_to_language
+  language_translation/summarization/abstractive
+  language_translation/linguistic_analysis/sentiment
+  multimedia_processing/image/analysis
+  multimedia_processing/image/generation
+
+Model: {name}
+Provider: {provider}
+Family: {family}
+Description: {description}
+Capabilities: {capabilities}
+Cost: ${cost_in}/MTok in, ${cost_out}/MTok out
+Context window: {context} tokens in, {max_output} out
+
+Return a JSON object with a "scored_paths" map. Use ONLY paths from the
+list above. Do NOT invent new paths. Example:
+{{"scored_paths": {{"technology_code/code_generation/python": 85}}}}"""
+
+
+def score_models(candidates: list[dict], max_models: int = 5,
+                 api_key: str | None = None,
+                 base_url: str = "https://api.deepseek.com/v1",
+                 model: str = "deepseek-v4-flash") -> list[dict]:
+    """Score top candidates on the 32 category paths using an LLM.
+
+    Returns list of dicts with ``chimera_id``, ``scored_paths``, ``cost_tier``.
+    """
+    import urllib.request
+
+    if not api_key:
+        api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not api_key:
+        print("[score] ERROR: No DEEPSEEK_API_KEY found in env", file=sys.stderr)
+        return []
+
+    scored = []
+    for i, m in enumerate(candidates[:max_models]):
+        # Determine cost tier
+        avg_cost = (m["cost_input_mtok"] + m["cost_output_mtok"]) / 2
+        if avg_cost >= 5:
+            cost_tier = "premium"
+        elif avg_cost >= 0.5:
+            cost_tier = "standard"
+        else:
+            cost_tier = "budget"
+
+        caps = []
+        if m.get("is_reasoning"):
+            caps.append("reasoning")
+        if m.get("is_tool_call"):
+            caps.append("tool-call")
+        caps_str = ", ".join(caps) if caps else "chat"
+
+        prompt = SCORING_PROMPT.format(
+            name=m["chimera_id"],
+            provider=m["provider_id"],
+            family=m.get("family", ""),
+            description=m.get("description", ""),
+            capabilities=caps_str,
+            cost_in=m.get("cost_input_mtok", 0),
+            cost_out=m.get("cost_output_mtok", 0),
+            context=m.get("context_window", 0),
+            max_output=m.get("max_output", 0),
+        )
+
+        print(f"[score] Scoring {i+1}/{min(len(candidates), max_models)}: {m['chimera_id']}...",
+              file=sys.stderr)
+
+        data = json.dumps({
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.0,
+            "max_tokens": 2000,
+            "response_format": {"type": "json_object"},
+        }).encode()
+
+        req = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                body = json.loads(resp.read())
+            content = body["choices"][0]["message"]["content"]
+            parsed = json.loads(content)
+            paths = parsed.get("scored_paths", {})
+
+            # Validate paths are in our known set
+            valid_paths = {}
+            for path, score in paths.items():
+                if path in CATEGORY_PATHS and isinstance(score, (int, float)):
+                    valid_paths[path] = int(score)
+                else:
+                    print(f"[score]   Warning: unknown path '{path}' = {score}",
+                          file=sys.stderr)
+
+            scored.append({
+                "chimera_id": m["chimera_id"],
+                "scored_paths": valid_paths,
+                "cost_tier": cost_tier,
+                "cost_per_1k_input": round(m["cost_input_mtok"] / 1000, 6) if m["cost_input_mtok"] else None,
+                "cost_per_1k_output": round(m["cost_output_mtok"] / 1000, 6) if m["cost_output_mtok"] else None,
+                "provider": m["provider_id"],
+            })
+            print(f"[score]   Got {len(valid_paths)} scored paths (tier={cost_tier})",
+                  file=sys.stderr)
+
+        except Exception as e:
+            print(f"[score]   FAILED: {e}", file=sys.stderr)
+
+    return scored
+
+
+def format_scored_yaml(scored: list[dict]) -> str:
+    """Format scored models as chimera.yaml model entries."""
+    lines = ["# Scored model entries for chimera.yaml", ""]
+    for m in scored:
+        lines.append(f"  {m['chimera_id']}:")
+        lines.append(f"    provider: {m['provider']}")
+        lines.append(f"    cost_tier: {m['cost_tier']}")
+        if m.get("cost_per_1k_input") and m.get("cost_per_1k_output"):
+            lines.append(f"    cost_per_1k_input: {m['cost_per_1k_input']}")
+            lines.append(f"    cost_per_1k_output: {m['cost_per_1k_output']}")
+        lines.append("    categories:")
+        for path, score in sorted(m["scored_paths"].items()):
+            lines.append(f"      {path}: {score}")
+        lines.append("")
+    return "\n".join(lines)
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -358,3 +566,19 @@ if __name__ == "__main__":
     ts_path = REPORTS_DIR / f"model_sync_{ts}.md"
     ts_path.write_text(report, encoding="utf-8")
     print(f"[output] Saved timestamped copy: {ts_path}", file=sys.stderr)
+
+    # LLM scoring
+    if do_score:
+        candidates = results.get("candidates", [])
+        if not candidates:
+            print("[score] No new candidates to score", file=sys.stderr)
+        else:
+            scored = score_models(candidates, max_models=5)
+            if scored:
+                yaml_out = format_scored_yaml(scored)
+                scored_path = REPORTS_DIR / f"model_scores_{ts}.yaml"
+                scored_path.write_text(yaml_out, encoding="utf-8")
+                print(f"\n[score] Saved scored entries to {scored_path}", file=sys.stderr)
+                print(yaml_out)
+            else:
+                print("[score] No models scored (check API key)", file=sys.stderr)
