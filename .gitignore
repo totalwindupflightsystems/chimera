@@ -11,3 +11,4 @@ mutants/
 .coverage
 htmlcov/
 reports/
+.seen_models.json
