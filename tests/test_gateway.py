@@ -261,3 +261,30 @@ def test_budget_exhausted_error_has_model_and_provider() -> None:
     assert "insufficient_quota" in str(exc)
     assert exc.model == "deepseek/deepseek-chat"
     assert exc.provider == "openrouter"
+
+
+# --------------------------------------------------------------------------- #
+# F8: Anthropic → OpenRouter fallback
+# --------------------------------------------------------------------------- #
+
+
+def test_anthropic_fallback_to_openrouter() -> None:
+    """F8: Anthropic models route through OpenRouter when fallback_provider=openrouter."""
+    model, extra = resolve_litellm_model(
+        "anthropic/claude-sonnet-4.6",
+        _entry("anthropic"),
+        api_key="sk-or-v1-test-key",
+        fallback_provider="openrouter",
+    )
+    assert model == "openrouter/anthropic/claude-sonnet-4.6"
+    assert extra.get("api_key") == "sk-or-v1-test-key"
+
+
+def test_anthropic_no_fallback_without_provider() -> None:
+    """F8: Without fallback_provider, Anthropic models resolve natively."""
+    model, extra = resolve_litellm_model(
+        "anthropic/claude-sonnet-4.6",
+        _entry("anthropic"),
+    )
+    assert model == "anthropic/claude-sonnet-4.6"
+    assert "api_key" not in extra

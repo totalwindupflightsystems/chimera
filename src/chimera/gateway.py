@@ -147,6 +147,7 @@ def negotiate_response_format(
 
 def resolve_litellm_model(
     model_name: str, entry: ModelEntry, api_key: str | None = None,
+    fallback_provider: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Map a Chimera model to a LiteLLM model string + extra kwargs.
 
@@ -157,6 +158,8 @@ def resolve_litellm_model(
     * ``anthropic`` / ``deepseek`` → use the native LiteLLM provider prefix.
     * When ``api_key`` is supplied, it is passed as ``api_key`` so LiteLLM
       authenticates — otherwise it falls back to env vars.
+    * ``fallback_provider``: when set, overrides entry.provider for
+      routing resolution (used for Anthropic→OpenRouter fallback).
     """
     kwargs: dict[str, Any] = {}
     if api_key:
@@ -164,7 +167,8 @@ def resolve_litellm_model(
     if entry.litellm_model:
         return entry.litellm_model, kwargs
 
-    provider = entry.provider.lower()
+    # Use fallback_provider if set, otherwise use the entry's provider
+    provider = (fallback_provider or entry.provider).lower()
     if provider == "zai":
         # The z.ai coding endpoint expects the bare model name (e.g. "glm-5.2"),
         # not the full catalog id ("zai-coding-plan/glm-5.2").
@@ -314,11 +318,29 @@ class LiteLLMGateway:
     ) -> GatewayResponse:
         entry = self.config.get_model(model)
         api_key = self.config.api_keys.get(entry.provider)
-        lm_model, extra = resolve_litellm_model(model, entry, api_key=api_key)
+        effective_provider = entry.provider
+
+        # F8: Anthropic → OpenRouter fallback.
+        # When no Anthropic key is available but OpenRouter is, route
+        # Anthropic models through OpenRouter so deliberation doesn't fail.
+        if entry.provider == "anthropic" and not api_key:
+            or_key = self.config.api_keys.get("openrouter")
+            if or_key:
+                api_key = or_key
+                effective_provider = "openrouter"
+                log.info(
+                    "gateway_anthropic_fallback",
+                    model=model,
+                    to_provider="openrouter",
+                )
+
+        lm_model, extra = resolve_litellm_model(
+            model, entry, api_key=api_key, fallback_provider=effective_provider,
+        )
 
         # F6: Provider-aware format negotiation
         negotiated_format = negotiate_response_format(
-            response_format, entry.provider
+            response_format, effective_provider
         )
 
         call_kwargs: dict[str, Any] = {
@@ -341,10 +363,10 @@ class LiteLLMGateway:
         )
 
         # F3: Circuit breaker check
-        breaker = self._get_circuit_breaker(entry.provider)
+        breaker = self._get_circuit_breaker(effective_provider)
         if breaker is not None and not breaker.before_call():
-            log.warning("circuit_breaker_open", provider=entry.provider, model=model)
-            return fast_fail_response(entry.provider)
+            log.warning("circuit_breaker_open", provider=effective_provider, model=model)
+            return fast_fail_response(effective_provider)
 
         try:
             response = await self._complete_with_retry(call_kwargs, model)
