@@ -272,9 +272,14 @@ def discover_providers(
                 # Prefer non-zero pricing: if we already have real pricing,
                 # don't overwrite with zero-cost entries from free-tier providers.
                 existing = model_pricing.get(chimera_model_id)
-                if existing is not None and existing["input"] > 0 and existing["output"] > 0:
-                    if new_input == 0.0 and new_output == 0.0:
-                        continue
+                if (
+                    existing is not None
+                    and existing["input"] > 0
+                    and existing["output"] > 0
+                    and new_input == 0.0
+                    and new_output == 0.0
+                ):
+                    continue
                 model_pricing[chimera_model_id] = {
                     "input": new_input,
                     "output": new_output,
