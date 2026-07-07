@@ -138,8 +138,12 @@ def _mtok_to_per_1k(cost_mtok: float) -> float:
     return cost_mtok / 1000.0
 
 
-def _load_cache() -> dict[str, Any] | None:
-    """Load cached models.dev data, returning None if stale, missing, or corrupt."""
+def _load_cache(*, ignore_ttl: bool = False) -> dict[str, Any] | None:
+    """Load cached models.dev data, returning None if stale, missing, or corrupt.
+
+    ``ignore_ttl=True`` skips the age check — used when a network fetch
+    failed and the stale cache is the only data available.
+    """
     path = Path(CACHE_PATH).expanduser()
     if not path.is_file():
         return None
@@ -152,8 +156,9 @@ def _load_cache() -> dict[str, Any] | None:
         log.warning("provider_cache_invalid", reason="not a dict")
         return None
     fetched_at = data.get("_fetched_at", 0)
-    if time.time() - fetched_at > CACHE_TTL:
-        log.info("provider_cache_stale", age_s=int(time.time() - fetched_at))
+    age = time.time() - fetched_at
+    if not ignore_ttl and age > CACHE_TTL:
+        log.info("provider_cache_stale", age_s=int(age))
         return None
     # Ensure at least one provider entry exists
     provider_count = sum(1 for k, v in data.items()
@@ -162,8 +167,9 @@ def _load_cache() -> dict[str, Any] | None:
         log.warning("provider_cache_empty", reason="no provider entries with models")
         return None
     log.info("provider_cache_hit",
-             age_s=int(time.time() - fetched_at),
-             providers=provider_count)
+             age_s=int(age),
+             providers=provider_count,
+             stale=bool(ignore_ttl and age > CACHE_TTL))
     return data
 
 
@@ -226,7 +232,9 @@ def discover_providers(
             log.info("provider_fetch_ok", providers=len(data))
         except Exception as exc:
             log.warning("provider_fetch_failed", error=str(exc))
-            data = _load_cache()  # fall back to stale cache
+            # Fall back to stale cache — ignore TTL because the network is
+            # unreachable and stale data is better than nothing.
+            data = _load_cache(ignore_ttl=True)
             if data is None:
                 log.warning("provider_no_data")
                 return {}, {}

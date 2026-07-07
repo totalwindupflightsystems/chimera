@@ -692,3 +692,49 @@ def test_normalize_result_uses_only_enabled_models(config) -> None:  # type: ign
         f"Disabled model should be remapped to default: "
         f"{result.formation.stage('worker_1').model}"
     )
+
+
+def test_parse_dispatch_result_preserves_progressive_fields(config) -> None:  # type: ignore[no-untyped-def]
+    """parse_dispatch_result preserves progressive/wait_messages/trigger on stages."""
+    payload = {
+        "formation": {
+            "stages": [
+                {
+                    "id": "worker_1",
+                    "kind": "worker",
+                    "model": "deepseek/deepseek-v4-pro",
+                    "depends_on": [],
+                    "progressive": True,
+                    "wait_messages": ["MSG-A: study context", "MSG-B: absorb rules"],
+                    "trigger": "SIMON SAYS: produce output",
+                },
+                {
+                    "id": "aggregator",
+                    "kind": "aggregator",
+                    "model": "deepseek/deepseek-v4-pro",
+                    "depends_on": ["worker_1"],
+                },
+            ],
+            "edges": [["worker_1", "aggregator"]],
+        },
+        "worker_prompts": [
+            {"stage_id": "worker_1", "model": "deepseek/deepseek-v4-pro",
+             "prompt": "Write the spec."},
+        ],
+        "aggregator_instructions": "Merge outputs.",
+    }
+    result = parse_dispatch_result(payload, config)
+    stage = result.formation.stage("worker_1")
+    assert stage.progressive is True
+    assert stage.wait_messages == ["MSG-A: study context", "MSG-B: absorb rules"]
+    assert stage.trigger == "SIMON SAYS: produce output"
+
+
+def test_parse_dispatch_result_progressive_defaults_false(config) -> None:  # type: ignore[no-untyped-def]
+    """Stages without progressive fields default to progressive=False, empty lists/strings."""
+    payload = _dispatch_payload(worker_prompt="do work")
+    result = parse_dispatch_result(payload, config)
+    stage = result.formation.stage("worker_1")
+    assert stage.progressive is False
+    assert stage.wait_messages == []
+    assert stage.trigger == ""

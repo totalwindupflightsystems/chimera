@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 import pytest
 
 from chimera.config import load_config
 from chimera.provider_discovery import (
+    CACHE_TTL,
     _mtok_to_per_1k,
     _resolve_model_id,
     discover_providers,
@@ -210,6 +212,33 @@ class TestDiscoverProviders:
             providers, _pricing = discover_providers(force_refresh=True)
 
         assert providers == {}, "Unresolved env var should be treated as unset"
+
+    def test_fallback_to_stale_cache_on_fetch_failure(self, monkeypatch, tmp_path):
+        """When fetch fails and cache is stale, fall back to stale cache."""
+        import time
+
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+
+        # Write a stale cache (age > CACHE_TTL)
+        stale_data = {}
+        stale_data.update(SAMPLE_API_JSON)
+        stale_data["_fetched_at"] = time.time() - CACHE_TTL - 3600  # 1h past TTL
+        cache_path = tmp_path / "stale-cache.json"
+        cache_path.write_text(json.dumps(stale_data), encoding="utf-8")
+
+        with patch(
+            "chimera.provider_discovery._fetch_models_dev",
+            side_effect=ConnectionError("network down"),
+        ), patch(
+            "chimera.provider_discovery.CACHE_PATH",
+            str(cache_path),
+        ):
+            providers, pricing = discover_providers()
+
+        assert "deepseek" in providers, (
+            f"DeepSeek should be discovered from stale cache: {providers}"
+        )
+        assert len(pricing) == 4, f"Pricing should be extracted from stale cache: {pricing}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

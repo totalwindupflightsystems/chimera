@@ -520,6 +520,9 @@ def parse_dispatch_result(
                 kind=s.get("kind", "worker"),
                 model=_resolve_and_normalize_model(s.get("model", ""), config),
                 depends_on=list(s.get("depends_on", [])),
+                progressive=s.get("progressive", False),
+                wait_messages=list(s.get("wait_messages", [])),
+                trigger=s.get("trigger", ""),
             )
             for s in stages_raw
         ]
