@@ -2,11 +2,12 @@
 
 ## Open
 
-- [ ] Closed iteration loop — Audit says "fail" but Refine doesn't re-trigger. Wire re-iteration.
 - [ ] Aggregator saturates on large panel outputs — deep reconciliation from GPT-5.5 audit.
 - [ ] Worker parallelism — stages configured as parallel still run sequentially in dispatch layer.
 
 ## Completed
+
+- [x] Closed iteration loop — Audit says "fail" but Refine doesn't re-trigger. Wire re-iteration. (d6c1d10)
 
 - [x] Fix models.dev cache — _load_cache now supports ignore_ttl=True, fetch-failure fallback uses stale cache. (ae82f57)
 - [x] Wire progressive prompting — parse_dispatch_result now passes through progressive/wait_messages/trigger fields. (2b6d5d1)
