@@ -9,15 +9,15 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def main() -> None:
-    print(f"=== Chimera Model Sync Cron ===")
-    print(f"Run: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+    print("=== Chimera Model Sync Cron ===")
+    print(f"Run: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}")
     print()
 
     # Step 1: Run model_sync.py --diff
@@ -55,7 +55,7 @@ def main() -> None:
         else:
             print("\n⚠️  DEEPSEEK_API_KEY not set — skipping auto-score.")
 
-    print(f"\n=== Done ===")
+    print("\n=== Done ===")
 
 
 if __name__ == "__main__":

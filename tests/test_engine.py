@@ -389,7 +389,6 @@ async def test_stage_timeout_produces_degraded_result(config, monkeypatch: pytes
     deliberation still completes via the aggregator."""
     import asyncio
 
-    import chimera.engine as engine_mod
 
     # Shrink the timeout so the test is fast; workers sleep past it.
     monkeypatch.setattr(config.timeout, "per_stage_s", 0.05)

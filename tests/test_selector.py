@@ -48,7 +48,7 @@ SAMPLE_MODELS = {
     ),
     "anthropic/claude-sonnet-4": _FakeEntry(
         {"technology_code/code_generation/python": 90, "technology_code/data_science/analysis": 92,
-         "creative_conversational/ux_writing/interface_copy": 88, "general_knowledge/reasoning/explanation": 93},
+        "creative_conversational/ux_writing/interface_copy": 88, "general_knowledge/reasoning/explanation": 93},  # noqa: E501
         "anthropic", "premium",
         cost_per_1k_input=0.003, cost_per_1k_output=0.015,
     ),

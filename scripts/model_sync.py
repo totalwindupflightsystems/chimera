@@ -20,7 +20,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -28,12 +28,10 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from chimera.provider_discovery import (
-    PROVIDER_ID_MAP,
-    MODEL_ID_MAP,
+from chimera.provider_discovery import (  # noqa: E402
     _load_cache,
-    _resolve_model_id,
     _mtok_to_per_1k,
+    _resolve_model_id,
 )
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -117,10 +115,7 @@ def _is_chat_model(model_id: str, family: str | None = None) -> bool:
 
     # Skip obvious non-chat prefixes
     skip_prefixes = ("davinci", "babbage", "curie", "ada-")
-    if any(lower.startswith(p) for p in skip_prefixes):
-        return False
-
-    return True
+    return not any(lower.startswith(p) for p in skip_prefixes)
 
 
 def _load_chimera_models() -> set[str]:
@@ -313,13 +308,13 @@ def format_report(
 
     # Summary
     if markdown:
-        lines.insert(0, f"# Chimera Model Sync Report")
-        lines.insert(1, f"")
-        lines.insert(2, f"**Generated:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+        lines.insert(0, "# Chimera Model Sync Report")
+        lines.insert(1, "")
+        lines.insert(2, f"**Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}")
         lines.insert(3, f"**Candidates:** {total_new} new models across {len(candidates)} providers")
         lines.insert(4, "")
     else:
-        header = f"Chimera Model Sync — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+        header = f"Chimera Model Sync — {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}"
         lines.insert(0, header)
         lines.insert(1, f"Candidates: {total_new} new models across {len(candidates)} providers")
         lines.insert(2, "")
@@ -400,8 +395,8 @@ def _llm_score_candidates(candidates: dict[str, list[dict[str, Any]]]) -> None:
 
     # Build prompt with model info and category paths
     from chimera.selector import PATH_PATTERNS
-    CATEGORY_PATHS = sorted(set(p for p, _ in PATH_PATTERNS))
-    path_list = "\n".join(f"- {p}" for p in CATEGORY_PATHS)
+    category_paths = sorted({p for p, _ in PATH_PATTERNS})
+    path_list = "\n".join(f"- {p}" for p in category_paths)
 
     model_descriptions = "\n".join(
         f"- `{m['chimera_id']}`: {m.get('description', m.get('family', ''))[:200]}"
@@ -410,7 +405,9 @@ def _llm_score_candidates(candidates: dict[str, list[dict[str, Any]]]) -> None:
 
     prompt = f"""You are evaluating LLM models for inclusion in the Chimera multi-model deliberation system.
 
-Chimera uses a hierarchical category system to route tasks to the right model. Each model is scored 0-100 on relevant categories. Only score categories where the model genuinely excels (≥60).
+Chimera uses a hierarchical category system to route tasks to the right model.
+Each model is scored 0-100 on relevant categories.
+Only score categories where the model genuinely excels (≥60).
 
 Available category paths:
 {path_list}
@@ -436,7 +433,9 @@ For each model, assign scores (0-100, whole numbers only, ≥60) on the relevant
 }}
 ```
 
-Only include paths where score ≥60. Use whole numbers only. Be conservative — only score categories the model is known to excel at based on benchmarks and provider claims."""
+Only include paths where score ≥60. Use whole numbers only.
+Be conservative — only score categories the model is known to excel at
+based on benchmarks and provider claims."""
 
     body = json.dumps({
         "model": "deepseek-v4-flash",

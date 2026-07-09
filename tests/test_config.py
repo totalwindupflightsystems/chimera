@@ -402,8 +402,8 @@ class TestModelEnabled:
             "api_keys": {},
             "providers": {"deepseek": {"base_url": "https://x.com/v1"}},
             "models": {
-                "deepseek/a": {"categories": {}, "cost_tier": "budget", "provider": "deepseek", "enabled": False},
-                "deepseek/b": {"categories": {}, "cost_tier": "budget", "provider": "deepseek", "enabled": True},
+                "deepseek/a": {"categories": {}, "cost_tier": "budget", "provider": "deepseek", "enabled": False},  # noqa: E501
+                "deepseek/b": {"categories": {}, "cost_tier": "budget", "provider": "deepseek", "enabled": True},  # noqa: E501
                 "deepseek/c": {"categories": {}, "cost_tier": "budget", "provider": "deepseek"},
             },
             "defaults": {

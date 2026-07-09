@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 
-from chimera.engine import Engine, _RE_ITERATION_SIGNAL
 from chimera.dispatcher import Stage
+from chimera.engine import _RE_ITERATION_SIGNAL, Engine
 from tests.conftest import FakeGateway, resp
 
 
