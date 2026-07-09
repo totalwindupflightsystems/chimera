@@ -70,6 +70,10 @@ formations:
         model: deepseek/deepseek-v4-flash
         depends_on:
         - merge
+        iterate_on:
+        - write_a
+        - write_b
+        iteration_limit: 3
       - id: refine
         kind: aggregator
         model: deepseek/deepseek-v4-flash

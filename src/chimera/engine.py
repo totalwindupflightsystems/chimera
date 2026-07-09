@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 import uuid
 from typing import Any
@@ -38,6 +39,11 @@ log = structlog.get_logger("chimera.engine")
 #: or the per-request ``X-Chimera-Timeout`` header.
 DEFAULT_STAGE_TIMEOUT_S: float = 120.0
 
+#: Regex to detect a failure signal in a stage's JSON output.  A stage with
+#: ``iterate_on`` triggers re-iteration when its response contains
+#: ``"passed": false`` (case-insensitive, allowing whitespace).
+_RE_ITERATION_SIGNAL = re.compile(r'"passed"\s*:\s*false\s*[,}]', re.IGNORECASE)
+
 
 class StageSpan(BaseModel):
     """One traced stage execution."""
@@ -52,6 +58,8 @@ class StageSpan(BaseModel):
     latency_ms: int = 0
     cost: float = 0.0
     depends_on: list[str] = Field(default_factory=list)
+    iteration: int = 1
+    """Which attempt this span belongs to (1 for the first pass, 2+ for re-iterations)."""
 
 
 class DeliberationTrace(BaseModel):
@@ -68,6 +76,8 @@ class DeliberationTrace(BaseModel):
     total_duration_ms: int = 0
     total_cost: float = 0.0
     total_tokens: int = 0
+    iteration_count: int = 1
+    """How many iteration passes were executed (1 = single pass, 2+ = looped)."""
 
 
 class DeliberationResult(BaseModel):
@@ -293,6 +303,9 @@ class Engine:
             timeout_per_stage_s=overrides.timeout_per_stage_s if overrides else None,
         )
 
+        # Extract iteration count from the results sentinel (stored by _run_dag).
+        iteration_count: int = stage_results.pop("_iteration_count", 1)  # type: ignore[misc]
+
         answer, answer_stage_id = self._select_answer(outcome.result.formation, stage_results)
         trace = self._assemble_trace(
             request_id=request_id,
@@ -302,6 +315,7 @@ class Engine:
             stage_spans=stage_spans,
             answer_stage_id=answer_stage_id,
             started=started,
+            iteration_count=iteration_count,
         )
         _maybe_langfuse(trace, user_prompt)
         structlog.contextvars.unbind_contextvars("request_id", "formation")
@@ -342,6 +356,13 @@ class Engine:
         spans: dict[str, StageSpan] = {}
         results: dict[str, StageResult] = {}
 
+        #: Tracks how many times each ``iterate_on`` trigger stage has fired.
+        iteration_counts: dict[str, int] = {}
+        #: Accumulated feedback text for each re-run worker stage.
+        feedback_map: dict[str, str] = {}
+        #: Which iteration pass the overall DAG execution is on (1 = first).
+        iteration_pass: int = 1
+
         remaining = list(topo)
         while remaining:
             ready = [s for s in remaining if all(d in results for d in s.depends_on)]
@@ -349,11 +370,13 @@ class Engine:
                 raise RuntimeError("DAG has unresolvable dependencies")
             outcomes = await asyncio.gather(
                 *(self._execute_stage(s, dispatch, results, user_prompt, output_schema,
-                                       timeout_total_s=timeout_total_s,
-                                       timeout_per_stage_s=timeout_per_stage_s)
+                                      timeout_total_s=timeout_total_s,
+                                      timeout_per_stage_s=timeout_per_stage_s,
+                                      iteration_feedback=feedback_map.get(s.id))
                   for s in ready)
             )
             for stage, (result, span) in zip(ready, outcomes, strict=False):
+                span.iteration = iteration_counts.get(stage.id, 0) + 1
                 results[stage.id] = result
                 spans[stage.id] = span
                 log.info(
@@ -366,6 +389,69 @@ class Engine:
                 )
             remaining = [s for s in remaining if s not in ready]
 
+            # ── Iteration loop check ──────────────────────────────────
+            # After a wave completes, check whether any finished stage's
+            # output signals failure and should trigger re-iteration of its
+            # ``iterate_on`` targets.
+            iteration_triggered = False
+            for stage in ready:
+                if not stage.iterate_on:
+                    continue
+                span = spans.get(stage.id)
+                if span is None or not self._check_iteration_needed(stage, span):
+                    continue
+                count = iteration_counts.get(stage.id, 0)
+                if count >= stage.iteration_limit:
+                    log.info(
+                        "engine_iteration_limit_reached",
+                        stage=stage.id,
+                        limit=stage.iteration_limit,
+                    )
+                    continue
+                # ── Fire re-iteration ──
+                iteration_counts[stage.id] = count + 1
+                iteration_pass += 1
+                to_rerun: set[str] = set(stage.iterate_on)
+
+                # Collect all downstream stages that depend on the re-run targets
+                # so they are also cleared and re-executed.
+                for s in topo:
+                    if s.id in to_rerun:
+                        continue
+                    if any(d in to_rerun for d in s.depends_on):
+                        to_rerun.add(s.id)
+                # The trigger stage must also be re-run: it needs to evaluate
+                # the new output from the re-run workers.  Clearing its
+                # result puts it back in ``remaining``.
+                to_rerun.add(stage.id)
+                # Prepare feedback for re-run workers.
+                for sid in stage.iterate_on:
+                    feedback_map[sid] = self._collect_feedback(
+                        stage, dispatch, results, spans,
+                    )
+                    log.info(
+                        "engine_iteration_feedback",
+                        trigger=stage.id,
+                        target=sid,
+                        attempt=iteration_counts[stage.id],
+                    )
+
+                # Clear stale results so the DAG re-executes from the
+                # re-run stages forward.
+                for sid in to_rerun:
+                    results.pop(sid, None)
+                    spans.pop(sid, None)
+
+                remaining = [s for s in topo if s.id not in results]
+                iteration_triggered = True
+                break
+
+            if iteration_triggered:
+                continue  # re-enter the while loop with remaining rebuilt
+
+        # Stamp the overall iteration count on the results dict for
+        # trace assembly to pick up.
+        results["_iteration_count"] = iteration_pass  # type: ignore[assignment]
         return spans, results
 
     async def _execute_stage(
@@ -378,6 +464,7 @@ class Engine:
         *,
         timeout_total_s: float | None = None,
         timeout_per_stage_s: float | None = None,
+        iteration_feedback: str | None = None,
     ) -> tuple[StageResult, StageSpan]:
         dep_results = [results[d] for d in stage.depends_on if d in results]
 
@@ -398,7 +485,8 @@ class Engine:
         messages: list[dict[str, str]] = []
         try:
             messages, response = await asyncio.wait_for(
-                self._call_stage(stage, dispatch, dep_results, user_prompt, output_schema),
+                self._call_stage(stage, dispatch, dep_results, user_prompt, output_schema,
+                                 iteration_feedback=iteration_feedback),
                 timeout=per_stage,
             )
         except TimeoutError:
@@ -515,10 +603,13 @@ class Engine:
         dep_results: list[StageResult],
         user_prompt: str,
         output_schema: dict[str, Any] | None = None,
+        *,
+        iteration_feedback: str | None = None,
     ) -> tuple[list[dict[str, str]], GatewayResponse]:
         """Make the actual model call for a stage; returns (messages, response)."""
         if stage.kind == "worker":
-            messages = self._worker_messages(stage, dispatch, user_prompt)
+            messages = self._worker_messages(stage, dispatch, user_prompt,
+                                             iteration_feedback=iteration_feedback)
             # Progressive prompting: feed context piece-by-piece before the real call.
             if stage.progressive and stage.wait_messages:
                 for msg in stage.wait_messages:
@@ -576,18 +667,71 @@ class Engine:
         )
         return result, span
 
+    # ------------------------------------------------------------------ #
+    # Iteration helpers
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _check_iteration_needed(stage: Stage, span: StageSpan) -> bool:
+        """Check whether *stage*'s output signals that re-iteration is needed.
+
+        Returns ``True`` when the response contains ``"passed": false``
+        (case-insensitive JSON fragment) — the conventional signal used by
+        audit/refine stages to indicate the result failed quality checks.
+        """
+        return bool(_RE_ITERATION_SIGNAL.search(span.response))
+
+    @staticmethod
+    def _collect_feedback(
+        trigger: Stage,
+        dispatch: DispatchResult,
+        results: dict[str, StageResult],
+        spans: dict[str, StageSpan],
+    ) -> str:
+        """Build a feedback string for re-run workers after a failed iteration.
+
+        Collects the output of the trigger stage and any upstream stages
+        that contributed to the failure signal so workers can understand
+        what went wrong and what to improve.
+        """
+        parts: list[str] = []
+        trigger_span = spans.get(trigger.id)
+        if trigger_span is not None:
+            parts.append(
+                f"## Re-iteration feedback from {trigger.id}\n"
+                f"{trigger_span.response[:2000]}"
+            )
+        # Include all direct upstream results for context
+        for dep_id in trigger.depends_on:
+            dep_result = results.get(dep_id)
+            if dep_result is not None:
+                parts.append(
+                    f"## Context from upstream {dep_id}\n"
+                    f"{dep_result.response.text[:1000]}"
+                )
+        return "\n\n".join(parts) if parts else "The previous output needs improvement."
+
+    # ------------------------------------------------------------------ #
+    # Worker prompt assembly
+    # ------------------------------------------------------------------ #
+
     def _worker_messages(
         self,
         stage: Stage,
         dispatch: DispatchResult,
         user_prompt: str,
+        *,
+        iteration_feedback: str | None = None,
     ) -> list[dict[str, str]]:
         wp = dispatch.worker_prompt_for(stage.id)
         task = wp.prompt if wp and wp.prompt else "Solve the user's request."
+        content = f"## User request\n{user_prompt}\n\n## Your assigned task\n{task}"
+        if iteration_feedback:
+            content += f"\n\n## Previous attempt feedback\n{iteration_feedback}"
         return [
             {
                 "role": "user",
-                "content": f"## User request\n{user_prompt}\n\n## Your assigned task\n{task}",
+                "content": content,
             }
         ]
 
@@ -644,6 +788,7 @@ class Engine:
         stage_spans: dict[str, StageSpan],
         answer_stage_id: str,
         started: float,
+        iteration_count: int = 1,
     ) -> DeliberationTrace:
         workers = [s for s in stage_spans.values() if s.kind == "worker"]
         primary_aggregator = next(
@@ -665,6 +810,7 @@ class Engine:
             total_duration_ms=int((time.monotonic() - started) * 1000),
             total_cost=total_cost,
             total_tokens=total_tokens,
+            iteration_count=iteration_count,
         )
 
 

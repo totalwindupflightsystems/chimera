@@ -87,6 +87,16 @@ class Stage(BaseModel):
     trigger: str = ""
     """Final message that requests actual output. If empty, the main task prompt
     serves as the trigger. Only used when progressive=True."""
+    iterate_on: list[str] = Field(default_factory=list)
+    """Stage IDs to re-run when this stage's output signals failure
+    (``\"passed\": false`` in its response).  The engine clears old results for
+    the listed stages *and* every downstream stage that depends on them, then
+    re-executes the DAG from those stages with accumulated feedback.  Leave
+    empty for stages that should never trigger re-iteration."""
+    iteration_limit: int = 3
+    """Maximum number of iteration loops before accepting the result.  Only
+    used when ``iterate_on`` is non-empty.  A limit of 1 means the loop body
+    runs at most twice (first attempt + one re-iteration)."""
 
 
 class FormationDAG(BaseModel):
@@ -272,6 +282,8 @@ def build_dag_from_dict(dag_dict: dict[str, Any], config: ChimeraConfig) -> Form
                 progressive=s.get("progressive", False),
                 wait_messages=list(s.get("wait_messages", [])),
                 trigger=s.get("trigger", ""),
+                iterate_on=list(s.get("iterate_on", [])),
+                iteration_limit=s.get("iteration_limit", 3),
             )
         )
     edges = [tuple(e) for e in (dag_dict.get("edges") or [])]
@@ -523,6 +535,8 @@ def parse_dispatch_result(
                 progressive=s.get("progressive", False),
                 wait_messages=list(s.get("wait_messages", [])),
                 trigger=s.get("trigger", ""),
+                iterate_on=list(s.get("iterate_on", [])),
+                iteration_limit=s.get("iteration_limit", 3),
             )
             for s in stages_raw
         ]
