@@ -652,7 +652,9 @@ class Engine:
             response = await self.gateway.complete(stage.model, messages, temperature=0.3)
             return messages, response
         response = await self.aggregator.execute(
-            stage, dispatch, dep_results, user_prompt, output_schema=output_schema,
+            stage, dispatch, dep_results, user_prompt,
+            output_schema=output_schema,
+            max_prompt_tokens=self.config.max_aggregator_context_tokens,
         )
         return [], response
 

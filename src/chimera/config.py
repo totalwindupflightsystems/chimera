@@ -250,6 +250,13 @@ class ChimeraConfig(BaseModel):
     selector: SelectorConfig = Field(default_factory=SelectorConfig)
     provider_discovery: bool = True  # auto-discover providers from models.dev
     timeout: StageTimeoutConfig = Field(default_factory=StageTimeoutConfig)
+    # Optional soft cap on the *aggregator* prompt size in estimated tokens
+    # (~4 chars/token). When the natural prompt would exceed this, the
+    # longest worker outputs are truncated (preserving shorter ones)
+    # until the prompt fits. ``None`` = no cap, backward compatible.
+    # Useful when a deliberation uses many large-output workers feeding
+    # an aggregator model with a small context window.
+    max_aggregator_context_tokens: int | None = None
 
     @model_validator(mode="after")
     def _resolve_provider_api_keys(self) -> ChimeraConfig:

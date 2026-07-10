@@ -1,10 +1,8 @@
 # Chimera v2 — Task List
 
-## Open
-
-- [ ] Aggregator saturates on large panel outputs — deep reconciliation from GPT-5.5 audit.
-
 ## Completed
+
+- [x] Aggregator saturates on large panel outputs — deep reconciliation from GPT-5.5 audit. (token-aware truncation + config option)
 
 - [x] Worker parallelism — stages configured as parallel still run sequentially in dispatch layer. (acompletion + create_task waves + overlap tests)
 
