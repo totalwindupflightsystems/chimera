@@ -28,6 +28,7 @@ from chimera.gateway import (
     _get_format_capability,
     _is_budget_exhausted,
     _is_retryable,
+    _litellm_acomplete,
     _litellm_sync_complete,
     _sleep_ms,
     negotiate_response_format,
@@ -263,6 +264,48 @@ class TestLitellmSyncComplete:
             _litellm_sync_complete({"model": "x", "messages": []})
 
 
+class TestLitellmAComplete:
+    """Cover _litellm_acomplete preferring litellm.acompletion."""
+
+    @pytest.mark.asyncio
+    async def test_uses_acompletion_when_available(self) -> None:
+        fake_result = _litellm_result("async ok")
+        call_kwargs = {"model": "openai/gpt-4o", "messages": []}
+
+        async def _fake_acomplete(**kwargs: Any) -> Any:
+            return fake_result
+
+        with patch("litellm.acompletion", side_effect=_fake_acomplete) as mock:
+            result = await _litellm_acomplete(call_kwargs)
+
+        assert result is fake_result
+        mock.assert_called_once_with(**call_kwargs)
+
+    @pytest.mark.asyncio
+    async def test_accepts_non_coroutine_mock_return(self) -> None:
+        """Mocks that return a plain value (not a coroutine) are accepted."""
+        fake_result = _litellm_result("plain")
+        with patch("litellm.acompletion", return_value=fake_result):
+            result = await _litellm_acomplete({"model": "x", "messages": []})
+        assert result is fake_result
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_sync_on_type_error(self) -> None:
+        fake_result = _litellm_result("sync fallback")
+
+        def _raise_type(**kwargs: Any) -> Any:
+            raise TypeError("acompletion not supported for this provider")
+
+        with (
+            patch("litellm.acompletion", side_effect=_raise_type),
+            patch("litellm.completion", return_value=fake_result) as sync_mock,
+        ):
+            result = await _litellm_acomplete({"model": "x", "messages": []})
+
+        assert result is fake_result
+        sync_mock.assert_called_once()
+
+
 # =========================================================================== #
 # _build_response + _extract_text edge cases
 # =========================================================================== #
@@ -415,7 +458,7 @@ class TestLiteLLMGatewayComplete:
         gw = LiteLLMGateway(config)
         fake_result = _litellm_result("answer", prompt_tokens=5, completion_tokens=10)
 
-        with patch("litellm.completion", return_value=fake_result):
+        with patch("litellm.acompletion", return_value=fake_result):
             resp = await gw.complete(
                 "deepseek/deepseek-chat",
                 [{"role": "user", "content": "hi"}],
@@ -433,7 +476,7 @@ class TestLiteLLMGatewayComplete:
         gw = LiteLLMGateway(config)
         fake_result = _litellm_result("", completion_tokens=0)
 
-        with patch("litellm.completion", return_value=fake_result):
+        with patch("litellm.acompletion", return_value=fake_result):
             resp = await gw.complete(
                 "deepseek/deepseek-chat",
                 [{"role": "user", "content": "hi"}],
@@ -458,7 +501,7 @@ class TestLiteLLMGatewayComplete:
             captured_kwargs.update(kwargs)
             return fake_result
 
-        with patch("litellm.completion", side_effect=capture):
+        with patch("litellm.acompletion", side_effect=capture):
             await gw.complete(
                 "deepseek/test-chat",
                 [{"role": "user", "content": "hi"}],
@@ -485,7 +528,7 @@ class TestLiteLLMGatewayComplete:
         )
         gw = LiteLLMGateway(config)
 
-        with patch("litellm.completion", side_effect=capture):
+        with patch("litellm.acompletion", side_effect=capture):
             await gw.complete(
                 "test/mistral",
                 [{"role": "user", "content": "hi"}],
@@ -507,7 +550,7 @@ class TestLiteLLMGatewayComplete:
         exc = httpx.HTTPStatusError("bad request", request=req, response=resp_400)
 
         with (
-            patch("litellm.completion", side_effect=exc),
+            patch("litellm.acompletion", side_effect=exc),
             pytest.raises(GatewayError, match="call failed"),
         ):
             await gw.complete(
@@ -537,7 +580,7 @@ class TestLiteLLMGatewayComplete:
                 raise exc
             return fake_result
 
-        with patch("litellm.completion", side_effect=flaky):
+        with patch("litellm.acompletion", side_effect=flaky):
             resp = await gw.complete(
                 "deepseek/deepseek-chat",
                 [{"role": "user", "content": "hi"}],
@@ -560,7 +603,7 @@ class TestLiteLLMGatewayComplete:
         exc = httpx.HTTPStatusError("unavailable", request=req, response=resp_503)
 
         with (
-            patch("litellm.completion", side_effect=exc) as mock,
+            patch("litellm.acompletion", side_effect=exc) as mock,
             pytest.raises(GatewayError, match="after 2 attempts"),
         ):
             await gw.complete(
@@ -579,7 +622,7 @@ class TestLiteLLMGatewayComplete:
         exc = RuntimeError("insufficient_quota: you exceeded your limit")
 
         with (
-            patch("litellm.completion", side_effect=exc) as mock,
+            patch("litellm.acompletion", side_effect=exc) as mock,
             pytest.raises(BudgetExhaustedError),
         ):
             await gw.complete(
@@ -612,7 +655,7 @@ class TestLiteLLMGatewayComplete:
         assert breaker.state == CircuitState.OPEN
 
         # Now the next call should fast-fail without hitting litellm
-        with patch("litellm.completion") as mock:
+        with patch("litellm.acompletion") as mock:
             resp = await gw.complete(
                 "deepseek/deepseek-chat",
                 [{"role": "user", "content": "hi"}],
@@ -637,7 +680,7 @@ class TestLiteLLMGatewayComplete:
         breaker.on_failure()
         assert breaker.failure_count == 1
 
-        with patch("litellm.completion", return_value=_litellm_result("ok")):
+        with patch("litellm.acompletion", return_value=_litellm_result("ok")):
             await gw.complete(
                 "deepseek/deepseek-chat",
                 [{"role": "user", "content": "hi"}],
@@ -664,7 +707,7 @@ class TestLiteLLMGatewayComplete:
         resp_400 = httpx.Response(400, request=req)
         exc = httpx.HTTPStatusError("bad", request=req, response=resp_400)
 
-        with patch("litellm.completion", side_effect=exc), pytest.raises(GatewayError):
+        with patch("litellm.acompletion", side_effect=exc), pytest.raises(GatewayError):
             await gw.complete(
                 "deepseek/deepseek-chat",
                 [{"role": "user", "content": "hi"}],

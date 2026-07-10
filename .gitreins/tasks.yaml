@@ -17,8 +17,9 @@ tasks:
   - Provider cache is written to a local file and reused within TTL
   - Auto-discovery activates providers when their API key env var is set
   - "Network failure during fetch does not crash startup \u2014 returns empty gracefully"
-  status: in_progress
+  status: complete
   created_at: '2026-06-21T12:04:20.812836+00:00'
+  completed_at: '2026-07-10T00:43:50.431246+00:00'
 - id: model-selector
   title: Model selection with toggle and cost weighting
   criteria:
@@ -28,8 +29,9 @@ tasks:
     ranking
   - select_diverse() returns models from different providers
   - Per-call price_sensitivity override works without mutating global config
-  status: in_progress
+  status: complete
   created_at: '2026-06-21T12:04:24.978621+00:00'
+  completed_at: '2026-07-10T00:45:31.815806+00:00'
 - id: deliberation-api
   title: Deliberation API endpoints
   criteria:
@@ -38,8 +40,9 @@ tasks:
   - Health endpoint returns 200 with status ok
   - Disabled models are excluded from /v1/models when enabled=false
   - Missing required fields in /v1/deliberate request returns 422 with field names
-  status: in_progress
+  status: complete
   created_at: '2026-06-21T12:04:29.292847+00:00'
+  completed_at: '2026-07-10T00:47:03.509068+00:00'
 - id: config-loading
   title: Config loading and env override defense
   criteria:
@@ -48,11 +51,40 @@ tasks:
   - Missing chimera.yaml raises a clear error, not a cryptic KeyError
   - Unknown fields in model config log a warning, don't crash
   - auto_discover_providers=false skips models.dev fetch entirely
-  status: in_progress
+  status: complete
   created_at: '2026-06-21T12:04:34.070367+00:00'
+  completed_at: '2026-07-10T00:50:03.587621+00:00'
 - id: smoke-test
   title: Smoke test
   criteria:
   - File README.md exists in the repo root
-  status: pending
+  status: complete
   created_at: '2026-06-22T03:56:20.070273+00:00'
+  completed_at: '2026-07-10T01:21:06.904172+00:00'
+- id: closed-iteration-loop
+  title: "Closed iteration loop \u2014 Audit failure triggers worker re-run"
+  criteria:
+  - Stage.iterate_on field exists and accepts a list of stage IDs
+  - Stage.iteration_limit field exists and defaults to 3
+  - 'Engine._run_dag re-runs iterate_on targets when stage output contains \"passed\":
+    false'
+  - Re-run workers receive feedback from failed iteration in their prompt
+  - Engine stops iterating after iteration_limit is reached
+  - StageSpan.iteration tracks which attempt each span belongs to
+  - DeliberationTrace.iteration_count reports total passes
+  - spec-writer formation in chimera.yaml has iterate_on on audit stage
+  - 18 new unit tests all pass
+  - All 391 tests pass in full suite
+  status: complete
+  created_at: '2026-07-09T03:57:36.712944+00:00'
+  completed_at: '2026-07-09T04:09:54.468146+00:00'
+- id: parallel-workers
+  title: "Worker parallelism \u2014 stages run concurrently via native async + create_task"
+  criteria:
+  - 'C1: asyncio.create_task is used in engine._run_dag for stage execution'
+  - 'C2: Native async acompletion is prioritized in gateway._complete_with_retry'
+  - 'C3: Dedicated ThreadPoolExecutor (32 workers) exists for sync fallback'
+  - 'C4: test_parallel_stages.py verifies worker overlap via timestamps'
+  - 'C5: All 398 tests pass in full suite'
+  status: in_progress
+  created_at: '2026-07-10T01:41:28.605289+00:00'

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
@@ -26,6 +27,28 @@ from chimera.config import ChimeraConfig, ModelEntry
 from chimera.exceptions import BudgetExhaustedError
 
 log = structlog.get_logger("chimera.gateway")
+
+#: Dedicated pool for residual sync LiteLLM work. Sized for concurrent stage
+#: waves (multiple workers + progressive wait-messages) so default-executor
+#: saturation cannot serialize independent stage calls.
+_GATEWAY_EXECUTOR: ThreadPoolExecutor | None = None
+_GATEWAY_EXECUTOR_WORKERS = 32
+
+
+def _get_gateway_executor() -> ThreadPoolExecutor:
+    """Lazily create (and install as loop default) a large thread pool."""
+    global _GATEWAY_EXECUTOR
+    if _GATEWAY_EXECUTOR is None:
+        _GATEWAY_EXECUTOR = ThreadPoolExecutor(
+            max_workers=_GATEWAY_EXECUTOR_WORKERS,
+            thread_name_prefix="chimera-gw",
+        )
+        try:
+            loop = asyncio.get_running_loop()
+            loop.set_default_executor(_GATEWAY_EXECUTOR)
+        except RuntimeError:
+            pass  # no running loop yet; to_thread will use this via run_in_executor
+    return _GATEWAY_EXECUTOR
 
 
 class GatewayError(Exception):
@@ -415,9 +438,11 @@ class LiteLLMGateway:
 
         for attempt in range(1, retry_cfg.max_attempts + 1):
             try:
-                result = await asyncio.to_thread(
-                    _litellm_sync_complete, call_kwargs
-                )
+                # Prefer native async acompletion so independent stages truly
+                # overlap on the event loop (no thread-pool bottleneck).
+                # Fall back to sync completion on a dedicated large pool if
+                # acompletion is unavailable or raises TypeError/NotImplemented.
+                result = await _litellm_acomplete(call_kwargs)
                 return self._build_response(result, model)
             except Exception as exc:
                 last_error = exc
@@ -527,9 +552,39 @@ def _build_response(result: Any, model: str) -> GatewayResponse:
 
 
 def _litellm_sync_complete(call_kwargs: dict[str, Any]) -> Any:
+    """Blocking LiteLLM completion (used by tests and sync fallback)."""
     import litellm
 
     return litellm.completion(**call_kwargs)
+
+
+async def _litellm_acomplete(call_kwargs: dict[str, Any]) -> Any:
+    """Async LiteLLM completion — concurrent stages share one event loop.
+
+    Uses ``litellm.acompletion`` when available so parallel DAG waves do not
+    serialize on a thread pool. Falls back to ``asyncio.to_thread`` + sync
+    ``completion`` on a dedicated large executor if acompletion is missing
+    or returns a non-awaitable.
+    """
+    import litellm
+
+    acomplete = getattr(litellm, "acompletion", None)
+    if acomplete is not None:
+        try:
+            result = acomplete(**call_kwargs)
+            if asyncio.iscoroutine(result):
+                return await result
+            # Some mocks return a plain value — accept it.
+            return result
+        except TypeError:
+            # Provider path may not support acompletion kwargs; fall through.
+            pass
+
+    executor = _get_gateway_executor()
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        executor, _litellm_sync_complete, call_kwargs
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -613,6 +668,8 @@ __all__ = [
     "BudgetExhaustedError",
     "_get_format_capability",
     "_is_retryable",
+    "_litellm_acomplete",
+    "_litellm_sync_complete",
     "negotiate_response_format",
     "resolve_litellm_model",
 ]

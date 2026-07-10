@@ -3,9 +3,10 @@
 ## Open
 
 - [ ] Aggregator saturates on large panel outputs — deep reconciliation from GPT-5.5 audit.
-- [ ] Worker parallelism — stages configured as parallel still run sequentially in dispatch layer.
 
 ## Completed
+
+- [x] Worker parallelism — stages configured as parallel still run sequentially in dispatch layer. (acompletion + create_task waves + overlap tests)
 
 - [x] Closed iteration loop — Audit says "fail" but Refine doesn't re-trigger. Wire re-iteration. (d6c1d10)
 

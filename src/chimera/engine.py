@@ -60,6 +60,10 @@ class StageSpan(BaseModel):
     depends_on: list[str] = Field(default_factory=list)
     iteration: int = 1
     """Which attempt this span belongs to (1 for the first pass, 2+ for re-iterations)."""
+    started_at: float = 0.0
+    """``time.monotonic()`` when the stage began (for wave overlap checks)."""
+    ended_at: float = 0.0
+    """``time.monotonic()`` when the stage finished."""
 
 
 class DeliberationTrace(BaseModel):
@@ -368,13 +372,31 @@ class Engine:
             ready = [s for s in remaining if all(d in results for d in s.depends_on)]
             if not ready:
                 raise RuntimeError("DAG has unresolvable dependencies")
-            outcomes = await asyncio.gather(
-                *(self._execute_stage(s, dispatch, results, user_prompt, output_schema,
-                                      timeout_total_s=timeout_total_s,
-                                      timeout_per_stage_s=timeout_per_stage_s,
-                                      iteration_feedback=feedback_map.get(s.id))
-                  for s in ready)
-            )
+            if len(ready) > 1:
+                log.info(
+                    "engine_wave_parallel",
+                    stages=[s.id for s in ready],
+                    wave_size=len(ready),
+                )
+            # Explicit create_task so independent stages start immediately and
+            # truly overlap (gather on bare coroutines is equivalent, but
+            # create_task makes concurrency intent unmistakable).
+            tasks = [
+                asyncio.create_task(
+                    self._execute_stage(
+                        s,
+                        dispatch,
+                        results,
+                        user_prompt,
+                        output_schema,
+                        timeout_total_s=timeout_total_s,
+                        timeout_per_stage_s=timeout_per_stage_s,
+                        iteration_feedback=feedback_map.get(s.id),
+                    )
+                )
+                for s in ready
+            ]
+            outcomes = await asyncio.gather(*tasks)
             for stage, (result, span) in zip(ready, outcomes, strict=False):
                 span.iteration = iteration_counts.get(stage.id, 0) + 1
                 results[stage.id] = result
@@ -386,6 +408,8 @@ class Engine:
                     model=span.model,
                     latency_ms=span.latency_ms,
                     tokens=span.tokens_input + span.tokens_output,
+                    started_at=span.started_at,
+                    ended_at=span.ended_at,
                 )
             remaining = [s for s in remaining if s not in ready]
 
@@ -502,6 +526,7 @@ class Engine:
                 GatewayError(f"timed out after {per_stage or 0:.0f}s"),
                 [],
                 latency_ms,
+                started_at=start,
             )
         except (GatewayError, BudgetExhaustedError) as exc:
             return await self._handle_stage_failure(
@@ -526,7 +551,7 @@ class Engine:
         log.warning("engine_stage_failed", stage=stage.id, model=stage.model, error=str(exc))
 
         if stage.kind not in {"aggregator", "merge", "audit"}:
-            return self._degraded_stage(stage, exc, [], latency_ms)
+            return self._degraded_stage(stage, exc, [], latency_ms, started_at=start)
 
         fallback_model = self.config.defaults.default_aggregator
 
@@ -559,7 +584,7 @@ class Engine:
             return self._build_stage_result(stage, response, messages, start,
                                             user_prompt, dispatch, dep_results)
         except GatewayError as exc2:
-            return self._degraded_stage(stage, exc2, [], latency_ms)
+            return self._degraded_stage(stage, exc2, [], latency_ms, started_at=start)
 
     def _build_stage_result(
         self,
@@ -576,6 +601,7 @@ class Engine:
         prompt_text = _last_user_content(messages) if messages else _aggregator_prompt_summary(
             stage, dispatch, dep_results
         )
+        ended = time.monotonic()
         span = StageSpan(
             stage_id=stage.id,
             kind=stage.kind,
@@ -587,6 +613,8 @@ class Engine:
             latency_ms=latency_ms,
             cost=_stage_cost(response.model, self.config, response.tokens_input, response.tokens_output),
             depends_on=list(stage.depends_on),
+            started_at=start,
+            ended_at=ended,
         )
         result = StageResult(
             stage_id=stage.id,
@@ -634,6 +662,8 @@ class Engine:
         error: Exception,
         messages: list[dict[str, str]],
         latency_ms: int,
+        *,
+        started_at: float | None = None,
     ) -> tuple[StageResult, StageSpan]:
         prompt_text = (
             _last_user_content(messages)
@@ -646,6 +676,8 @@ class Engine:
             tokens_input=0,
             tokens_output=0,
         )
+        ended = time.monotonic()
+        start_ts = started_at if started_at is not None else ended - (latency_ms / 1000.0)
         span = StageSpan(
             stage_id=stage.id,
             kind=stage.kind,
@@ -657,6 +689,8 @@ class Engine:
             latency_ms=latency_ms,
             cost=0.0,
             depends_on=list(stage.depends_on),
+            started_at=start_ts,
+            ended_at=ended,
         )
         result = StageResult(
             stage_id=stage.id,
