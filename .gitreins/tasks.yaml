@@ -97,5 +97,6 @@ tasks:
   - 'C3: max_aggregator_context_tokens config field exists in ChimeraConfig'
   - 'C4: test_aggregator.py has 7+ tests covering truncation/overflow/degraded/no-truncation'
   - 'C5: All 405 tests pass'
-  status: in_progress
+  status: complete
   created_at: '2026-07-10T02:27:46.060934+00:00'
+  completed_at: '2026-07-10T02:30:50.553048+00:00'
