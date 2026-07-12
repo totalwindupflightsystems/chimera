@@ -2,7 +2,7 @@
 
 ## Open
 
-- [ ] Speed formation — build a "fast" deliberation formation with budget models for <30s agent-in-the-loop use
+- [x] Speed formation — build a "fast" deliberation formation with budget models for <30s agent-in-the-loop use (2026-07-12: commit 1bf73ea, 2 budget workers + budget aggregator, 8 files changed)
 - [ ] Validation-as-code — Stage 0 emits JSON Schema, Audit validates mechanically against it (not manual)
 - [ ] MCP server progressive prompting — make the MCP chimera_deliberate tool support progressive/wait_messages
 - [ ] models.dev provider refresh — cache TTL tighter (30min instead of 24h), catch new providers faster
