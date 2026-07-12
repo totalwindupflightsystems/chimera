@@ -2,7 +2,6 @@
 
 ## Open
 
-- [ ] Fix model sync cron — clear stale seen_models.json, verify daily sync finds new models, pipe results to foreman
 - [ ] Speed formation — build a "fast" deliberation formation with budget models for <30s agent-in-the-loop use
 - [ ] Validation-as-code — Stage 0 emits JSON Schema, Audit validates mechanically against it (not manual)
 - [ ] MCP server progressive prompting — make the MCP chimera_deliberate tool support progressive/wait_messages
@@ -10,6 +9,7 @@
 
 ## Completed
 
+- [x] Fix model sync cron — clear stale seen_models.json, verify daily sync finds new models, pipe results to foreman (2026-07-12: deleted stale reports/.seen_models.json, sync verified 0 new models across 13 providers, 5/5 verification)
 - [x] Add GPT-5.6 family + Grok 4.5 LLM-refined scores (95 adjustments, commit b7ca553, 2026-07-12)
 - [x] Aggregator saturates on large panel outputs — deep reconciliation from GPT-5.5 audit. (token-aware truncation + config option)
 - [x] Worker parallelism — stages configured as parallel still run sequentially in dispatch layer. (acompletion + create_task waves + overlap tests)
