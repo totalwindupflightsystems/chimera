@@ -98,7 +98,6 @@ def build_merge_prompt(
     dep_blocks: list[tuple[StageResult, str, bool]] = []  # (dep, raw_output, degraded)
     degraded_count = 0
     for dep in dependencies:
-        asked = _what_worker_was_asked(dep.stage_id, dispatch)
         if dep.degraded:
             degraded_count += 1
             dep_blocks.append((dep, dep.response.text, True))

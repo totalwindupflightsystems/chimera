@@ -136,7 +136,7 @@ def _make_big_deps(outputs: list[str], degraded: list[bool] | None = None) -> li
             response=resp(out, "m"),
             degraded=deg,
         )
-        for i, (out, deg) in enumerate(zip(outputs, degraded))
+        for i, (out, deg) in enumerate(zip(outputs, degraded, strict=False))
     ]
 
 
