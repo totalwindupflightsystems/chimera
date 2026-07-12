@@ -678,3 +678,122 @@ async def test_non_progressive_worker_skips_wait_messages(config) -> None:
                 assert "SHOULD NOT BE USED" not in msg["content"], (
                     f"Trigger leaked into non-progressive call: {msg['content'][:80]}"
                 )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Validation-as-code: schema extraction + mechanical audit validation
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestSchemaExtraction:
+    """Tests for Engine._extract_output_schema()."""
+
+    def test_extracts_schema_field(self):
+        from chimera.engine import Engine
+
+        response = json.dumps({
+            "strategy": "generate a user profile",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
+                },
+                "required": ["name", "age"],
+            },
+        })
+        result = Engine._extract_output_schema(response)
+        assert result is not None
+        assert result["type"] == "object"
+        assert "name" in result["properties"]
+
+    def test_extracts_whole_schema_if_no_field(self):
+        from chimera.engine import Engine
+
+        response = json.dumps({
+            "type": "object",
+            "properties": {"x": {"type": "number"}},
+        })
+        result = Engine._extract_output_schema(response)
+        assert result is not None
+        assert result["type"] == "object"
+
+    def test_returns_none_for_plain_text(self):
+        from chimera.engine import Engine
+
+        assert Engine._extract_output_schema("Just some thoughts...") is None
+        assert Engine._extract_output_schema("") is None
+
+    def test_returns_none_for_json_without_schema(self):
+        from chimera.engine import Engine
+
+        response = json.dumps({"plan": "do X then Y", "workers": 3})
+        assert Engine._extract_output_schema(response) is None
+
+    def test_schema_field_wins_over_heuristic(self):
+        from chimera.engine import Engine
+
+        # Response has BOTH a top-level type=object AND a nested schema field
+        response = json.dumps({
+            "type": "object",
+            "properties": {"outer": {"type": "string"}},
+            "schema": {"type": "object", "properties": {"inner": {"type": "integer"}}},
+        })
+        result = Engine._extract_output_schema(response)
+        assert result is not None
+        # The explicit schema field should win
+        assert "inner" in result.get("properties", {})
+
+
+class TestSchemaValidation:
+    """Tests for Engine._validate_against_schema()."""
+
+    def test_valid_output_passes(self):
+        from chimera.engine import Engine
+
+        schema = {"type": "object", "properties": {"x": {"type": "number"}}}
+        output = json.dumps({"x": 42})
+        assert Engine._validate_against_schema(schema, output) is None
+
+    def test_invalid_output_fails(self):
+        from chimera.engine import Engine
+
+        schema = {"type": "object", "properties": {"x": {"type": "number"}}}
+        output = json.dumps({"x": "not-a-number"})
+        result = Engine._validate_against_schema(schema, output)
+        assert result is not None
+        assert result["passed"] is False
+        assert len(result["errors"]) > 0
+        assert "not-a-number" in str(result["errors"][0]) or "string" in str(result["errors"][0])
+
+    def test_missing_required_fails(self):
+        from chimera.engine import Engine
+
+        schema = {
+            "type": "object",
+            "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
+            "required": ["a", "b"],
+        }
+        output = json.dumps({"a": "hello"})
+        result = Engine._validate_against_schema(schema, output)
+        assert result is not None
+        assert result["passed"] is False
+
+    def test_non_json_output_fails(self):
+        from chimera.engine import Engine
+
+        schema = {"type": "object"}
+        result = Engine._validate_against_schema(schema, "not valid json {{{")
+        assert result is not None
+        assert result["passed"] is False
+        assert "not valid JSON" in result["errors"][0]
+
+    def test_validation_error_has_passed_false_signal(self):
+        from chimera.engine import Engine, _RE_ITERATION_SIGNAL
+
+        schema = {"type": "object", "properties": {"x": {"type": "number"}}}
+        output = json.dumps({"x": "bad"})
+        result = Engine._validate_against_schema(schema, output)
+        error_json = json.dumps(result)
+        # The iteration loop should detect this as a failure
+        assert _RE_ITERATION_SIGNAL.search(error_json) is not None

@@ -14,6 +14,7 @@ import time
 import uuid
 from typing import Any
 
+import jsonschema
 import structlog
 from pydantic import BaseModel, Field
 
@@ -401,6 +402,18 @@ class Engine:
                 span.iteration = iteration_counts.get(stage.id, 0) + 1
                 results[stage.id] = result
                 spans[stage.id] = span
+
+                # ── Schema extraction from STRUCTURE stages ──────────
+                if not output_schema and stage.kind == "worker":
+                    extracted = self._extract_output_schema(span.response)
+                    if extracted is not None:
+                        output_schema = extracted
+                        log.info(
+                            "engine_schema_extracted",
+                            stage=stage.id,
+                            schema_keys=list(extracted.keys()),
+                        )
+
                 log.info(
                     "engine_stage_done",
                     stage=stage.id,
@@ -656,6 +669,29 @@ class Engine:
             output_schema=output_schema,
             max_prompt_tokens=self.config.max_aggregator_context_tokens,
         )
+
+        # ── Mechanical schema validation for AUDIT stages ──────────
+        if stage.kind == "audit" and output_schema is not None:
+            validation_error = self._validate_against_schema(
+                output_schema, response.text,
+            )
+            if validation_error is not None:
+                log.info(
+                    "engine_audit_validation_failed",
+                    stage=stage.id,
+                    errors=validation_error.get("errors", []),
+                )
+                # Replace response text so the iteration loop sees the
+                # ``"passed": false`` signal and triggers re-iteration.
+                response = GatewayResponse(
+                    text=json.dumps(validation_error),
+                    model=response.model,
+                    tokens_input=response.tokens_input,
+                    tokens_output=response.tokens_output,
+                )
+            else:
+                log.info("engine_audit_validation_passed", stage=stage.id)
+
         return [], response
 
     def _degraded_stage(
@@ -716,6 +752,54 @@ class Engine:
         audit/refine stages to indicate the result failed quality checks.
         """
         return bool(_RE_ITERATION_SIGNAL.search(span.response))
+
+    # ------------------------------------------------------------------ #
+    # Schema-driven validation (Validation-as-code)
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _extract_output_schema(response_text: str) -> dict[str, Any] | None:
+        """Extract a JSON Schema from a STRUCTURE stage response.
+
+        The STRUCTURE stage can emit a ``schema`` field containing a valid
+        JSON Schema.  This schema is then used for mechanical validation
+        in downstream AUDIT stages instead of (or in addition to) LLM review.
+        """
+        try:
+            data = json.loads(response_text)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        # Explicit ``schema`` field — canonical STRUCTURE output shape
+        schema = data.get("schema")
+        if isinstance(schema, dict):
+            return schema
+        # Heuristic: the whole response might BE a JSON Schema
+        if data.get("type") == "object" and "properties" in data:
+            return data
+        return None
+
+    @staticmethod
+    def _validate_against_schema(
+        schema: dict[str, Any], output: str
+    ) -> dict[str, Any] | None:
+        """Mechanically validate *output* against *schema*.
+
+        Returns ``None`` on success (output is valid), or a dict suitable
+        for embedding in the audit response::
+
+            {"passed": false, "errors": [...]}
+        """
+        try:
+            instance = json.loads(output)
+        except (json.JSONDecodeError, TypeError) as exc:
+            return {"passed": False, "errors": [f"Output is not valid JSON: {exc}"]}
+        try:
+            jsonschema.validate(instance=instance, schema=schema)
+        except jsonschema.ValidationError as exc:
+            return {"passed": False, "errors": [str(exc)]}
+        return None  # passed
 
     @staticmethod
     def _collect_feedback(
