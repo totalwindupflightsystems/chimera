@@ -37,8 +37,11 @@ formations:
         depends_on: []
         progressive: true
         wait_messages:
-        - "You are planning a UI specification document. Read the user's request carefully. Identify all subsections, components, states, and interaction paths that need to be specified. Do NOT write the spec yet — just plan the structure. Respond with 'Structure planned.' when ready."
-        trigger: "SIMON SAYS: Output the complete outline. List every subsection with its component inventory, every state to be specified per component, and the exact assignment of subsections to workers. Format as a structured outline."
+        - You are planning a UI specification document. Read the user's request carefully. Identify all subsections, components,
+          states, and interaction paths that need to be specified. Do NOT write the spec yet — just plan the structure. Respond
+          with 'Structure planned.' when ready.
+        trigger: 'SIMON SAYS: Output the complete outline. List every subsection with its component inventory, every state
+          to be specified per component, and the exact assignment of subsections to workers. Format as a structured outline.'
       - id: write_a
         kind: worker
         model: deepseek/deepseek-v4-pro
@@ -46,9 +49,20 @@ formations:
         - structure
         progressive: true
         wait_messages:
-        - "STUDY THIS — do not write yet. CSS token system: --color-bg-canvas:#0d1117, --color-bg-surface:#161b22, --color-bg-surface-raised:#1c2128, --color-bg-input:#0a0e14, --color-text-primary:#e6edf3, --color-text-secondary:#8b949e, --color-text-tertiary:#484f58, --color-text-link:#58a6ff, --color-accent-primary:#388bfd, --color-accent-success:#238636, --color-accent-warning:#d29922, --color-accent-error:#da3633. Borders: --color-border-default:rgba(48,54,61,0.6), --color-border-hover:rgba(68,77,87,0.8). Spacing: --space-0(0px) through --space-20(80px) in 4px increments. Radius: --radius-sm(3px), --radius-md(6px), --radius-lg(10px), --radius-full(9999px). Duration: --duration-micro(80ms), --duration-quick(150ms), --duration-standard(250ms), --duration-slow(400ms). Easing: --ease-out-quint(0.22,1,0.36,1), --ease-out-expo(0.16,1,0.3,1), --ease-spring(0.34,1.56,0.64,1). Respond with 'Tokens absorbed.'"
-        - "OUTPUT RULES — study, do not write. Every element must have all 7 states: DEFAULT, HOVER, ACTIVE, DISABLED, LOADING, ERROR, EMPTY — each with exact CSS values using ONLY the token system. Every animation must specify cubic-bezier curve + duration in ms + property. Every component needs aria attributes and keyboard shortcuts. Use ASCII diagrams for layouts. Zero prose filler — every sentence is a specification. Respond with 'Rules understood.'"
-        trigger: "SIMON SAYS: Write your assigned subsections. Use only the token system. Specify all 7 states per element. Include ASCII diagrams, keyboard shortcuts, and aria attributes. Target 800+ lines of blind-developer density."
+        - 'STUDY THIS — do not write yet. CSS token system: --color-bg-canvas:#0d1117, --color-bg-surface:#161b22, --color-bg-surface-raised:#1c2128,
+          --color-bg-input:#0a0e14, --color-text-primary:#e6edf3, --color-text-secondary:#8b949e, --color-text-tertiary:#484f58,
+          --color-text-link:#58a6ff, --color-accent-primary:#388bfd, --color-accent-success:#238636, --color-accent-warning:#d29922,
+          --color-accent-error:#da3633. Borders: --color-border-default:rgba(48,54,61,0.6), --color-border-hover:rgba(68,77,87,0.8).
+          Spacing: --space-0(0px) through --space-20(80px) in 4px increments. Radius: --radius-sm(3px), --radius-md(6px),
+          --radius-lg(10px), --radius-full(9999px). Duration: --duration-micro(80ms), --duration-quick(150ms), --duration-standard(250ms),
+          --duration-slow(400ms). Easing: --ease-out-quint(0.22,1,0.36,1), --ease-out-expo(0.16,1,0.3,1), --ease-spring(0.34,1.56,0.64,1).
+          Respond with ''Tokens absorbed.'''
+        - 'OUTPUT RULES — study, do not write. Every element must have all 7 states: DEFAULT, HOVER, ACTIVE, DISABLED, LOADING,
+          ERROR, EMPTY — each with exact CSS values using ONLY the token system. Every animation must specify cubic-bezier
+          curve + duration in ms + property. Every component needs aria attributes and keyboard shortcuts. Use ASCII diagrams
+          for layouts. Zero prose filler — every sentence is a specification. Respond with ''Rules understood.'''
+        trigger: 'SIMON SAYS: Write your assigned subsections. Use only the token system. Specify all 7 states per element.
+          Include ASCII diagrams, keyboard shortcuts, and aria attributes. Target 800+ lines of blind-developer density.'
       - id: write_b
         kind: worker
         model: deepseek/deepseek-v4-pro
@@ -56,9 +70,20 @@ formations:
         - structure
         progressive: true
         wait_messages:
-        - "STUDY THIS — do not write yet. CSS token system: --color-bg-canvas:#0d1117, --color-bg-surface:#161b22, --color-bg-surface-raised:#1c2128, --color-bg-input:#0a0e14, --color-text-primary:#e6edf3, --color-text-secondary:#8b949e, --color-text-tertiary:#484f58, --color-text-link:#58a6ff, --color-accent-primary:#388bfd, --color-accent-success:#238636, --color-accent-warning:#d29922, --color-accent-error:#da3633. Borders: --color-border-default:rgba(48,54,61,0.6), --color-border-hover:rgba(68,77,87,0.8). Spacing: --space-0(0px) through --space-20(80px) in 4px increments. Radius: --radius-sm(3px), --radius-md(6px), --radius-lg(10px), --radius-full(9999px). Duration: --duration-micro(80ms), --duration-quick(150ms), --duration-standard(250ms), --duration-slow(400ms). Easing: --ease-out-quint(0.22,1,0.36,1), --ease-out-expo(0.16,1,0.3,1), --ease-spring(0.34,1.56,0.64,1). Respond with 'Tokens absorbed.'"
-        - "OUTPUT RULES — study, do not write. Every element must have all 7 states: DEFAULT, HOVER, ACTIVE, DISABLED, LOADING, ERROR, EMPTY — each with exact CSS values using ONLY the token system. Every animation must specify cubic-bezier curve + duration in ms + property. Every component needs aria attributes and keyboard shortcuts. Use ASCII diagrams for layouts. Zero prose filler — every sentence is a specification. Respond with 'Rules understood.'"
-        trigger: "SIMON SAYS: Write your assigned subsections. Use only the token system. Specify all 7 states per element. Include ASCII diagrams, keyboard shortcuts, and aria attributes. Target 800+ lines of blind-developer density."
+        - 'STUDY THIS — do not write yet. CSS token system: --color-bg-canvas:#0d1117, --color-bg-surface:#161b22, --color-bg-surface-raised:#1c2128,
+          --color-bg-input:#0a0e14, --color-text-primary:#e6edf3, --color-text-secondary:#8b949e, --color-text-tertiary:#484f58,
+          --color-text-link:#58a6ff, --color-accent-primary:#388bfd, --color-accent-success:#238636, --color-accent-warning:#d29922,
+          --color-accent-error:#da3633. Borders: --color-border-default:rgba(48,54,61,0.6), --color-border-hover:rgba(68,77,87,0.8).
+          Spacing: --space-0(0px) through --space-20(80px) in 4px increments. Radius: --radius-sm(3px), --radius-md(6px),
+          --radius-lg(10px), --radius-full(9999px). Duration: --duration-micro(80ms), --duration-quick(150ms), --duration-standard(250ms),
+          --duration-slow(400ms). Easing: --ease-out-quint(0.22,1,0.36,1), --ease-out-expo(0.16,1,0.3,1), --ease-spring(0.34,1.56,0.64,1).
+          Respond with ''Tokens absorbed.'''
+        - 'OUTPUT RULES — study, do not write. Every element must have all 7 states: DEFAULT, HOVER, ACTIVE, DISABLED, LOADING,
+          ERROR, EMPTY — each with exact CSS values using ONLY the token system. Every animation must specify cubic-bezier
+          curve + duration in ms + property. Every component needs aria attributes and keyboard shortcuts. Use ASCII diagrams
+          for layouts. Zero prose filler — every sentence is a specification. Respond with ''Rules understood.'''
+        trigger: 'SIMON SAYS: Write your assigned subsections. Use only the token system. Specify all 7 states per element.
+          Include ASCII diagrams, keyboard shortcuts, and aria attributes. Target 800+ lines of blind-developer density.'
       - id: merge
         kind: aggregator
         model: deepseek/deepseek-v4-flash
@@ -326,33 +351,33 @@ models:
     enabled: true
   openrouter/openai/gpt-5.6:
     categories:
-      technology_code/code_generation/python: 94
-      technology_code/code_generation/javascript: 93
-      technology_code/code_generation/sql: 92
+      technology_code/code_generation/python: 93
+      technology_code/code_generation/javascript: 92
+      technology_code/code_generation/sql: 91
       technology_code/code_generation/shell: 91
-      technology_code/system_design/architecture: 89
+      technology_code/system_design/architecture: 88
       technology_code/system_design/devops: 88
-      technology_code/testing_debugging/unit_tests: 89
+      technology_code/testing_debugging/unit_tests: 88
       technology_code/testing_debugging/error_analysis: 88
-      technology_code/data_science/analysis: 95
+      technology_code/data_science/analysis: 94
       technology_code/data_science/modeling: 93
       technology_code/data_interaction/database/sql: 92
       technology_code/data_interaction/file_based/json: 93
-      complex_reasoning_agency/multi_step_planning/task_decomposition: 94
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 93
       complex_reasoning_agency/tool_use/code_execution: 91
       complex_reasoning_agency/self_correction/debugging: 89
       academic_scientific/formal_writing/research_paper: 91
-      academic_scientific/mathematics/statistics: 93
+      academic_scientific/mathematics/statistics: 92
       academic_scientific/mathematics/algebra: 91
       academic_scientific/mathematics/calculus: 89
-      general_knowledge/reasoning/explanation: 95
+      general_knowledge/reasoning/explanation: 94
       general_knowledge/reasoning/logic_puzzle: 93
-      general_knowledge/fact_retrieval/definitions: 94
+      general_knowledge/fact_retrieval/definitions: 93
       general_knowledge/fact_retrieval/historical_events: 91
-      language_translation/summarization/abstractive: 89
+      language_translation/summarization/abstractive: 88
       language_translation/translation/language_to_language: 86
       language_translation/linguistic_analysis/sentiment: 87
-      business_finance/marketing/copywriting: 88
+      business_finance/marketing/copywriting: 87
       business_finance/legal_document/analysis: 87
       creative_conversational/creative_writing/storytelling: 86
       creative_conversational/ux_writing/interface_copy: 89
@@ -363,13 +388,13 @@ models:
     enabled: true
   openrouter/openai/gpt-5.6-luna:
     categories:
-      technology_code/code_generation/python: 86
-      technology_code/code_generation/javascript: 85
+      technology_code/code_generation/python: 85
+      technology_code/code_generation/javascript: 84
       technology_code/code_generation/sql: 84
       technology_code/code_generation/shell: 83
       technology_code/system_design/architecture: 80
       technology_code/system_design/devops: 79
-      technology_code/testing_debugging/unit_tests: 82
+      technology_code/testing_debugging/unit_tests: 81
       technology_code/testing_debugging/error_analysis: 81
       technology_code/data_science/analysis: 84
       technology_code/data_science/modeling: 82
@@ -379,18 +404,18 @@ models:
       complex_reasoning_agency/tool_use/code_execution: 84
       complex_reasoning_agency/self_correction/debugging: 82
       academic_scientific/formal_writing/research_paper: 82
-      academic_scientific/mathematics/statistics: 84
+      academic_scientific/mathematics/statistics: 83
       academic_scientific/mathematics/algebra: 82
-      academic_scientific/mathematics/calculus: 80
-      general_knowledge/reasoning/explanation: 89
+      academic_scientific/mathematics/calculus: 78
+      general_knowledge/reasoning/explanation: 88
       general_knowledge/reasoning/logic_puzzle: 86
-      general_knowledge/fact_retrieval/definitions: 87
+      general_knowledge/fact_retrieval/definitions: 86
       general_knowledge/fact_retrieval/historical_events: 84
       language_translation/summarization/abstractive: 86
       language_translation/translation/language_to_language: 82
       language_translation/linguistic_analysis/sentiment: 83
-      business_finance/marketing/copywriting: 80
-      business_finance/legal_document/analysis: 79
+      business_finance/marketing/copywriting: 79
+      business_finance/legal_document/analysis: 78
       creative_conversational/creative_writing/storytelling: 82
       creative_conversational/ux_writing/interface_copy: 83
     cost_tier: budget
@@ -398,28 +423,28 @@ models:
     enabled: true
   openrouter/openai/gpt-5.6-sol:
     categories:
-      technology_code/code_generation/python: 95
-      technology_code/code_generation/javascript: 94
-      technology_code/code_generation/sql: 93
-      technology_code/code_generation/shell: 92
+      technology_code/code_generation/python: 96
+      technology_code/code_generation/javascript: 95
+      technology_code/code_generation/sql: 94
+      technology_code/code_generation/shell: 93
       technology_code/system_design/architecture: 91
       technology_code/system_design/devops: 90
-      technology_code/testing_debugging/unit_tests: 91
-      technology_code/testing_debugging/error_analysis: 90
+      technology_code/testing_debugging/unit_tests: 92
+      technology_code/testing_debugging/error_analysis: 91
       technology_code/data_science/analysis: 97
       technology_code/data_science/modeling: 96
       technology_code/data_interaction/database/sql: 93
       technology_code/data_interaction/file_based/json: 94
-      complex_reasoning_agency/multi_step_planning/task_decomposition: 97
-      complex_reasoning_agency/tool_use/code_execution: 94
-      complex_reasoning_agency/self_correction/debugging: 92
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 98
+      complex_reasoning_agency/tool_use/code_execution: 95
+      complex_reasoning_agency/self_correction/debugging: 93
       academic_scientific/formal_writing/research_paper: 94
       academic_scientific/mathematics/statistics: 96
       academic_scientific/mathematics/algebra: 94
       academic_scientific/mathematics/calculus: 92
-      general_knowledge/reasoning/explanation: 97
-      general_knowledge/reasoning/logic_puzzle: 96
-      general_knowledge/fact_retrieval/definitions: 95
+      general_knowledge/reasoning/explanation: 98
+      general_knowledge/reasoning/logic_puzzle: 97
+      general_knowledge/fact_retrieval/definitions: 96
       general_knowledge/fact_retrieval/historical_events: 93
       language_translation/summarization/abstractive: 91
       language_translation/translation/language_to_language: 88
@@ -435,38 +460,38 @@ models:
     enabled: true
   openrouter/openai/gpt-5.6-terra:
     categories:
-      technology_code/code_generation/python: 94
-      technology_code/code_generation/javascript: 93
-      technology_code/code_generation/sql: 92
-      technology_code/code_generation/shell: 91
-      technology_code/system_design/architecture: 90
-      technology_code/system_design/devops: 89
-      technology_code/testing_debugging/unit_tests: 90
-      technology_code/testing_debugging/error_analysis: 89
-      technology_code/data_science/analysis: 96
-      technology_code/data_science/modeling: 95
-      technology_code/data_interaction/database/sql: 92
-      technology_code/data_interaction/file_based/json: 93
-      complex_reasoning_agency/multi_step_planning/task_decomposition: 96
-      complex_reasoning_agency/tool_use/code_execution: 93
-      complex_reasoning_agency/self_correction/debugging: 91
-      academic_scientific/formal_writing/research_paper: 93
-      academic_scientific/mathematics/statistics: 95
-      academic_scientific/mathematics/algebra: 93
-      academic_scientific/mathematics/calculus: 91
-      general_knowledge/reasoning/explanation: 96
-      general_knowledge/reasoning/logic_puzzle: 95
-      general_knowledge/fact_retrieval/definitions: 94
-      general_knowledge/fact_retrieval/historical_events: 92
-      language_translation/summarization/abstractive: 90
-      language_translation/translation/language_to_language: 87
-      language_translation/linguistic_analysis/sentiment: 88
-      business_finance/marketing/copywriting: 89
-      business_finance/legal_document/analysis: 90
-      creative_conversational/creative_writing/storytelling: 88
-      creative_conversational/ux_writing/interface_copy: 90
-      multimedia_processing/image/analysis: 85
-      multimedia_processing/image/generation: 78
+      technology_code/code_generation/python: 89
+      technology_code/code_generation/javascript: 88
+      technology_code/code_generation/sql: 88
+      technology_code/code_generation/shell: 87
+      technology_code/system_design/architecture: 87
+      technology_code/system_design/devops: 86
+      technology_code/testing_debugging/unit_tests: 87
+      technology_code/testing_debugging/error_analysis: 86
+      technology_code/data_science/analysis: 92
+      technology_code/data_science/modeling: 91
+      technology_code/data_interaction/database/sql: 89
+      technology_code/data_interaction/file_based/json: 90
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 92
+      complex_reasoning_agency/tool_use/code_execution: 90
+      complex_reasoning_agency/self_correction/debugging: 88
+      academic_scientific/formal_writing/research_paper: 90
+      academic_scientific/mathematics/statistics: 92
+      academic_scientific/mathematics/algebra: 90
+      academic_scientific/mathematics/calculus: 88
+      general_knowledge/reasoning/explanation: 93
+      general_knowledge/reasoning/logic_puzzle: 92
+      general_knowledge/fact_retrieval/definitions: 91
+      general_knowledge/fact_retrieval/historical_events: 90
+      language_translation/summarization/abstractive: 88
+      language_translation/translation/language_to_language: 85
+      language_translation/linguistic_analysis/sentiment: 86
+      business_finance/marketing/copywriting: 87
+      business_finance/legal_document/analysis: 88
+      creative_conversational/creative_writing/storytelling: 86
+      creative_conversational/ux_writing/interface_copy: 88
+      multimedia_processing/image/analysis: 82
+      multimedia_processing/image/generation: 76
     cost_tier: premium
     provider: openrouter
     enabled: true
@@ -892,36 +917,36 @@ models:
     enabled: true
   openrouter/x-ai/grok-4.5:
     categories:
-      technology_code/code_generation/python: 88
-      technology_code/code_generation/javascript: 86
-      technology_code/code_generation/sql: 85
-      technology_code/code_generation/shell: 84
-      technology_code/system_design/architecture: 76
-      technology_code/system_design/devops: 74
-      technology_code/testing_debugging/unit_tests: 81
-      technology_code/testing_debugging/error_analysis: 79
-      technology_code/data_science/analysis: 86
-      technology_code/data_science/modeling: 84
-      technology_code/data_interaction/database/sql: 85
-      technology_code/data_interaction/file_based/json: 86
-      complex_reasoning_agency/multi_step_planning/task_decomposition: 88
-      complex_reasoning_agency/tool_use/code_execution: 85
-      complex_reasoning_agency/self_correction/debugging: 79
-      academic_scientific/formal_writing/research_paper: 75
-      academic_scientific/mathematics/statistics: 77
-      academic_scientific/mathematics/algebra: 75
-      academic_scientific/mathematics/calculus: 73
-      general_knowledge/reasoning/explanation: 88
-      general_knowledge/reasoning/logic_puzzle: 86
-      general_knowledge/fact_retrieval/definitions: 86
-      general_knowledge/fact_retrieval/historical_events: 82
-      language_translation/summarization/abstractive: 80
-      language_translation/translation/language_to_language: 74
-      language_translation/linguistic_analysis/sentiment: 76
-      business_finance/marketing/copywriting: 72
-      business_finance/legal_document/analysis: 70
-      creative_conversational/creative_writing/storytelling: 68
-      creative_conversational/ux_writing/interface_copy: 74
+      technology_code/code_generation/python: 91
+      technology_code/code_generation/javascript: 89
+      technology_code/code_generation/sql: 88
+      technology_code/code_generation/shell: 86
+      technology_code/system_design/architecture: 78
+      technology_code/system_design/devops: 76
+      technology_code/testing_debugging/unit_tests: 83
+      technology_code/testing_debugging/error_analysis: 81
+      technology_code/data_science/analysis: 89
+      technology_code/data_science/modeling: 87
+      technology_code/data_interaction/database/sql: 87
+      technology_code/data_interaction/file_based/json: 88
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 91
+      complex_reasoning_agency/tool_use/code_execution: 87
+      complex_reasoning_agency/self_correction/debugging: 82
+      academic_scientific/formal_writing/research_paper: 78
+      academic_scientific/mathematics/statistics: 90
+      academic_scientific/mathematics/algebra: 87
+      academic_scientific/mathematics/calculus: 85
+      general_knowledge/reasoning/explanation: 91
+      general_knowledge/reasoning/logic_puzzle: 89
+      general_knowledge/fact_retrieval/definitions: 88
+      general_knowledge/fact_retrieval/historical_events: 84
+      language_translation/summarization/abstractive: 82
+      language_translation/translation/language_to_language: 76
+      language_translation/linguistic_analysis/sentiment: 78
+      business_finance/marketing/copywriting: 74
+      business_finance/legal_document/analysis: 72
+      creative_conversational/creative_writing/storytelling: 70
+      creative_conversational/ux_writing/interface_copy: 76
     cost_tier: premium
     provider: openrouter
     enabled: true
@@ -1334,9 +1359,7 @@ observability:
     enabled: false
 selector:
   price_sensitivity: 0.0
-
 provider_discovery: true
-
 timeout:
   total_s: 600.0
   per_stage_s: 300.0
