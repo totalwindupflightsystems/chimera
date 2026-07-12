@@ -96,6 +96,21 @@ def test_preset_audit_dag_has_audit_stage(config) -> None:  # type: ignore[no-un
     assert [t.id for t in terminals] == ["audit"]
 
 
+def test_preset_speed_dag(config) -> None:  # type: ignore[no-untyped-def]
+    """Speed formation uses budget models for <30s deliberation."""
+    dag = build_preset_dag(config.formations["speed"], config)
+    kinds = {s.kind for s in dag.stages}
+    assert kinds == {"worker", "aggregator"}
+    workers = [s for s in dag.stages if s.kind == "worker"]
+    assert len(workers) == 2
+    worker_models = sorted(s.model for s in workers)
+    assert "deepseek/deepseek-v4-flash" in worker_models
+    assert "openrouter/qwen/qwen3-coder" in worker_models
+    aggregator = dag.stage("aggregator")
+    assert aggregator.model == "deepseek/deepseek-v4-flash"
+    assert set(aggregator.depends_on) == {w.id for w in workers}
+
+
 def test_preset_worker_models_override(config) -> None:  # type: ignore[no-untyped-def]
     preset = FormationPreset(workers=2,
                              worker_models=["deepseek/deepseek-chat",

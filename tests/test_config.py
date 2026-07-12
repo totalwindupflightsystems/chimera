@@ -85,7 +85,7 @@ def test_env_substitution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
 def test_load_config_from_file(config_file: Path) -> None:
     cfg = load_config(config_file)
     assert cfg.defaults.dispatcher == "zai-coding-plan/glm-5.2"
-    assert set(cfg.formations) == {"auto", "simple", "debate", "audit"}
+    assert set(cfg.formations) == {"auto", "simple", "debate", "audit", "speed"}
 
 
 def test_find_config_path_walks_upwards(tmp_path: Path) -> None:
@@ -316,7 +316,12 @@ def test_formation_models_exist_in_catalog() -> None:
 
     # Collect all known model IDs from the config
     known_models: set[str] = set()
-    for provider_entry in cfg.get("providers", []):
+    # Top-level `models:` catalog — the canonical model registry.
+    for model_id in cfg.get("models", {}) or {}:
+        if isinstance(model_id, str):
+            known_models.add(model_id)
+    # Some configs list models per-provider instead of at the top level.
+    for provider_entry in cfg.get("providers", []) or []:
         if isinstance(provider_entry, str):
             continue  # provider name-only entries
         for model in provider_entry.get("models", []):

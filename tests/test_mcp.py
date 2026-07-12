@@ -63,7 +63,7 @@ async def test_mcp_deliberate_tool(config) -> None:  # type: ignore[no-untyped-d
 async def test_mcp_formations_tool(config) -> None:  # type: ignore[no-untyped-def]
     server = _make_server(config)
     data = await _call(server, "chimera_formations")
-    assert set(data) == {"auto", "simple", "debate", "audit"}
+    assert set(data) == {"auto", "simple", "debate", "audit", "speed"}
 
 
 @pytest.mark.asyncio

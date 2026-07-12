@@ -28,6 +28,12 @@ formations:
   simple:
     aggregator: default
     workers: 2
+  speed:
+    aggregator: deepseek/deepseek-v4-flash
+    workers: 2
+    worker_models:
+    - deepseek/deepseek-v4-flash
+    - openrouter/qwen/qwen3-coder
   spec-writer:
     dag:
       stages:

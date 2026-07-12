@@ -19,6 +19,7 @@ CONFIG_DICT: dict[str, Any] = {
         "openrouter": {"base_url": "https://openrouter.ai/api/v1"},
         "zai": {"base_url": "https://api.z.ai/api/coding/paas/v4"},
         "anthropic": {"base_url": "https://api.anthropic.com/v1"},
+        "deepseek": {"base_url": "https://api.deepseek.com/v1"},
     },
     "models": {
         "zai-coding-plan/glm-5.2": {
@@ -30,6 +31,18 @@ CONFIG_DICT: dict[str, Any] = {
         "deepseek/deepseek-chat": {
             "categories": {"code": 0.95, "analysis": 0.85, "design": 0.40,
                            "audit": 0.60, "reasoning": 0.80},
+            "cost_tier": "budget",
+            "provider": "openrouter",
+        },
+        "deepseek/deepseek-v4-flash": {
+            "categories": {"code": 0.88, "analysis": 0.80, "design": 0.50,
+                           "audit": 0.55, "reasoning": 0.75},
+            "cost_tier": "budget",
+            "provider": "deepseek",
+        },
+        "openrouter/qwen/qwen3-coder": {
+            "categories": {"code": 0.91, "analysis": 0.72, "design": 0.45,
+                           "audit": 0.50, "reasoning": 0.68},
             "cost_tier": "budget",
             "provider": "openrouter",
         },
@@ -63,6 +76,14 @@ CONFIG_DICT: dict[str, Any] = {
             "workers": 2,
             "aggregator": "default",
             "audit": "openrouter/anthropic/claude-sonnet-4",
+        },
+        "speed": {
+            "workers": 2,
+            "worker_models": [
+                "deepseek/deepseek-v4-flash",
+                "openrouter/qwen/qwen3-coder",
+            ],
+            "aggregator": "deepseek/deepseek-v4-flash",
         },
     },
     "observability": {"log_level": "warning", "trace_enabled": False,

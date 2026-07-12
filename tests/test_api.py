@@ -48,7 +48,7 @@ def test_list_formations(config) -> None:  # type: ignore[no-untyped-def]
     r = client.get("/v1/formations")
     assert r.status_code == 200
     data = r.json()
-    assert set(data) == {"auto", "simple", "debate", "audit"}
+    assert set(data) == {"auto", "simple", "debate", "audit", "speed"}
     assert data["simple"]["workers"] == 2
 
 
