@@ -74,11 +74,11 @@ def _litellm_result(
 class TestGetFormatCapability:
     """Cover _get_format_capability for every provider tier."""
 
-    @pytest.mark.parametrize("provider", ["openai", "anthropic", "google", "zai"])
+    @pytest.mark.parametrize("provider", ["openai", "anthropic", "google", "zai", "deepseek"])
     def test_json_schema_providers(self, provider: str) -> None:
         assert _get_format_capability(provider) == FormatCapability.JSON_SCHEMA
 
-    @pytest.mark.parametrize("provider", ["deepseek", "moonshot"])
+    @pytest.mark.parametrize("provider", ["moonshot"])
     def test_json_object_providers(self, provider: str) -> None:
         assert _get_format_capability(provider) == FormatCapability.JSON_OBJECT
 
@@ -87,7 +87,7 @@ class TestGetFormatCapability:
 
     def test_case_insensitive(self) -> None:
         assert _get_format_capability("OpenAI") == FormatCapability.JSON_SCHEMA
-        assert _get_format_capability("DEEPSEEK") == FormatCapability.JSON_OBJECT
+        assert _get_format_capability("DEEPSEEK") == FormatCapability.JSON_SCHEMA
 
 
 # =========================================================================== #
@@ -106,7 +106,7 @@ class TestNegotiateResponseFormat:
 
     def test_json_schema_downgrades_for_json_object_provider(self) -> None:
         fmt = {"type": "json_schema", "json_schema": {"name": "x", "schema": {}}}
-        result = negotiate_response_format(fmt, "deepseek")
+        result = negotiate_response_format(fmt, "moonshot")
         assert result == {"type": "json_object"}
 
     def test_json_object_passthrough_for_json_object_provider(self) -> None:
@@ -116,7 +116,7 @@ class TestNegotiateResponseFormat:
 
     def test_unknown_type_falls_back_to_json_object(self) -> None:
         fmt = {"type": "weird_format"}
-        result = negotiate_response_format(fmt, "deepseek")
+        result = negotiate_response_format(fmt, "moonshot")
         assert result == {"type": "json_object"}
 
     def test_text_only_provider_strips_json_schema(self) -> None:
@@ -489,9 +489,9 @@ class TestLiteLLMGatewayComplete:
     async def test_format_negotiation_downgrade_applied(self) -> None:
         """JSON schema request for a JSON-object provider is downgraded."""
         config = _gateway_config()
-        # Add a model whose provider is 'deepseek' (JSON_OBJECT capability)
-        config.models["deepseek/test-chat"] = ModelEntry(
-            categories={"code": 0.9}, cost_tier="budget", provider="deepseek",
+        # Add a model whose provider is 'moonshot' (JSON_OBJECT capability)
+        config.models["moonshot/test-chat"] = ModelEntry(
+            categories={"code": 0.9}, cost_tier="budget", provider="moonshot",
         )
         gw = LiteLLMGateway(config)
         fake_result = _litellm_result('{"answer": "x"}')
@@ -503,7 +503,7 @@ class TestLiteLLMGatewayComplete:
 
         with patch("litellm.acompletion", side_effect=capture):
             await gw.complete(
-                "deepseek/test-chat",
+                "moonshot/test-chat",
                 [{"role": "user", "content": "hi"}],
                 response_format={"type": "json_schema",
                                  "json_schema": {"name": "x", "schema": {}}},

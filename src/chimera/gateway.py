@@ -100,12 +100,12 @@ class FormatCapability(Enum):
 
 # Providers that support full json_schema
 _JSON_SCHEMA_PROVIDERS: frozenset[str] = frozenset({
-    "openai", "anthropic", "google", "zai",
+    "openai", "anthropic", "google", "zai", "deepseek",
 })
 
 # Providers that support json_object but not json_schema
 _JSON_OBJECT_PROVIDERS: frozenset[str] = frozenset({
-    "deepseek", "moonshot",
+    "moonshot",
 })
 
 
