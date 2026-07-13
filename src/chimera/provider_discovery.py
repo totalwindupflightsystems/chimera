@@ -31,8 +31,8 @@ MODELS_DEV_URL: str = "https://models.dev/api.json"
 #: Local cache path (relative to user config dir).
 CACHE_PATH: str = "~/.chimera/models-dev-cache.json"
 
-#: Cache TTL in seconds (24 hours).
-CACHE_TTL: int = 86400
+#: Cache TTL in seconds (30 minutes).
+CACHE_TTL: int = 1800
 
 #: Map models.dev provider IDs to Chimera provider names.
 #: Most match 1:1; this table handles the exceptions.
