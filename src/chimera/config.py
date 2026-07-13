@@ -178,7 +178,7 @@ class DeliberationOverrides(BaseModel):
     timeout_per_stage_s: float | None = None     # Per-request per-stage timeout
     progressive: bool = False                     # Enable progressive prompting on worker stages
     wait_messages: list[str] | None = None       # Context msgs fed one-at-a-time before the main prompt
-    trigger: str | None = None                   # Final msg that requests actual output (replaces task prompt when set)
+    trigger: str | None = None                   # Final msg requesting actual output (replaces task prompt)
 
 
 class SelectorConfig(BaseModel):
