@@ -176,6 +176,9 @@ class DeliberationOverrides(BaseModel):
     stage_models: dict[str, str] | None = None   # Per-stage model overrides (stage_id → model)
     timeout_total_s: float | None = None         # Per-request total timeout (≤ admin ceiling)
     timeout_per_stage_s: float | None = None     # Per-request per-stage timeout
+    progressive: bool = False                     # Enable progressive prompting on worker stages
+    wait_messages: list[str] | None = None       # Context msgs fed one-at-a-time before the main prompt
+    trigger: str | None = None                   # Final msg that requests actual output (replaces task prompt when set)
 
 
 class SelectorConfig(BaseModel):

@@ -680,6 +680,68 @@ async def test_non_progressive_worker_skips_wait_messages(config) -> None:
                 )
 
 
+@pytest.mark.asyncio
+async def test_progressive_via_overrides_applies_to_workers(config) -> None:
+    """Progressive settings via DeliberationOverrides apply to all worker stages."""
+    gw = FakeGateway(None)
+
+    from chimera.config import DeliberationOverrides
+
+    overrides = DeliberationOverrides(
+        progressive=True,
+        wait_messages=["OVERRIDE MSG 1", "OVERRIDE MSG 2"],
+        trigger="OVERRIDE TRIGGER: answer now",
+    )
+
+    # Use a DAG without progressive — rely on overrides to apply it.
+    dag = {
+        "stages": [
+            {
+                "id": "w1",
+                "kind": "worker",
+                "model": "deepseek/deepseek-chat",
+                "depends_on": [],
+                "progressive": False,
+            },
+            {
+                "id": "agg",
+                "kind": "aggregator",
+                "model": "zai-coding-plan/glm-5.2",
+                "depends_on": ["w1"],
+            },
+        ],
+        "edges": [["w1", "agg"]],
+    }
+
+    result = await Engine(config, gw).deliberate(
+        "test", "auto", dag=dag, allow_custom_dag=True, overrides=overrides,
+    )
+
+    assert result.answer is not None
+
+    # Progressive should have been applied: 2 wait calls + 1 trigger call + dispatcher + aggregator
+    all_calls = gw.calls
+    assert len(all_calls) >= 5, f"Expected 5+ calls, got {len(all_calls)}"
+
+    temp03_calls = [c for c in all_calls if c[2].get("temperature") == 0.3]
+    assert len(temp03_calls) == 3, f"Expected 3 temp=0.3 calls (2 wait + 1 trigger), got {len(temp03_calls)}"
+
+    # Check the two wait message calls
+    wait_calls = [
+        c for c in temp03_calls
+        if c[1] == [{"role": "user", "content": "OVERRIDE MSG 1"}]
+        or c[1] == [{"role": "user", "content": "OVERRIDE MSG 2"}]
+    ]
+    assert len(wait_calls) == 2, f"Expected 2 wait-message calls, got {len(wait_calls)}"
+
+    # Check the trigger call
+    trigger_calls = [
+        c for c in temp03_calls
+        if c[1] == [{"role": "user", "content": "OVERRIDE TRIGGER: answer now"}]
+    ]
+    assert len(trigger_calls) == 1, "Expected exactly 1 trigger call with override trigger"
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Validation-as-code: schema extraction + mechanical audit validation
 # ─────────────────────────────────────────────────────────────────────

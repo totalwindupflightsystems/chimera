@@ -72,3 +72,18 @@ async def test_mcp_models_tool(config) -> None:  # type: ignore[no-untyped-def]
     data = await _call(server, "chimera_models")
     assert "deepseek/deepseek-chat" in data
     assert data["deepseek/deepseek-chat"]["cost_tier"] == "budget"
+
+
+@pytest.mark.asyncio
+async def test_mcp_deliberate_progressive(config) -> None:  # type: ignore[no-untyped-def]
+    """Progressive params are accepted by the tool."""
+    server = _make_server(config)
+    data = await _call(
+        server, "chimera_deliberate",
+        prompt="hello", formation="simple",
+        progressive=True,
+        wait_messages=["context chunk 1", "context chunk 2"],
+        trigger="Now answer the question",
+    )
+    assert data["answer"] == "FINAL MCP ANSWER"
+    assert data["trace"]["formation"] == "simple"

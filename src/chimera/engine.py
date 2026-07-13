@@ -150,6 +150,26 @@ def _apply_stage_models(
                 wp.model = model
 
 
+def _apply_progressive(
+    dispatch: DispatchResult,
+    wait_messages: list[str] | None,
+    trigger: str | None,
+) -> None:
+    """Apply progressive prompting settings to all worker stages.
+
+    When ``wait_messages`` is provided, every worker stage gets
+    ``progressive=True`` with the given messages and trigger.
+    Non-worker stages (aggregator, audit, merge) are left unchanged.
+    """
+    if not wait_messages:
+        return
+    for stage in dispatch.formation.stages:
+        if stage.kind == "worker":
+            stage.progressive = True
+            stage.wait_messages = list(wait_messages)
+            stage.trigger = trigger or ""
+
+
 def _apply_allowed_models(
     dispatch: DispatchResult,
     allowed_models: list[str] | None,
@@ -288,6 +308,9 @@ class Engine:
         _apply_stage_models(outcome.result, stage_models, self.config)
         if overrides:
             _apply_allowed_models(outcome.result, overrides.allowed_models, self.config)
+            _apply_progressive(
+                outcome.result, overrides.wait_messages, overrides.trigger,
+            )
 
         log.info(
             "engine_dispatched",

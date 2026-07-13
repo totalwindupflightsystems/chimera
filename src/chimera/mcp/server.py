@@ -39,15 +39,26 @@ def build_server(
         stage_models: dict[str, str] | None = None,
         dag: dict[str, Any] | None = None,
         allow_custom_dag: bool = False,
+        progressive: bool = False,
+        wait_messages: list[str] | None = None,
+        trigger: str | None = None,
     ) -> str:
         """Run a full multi-model deliberation and return the merged answer + trace.
 
         ``stage_models`` forces models per stage (stage_id → model).
         ``dag`` defines a full client DAG (requires ``allow_custom_dag=True``).
+        ``progressive`` / ``wait_messages`` / ``trigger`` enable progressive
+        prompting — wait_messages are sent sequentially to each worker before
+        the real prompt, improving context absorption for large inputs.
         """
         from chimera.config import DeliberationOverrides
 
-        overrides = DeliberationOverrides(stage_models=stage_models)
+        overrides = DeliberationOverrides(
+            stage_models=stage_models,
+            progressive=progressive,
+            wait_messages=wait_messages,
+            trigger=trigger,
+        )
         result = await state["engine"].deliberate(
             prompt,
             formation,
