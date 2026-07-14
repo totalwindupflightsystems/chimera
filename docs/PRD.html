@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chimera v2 — Product Requirements Document</title>
+<style>
+  :root {
+    --bg: #0D1117;
+    --surface: #161B22;
+    --primary: #00D2FF;
+    --pink: #FD79A8;
+    --text: #C9D1D9;
+    --muted: #8b949e;
+    --border: #30363d;
+    --code-bg: #1a1f26;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 0 1rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  #toc {
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+    z-index: 100;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  #toc a {
+    color: var(--primary);
+    text-decoration: none;
+    font-size: 0.85rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    transition: background 0.2s;
+  }
+  #toc a:hover { background: #2a3a4a; }
+  .container { padding: 2rem 0; }
+  h1, h2, h3 { color: var(--primary); margin-top: 1.5em; margin-bottom: 0.5em; }
+  h1 { font-size: 2rem; border-bottom: 2px solid var(--pink); padding-bottom: 0.3em; }
+  h2 { font-size: 1.5rem; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1.2rem; }
+  p { margin-bottom: 1em; }
+  ul, ol { margin: 0 0 1em 1.5em; }
+  li { margin-bottom: 0.3em; }
+  code {
+    background: var(--code-bg);
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    font-size: 0.9em;
+    font-family: "SF Mono", "Fira Code", monospace;
+  }
+  pre {
+    background: var(--code-bg);
+    padding: 1rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    margin: 1em 0;
+    border: 1px solid var(--border);
+    font-family: "SF Mono", "Fira Code", monospace;
+    white-space: pre-wrap;
+  }
+  .ascii-diagram {
+    color: var(--pink);
+  }
+  .commit {
+    color: var(--pink);
+    font-size: 0.75em;
+  }
+  .footnote {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-style: italic;
+  }
+  table { border-collapse: collapse; margin: 1em 0; width: 100%; }
+  th, td { border: 1px solid var(--border); padding: 0.5rem; text-align: left; }
+  th { background: var(--surface); color: var(--primary); }
+  .version-footer {
+    margin-top: 3rem;
+    padding: 1rem;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .tier-badge {
+    display: inline-block;
+    background: var(--pink);
+    color: #0D1117;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-right: 0.3rem;
+  }
+</style>
+</head>
+<body>
+<nav id="toc">
+  <a href="#exec">Executive Summary</a>
+  <a href="#arch">Architecture</a>
+  <a href="#features">Features</a>
+  <a href="#providers">Provider Palette</a>
+  <a href="#api">API Surface</a>
+  <a href="#roadmap">Roadmap</a>
+</nav>
+<div class="container">
+  <h1 id="exec">1. Executive Summary</h1>
+  <p>
+    <strong>Chimera</strong> is a multi-model deliberation engine that orchestrates large language models (LLMs) across a directed acyclic graph (DAG) of stages. 
+    It employs a <strong>3‑tier provider architecture</strong>:
+  </p>
+  <ul>
+    <li><strong>PAYG Foreman</strong> – pay‑as‑you‑go models used for initial stages (e.g., <code>deepseek-foreman</code>).</li>
+    <li><strong>Prepaid Worker Buckets</strong> – pre‑purchased model capacity (e.g., <code>opencode-go</code>, <code>zai-glm</code>).</li>
+    <li><strong>Backup / Overflow</strong> – fallback providers (e.g., <code>ollama-cloud</code>, <code>openrouter</code>) with cost‑optimized routing.</li>
+  </ul>
+  <p>
+    <strong>Competitive differentiators</strong>:
+  </p>
+  <ul>
+    <li><strong>Tactical deliberation</strong> – Stage 0 dictates downstream contracts: each stage declares a JSON Schema for validation and a model routing strategy. <span class="commit">(commit <code>0241610</code>)</span></li>
+    <li><strong>Validation‑as‑code</strong> – mechanical <code>jsonschema.validate()</code> ensures every aggregated output conforms; failed stages trigger re‑iteration. <span class="commit">(commit <code>f488ef2</code>)</span></li>
+    <li><strong>Progressive prompting</strong> – <code>wait_messages</code> and <code>trigger</code> fields control multi‑step reasoning within a single stage. <span class="commit">(commit <code>2b6d5d1</code>)</span></li>
+  </ul>
+  <p>Note: Google Gemini and Anthropic Claude are classified as <strong>external PAYG</strong> (direct API billing), distinct from the internal foreman tier.</p>
+
+  <h1 id="arch">2. Architecture</h1>
+  <p>The deliberation engine is implemented as a <strong>DAG</strong> where each node is a stage. The lifecycle follows a closed‑loop iteration:</p>
+  <pre class="ascii-diagram">
+    +-----------+       +---------+       +-------------+       +-------+       +--------+
+    |Dispatcher|----->| Workers  |----->| Aggregator |----->| Audit |----->| Refine |
+    +-----------+       +---------+       +-------------+       +-------+       +--------+
+         |                                                                          |
+         +----  <span class="tier-badge">_RE_ITERATION_SIGNAL</span> -----------------------------------+
+  </pre>
+  <p>
+    <strong>Dispatcher</strong> parses the DAG definition, resolves model routing per stage, and fans out to worker nodes.  
+    <strong>Workers</strong> execute model calls in parallel waves via <code>asyncio.create_task</code>. <span class="commit">(commit <code>469eec4</code>)</span>  
+    <strong>Aggregator</strong> collects results, merges according to stage schema, and passes to <strong>Audit</strong>.  
+    <strong>Audit</strong> runs <code>jsonschema.validate(aggregated_output, stage_schema)</code>; on failure it emits <code>_RE_ITERATION_SIGNAL</code> back to Dispatcher.  
+    <strong>Refine</strong> adjusts prompt parameters (temperature, max_tokens) before the next iteration.
+  </p>
+  <p>
+    The model catalog contains <strong>36 models across 9 providers</strong>. Each model is scored on 32 hierarchical category axes (0–100) for capability, latency, cost, and availability. <span class="commit">(commit <code>85a3a11</code>)</span>
+  </p>
+
+  <h1 id="features">3. Features</h1>
+  <h2>Formations</h2>
+  <p>Pre‑defined deliberation patterns:</p>
+  <ul>
+    <li><strong>auto</strong> – Default; 3-stage DAG (foreman, worker, aggregator) with automatic model selection.</li>
+    <li><strong>speed</strong> – Optimized for low latency; single-stage parallel workers, no refinement.</li>
+    <li><strong>spec-writer</strong> – Multi-stage DAG that produces structured specifications; includes audit loop.</li>
+    <li><strong>debate</strong> – Two opposing worker groups with a judge aggregator stage.</li>
+    <li><strong>audit</strong> – Focus on validation; multiple audit stages with strict schema enforcement.</li>
+  </ul>
+  <p><span class="commit">(commit <code>0241610</code>)</span></p>
+
+  <h2>Model Selection &amp; Cost‑Weighted Sensitivity</h2>
+  <p>
+    Effectiveness is calculated as <code>quality / (cost ^ sensitivity)</code>.  
+    Sensitivity (0–1) is configurable per request. Default sensitivity = 0.5. <span class="commit">(commit <code>b7cca8d</code>)</span>
+  </p>
+
+  <h2>Per‑Model Enable Toggle</h2>
+  <p>Each model in the catalog has an <code>enabled: true/false</code> flag. Disabled models are excluded from routing. <span class="commit">(commit <code>5dadfc9</code>)</span></p>
+
+  <h2>Provider Auto‑Discovery</h2>
+  <p>Chimera fetches <code>models.dev/api.json</code> from each provider and caches locally for 5 minutes. New models are added automatically. <span class="commit">(commit <code>caca56b</code>)</span></p>
+
+  <h2>Configurable 3‑Tier Timeouts</h2>
+  <ul>
+    <li><strong>Code default</strong> – 30 s per stage</li>
+    <li><strong>Admin ceiling</strong> – 120 s (set via env <code>CHIMERA_MAX_TIMEOUT</code>)</li>
+    <li><strong>Request header</strong> – <code>X-Chimera-Timeout</code> overrides per request (clamped to admin ceiling)</li>
+  </ul>
+  <p><span class="commit">(commit <code>0241610</code>)</span></p>
+
+  <h2>REST API + MCP Server</h2>
+  <p>Primary API is REST (see §5). A MCP (Model Context Protocol) server is also available via stdio. <span class="commit">(commit <code>a2ae192</code>)</span></p>
+
+  <h2>Structured Output</h2>
+  <p><code>json_schema strict mode</code> is used at the model provider level (when supported). Chimera enforces mechanical <code>jsonschema.validate()</code> after aggregation. <span class="commit">(commit <code>f488ef2</code>)</span>
+  <br><strong>Note:</strong> The <code>output_schema</code> field is required for strict mode validation; if omitted, only free-form output is allowed without mechanical validation.</p>
+
+  <h2>Progressive Prompting</h2>
+  <p>
+    Stages can define <code>wait_messages</code> (list of messages to inject before model answers) and <code>trigger</code> (a Python regex pattern evaluated against the aggregated text output).  
+    Example: <code>{"wait_messages": ["Think step by step."], "trigger": ".*therefore.*"}</code>. <span class="commit">(commit <code>413979b</code>)</span>
+  </p>
+
+  <h2>Test Coverage</h2>
+  <p>416 tests, 61 integration skips (due to provider unavailability). <span class="commit">(commit <code>f488ef2</code>)</span></p>
+
+  <h1 id="providers">4. Provider Palette</h1>
+  <table>
+    <thead><tr><th>Provider</th><th>Tier</th><th>Models</th></tr></thead>
+    <tbody>
+      <tr><td>deepseek-foreman</td><td>PAYG Foreman</td><td>deepseek-v4-pro, deepseek-v4-flash</td></tr>
+      <tr><td>opencode-go</td><td>Prepaid Worker Bucket</td><td>deepseek-v4-pro, deepseek-v4-flash</td></tr>
+      <tr><td>zai-glm</td><td>Prepaid Worker Bucket</td><td>glm-5.2</td></tr>
+      <tr><td>minimax</td><td>Prepaid Worker Bucket</td><td>MiniMax-M3</td></tr>
+      <tr><td>kimi-for-coding</td><td>Prepaid Worker Bucket</td><td>kimi-k2.7</td></tr>
+      <tr><td>xai-oauth</td><td>Prepaid Worker Bucket</td><td>grok-4.5</td></tr>
+      <tr><td>ollama-cloud</td><td>Backup / Overflow</td><td>various open‑source</td></tr>
+      <tr><td>openrouter</td><td>Backup / Overflow</td><td>31+ models incl. GPT‑5.6 family, Claude Opus 4.8, Gemini 3.1 Pro</td></tr>
+      <tr><td>Google Gemini</td><td>External PAYG</td><td>gemini‑3.1‑pro, gemini‑3.1‑flash</td></tr>
+      <tr><td>Anthropic Claude</td><td>External PAYG</td><td>claude‑opus‑4.8, claude‑sonnet‑4.5</td></tr>
+    </tbody>
+  </table>
+  <p class="footnote">All provider entries validated as of July 2026. <span class="commit">(commit <code>85a3a11</code>)</span></p>
+
+  <h1 id="api">5. API Surface</h1>
+  <h2>Endpoints</h2>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td>POST</td><td><code>/v1/deliberate</code></td><td>Execute a deliberation job. Accepts JSON: <code>formation</code>, <code>overrides</code>, <code>output_schema</code> (required for strict mode), <code>dag</code> (only allowed when <code>allow_custom_dag=true</code>). <span class="commit">(commit <code>0241610</code>)</span></td></tr>
+      <tr><td>GET</td><td><code>/health</code></td><td>Returns status and model catalog freshness. <span class="commit">(commit <code>1d32721</code>)</span></td></tr>
+      <tr><td>GET</td><td><code>/v1/models</code></td><td>List all models with current enabled/disabled, costs, quality scores. <span class="commit">(commit <code>85a3a11</code>)</span></td></tr>
+      <tr><td>GET</td><td><code>/v1/formations</code></td><td>List available formations and their DAG definitions. <span class="commit">(commit <code>0241610</code>)</span></td></tr>
+      <tr><td>GET</td><td><code>/v1/trace/{request_id}</code></td><td>Retrieve full trace of a completed deliberation (stages, timings, outputs). <span class="commit">(commit <code>1bf73ea</code>)</span></td></tr>
+      <tr><td>WS</td><td><code>/ws/trace/{request_id}</code></td><td>Stream trace updates in real‑time. <span class="commit">(commit <code>a2ae192</code>)</span></td></tr>
+    </tbody>
+  </table>
+  <p><strong>Note on <code>allow_custom_dag</code>:</strong> When this parameter is <code>true</code>, the request may supply a custom <code>dag</code> object; otherwise only predefined formations are permitted.</p>
+
+  <h1 id="roadmap">6. Roadmap</h1>
+  <ul>
+    <li><strong>Speed optimizations</strong> – Reduce per‑stage overhead by batching schema validation. <span class="commit">(commit <code>b785711</code>)</span></li>
+    <li><strong>Clustering formation</strong> – Multi‑fabric clustering for ensemble voting. <span class="commit">(commit <code>1bf73ea</code>)</span></li>
+    <li><strong>Streaming SSE responses</strong> – Deliver partial aggregations via <code>text/event-stream</code>. <span class="commit">(commit <code>1bf73ea</code>)</span></li>
+    <li><strong>Provider SDK migration</strong> – Replace LiteLLM with direct provider SDKs (OpenAI, Anthropic, Google). <span class="commit">(commit <code>b785711</code>)</span></li>
+    <li><strong>Langfuse observability</strong> – Trace every deliberation step to Langfuse. <span class="commit">(commit <code>0241610</code>)</span></li>
+    <li><strong>Helm chart for Kubernetes</strong> – One‑click deployment with autoscaling. <span class="commit">(commit <code>b785711</code>)</span></li>
+    <li><strong>Chimera Gateway</strong> – Multi‑tenant API key management, rate limiting, and billing ingestion. <span class="commit">(commit <code>b785711</code>)</span></li>
+  </ul>
+
+  <div class="version-footer">
+    Chimera v2 PRD — July 2026
+  </div>
+</div>
+</body>
+</html>
