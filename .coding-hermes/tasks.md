@@ -28,3 +28,8 @@
 - [x] Provider auto-discovery via models.dev
 - [x] OpenRouter API key for cross-provider testing
 - [x] MCP noise fix (structlog WARNING filter + stderr)
+
+## [ ] DEPS-1 — Upgrade pydantic_core 2.46.4 → 2.47.0 ⚠️ BLOCKED: pydantic 2.13.4 (latest) enforces strict 1:1 coupling with pydantic-core (==2.46.4). Core 2.47.0 (May 2026) requires a future pydantic release. Monitor pydantic>=2.14 for compatibility. (2026-07-14: foreman investigated, blocked)
+
+## [ ] DEPS-2 — Upgrade gitreins 0.7.9 → 0.10.2 (dev dep, commit review engine + CVE severity scoring)
+## [ ] INFRA — Add Hilo .vfs/ gitignore entries (graph.db, graph.db.wal, .last_warm) per hilo-usage skill pitfall

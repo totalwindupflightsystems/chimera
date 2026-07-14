@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chimera — Multi-Model AI Deliberation Engine | PRD</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131a;
+    --surface2: #1a1a24;
+    --border: #252530;
+    --text: #e0e0e6;
+    --text2: #9898a6;
+    --accent: #7c5cfc;
+    --accent2: #4ec9b0;
+    --warn: #e8b339;
+    --danger: #e05252;
+    --radius: 10px;
+    --max-w: 960px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 0 1.5rem 4rem;
+  }
+  .container { max-width: var(--max-w); margin: 0 auto; }
+
+  /* ── Hero ── */
+  .hero {
+    text-align: center;
+    padding: 4rem 0 3rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2.5rem;
+  }
+  .hero .badge {
+    display: inline-block;
+    padding: 0.25rem 0.9rem;
+    border-radius: 99px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    background: rgba(124, 92, 252, 0.15);
+    color: var(--accent);
+    margin-bottom: 1rem;
+  }
+  .hero h1 {
+    font-size: 2.8rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.6rem;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero .tagline {
+    font-size: 1.25rem;
+    color: var(--text2);
+    max-width: 600px;
+    margin: 0 auto 1.5rem;
+  }
+  .hero .meta-row {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+    font-size: 0.85rem;
+    color: var(--text2);
+  }
+  .hero .meta-row span { display: flex; align-items: center; gap: 0.35rem; }
+
+  /* ── Sections ── */
+  section { margin-bottom: 3rem; }
+  section h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  section h2 .icon { margin-right: 0.5rem; }
+  section h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 1.25rem 0 0.6rem;
+    color: var(--accent2);
+  }
+  p, li { color: var(--text2); }
+  p + p { margin-top: 0.75rem; }
+
+  /* ── Cards ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+  }
+  .card .card-icon { font-size: 1.5rem; margin-bottom: 0.5rem; }
+  .card h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.35rem; }
+  .card p { font-size: 0.88rem; }
+
+  /* ── Tables ── */
+  .tbl-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  th, td {
+    padding: 0.7rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  th {
+    background: var(--surface2);
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text2);
+  }
+  td { color: var(--text); }
+  td.t2 { color: var(--text2); font-size: 0.82rem; }
+
+  /* ── Architecture diagram ── */
+  .arch-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 2rem;
+    text-align: center;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.85rem;
+    line-height: 1.8;
+    overflow-x: auto;
+  }
+  .arch-diagram .hl { color: var(--accent); }
+  .arch-diagram .hl2 { color: var(--accent2); }
+
+  /* ── Code ── */
+  code {
+    background: var(--surface2);
+    padding: 0.15em 0.45em;
+    border-radius: 4px;
+    font-size: 0.88em;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  }
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    overflow-x: auto;
+    font-size: 0.82rem;
+    line-height: 1.55;
+  }
+
+  /* ── Use Cases ── */
+  .use-case {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    margin-bottom: 0.75rem;
+  }
+  .use-case h4 { font-weight: 600; margin-bottom: 0.3rem; }
+  .use-case .models { font-size: 0.8rem; color: var(--accent); margin-bottom: 0.4rem; }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 2rem 0 0;
+    text-align: center;
+    font-size: 0.82rem;
+    color: var(--text2);
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 2rem; }
+    .hero .meta-row { flex-direction: column; gap: 0.5rem; align-items: center; }
+    th, td { padding: 0.5rem 0.7rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ════════════════════════════════════════════ HERO ════════════════════════════════════════════ -->
+<header class="hero">
+  <div class="badge">PRODUCT REQUIREMENTS DOCUMENT — v2.0</div>
+  <h1>Chimera</h1>
+  <p class="tagline">
+    <strong>One API call. A team of models. One superior answer.</strong><br>
+    A dynamic multi-model deliberation engine that fuses the best of every AI model into a single, structured output.
+  </p>
+  <div class="meta-row">
+    <span>🏷️ v2.0</span>
+    <span>🐍 Python 3.11+</span>
+    <span>📦 MIT License</span>
+    <span>🐳 Docker-ready</span>
+    <span>✅ CI/CD on GitHub Actions</span>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════ PROBLEM & SOLUTION ═══════════════════════════════════════ -->
+<section>
+  <h2><span class="icon">🎯</span> Problem &amp; Solution</h2>
+
+  <h3>The Problem</h3>
+  <p>No single AI model is best at everything. DeepSeek V4 excels at coding but misses nuance in creative work. Claude Sonnet 4 is a brilliant writer but weaker at structured reasoning. Kimi K2.7 leads code benchmarks but struggles with broad analysis. Picking one model means accepting its blind spots.</p>
+  <p>Today's "model routing" tools pick <em>one</em> model per task. Multi-model "fusion" products give identical prompts to every model — wasting tokens on duplicate work. Neither captures the power of <strong>collaborative intelligence</strong>: different models tackling different aspects of a problem, then merging their insights.</p>
+
+  <h3>The Solution</h3>
+  <p>Chimera is a <strong>dynamic deliberation engine</strong>. A single "dispatcher" model analyzes your prompt, designs a custom processing pipeline (DAG), assigns domain-specific subtasks to the best models for each, and an aggregator merges their work using dispatcher-written instructions. The result: an answer that's stronger than any single model could produce — at a fraction of the cost of running every model on every query.</p>
+</section>
+
+<!-- ═══════════════════════════════════════ ARCHITECTURE ═══════════════════════════════════════ -->
+<section>
+  <h2><span class="icon">🏗️</span> Architecture</h2>
+
+  <div class="arch-diagram">
+<pre style="background:none;border:none;padding:0;margin:0;">
+┌─────────────────────────────────────────────────────────────┐
+│                        <span class="hl2">CLIENT</span>                          │
+│              POST /v1/chat/completions                       │
+│              { "model": "auto", "messages": [...] }          │
+└────────────────────────┬────────────────────────────────────┘
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   <span class="hl">DISPATCHER</span> (1 call)                    │
+│  Analyzes task → Designs DAG → Picks models by category     │
+│  → Writes per-worker custom prompts → Writes merge recipe   │
+└──────┬──────────────┬──────────────┬────────────────────────┘
+       ▼              ▼              ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│ <span class="hl2">Worker A</span>      │ │ <span class="hl2">Worker B</span>      │ │ <span class="hl2">Worker C</span>      │
+│ Code-focused │ │ Design-focus │ │ Analysis     │
+│ (DeepSeek    │ │ (Claude      │ │ (GLM-5.2)    │
+│  V4 Pro)     │ │  Sonnet 4)   │ │              │
+└──────┬───────┘ └──────┬───────┘ └──────┬────────┘
+       │                │                │
+       └────────────────┼────────────────┘
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   <span class="hl">AGGREGATOR</span> (1 call)                    │
+│  Merges heterogeneous results using dispatcher's recipe     │
+│  → Structured output (JSON Schema) → Final answer           │
+└─────────────────────────────────────────────────────────────┘
+</pre>
+  </div>
+  <p style="margin-top:1rem;text-align:center;color:var(--text2);font-size:0.85rem;">
+    <strong>Dispatcher → Workers (parallel) → Aggregator.</strong> One dispatcher designs the entire run.
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════ CORE FEATURES ═══════════════════════════════════════ -->
+<section>
+  <h2><span class="icon">⚡</span> Core Features</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">🧠</div>
+      <h4>Category-Weighted Model Selection</h4>
+      <p>Models scored on 32 hierarchical category paths (code, analysis, reasoning, design, audit). The dispatcher matches task domains to model strengths automatically — with per-request overrides.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔀</div>
+      <h4>Dynamic DAG Formations</h4>
+      <p>Not a fixed pipeline. The dispatcher designs the optimal processing graph per query: simple (2 workers), debate (3+merge), audit (workers→merge→audit→refine), or fully custom.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📐</div>
+      <h4>Structured Output Guarantee</h4>
+      <p>End-to-end JSON Schema enforcement. Client passes <code>response_format</code> → dispatcher designs schema → aggregator enforces it via provider-native structured modes (json_schema, json_object).</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🛡️</div>
+      <h4>Failure Resilience</h4>
+      <p>Worker failures degrade gracefully (not crash). Circuit breakers per provider. Token limit detection. Retry with exponential backoff. Budget exhaustion protection.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">💰</div>
+      <h4>Budget-First Defaults</h4>
+      <p>Smart defaults use DeepSeek V4 Pro/Flash — high quality at 10-50× lower cost than premium models. Premium models (Claude, GPT) available via overrides when the task justifies it.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <h4>Full Trace &amp; Observability</h4>
+      <p>Every deliberation returns a complete trace: model per stage, tokens in/out, cost, duration. structlog + optional Langfuse integration. Web UI with live DAG visualization.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ INTERFACES ═══════════════════════════════════════ -->
+<section>
+  <h2><span class="icon">🔌</span> Six Interfaces, One Engine</h2>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Interface</th><th>Entry</th><th>Use Case</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td><strong>CLI</strong></td><td><code>chimera "prompt"</code></td><td>Terminal one-shots, quick queries</td></tr>
+        <tr><td>2</td><td><strong>REST API</strong></td><td><code>POST /v1/chat/completions</code></td><td>OpenAI-compatible drop-in for any app</td></tr>
+        <tr><td>3</td><td><strong>REST API</strong></td><td><code>POST /v1/deliberate</code></td><td>Full control: DAG, overrides, trace</td></tr>
+        <tr><td>4</td><td><strong>Python SDK</strong></td><td><code>from chimera import Engine</code></td><td>Embedded in Python apps</td></tr>
+        <tr><td>5</td><td><strong>MCP Server</strong></td><td><code>chimera-mcp</code> (stdio)</td><td>AI agent integration (Hermes, Claude, etc.)</td></tr>
+        <tr><td>6</td><td><strong>Web UI</strong></td><td><code>/web/</code> (SPA)</td><td>Multi-turn chat with live DAG visualization</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ PROVIDERS & MODELS ═══════════════════════════════════════ -->
+<section>
+  <h2><span class="icon">🌐</span> Supported Providers &amp; Models</h2>
+
+  <p>Via LiteLLM gateway with automatic provider routing. Direct API routes for DeepSeek and Z.AI (lower latency); OpenRouter for everything else.</p>
+
+  <div class="tbl-wrap" style="margin-top:1rem;">
+    <table>
+      <thead>
+        <tr><th>Provider</th><th>Models</th><th>Routing</th><th>Strengths</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>DeepSeek</strong></td><td>V4 Pro, V4 Flash</td><td>Direct API</td><td>Budget-optimized, strong coding &amp; reasoning</td></tr>
+        <tr><td><strong>Anthropic</strong></td><td>Claude Sonnet 4, Opus 4.7/4.8, Haiku 4.5</td><td>OpenRouter</td><td>Creative writing, nuanced analysis, design</td></tr>
+        <tr><td><strong>Z.AI</strong></td><td>GLM-5.2</td><td>Direct API</td><td>Strong reasoning, multilingual, coding</td></tr>
+        <tr><td><strong>OpenAI</strong></td><td>GPT-5.5, GPT-5.1, GPT-5.1-mini</td><td>OpenRouter</td><td>Broad capability, structured outputs</td></tr>
+        <tr><td><strong>MoonshotAI</strong></td><td>Kimi K2.7 Code, K2.6</td><td>OpenRouter</td><td>Top-tier coding benchmarks</td></tr>
+        <tr><td><strong>Google</strong></td><td>Gemini 3.5 Flash, 3.1 Pro, 2.5 Flash</td><td>OpenRouter</td><td>Multimodal, large context windows</td></tr>
+        <tr><td><strong>xAI</strong></td><td>Grok 4.20</td><td>OpenRouter</td><td>Real-time knowledge, reasoning</td></tr>
+        <tr><td><strong>MiniMax</strong></td><td>M3</td><td>OpenRouter</td><td>Multimodal, 1M context</td></tr>
+        <tr><td><strong>Meta</strong></td><td>Llama 4 Maverick</td><td>OpenRouter</td><td>Open-source, strong general performance</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ USE CASES ═══════════════════════════════════════ -->
+<section>
+  <h2><span class="icon">💼</span> Use Cases</h2>
+
+  <div class="use-case">
+    <h4>🔧 Software Specification Generation</h4>
+    <div class="models">Formation: spec-writer (5-stage audit loop)</div>
+    <p>Structure → parallel domain-specific writing → merge → gap audit → refinement. Produces exhaustive technical specs with Mermaid diagrams, test scenarios, and error paths.</p>
+  </div>
+
+  <div class="use-case">
+    <h4>🎨 Creative &amp; Design Work</h4>
+    <div class="models">Formation: design deliberation</div>
+    <p>Multiple models critique and improve design outputs (CSS, UI, branding) through iterative refinement. Beats solo model output on visual identity tasks.</p>
+  </div>
+
+  <div class="use-case">
+    <h4>📊 Technical Analysis &amp; Research</h4>
+    <div class="models">Formation: auto / debate</div>
+    <p>Tech stack evaluations, architecture decisions, competitive analysis. Different models analyze different dimensions (performance, security, DX, ecosystem) → merged recommendation.</p>
+  </div>
+
+  <div class="use-case">
+    <h4>🤖 AI Agent Orchestration</h4>
+    <div class="models">Interface: MCP server</div>
+    <p>AI coding agents (Hermes, Claude Code) use Chimera as a "super-consult" tool. The agent delegates complex reasoning to Chimera's model panel, gets back a structured, multi-perspective answer.</p>
+  </div>
+
+  <div class="use-case">
+    <h4>📝 Content Generation Pipeline</h4>
+    <div class="models">Formation: custom DAG</div>
+    <p>Client-defined DAGs for content pipelines: research → draft → fact-check → polish → publish. Each stage uses the optimal model for that specific subtask.</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ TECH STACK ═══════════════════════════════════════ -->
+<section>
+  <h2><span class="icon">🛠️</span> Technology Stack</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>Core</h4>
+      <p>Python 3.11+, asyncio, Pydantic v2, structlog</p>
+    </div>
+    <div class="card">
+      <h4>API Gateway</h4>
+      <p>LiteLLM — 100+ providers, OpenAI-compatible, automatic format negotiation</p>
+    </div>
+    <div class="card">
+      <h4>Server</h4>
+      <p>FastAPI + Uvicorn — async, OpenAPI auto-docs, SSE streaming, CORS</p>
+    </div>
+    <div class="card">
+      <h4>MCP</h4>
+      <p>FastMCP (stdio) — 3 tools: deliberate, formations, models</p>
+    </div>
+    <div class="card">
+      <h4>Model Catalog</h4>
+      <p>models.dev auto-discovery — 145 providers, $/MTok pricing, 24h cache</p>
+    </div>
+    <div class="card">
+      <h4>Deployment</h4>
+      <p>Docker with built-in config. Single command: <code>docker compose up -d</code></p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ COST MODEL ═══════════════════════════════════════ -->
+<section>
+  <h2><span class="icon">💵</span> Cost Model</h2>
+
+  <p>Chimera is <strong>MIT-licensed open source</strong> — you pay only for the underlying model API calls. No per-request markup, no platform fees.</p>
+
+  <div class="tbl-wrap" style="margin-top:1rem;">
+    <table>
+      <thead>
+        <tr><th>Formation</th><th>Typical Calls</th><th>Budget (~$0.0002/1K tok)</th><th>Premium (up to ~$0.015/1K tok)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Simple</strong></td><td>1 dispatch + 2 workers + 1 aggregator = 4 calls</td><td>~$0.003</td><td>~$0.08</td></tr>
+        <tr><td><strong>Debate</strong></td><td>1 dispatch + 3 workers + 2 aggregators + 1 merge = 7 calls</td><td>~$0.006</td><td>~$0.18</td></tr>
+        <tr><td><strong>Spec-Writer</strong></td><td>1 structure + 2 writers + 1 merge + 1 audit + 1 refine = 6 calls</td><td>~$0.008</td><td>~$0.25</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:0.75rem;font-size:0.85rem;">Actual costs vary by prompt length and model selection. Budget formations use DeepSeek V4 Flash (~$0.00014/1K tokens). Premium formations can include Claude Sonnet 4 or GPT-5.5. The dispatcher picks models based on <strong>category-weighted scoring</strong> with configurable <strong>price sensitivity</strong> (0.0 = pure quality, 1.0 = pure bang-for-buck).</p>
+</section>
+
+<!-- ═══════════════════════════════════════ DEPLOYMENT ═══════════════════════════════════════ -->
+<section>
+  <h2><span class="icon">🚀</span> Deployment</h2>
+
+  <h3>Docker (One Command)</h3>
+  <pre>git clone https://github.com/totalwindupflightsystems/chimera.git
+cd chimera
+export DEEPSEEK_KEY=sk-...   # only required credential
+docker compose up -d
+# → REST API on :8765, Web UI on :8765/web/</pre>
+
+  <h3>pip</h3>
+  <pre>pip install chimera-deliberation[full]
+cp chimera.yaml.example chimera.yaml   # add API keys
+chimera serve                            # start server</pre>
+
+  <h3>12-Factor Config</h3>
+  <p>Every setting is overridable via environment variables or CLI flags. No YAML editing required for common deployments:</p>
+  <pre>CHIMERA_PORT=8080 CHIMERA_DISPATCHER=deepseek/deepseek-v4-pro chimera serve</pre>
+</section>
+
+<!-- ═══════════════════════════════════════ QUALITY ═══════════════════════════════════════ -->
+<section>
+  <h2><span class="icon">✅</span> Quality &amp; Reliability</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>Testing</h4>
+      <p>309+ unit tests, 54 integration tests (real API calls), 7-model compat suite. CI runs on every push to main.</p>
+    </div>
+    <div class="card">
+      <h4>Circuit Breakers</h4>
+      <p>Per-provider state machine (CLOSED→OPEN→HALF_OPEN). Failing providers are isolated automatically; healthy ones keep working.</p>
+    </div>
+    <div class="card">
+      <h4>Rate Limiting</h4>
+      <p>In-memory token bucket per API key. Configurable limits prevent runaway costs.</p>
+    </div>
+    <div class="card">
+      <h4>Authentication</h4>
+      <p>API key auth (env or list mode). Optional per-endpoint. <code>/v1/health/live</code> always open for orchestration.</p>
+    </div>
+    <div class="card">
+      <h4>Concurrency</h4>
+      <p>Async throughout (asyncio + FastAPI). Workers run in parallel. 50-request stress tests pass cleanly.</p>
+    </div>
+    <div class="card">
+      <h4>PyPI Publishing</h4>
+      <p>Automated CI/CD pipeline. Tag a version → lint → test → integration test → publish to PyPI. Zero manual steps.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ STATUS & ROADMAP ═══════════════════════════════════════ -->
+<section>
+  <h2><span class="icon">🗺️</span> Current Status &amp; Roadmap</h2>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>Status</th><th>Item</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>✅ Done</td><td>v2 architecture — single dispatcher, category-weighted selection, budget-first defaults</td></tr>
+        <tr><td>✅ Done</td><td>6 interfaces: CLI, REST, MCP, Python SDK, OpenAI-compatible, Web UI</td></tr>
+        <tr><td>✅ Done</td><td>Structured output pipeline (json_schema → json_object fallback)</td></tr>
+        <tr><td>✅ Done</td><td>Failure resilience: degradation, circuit breakers, retry, budget protection</td></tr>
+        <tr><td>✅ Done</td><td>Custom DAGs + per-stage model overrides</td></tr>
+        <tr><td>✅ Done</td><td>Provider auto-discovery (models.dev, 145 providers)</td></tr>
+        <tr><td>✅ Done</td><td>Config-defined formations (spec-writer, etc.)</td></tr>
+        <tr><td>✅ Done</td><td>Docker one-command deploy with built-in config</td></tr>
+        <tr><td>✅ Done</td><td>CI/CD: lint → test → integration → PyPI publish</td></tr>
+        <tr><td>✅ Done</td><td>Web UI: multi-turn chat, live DAG viz (Mermaid.js), token/cost dashboard</td></tr>
+        <tr><td>✅ Done</td><td>Configurable timeout hierarchy (request header → admin ceiling → default)</td></tr>
+        <tr><td>🔄 Near-term</td><td>Persistent session storage (SQLite/Postgres backend for Web UI sessions)</td></tr>
+        <tr><td>🔄 Near-term</td><td>OpenRouter key auto-provisioning for multi-tenant deployments</td></tr>
+        <tr><td>📋 Planned</td><td>Streaming responses (SSE token-by-token from aggregator)</td></tr>
+        <tr><td>📋 Planned</td><td>Model benchmark auto-refresh pipeline (scores update from live eval results)</td></tr>
+        <tr><td>📋 Planned</td><td>Multi-tenant SaaS mode with per-tenant API key + budget isolation</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ FOOTER ═══════════════════════════════════════ -->
+<footer>
+  <p>
+    <strong>Chimera</strong> — Dynamic Multi-Model Deliberation Engine<br>
+    <a href="https://github.com/totalwindupflightsystems/chimera">github.com/totalwindupflightsystems/chimera</a> ·
+    <a href="https://pypi.org/project/chimera-deliberation/">pypi.org/project/chimera-deliberation</a><br>
+    MIT License · Python 3.11+ · July 2026
+  </p>
+</footer>
+
+</div>
+</body>
+</html>
