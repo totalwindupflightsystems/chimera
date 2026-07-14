@@ -2,6 +2,8 @@
 
 ## Open
 
+- [x] CONFIG — align chimera.yaml server port from 8000 to 8765 to match README docs (2026-07-14: port 8765, server verified, chimera.yaml + example updated)
+- [x] CI — fix ruff I001 import sort in tests/test_engine.py:854 causing CI lint failure (2026-07-14: ruff --fix, lint green, 4 files)
 - [x] Speed formation — build a "fast" deliberation formation with budget models for <30s agent-in-the-loop use (2026-07-12: commit 1bf73ea, 2 budget workers + budget aggregator, 8 files changed)
 - [x] Validation-as-code — Stage 0 emits JSON Schema, Audit validates mechanically against it (not manual) (2026-07-12: commit f488ef2, _extract_output_schema + _validate_against_schema, 11 tests, jsonschema dep)
 - [x] MCP server progressive prompting — make the MCP chimera_deliberate tool support progressive/wait_messages (2026-07-12: commit a2ae192, +115/-1 across 5 files, 2 new tests)

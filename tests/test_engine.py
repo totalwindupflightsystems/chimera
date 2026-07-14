@@ -851,7 +851,7 @@ class TestSchemaValidation:
         assert "not valid JSON" in result["errors"][0]
 
     def test_validation_error_has_passed_false_signal(self):
-        from chimera.engine import Engine, _RE_ITERATION_SIGNAL
+        from chimera.engine import _RE_ITERATION_SIGNAL, Engine
 
         schema = {"type": "object", "properties": {"x": {"type": "number"}}}
         output = json.dumps({"x": "bad"})
