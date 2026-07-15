@@ -27,7 +27,7 @@ from tests.integration.conftest import BUDGET_MODELS
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
-TIMEOUT = 120.0  # generous — real LLM calls take 30-90s
+TIMEOUT = 180.0  # generous — real LLM calls take 30-120s, DeepSeek occasionally >120s
 
 
 # ═══════════════════════════════════════════════════════════════════════════
