@@ -2,7 +2,30 @@
 
 ## Open
 
-## [x] DEPS-3 — Upgrade gitreins 0.8.2 → 0.10.2 (2026-07-15: 0.10.2 already installed, guard passes, 418/418 unit tests pass)
+## [ ] CI — Fix integration test flakiness #3: pydantic validation error when answer is non-string (2026-07-15: discovery sweep)
+
+**Found:** CI run 29428743098 — `test_deliberate_simple_formation` fails with HTTP 400:
+```
+1 validation error for DeliberationResult
+answer
+  Input should be a valid string [type=string_type, input_value=4, input_type=int]
+```
+
+**Root cause:** `DeliberationResult.answer: str` (`engine.py:91`) strictly requires string. When the LLM returns a raw number (e.g., `4` for a math question), `_select_answer` returns the int value, `_maybe_unwrap_envelope` passes non-dict values through, and pydantic rejects the int at construction time (`engine.py:351`).
+
+**Files:** `src/chimera/engine.py:91,337-338,351`
+
+**ACs:**
+- `test_deliberate_simple_formation` passes reliably: when LLM returns non-string answer (int, float, bool, list, dict), the response is coerced to string or serialized appropriately
+- Chat Completions endpoint with `response_format.json_schema` also handles non-string answers
+- All 418 unit tests still pass
+- No regression in existing integration test behavior
+
+**Pre-existing:** Yes — CI flakiness present since before the 2 root-cause fixes (2026-07-15). This is root cause #3.
+
+## Completed
+
+- [x] DEPS-3 — Upgrade gitreins 0.8.2 → 0.10.2 (2026-07-15: 0.10.2 already installed, guard passes, 418/418 unit tests pass)
 - [x] CONFIG — align chimera.yaml server port from 8000 to 8765 to match README docs (2026-07-14: port 8765, server verified, chimera.yaml + example updated)
 - [x] CI — fix ruff I001 import sort in tests/test_engine.py:854 causing CI lint failure (2026-07-14: ruff --fix, lint green, 4 files)
 - [x] Speed formation — build a "fast" deliberation formation with budget models for <30s agent-in-the-loop use (2026-07-12: commit 1bf73ea, 2 budget workers + budget aggregator, 8 files changed)
