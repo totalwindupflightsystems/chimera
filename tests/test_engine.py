@@ -859,3 +859,37 @@ class TestSchemaValidation:
         error_json = json.dumps(result)
         # The iteration loop should detect this as a failure
         assert _RE_ITERATION_SIGNAL.search(error_json) is not None
+
+
+class TestMaybeUnwrapEnvelope:
+    """Test _maybe_unwrap_envelope coercion of non-string answer values."""
+
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            # String answers pass through unchanged
+            ('{"answer": "hello"}', "hello"),
+            ('{"answer": "42"}', "42"),
+            # Int/float/bool/None answers get JSON-serialized to string
+            ('{"answer": 4}', "4"),
+            ('{"answer": 3.14}', "3.14"),
+            ('{"answer": true}', "true"),
+            ('{"answer": false}', "false"),
+            ('{"answer": null}', "null"),
+            # Lists and dicts get JSON-serialized
+            ('{"answer": [1, 2, 3]}', "[1, 2, 3]"),
+            ('{"answer": {"k": "v"}}', '{"k": "v"}'),
+            # Double-unwrap: string-encoded JSON inside answer
+            ('{"answer": "{\\"k\\": \\"v\\"}"}', '{"k": "v"}'),
+            # Non-envelope: plain text passes through
+            ("hello world", "hello world"),
+            ("42", "42"),
+            # Non-envelope JSON without answer key passes through
+            ('{"sources": ["x"]}', '{"sources": ["x"]}'),
+        ],
+    )
+    def test_non_string_coercion(self, text, expected):
+        from chimera.engine import Engine
+        result = Engine._maybe_unwrap_envelope(text)
+        assert isinstance(result, str), f"Expected str, got {type(result)}: {result!r}"
+        assert result == expected, f"Expected {expected!r}, got {result!r}"

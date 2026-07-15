@@ -943,6 +943,10 @@ class Engine:
                             return _json.dumps(parsed)
                     except (_json.JSONDecodeError, TypeError):
                         pass
+                # Coerce non-string values (int, float, bool, None) to string
+                # so that DeliberationResult(answer: str) always receives a string.
+                if not isinstance(inner, str):
+                    return _json.dumps(inner)
                 return inner
         except (_json.JSONDecodeError, TypeError, KeyError):
             pass
