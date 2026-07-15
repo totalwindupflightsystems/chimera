@@ -29,6 +29,22 @@
 - [x] OpenRouter API key for cross-provider testing
 - [x] MCP noise fix (structlog WARNING filter + stderr)
 
+## [ ] CI — Fix integration tests: structured output wrapped in `{"answer": ...}` envelope instead of bare JSON
+
+**Files:** `tests/integration/test_collaborative_evals.py::test_website_with_structured_output`, `tests/integration/test_structured_output.py::test_json_schema_chat_completions`
+
+**Symptom:** Both tests pass `output_schema` (via `output_schema` field on `/v1/deliberate` or `response_format.json_schema` on `/v1/chat/completions`) but the Chimera response still wraps the output in `{"answer": "<data>", "sources": [...]}` envelope instead of returning the bare structured JSON object.
+
+**Root cause (suspected):** The `output_schema` parameter flows through `DeliberationOverrides` → `Engine.deliberate()` but the aggregator stage doesn't unwrap the envelope when structured output is requested. The response model (`DeliberateResponse`) always writes `answer: str` which preserves the wrapper.
+
+**ACs:**
+- `test_website_with_structured_output` passes: when `output_schema` is provided, the response `answer` field contains bare JSON (parsable as `{"html": ..., "title": ...}`), not `{"answer": "<html>", ...}`
+- `test_json_schema_chat_completions` passes: when `response_format.json_schema` is provided, `choices[0].message.content` contains bare JSON `{"name": "chimera", "value": 42}`, not `{"answer": "{...}", "sources": [...]}`
+- All 54 integration tests pass (`418 unit + 54 integration = 472 total`)
+- No regression: all 418 unit tests still pass
+
+**Pre-existing:** Yes — failing since at least 2026-07-13 across multiple CI runs. Not a new regression.
+
 ## [ ] DEPS-1 — Upgrade pydantic_core 2.46.4 → 2.47.0 ⚠️ BLOCKED: pydantic 2.13.4 (latest) enforces strict 1:1 coupling with pydantic-core (==2.46.4). Core 2.47.0 (May 2026) requires a future pydantic release. Monitor pydantic>=2.14 for compatibility. (2026-07-14: foreman investigated, blocked)
 
 ## [x] DEPS-2 — Upgrade gitreins 0.7.9 → 0.10.2 (dev dep, commit review engine + CVE severity scoring) (2026-07-14: upgraded, 418/418 tests pass, guard green)
