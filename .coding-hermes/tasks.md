@@ -45,6 +45,18 @@
 
 **Pre-existing:** Yes — failing since at least 2026-07-13 across multiple CI runs. Not a new regression.
 
+## [ ] DOC — Update docs/specs port references from 8000 to 8765 (CONFIG changed operational port, docs lagging)
+
+**Files:** `README.md:155-156`, `specs/architecture.md:257`, `docs/OPENAI_API.md:12,17,72,155,187`, `docs/CONFIG.md:57,237`, `docs/USAGE.md:74`, `docs/SECURITY.md:24,28`
+
+**Note:** Code default (`src/chimera/config.py:128`) and test fixtures stay at 8000 — that's the application default. Only docs referencing the shipped config's operational port need updating.
+
+**ACs:**
+- All doc/spec files reference port 8765 (the shipped chimera.yaml value)
+- `src/chimera/config.py` default remains 8000 (application default)
+- Test fixtures remain 8000 (test the default, not the shipped config)
+- `grep -rn 'localhost:8000\|127.0.0.1:8000' README.md docs/ specs/` returns empty
+
 ## [ ] DEPS-1 — Upgrade pydantic_core 2.46.4 → 2.47.0 ⚠️ BLOCKED: pydantic 2.13.4 (latest) enforces strict 1:1 coupling with pydantic-core (==2.46.4). Core 2.47.0 (May 2026) requires a future pydantic release. Monitor pydantic>=2.14 for compatibility. (2026-07-14: foreman investigated, blocked)
 
 ## [x] DEPS-2 — Upgrade gitreins 0.7.9 → 0.10.2 (dev dep, commit review engine + CVE severity scoring) (2026-07-14: upgraded, 418/418 tests pass, guard green)
