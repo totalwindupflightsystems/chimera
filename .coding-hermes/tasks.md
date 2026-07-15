@@ -58,17 +58,21 @@
 - Test fixtures remain 8000 (test the default, not the shipped config)
 - `grep -rn 'localhost:8000\|127.0.0.1:8000' README.md docs/ specs/` returns empty
 
-## [ ] CI — Integration test flakiness across 3 consecutive runs (red). test_chat_special_characters_prompt times out (httpx.ReadTimeout); structured output tests (test_website_with_structured_output, test_json_schema_chat_completions) occasionally regress despite 6d1d331 fix. Unit+lint green on all 3 Python versions. (2026-07-15: discovery sweep — 53/54 pass, 1 flaky timeout)
+## [ ] CI — Integration test flakiness: 2 root causes identified (2026-07-15: foreman investigation — narrowed from generic "flaky" to 2 specific root causes)
 
-**Investigation needed:**
-- Last 3 CI runs: 29406923934 (test_chat_special_characters_prompt httpx.ReadTimeout), 29406226486 (test_json_schema_chat_completions AssertionError), 29406207126 (2 structured output failures after fix commit)
-- Flakiness pattern: different test fails each run — likely network-dependent or LLM API response timing
-- Structured output fix (6d1d331) partially works — tests pass on some runs, fail on others
+**Root cause 1 — `/v1/chat/completions` endpoint still wraps in answer envelope (not flaky, consistently broken):**
+- Fix 6d1d331 suppresses conflicting JSON hint ONLY in the aggregator prompt for the `/v1/deliberate` path
+- `/v1/chat/completions` with `response_format.json_schema` goes through a different code path that still wraps output in `{"answer": "...", "sources": [...]}`
+- Evidence: `test_json_schema_chat_completions` fails 3/3 CI runs with `AssertionError: Missing 'name' in JSON: {'answer': '{"name": "chimera", "value": 42}', ...}`
+
+**Root cause 2 — `test_chat_special_characters_prompt` flaky timeout (intermittent):**
+- `httpx.ReadTimeout` on CI (1 of 3 runs); passes on the other 2
+- LLM API latency dependent — budget models sometimes take >120s
 
 **ACs:**
-- 3 consecutive CI integration runs green (0 failures)
-- Structured output tests consistently pass with bare JSON output
-- test_chat_special_characters_prompt passes without timeout on majority of runs (≥80%)
+- `/v1/chat/completions` with `response_format.json_schema` returns bare JSON (not wrapped in answer envelope) — fix needed in chat completions handler
+- `test_chat_special_characters_prompt`: bump timeout to 180s or add `@pytest.mark.flaky`
+- 2 consecutive CI integration runs green (0 failures)
 - No new unit/lint regressions
 
 ## [ ] DEPS-1 — Upgrade pydantic_core 2.46.4 → 2.47.0 ⚠️ BLOCKED: pydantic 2.13.4 (latest) enforces strict 1:1 coupling with pydantic-core (==2.46.4). Core 2.47.0 (May 2026) requires a future pydantic release. Monitor pydantic>=2.14 for compatibility. (2026-07-14: foreman investigated, blocked)
