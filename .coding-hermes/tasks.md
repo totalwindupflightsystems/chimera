@@ -29,7 +29,7 @@
 - [x] OpenRouter API key for cross-provider testing
 - [x] MCP noise fix (structlog WARNING filter + stderr)
 
-## [ ] CI — Fix integration tests: structured output wrapped in `{"answer": ...}` envelope instead of bare JSON
+## [x] CI — Fix integration tests: structured output wrapped in `{"answer": ...}` envelope instead of bare JSON (2026-07-15: fixed in `6d1d331` — `build_merge_prompt` suppresses conflicting "Respond in valid JSON format." hint when `output_schema` is provided; the `response_format` parameter enforces the schema so the prompt should not add contradictory JSON instructions. 418/418 unit tests pass, guard green.)
 
 **Files:** `tests/integration/test_collaborative_evals.py::test_website_with_structured_output`, `tests/integration/test_structured_output.py::test_json_schema_chat_completions`
 
