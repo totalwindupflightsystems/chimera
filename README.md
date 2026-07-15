@@ -152,8 +152,8 @@ chimera deliberate "Compare React, Vue, and Svelte for a real-time dashboard"
 
 # Or as an API server
 chimera serve
-# → http://localhost:8000/v1/chat/completions (OpenAI-compatible)
-# → http://localhost:8000/docs (OpenAPI docs)
+# → http://localhost:8765/v1/chat/completions (OpenAI-compatible)
+# → http://localhost:8765/docs (OpenAPI docs)
 
 # Or as MCP server for Hermes/AI agents
 chimera-mcp

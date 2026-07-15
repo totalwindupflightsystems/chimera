@@ -21,11 +21,11 @@ auth:
 Clients must include the key in every request:
 ```bash
 # Authorization header
-curl -H "Authorization: Bearer your-secret-key" http://localhost:8000/v1/deliberate \
+curl -H "Authorization: Bearer your-secret-key" http://localhost:8765/v1/deliberate \
   -d '{"prompt": "hello"}'
 
 # X-API-Key header
-curl -H "X-API-Key: your-secret-key" http://localhost:8000/v1/deliberate \
+curl -H "X-API-Key: your-secret-key" http://localhost:8765/v1/deliberate \
   -d '{"prompt": "hello"}'
 ```
 

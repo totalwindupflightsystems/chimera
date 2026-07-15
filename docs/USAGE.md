@@ -71,7 +71,7 @@ flowchart LR
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="local")
+client = OpenAI(base_url="http://localhost:8765/v1", api_key="local")
 
 # Simple
 r = client.chat.completions.create(

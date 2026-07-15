@@ -54,7 +54,7 @@ providers:
 
 server:
   host: 0.0.0.0
-  port: 8000
+  port: 8765
 
 observability:
   log_level: info
@@ -234,4 +234,4 @@ and full response payloads in logs.
 | Field | Default | Description |
 |---|---|---|
 | `host` | `0.0.0.0` | Bind address |
-| `port` | `8000` | Listen port |
+| `port` | `8765` | Listen port |

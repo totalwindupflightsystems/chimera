@@ -9,12 +9,12 @@ Chimera implements the OpenAI chat completions API. Drop it in as a replacement
 POST /v1/chat/completions
 ```
 
-Base URL: `http://localhost:8000` (default, configurable in `chimera.yaml`)
+Base URL: `http://localhost:8765` (default, configurable in `chimera.yaml`)
 
 ## Basic Usage
 
 ```bash
-curl http://localhost:8000/v1/chat/completions \
+curl http://localhost:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "auto",
@@ -69,7 +69,7 @@ defaults to budget-friendly auto-deliberation.
 ## Structured Output
 
 ```bash
-curl http://localhost:8000/v1/chat/completions \
+curl http://localhost:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "auto",
@@ -152,7 +152,7 @@ Any OpenAI SDK works — just change `base_url`:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8000/v1",
+    base_url="http://localhost:8765/v1",
     api_key="not-needed"
 )
 
@@ -184,7 +184,7 @@ print(response.choices[0].message.content)
 ### `/v1/deliberate`
 
 ```bash
-curl -X POST http://localhost:8000/v1/deliberate \
+curl -X POST http://localhost:8765/v1/deliberate \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "...",
