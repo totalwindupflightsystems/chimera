@@ -57,6 +57,19 @@
 - Test fixtures remain 8000 (test the default, not the shipped config)
 - `grep -rn 'localhost:8000\|127.0.0.1:8000' README.md docs/ specs/` returns empty
 
+## [ ] CI — Integration test flakiness across 3 consecutive runs (red). test_chat_special_characters_prompt times out (httpx.ReadTimeout); structured output tests (test_website_with_structured_output, test_json_schema_chat_completions) occasionally regress despite 6d1d331 fix. Unit+lint green on all 3 Python versions. (2026-07-15: discovery sweep — 53/54 pass, 1 flaky timeout)
+
+**Investigation needed:**
+- Last 3 CI runs: 29406923934 (test_chat_special_characters_prompt httpx.ReadTimeout), 29406226486 (test_json_schema_chat_completions AssertionError), 29406207126 (2 structured output failures after fix commit)
+- Flakiness pattern: different test fails each run — likely network-dependent or LLM API response timing
+- Structured output fix (6d1d331) partially works — tests pass on some runs, fail on others
+
+**ACs:**
+- 3 consecutive CI integration runs green (0 failures)
+- Structured output tests consistently pass with bare JSON output
+- test_chat_special_characters_prompt passes without timeout on majority of runs (≥80%)
+- No new unit/lint regressions
+
 ## [ ] DEPS-1 — Upgrade pydantic_core 2.46.4 → 2.47.0 ⚠️ BLOCKED: pydantic 2.13.4 (latest) enforces strict 1:1 coupling with pydantic-core (==2.46.4). Core 2.47.0 (May 2026) requires a future pydantic release. Monitor pydantic>=2.14 for compatibility. (2026-07-14: foreman investigated, blocked)
 
 ## [x] DEPS-2 — Upgrade gitreins 0.7.9 → 0.10.2 (dev dep, commit review engine + CVE severity scoring) (2026-07-14: upgraded, 418/418 tests pass, guard green)
