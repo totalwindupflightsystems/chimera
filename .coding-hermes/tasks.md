@@ -45,7 +45,7 @@
 
 **Pre-existing:** Yes — failing since at least 2026-07-13 across multiple CI runs. Not a new regression.
 
-## [ ] DOC — Update docs/specs port references from 8000 to 8765 (CONFIG changed operational port, docs lagging)
+## [x] DOC — Update docs/specs port references from 8000 to 8765 (CONFIG changed operational port, docs lagging) (2026-07-15: commit e44bbaf, 6 files, 13 insertions, 13 deletions)
 
 **Files:** `README.md:155-156`, `specs/architecture.md:257`, `docs/OPENAI_API.md:12,17,72,155,187`, `docs/CONFIG.md:57,237`, `docs/USAGE.md:74`, `docs/SECURITY.md:24,28`
 
