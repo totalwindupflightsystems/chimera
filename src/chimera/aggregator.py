@@ -76,6 +76,7 @@ def build_merge_prompt(
     user_prompt: str,
     *,
     max_prompt_tokens: int | None = None,
+    output_schema: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     """Build the message list for an aggregator / merge / audit stage.
 
@@ -90,6 +91,12 @@ def build_merge_prompt(
         longest worker outputs are truncated (preserving shorter, more
         focused ones) until the prompt fits. ``None`` (default) means
         no truncation — preserves backward compatibility.
+    output_schema
+        Optional JSON Schema the final answer must conform to.  When
+        provided, the "Respond in valid JSON format." hint is
+        suppressed — the ``response_format`` parameter on the gateway
+        call handles schema enforcement so the prompt should not add
+        conflicting JSON instructions.
     """
     instructions = _stage_instructions(stage, dispatch)
 
@@ -147,14 +154,18 @@ def build_merge_prompt(
             "Your job is to produce the single best answer to the user's request "
             "using the upstream outputs and the dispatcher's instructions.\n"
         )
+        json_hint = (
+            " Respond in valid JSON format."
+            if output_schema is None
+            else ""
+        )
         user = (
             f"## Original user request\n{user_prompt}\n\n"
             f"## Dispatcher's instructions for you ({stage.id})\n{instructions}\n\n"
             f"## Upstream outputs\n{section}\n\n"
             "## Your job\n"
             "Following the instructions above, combine these into the final answer "
-            "for the user. Output only the final answer."
-            " Respond in valid JSON format."
+            f"for the user. Output only the final answer.{json_hint}"
         )
         return system, user
 
@@ -277,6 +288,7 @@ class Aggregator:
         messages = build_merge_prompt(
             stage, dispatch, dependencies, user_prompt,
             max_prompt_tokens=max_prompt_tokens,
+            output_schema=output_schema,
         )
         log.info(
             "aggregator_execute",
