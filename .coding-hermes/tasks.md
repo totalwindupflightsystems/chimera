@@ -2,6 +2,7 @@
 
 ## Open
 
+- [ ] DEPS-3 — Upgrade gitreins 0.8.2 → 0.10.2 (dev dep; 0.8.2 installed, 0.10.2 available per pip. DEPS-2 only reached 0.8.2.) — Files: pip install --upgrade gitreins; verify guard+test pass
 - [x] CONFIG — align chimera.yaml server port from 8000 to 8765 to match README docs (2026-07-14: port 8765, server verified, chimera.yaml + example updated)
 - [x] CI — fix ruff I001 import sort in tests/test_engine.py:854 causing CI lint failure (2026-07-14: ruff --fix, lint green, 4 files)
 - [x] Speed formation — build a "fast" deliberation formation with budget models for <30s agent-in-the-loop use (2026-07-12: commit 1bf73ea, 2 budget workers + budget aggregator, 8 files changed)
@@ -72,5 +73,5 @@
 
 ## [ ] DEPS-1 — Upgrade pydantic_core 2.46.4 → 2.47.0 ⚠️ BLOCKED: pydantic 2.13.4 (latest) enforces strict 1:1 coupling with pydantic-core (==2.46.4). Core 2.47.0 (May 2026) requires a future pydantic release. Monitor pydantic>=2.14 for compatibility. (2026-07-14: foreman investigated, blocked)
 
-## [x] DEPS-2 — Upgrade gitreins 0.7.9 → 0.10.2 (dev dep, commit review engine + CVE severity scoring) (2026-07-14: upgraded, 418/418 tests pass, guard green)
+## [x] DEPS-2 — Upgrade gitreins 0.7.9 → 0.10.2 (dev dep, commit review engine + CVE severity scoring) (2026-07-14: upgraded to 0.8.2; 0.10.2 target not reached — pip shows 0.8.2 installed, 0.10.2 available. Remaining gap tracked as DEPS-3.)
 ## [x] INFRA — Add Hilo .vfs/ gitignore entries (graph.db, graph.db.wal, .last_warm) per hilo-usage skill pitfall (2026-07-14: added to .gitignore)
