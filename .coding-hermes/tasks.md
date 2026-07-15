@@ -2,7 +2,7 @@
 
 ## Open
 
-- [ ] DEPS-3 — Upgrade gitreins 0.8.2 → 0.10.2 (dev dep; 0.8.2 installed, 0.10.2 available per pip. DEPS-2 only reached 0.8.2.) — Files: pip install --upgrade gitreins; verify guard+test pass
+## [x] DEPS-3 — Upgrade gitreins 0.8.2 → 0.10.2 (2026-07-15: 0.10.2 already installed, guard passes, 418/418 unit tests pass)
 - [x] CONFIG — align chimera.yaml server port from 8000 to 8765 to match README docs (2026-07-14: port 8765, server verified, chimera.yaml + example updated)
 - [x] CI — fix ruff I001 import sort in tests/test_engine.py:854 causing CI lint failure (2026-07-14: ruff --fix, lint green, 4 files)
 - [x] Speed formation — build a "fast" deliberation formation with budget models for <30s agent-in-the-loop use (2026-07-12: commit 1bf73ea, 2 budget workers + budget aggregator, 8 files changed)
