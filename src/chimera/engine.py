@@ -335,6 +335,7 @@ class Engine:
         iteration_count: int = stage_results.pop("_iteration_count", 1)  # type: ignore[misc]
 
         answer, answer_stage_id = self._select_answer(outcome.result.formation, stage_results)
+        answer = self._maybe_unwrap_envelope(answer)
         trace = self._assemble_trace(
             request_id=request_id,
             formation=formation,
@@ -920,6 +921,32 @@ class Engine:
             if t.id in results
         ]
         return "\n\n".join(parts), terminals[0].id
+
+    @staticmethod
+    def _maybe_unwrap_envelope(text: str) -> str:
+        """If text is a Chimera API response envelope, extract the answer field.
+
+        Checks for a JSON dict with an ``answer`` key — if the value under
+        ``answer`` is itself valid JSON, it is extracted (double-unwrap).
+        Otherwise the raw ``answer`` value is returned.
+        """
+        import json as _json
+        try:
+            data = _json.loads(text)
+            if isinstance(data, dict) and "answer" in data:
+                inner = data["answer"]
+                # If the value is a JSON-encoded string, parse it out.
+                if isinstance(inner, str):
+                    try:
+                        parsed = _json.loads(inner)
+                        if isinstance(parsed, (dict, list)):
+                            return _json.dumps(parsed)
+                    except (_json.JSONDecodeError, TypeError):
+                        pass
+                return inner
+        except (_json.JSONDecodeError, TypeError, KeyError):
+            pass
+        return text
 
     def _assemble_trace(
         self,
