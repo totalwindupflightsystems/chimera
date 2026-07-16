@@ -929,8 +929,19 @@ class Engine:
         Checks for a JSON dict with an ``answer`` key — if the value under
         ``answer`` is itself valid JSON, it is extracted (double-unwrap).
         Otherwise the raw ``answer`` value is returned.
+
+        Always returns a ``str``, coercing non-string inputs and fall-through
+        values so that ``DeliberationResult(answer: str)`` never fails Pydantic
+        validation.
         """
         import json as _json
+
+        # Belt: coerce non-string input immediately (defensive — all callers
+        # should pass str, but a raw int/float from a misbehaving gateway
+        # would bypass json.loads and escape as the original value).
+        if not isinstance(text, str):
+            return _json.dumps(text) if text is not None else ""
+
         try:
             data = _json.loads(text)
             if isinstance(data, dict) and "answer" in data:
@@ -950,6 +961,12 @@ class Engine:
                 return inner
         except (_json.JSONDecodeError, TypeError, KeyError):
             pass
+
+        # Suspenders: ensure the fall-through value is always a string.
+        # json.loads on a raw number/boolean string returns the parsed
+        # Python value, which would be returned as-is without this guard.
+        if not isinstance(text, str):
+            return _json.dumps(text) if text is not None else ""
         return text
 
     def _assemble_trace(

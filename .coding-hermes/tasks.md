@@ -2,7 +2,7 @@
 
 ## Open
 
-## [ ] CI — Fix integration test flakiness #3: pydantic validation error when answer is non-string (2026-07-15: discovery sweep)
+## [x] CI — Fix integration test flakiness #3: pydantic validation error when answer is non-string (2026-07-15: fixed in `519841a` — _maybe_unwrap_envelope coerces non-string answers + 13 parametrized tests. 431/431 unit tests pass.)
 
 **Found:** CI run 29428743098 — `test_deliberate_simple_formation` fails with HTTP 400:
 ```
