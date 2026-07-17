@@ -2,6 +2,22 @@
 
 ## Open
 
+## [x] SEC — Upgrade mcp 1.28.0 → 1.28.1 (CVE-2026-59950, CVSS 7.6 HIGH) (2026-07-17: `pip install --upgrade mcp`, 1.28.0→1.28.1, 431/431 tests, guard green, 8/8 E2E pass)
+
+**Found:** 2026-07-17 discovery sweep — pip-audit flagged CVE-2026-59950 in mcp 1.28.0.
+
+**CVE:** CWE-346 Origin Validation Error in MCP Python SDK's deprecated `websocket_server` transport. Fixed in mcp 1.28.1.
+
+**Impact:** Chimera does NOT use `websocket_server` transport (grep confirms zero references), so the vulnerable code path is not exercised. However, the CVE is classified HIGH (CVSS 7.6), and upgrading is a trivial mechanical change.
+
+**Files:** `pyproject.toml`, `.venv/lib/python3.11/site-packages/mcp/`
+
+**ACs:**
+- mcp upgraded from 1.28.0 to >= 1.28.1
+- All 431 unit tests still pass
+- Guard (secrets, lint) passes
+- E2E endpoints (8/8) still pass after upgrade
+
 ## [x] CI — Fix integration test flakiness #3: pydantic validation error when answer is non-string (2026-07-15: fixed in `519841a` — _maybe_unwrap_envelope coerces non-string answers + 13 parametrized tests. 431/431 unit tests pass.)
 
 **Found:** CI run 29428743098 — `test_deliberate_simple_formation` fails with HTTP 400:
