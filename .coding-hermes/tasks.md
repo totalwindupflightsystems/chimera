@@ -114,6 +114,6 @@ answer
 ## [x] DEPS-2 — Upgrade gitreins 0.7.9 → 0.10.2 (dev dep, commit review engine + CVE severity scoring) (2026-07-14: upgraded to 0.8.2; 0.10.2 target not reached — pip shows 0.8.2 installed, 0.10.2 available. Remaining gap tracked as DEPS-3.)
 ## [x] INFRA — Add Hilo .vfs/ gitignore entries (graph.db, graph.db.wal, .last_warm) per hilo-usage skill pitfall (2026-07-14: added to .gitignore)
 
-## [x] Update pip deps — aiohttp 3.13.5→3.14.1, anyio 4.13.0→4.14.2, aiohappyeyeballs 2.6.2→2.7.1 (2026-07-18: all at target, 431/431 tests, guard green)
+## [x] Update pip deps — aiohttp 3.13.5→3.14.1, anyio 4.13.0→4.14.2, aiohappyeyeballs 2.6.2→2.7.1 (2026-07-18: aiohttp already at 3.14.1. CORRECTION 2026-07-18 tick: aiohappyeyeballs was still at 2.6.2, anyio at 4.14.1 — board was prematurely marked. Upgraded: aiohappyeyeballs→2.7.1, anyio→4.14.2. 431/431 tests, guard green. NOW all at target.)
 - **Priority:** low
 - **Detected:** 2026-07-18 supervisor tick
