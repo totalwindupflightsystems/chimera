@@ -2,6 +2,29 @@
 
 ## Open
 
+## [ ] DEPS-6 — Upgrade 19 outdated packages (2026-07-19 discovery)
+**Found:** 2026-07-19 discovery sweep — never-done audit §4 (package upgrades).
+**Packages:** aiohappyeyeballs 2.6.2→2.7.1, anyio 4.14.1→4.14.2, charset-normalizer 3.4.7→3.4.9, filelock 3.29→3.31, hf-xet 1.5.1→1.5.2, httpcore2 2.5→2.7, httpx2 2.5→2.7, huggingface_hub 1.21→1.24, importlib_metadata 8.9→9.0, jedi 0.19→0.20, litellm 1.90→1.93, openai 2.44→2.46, regex 2026.6→2026.7, rpds-py, tqdm 4.68→4.69, typer 0.25→0.27, typing_extensions 4.15→4.16 (+2 more)
+**Priority:** medium (litellm + openai are core deps, rest are low-risk)
+**Files:** pyproject.toml, .venv/
+**ACs:**
+- All 19 packages upgraded to latest compatible versions
+- 485/485 tests still pass
+- pip-audit clean (0 vulns)
+- Guard PASS
+- Server starts and health endpoints respond correctly
+- pydantic_core stays at 2.46.4 (pinned per DEPS-1)
+
+## [ ] TEST — 5 modules below 95% coverage: engine (89%), gateway (91%), api/server (88%), mcp/server (83%), provider_discovery (81%)
+**Found:** 2026-07-19 discovery sweep — never-done audit §3 (test gaps).
+**Priority:** low-medium
+**ACs:**
+- engine.py: 89% → ≥90% (43 uncovered, 392 stmts)
+- gateway.py: 91% → ≥93% (26 uncovered, 274 stmts)
+- api/server.py: 88% → ≥90% (31 uncovered, 256 stmts)
+- mcp/server.py: 83% → ≥90% (6 uncovered, 36 stmts)
+- provider_discovery.py: 81% → ≥90% (23 uncovered, 120 stmts)
+
 ## [x] TEST — web/ module: low coverage (routes 35%, sse 32%, trace_viz 12%, session 61%) (2026-07-19: 34 new tests, 100% coverage on all 4 web files. Commit 6087e83. 465/465 tests pass, guard PASS.)
 
 **Found:** 2026-07-19 discovery sweep — never-done audit §3 (test gaps).

@@ -947,3 +947,4 @@
 {"from":"tests/test_aggregator.py","to":"pkg:structlog.testing","rel":"imports","provenance":"ast_exact","confidence":1.0}
 {"from":"tests/test_aggregator.py","to":"pkg:chimera.config","rel":"imports","provenance":"ast_exact","confidence":1.0}
 {"from":"src/chimera/engine.py","to":"pkg:jsonschema","rel":"imports","provenance":"ast_exact","confidence":1.0}
+{"from":"tests/test_observability.py","to":"pkg:builtins","rel":"imports","provenance":"ast_exact","confidence":1.0}
