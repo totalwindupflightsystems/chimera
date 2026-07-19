@@ -30,15 +30,16 @@ Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc cove
 - Root cause identified (code vs infra)
 - CI passing on main
 
-## [ ] TEST — 5 modules below 95% coverage: engine (89%), gateway (91%), api/server (88%), mcp/server (83%), provider_discovery (81%) — **WORKER SPAWNED** (MiniMax-M3, minimax)
-**Found:** 2026-07-19 discovery sweep — never-done audit §3 (test gaps). Verified real — coverage numbers confirmed.
+## [ ] TEST — 2 modules remaining below 95%: engine (89%), gateway (91%) — 3/5 COMPLETE (tick 2026-07-19 13:29Z)
+**Found:** 2026-07-19 discovery sweep — never-done audit §3 (test gaps).
+**Worker:** spawned MiniMax-M3. Timed out. Completed 3/5: mcp/server 100%, provider_discovery 100%, api/server 98%. Commit 8ca4360.
 **Priority:** low-medium
 **ACs:**
-- engine.py: 89% → ≥90% (43 uncovered, 392 stmts)
-- gateway.py: 91% → ≥93% (26 uncovered, 274 stmts)
-- api/server.py: 88% → ≥90% (31 uncovered, 256 stmts)
-- mcp/server.py: 83% → ≥90% (6 uncovered, 36 stmts)
-- provider_discovery.py: 81% → ≥90% (23 uncovered, 120 stmts)
+- engine.py: 89% → ≥90% (42 uncovered, 392 stmts) — STILL OPEN
+- gateway.py: 91% → ≥93% (26 uncovered, 274 stmts) — STILL OPEN
+- api/server.py: 88% → 98% ✓ (commit 8ca4360)
+- mcp/server.py: 83% → 100% ✓ (commit 8ca4360)
+- provider_discovery.py: 81% → 100% ✓ (commit 8ca4360)
 
 ## [x] DUCKBRAIN — Chimera namespace stale (last entries Jul 13, 6 days old). References 418-431 tests (now 485). (2026-07-19: synced with current state: 485 tests, 5 modules below 95%, DEPS clean, server healthy, fabrications recorded.)
 **Found:** 2026-07-19 foreman tick — never-done audit §9 (DuckBrain sync).
