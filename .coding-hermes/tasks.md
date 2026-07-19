@@ -74,6 +74,23 @@ Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc cove
 
 **Idle tick #4 — all 11 checks pass. No new tasks. Counter: 4/7 (no action ≤2, 4h cooldown since tick #3).**
 
+**Audit Results (2026-07-19 16:44Z): IDLE TICK #5**
+| # | Check | Status | Finding |
+|---|-------|--------|---------|
+| 1 | SPEC ALIGNMENT | ✅ | specs/architecture.md (344 lines) + web-ui.md (144 lines). No drift. |
+| 2 | DOC COVERAGE | ✅ | docs/ 11 files. README, AGENTS.md, CONFIG, SECURITY, USAGE all accurate. |
+| 3 | TEST GAPS | ✅ | 546 passed, 62 skipped, 97% overall (2575 stmts, 78 misses). All modules ≥92%. Directory-check false positives: Python tests live in tests/, not alongside source. |
+| 4 | PACKAGE UPGRADES | ✅ | pydantic-core 2.46.4 (pinned — pydantic 2.13.4 constraint). chimera local 0.1.0. pip-audit: 0 vulns. |
+| 5 | PITFALL HUNT | ✅ | No TODO/FIXME/HACK. engine.py:719 `return [], response` is a legitimate code path, not a stub. |
+| 6 | PERFORMANCE | ✅ | N/A — CLI/library project, no benchmarks needed. |
+| 7 | ENDPOINT VERIFICATION | ✅ | 11 routes registered (/v1/health, /v1/models, /v1/formations, /v1/deliberate, /v1/chat/completions, /docs, /openapi.json, /redoc). All return valid status codes. |
+| 8 | CI/CD HEALTH | ✅ | Latest CI (c039da1) SUCCESS. |
+| 9 | DUCKBRAIN SYNC | ✅ | Namespace `chimera-v2` has 20+ entries (architecture, foreman state, events). **Correction:** prior ticks checked `chimera` namespace (empty); actual data lives in `chimera-v2`. |
+| 10 | CODE QUALITY | ✅ | Workdir clean. No untracked files. .gitignore complete. engine.py 1057 lines (largest). |
+| 11 | MIDDLE-OUT WIRING | ✅ | CLI: `chimera serve` + `chimera mcp`. All 11 API routes registered. Entry points in pyproject.toml. |
+
+**Idle tick #5 — all 11 checks pass. No new tasks. Counter: 5/7. 4h cooldown since tick #3.**
+
 ## [x] CI — CI passing. Latest run (caae7da) completed success: matrix tests pass (3.11/3.12/3.13), lint pass, integration pass. Prior DEPS-4 failure was transient.
 **Found:** 2026-07-19 foreman tick — never-done audit §8 (CI/CD health).
 **Priority:** low
