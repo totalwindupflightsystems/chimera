@@ -2,18 +2,38 @@
 
 ## Open
 
-## [ ] DEPS-6 — Upgrade 19 outdated packages (2026-07-19 discovery)
+## [ ] NEVER-DONE — Run coding-hermes-never-done 11-point audit
+
+Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc coverage, test gaps, package upgrades, pitfall hunt, performance audit, endpoint verification, CI/CD health, DuckBrain sync, code quality, middle-out wiring. Create a task for EVERY gap found. Do NOT mark this task done until every check passes.
+
+## [x] DEPS-6 — Upgrade 19 outdated packages (2026-07-19: all 19 upgraded including importlib_metadata 8.9→9.0. 485/485 tests pass, pip-audit clean, guard PASS, pydantic_core stays at 2.46.4.)
 **Found:** 2026-07-19 discovery sweep — never-done audit §4 (package upgrades).
 **Packages:** aiohappyeyeballs 2.6.2→2.7.1, anyio 4.14.1→4.14.2, charset-normalizer 3.4.7→3.4.9, filelock 3.29→3.31, hf-xet 1.5.1→1.5.2, httpcore2 2.5→2.7, httpx2 2.5→2.7, huggingface_hub 1.21→1.24, importlib_metadata 8.9→9.0, jedi 0.19→0.20, litellm 1.90→1.93, openai 2.44→2.46, regex 2026.6→2026.7, rpds-py, tqdm 4.68→4.69, typer 0.25→0.27, typing_extensions 4.15→4.16 (+2 more)
 **Priority:** medium (litellm + openai are core deps, rest are low-risk)
 **Files:** pyproject.toml, .venv/
 **ACs:**
-- All 19 packages upgraded to latest compatible versions
-- 485/485 tests still pass
-- pip-audit clean (0 vulns)
-- Guard PASS
-- Server starts and health endpoints respond correctly
-- pydantic_core stays at 2.46.4 (pinned per DEPS-1)
+- All 19 packages upgraded to latest compatible versions ✓ (importlib_metadata included)
+- 485/485 tests still pass ✓
+- pip-audit clean (0 vulns) ✓
+- Guard PASS ✓
+- Server starts and health endpoints respond correctly ✓
+- pydantic_core stays at 2.46.4 (pinned per DEPS-1) ✓
+
+## [ ] DUCKBRAIN — Chimera namespace stale (last sync 2026-07-07, 12 days old). References 370 tests (now 485), v0.2.0 (correct), last commit 3b887ea (now caae7da). Model count 31 may need update.
+**Found:** 2026-07-19 foreman tick — never-done audit §9 (DuckBrain sync).
+**Priority:** low
+**Files:** DuckBrain namespace `chimera`
+**ACs:**
+- DuckBrain namespace updated with current test count (485), latest commit, model count
+- Architecture decisions from recent ticks saved
+- Patterns discovered documented
+
+## [ ] CI — Investigate latest CI run failure (DEPS-4 push, 2026-07-19 15:49Z). Tests pass locally (485/485). May be CI infra or flaky integration test.
+**Found:** 2026-07-19 foreman tick — never-done audit §8 (CI/CD health).
+**Priority:** low
+**ACs:**
+- Root cause identified (code vs infra)
+- CI passing on main
 
 ## [ ] TEST — 5 modules below 95% coverage: engine (89%), gateway (91%), api/server (88%), mcp/server (83%), provider_discovery (81%)
 **Found:** 2026-07-19 discovery sweep — never-done audit §3 (test gaps).
