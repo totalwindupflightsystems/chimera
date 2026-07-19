@@ -888,14 +888,9 @@ class TestIsRetryableLiteLLMErrors:
         fake.APIConnectionError = type("APIConnectionError", (_BaseError,), {})
         fake.APITimeoutError = type("APITimeoutError", (_BaseError,), {})
 
-        # Save the real openai (cached in sys.modules) and inject the stub.
-        saved = sys.modules.get("openai")
+        # Inject the stub. monkeypatch.setitem restores the original value
+        # at test teardown automatically.
         monkeypatch.setitem(sys.modules, "openai", fake)
-        # Restore after the test.
-        if saved is not None:
-            monkeypatch.addfinalizer(lambda: sys.modules.__setitem__("openai", saved))
-        else:
-            monkeypatch.addfinalizer(lambda: sys.modules.__delitem__("openai"))
 
     def test_litellm_apierror_with_retryable_status(
         self, monkeypatch: pytest.MonkeyPatch,
