@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
+import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
 pytest.importorskip("mcp")
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 
 from chimera.engine import Engine  # noqa: E402
-from chimera.mcp.server import build_server  # noqa: E402
-from tests.conftest import FakeGateway, dispatch_json  # noqa: E402
+from chimera.mcp.server import build_server, run  # noqa: E402
+from tests.conftest import CONFIG_DICT, FakeGateway, dispatch_json  # noqa: E402
 
 
 def _make_server(config):  # type: ignore[no-untyped-def]
@@ -87,3 +90,40 @@ async def test_mcp_deliberate_progressive(config) -> None:  # type: ignore[no-un
     )
     assert data["answer"] == "FINAL MCP ANSWER"
     assert data["trace"]["formation"] == "simple"
+
+
+def test_mcp_run_with_explicit_config_path(tmp_path) -> None:
+    """``run(config_path=...)`` loads the config, builds the server, and starts it."""
+    cfg_file = tmp_path / "chimera.yaml"
+    cfg_file.write_text(yaml.safe_dump(CONFIG_DICT), encoding="utf-8")
+
+    fake_server = MagicMock(spec=FastMCP)
+    fake_server.run = MagicMock()
+    with patch("chimera.mcp.server.build_server", return_value=fake_server) as build_mock:
+        run(config_path=str(cfg_file))
+
+    build_mock.assert_called_once()
+    # The config passed to build_server must be the one loaded from cfg_file.
+    from chimera.config import ChimeraConfig
+    cfg_arg = build_mock.call_args.args[0]
+    assert isinstance(cfg_arg, ChimeraConfig)
+    fake_server.run.assert_called_once()
+
+
+def test_mcp_run_falls_back_to_sys_argv(tmp_path) -> None:
+    """When ``config_path`` is None and ``sys.argv[1]`` is set, it is used as the path."""
+    cfg_file = tmp_path / "alt-chimera.yaml"
+    cfg_file.write_text(yaml.safe_dump(CONFIG_DICT), encoding="utf-8")
+
+    fake_server = MagicMock(spec=FastMCP)
+    fake_server.run = MagicMock()
+    saved_argv = sys.argv
+    sys.argv = [sys.argv[0], str(cfg_file)]
+    try:
+        with patch("chimera.mcp.server.build_server", return_value=fake_server) as build_mock:
+            run()
+    finally:
+        sys.argv = saved_argv
+
+    build_mock.assert_called_once()
+    fake_server.run.assert_called_once()

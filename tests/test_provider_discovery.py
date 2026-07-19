@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+import time
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from chimera.config import load_config
 from chimera.provider_discovery import (
     CACHE_TTL,
+    _fetch_models_dev,
+    _load_cache,
     _mtok_to_per_1k,
     _resolve_model_id,
+    _save_cache,
     discover_providers,
 )
 
@@ -452,3 +456,242 @@ class TestConfigDiscoveryIntegration:
 
         cfg = load_config(path)
         assert cfg.providers == {}, "Should not have discovered providers"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Direct coverage of internals (cache + http helpers)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestLoadCache:
+    def test_missing_cache_file(self, tmp_path, monkeypatch):
+        """When the cache file does not exist, returns None."""
+        # Point CACHE_PATH at a path inside tmp_path that we never create
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH",
+                            str(tmp_path / "does-not-exist.json"))
+        assert _load_cache() is None
+
+    def test_corrupt_json(self, tmp_path, monkeypatch):
+        """Corrupt JSON in cache returns None."""
+        cache = tmp_path / "cache.json"
+        cache.write_text("{not valid json", encoding="utf-8")
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
+        assert _load_cache() is None
+
+    def test_oserror_on_read(self, tmp_path, monkeypatch):
+        """OSError reading cache returns None."""
+        # A directory masquerading as a file: read_text will raise OSError
+        cache = tmp_path / "as_dir"
+        cache.mkdir()
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
+        assert _load_cache() is None
+
+    def test_non_dict_data(self, tmp_path, monkeypatch, caplog):
+        """Cache file containing a JSON list (not dict) returns None."""
+        cache = tmp_path / "cache.json"
+        cache.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
+        assert _load_cache() is None
+
+    def test_empty_provider_set(self, tmp_path, monkeypatch):
+        """Cache with only _fetched_at → 0 provider entries → returns None."""
+        cache = tmp_path / "cache.json"
+        cache.write_text(json.dumps({"_fetched_at": time.time()}), encoding="utf-8")
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
+        assert _load_cache() is None
+
+    def test_valid_cache(self, tmp_path, monkeypatch):
+        """Valid cache within TTL is returned unchanged (minus _fetched_at)."""
+        cache = tmp_path / "cache.json"
+        data = {"deepseek": {"id": "deepseek", "env": ["K"], "models": {"x": {}}},
+                "_fetched_at": time.time()}
+        cache.write_text(json.dumps(data), encoding="utf-8")
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
+        loaded = _load_cache()
+        assert loaded is not None
+        assert "deepseek" in loaded
+
+    def test_stale_cache_respects_ttl_by_default(self, tmp_path, monkeypatch):
+        """Without ignore_ttl, stale cache returns None."""
+        cache = tmp_path / "cache.json"
+        data = {"deepseek": {"id": "deepseek", "env": ["K"], "models": {"x": {}}},
+                "_fetched_at": time.time() - CACHE_TTL - 100}
+        cache.write_text(json.dumps(data), encoding="utf-8")
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
+        assert _load_cache() is None
+
+    def test_stale_cache_usable_with_ignore_ttl(self, tmp_path, monkeypatch):
+        """With ignore_ttl=True, stale cache is still returned."""
+        cache = tmp_path / "cache.json"
+        data = {"deepseek": {"id": "deepseek", "env": ["K"], "models": {"x": {}}},
+                "_fetched_at": time.time() - CACHE_TTL - 100}
+        cache.write_text(json.dumps(data), encoding="utf-8")
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
+        loaded = _load_cache(ignore_ttl=True)
+        assert loaded is not None
+
+
+class TestSaveCache:
+    def test_save_writes_atomic(self, tmp_path, monkeypatch):
+        """``_save_cache`` writes a JSON file with _fetched_at, atomically."""
+        cache = tmp_path / "sub" / "cache.json"
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
+        data = {"deepseek": {"id": "deepseek"}}
+        before = time.time()
+        _save_cache(data)
+        after = time.time()
+        assert cache.is_file()
+        saved = json.loads(cache.read_text(encoding="utf-8"))
+        assert "_fetched_at" in saved
+        assert before <= saved["_fetched_at"] <= after
+        assert saved["deepseek"] == {"id": "deepseek"}
+
+
+class TestFetchModelsDev:
+    def test_fetch_uses_urllib(self):
+        """``_fetch_models_dev`` calls urllib.request.urlopen and parses JSON."""
+        fake_resp = MagicMock()
+        fake_resp.read.return_value = b'{"hello": "world"}'
+        fake_resp.__enter__ = lambda self_: self_
+        fake_resp.__exit__ = lambda self_, *a: None
+
+        with patch("urllib.request.urlopen", return_value=fake_resp) as urlopen_mock:
+            data = _fetch_models_dev()
+
+        assert data == {"hello": "world"}
+        urlopen_mock.assert_called_once()
+        # The Request object should target the canonical URL.
+        req = urlopen_mock.call_args.args[0]
+        assert req.full_url == "https://models.dev/api.json"
+        assert "Chimera/" in req.headers["User-agent"]
+
+
+class TestDiscoverProvidersEdgeCases:
+    def test_skip_internal_fetched_at_key(self, monkeypatch):
+        """``_fetched_at`` key in data dict is treated as metadata, not a provider."""
+        # Provide data with _fetched_at in it; the provider loop must skip it.
+        data = {
+            "deepseek": {
+                "id": "deepseek",
+                "env": ["DEEPSEEK_API_KEY"],
+                "api": "https://api.deepseek.com",
+                "models": {},
+            },
+            "_fetched_at": time.time(),
+        }
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+        with patch("chimera.provider_discovery._fetch_models_dev",
+                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+            providers, _pricing = discover_providers(force_refresh=True)
+        assert "deepseek" in providers
+
+    def test_provider_value_not_a_dict(self, monkeypatch):
+        """``md_provider`` that isn't a dict is skipped over."""
+        data = {"bogus_provider": "not a dict"}
+        with patch("chimera.provider_discovery._fetch_models_dev",
+                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+            providers, pricing = discover_providers(force_refresh=True)
+        assert providers == {}
+        assert pricing == {}
+
+    def test_model_value_not_a_dict(self, monkeypatch):
+        """When models dict has a non-dict entry, skip it in pricing extraction."""
+        data = {
+            "deepseek": {
+                "id": "deepseek",
+                "env": ["DEEPSEEK_API_KEY"],
+                "api": "https://api.deepseek.com",
+                "models": {"good-model": "not a dict"},
+            },
+        }
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+        with patch("chimera.provider_discovery._fetch_models_dev",
+                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+            providers, pricing = discover_providers(force_refresh=True)
+        assert pricing == {}
+        assert "deepseek" in providers
+
+    def test_cost_field_not_a_dict(self, monkeypatch):
+        """If ``cost`` is not a dict on a model, skip pricing extraction for it."""
+        data = {
+            "deepseek": {
+                "id": "deepseek",
+                "env": ["DEEPSEEK_API_KEY"],
+                "api": "https://api.deepseek.com",
+                "models": {
+                    "weird-model": {
+                        "id": "weird-model",
+                        "cost": "not a dict",
+                    },
+                },
+            },
+        }
+        with patch("chimera.provider_discovery._fetch_models_dev",
+                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+            _providers, pricing = discover_providers(force_refresh=True)
+        assert pricing == {}
+
+    def test_env_var_field_is_string_not_list(self, monkeypatch):
+        """Some providers may expose ``env`` as a single string — should still work."""
+        data = {
+            "deepseek": {
+                "id": "deepseek",
+                "env": "DEEPSEEK_API_KEY",  # string, not list
+                "api": "https://api.deepseek.com",
+                "models": {},
+            },
+        }
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+        with patch("chimera.provider_discovery._fetch_models_dev",
+                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+            providers, _pricing = discover_providers(force_refresh=True)
+        assert "deepseek" in providers
+        assert providers["deepseek"]["api_key_env"] == "DEEPSEEK_API_KEY"
+
+    def test_env_var_field_falsy(self, monkeypatch):
+        """If ``env`` is some falsy value, the list-coercion fallback yields []
+        and no env var is checked."""
+        data = {
+            "deepseek": {
+                "id": "deepseek",
+                "env": None,  # falsy
+                "api": "https://api.deepseek.com",
+                "models": {},
+            },
+        }
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        with patch("chimera.provider_discovery._fetch_models_dev",
+                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+            providers, _pricing = discover_providers(force_refresh=True)
+        # Without any env match and without api_keys, provider is not registered.
+        assert "deepseek" not in providers
+
+    def test_api_keys_fallback_when_env_unset(self, monkeypatch):
+        """When env var is unset, the api_keys dict provides the key."""
+        data = {
+            "deepseek": {
+                "id": "deepseek",
+                "env": ["DEEPSEEK_API_KEY"],
+                "api": "https://api.deepseek.com",
+                "models": {},
+            },
+        }
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        with patch("chimera.provider_discovery._fetch_models_dev",
+                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+            providers, _pricing = discover_providers(
+                force_refresh=True, api_keys={"deepseek": "yaml-supplied-key"},
+            )
+        assert "deepseek" in providers
+        assert providers["deepseek"]["api_key_env"] == "DEEPSEEK_API_KEY"
+
+    def test_fetch_failure_without_stale_cache_returns_empty(self, monkeypatch, tmp_path):
+        """When network fails AND no stale cache exists, returns ({},{})."""
+        # Ensure no cache
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH",
+                            str(tmp_path / "no-cache-here.json"))
+        with patch("chimera.provider_discovery._fetch_models_dev",
+                   side_effect=ConnectionError("network down")):
+            providers, pricing = discover_providers(force_refresh=True)
+        assert providers == {}
+        assert pricing == {}
