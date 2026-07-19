@@ -2,6 +2,19 @@
 
 ## Open
 
+## [ ] DEPS-4 — Batch upgrade 37 outdated packages (2026-07-19: discovery sweep — fastapi 0.137→0.139, litellm 1.90→1.93, uvicorn 0.49→0.51, openai 2.44→2.46, httpx2 2.5→2.7, huggingface_hub 1.21→1.24, +31 others. pip-audit clean on project deps. Note: pydantic_core 2.46.4→2.47.0 still blocked (DEPS-1).)
+
+**Priority:** low
+**Detected:** 2026-07-19 discovery sweep — 37 packages outdated
+**Files:** pyproject.toml, .venv/
+**ACs:**
+- All 37 packages upgraded to latest compatible versions
+- pip-audit passes (0 vulns in project deps)
+- 431/431 tests still pass
+- Guard (secrets, lint) passes
+- pydantic_core stays at 2.46.4 (pinned per DEPS-1)
+
+
 ## [x] SEC — Upgrade mcp 1.28.0 → 1.28.1 (CVE-2026-59950, CVSS 7.6 HIGH) (2026-07-17: `pip install --upgrade mcp`, 1.28.0→1.28.1, 431/431 tests, guard green, 8/8 E2E pass)
 
 **Found:** 2026-07-17 discovery sweep — pip-audit flagged CVE-2026-59950 in mcp 1.28.0.
