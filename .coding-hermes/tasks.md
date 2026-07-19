@@ -26,11 +26,16 @@
 - 465/465 tests pass ✓
 - Guard PASS ✓
 
-## [ ] TEST — cli/main.py coverage gap (73%, 37 uncovered)
+## [x] TEST — cli/main.py coverage gap (73%, 37 uncovered) (2026-07-19: 13 new tests, coverage 73%→99%. Commit 51bd3e3. 482/482 tests pass, guard PASS.)
+
 **Found:** 2026-07-19 discovery sweep — never-done audit §3 (test gaps).
-**Files:** src/chimera/cli/main.py
+**Files:** tests/test_cli.py (+292 lines, 13 new tests)
 **Priority:** low
-**ACs:** cli/main.py coverage ≥85% (from 73%)
+**ACs:**
+- cli/main.py coverage ≥85% ✓ (99%, 138/138 stmts — only `if __name__ == "__main__"` on line 265 uncovered)
+- 13 tests covering: invalid JSON, empty prompt, stage_models, DAG, ValueError, verbose trace, _print_trace table, serve (host/port/env), mcp ✓
+- 482/482 tests pass ✓
+- Guard PASS ✓
 
 ## [ ] TEST — observability.py coverage gap (70%, 11 uncovered)
 **Found:** 2026-07-19 discovery sweep — never-done audit §3 (test gaps).
