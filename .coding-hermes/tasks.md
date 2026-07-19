@@ -2,7 +2,7 @@
 
 ## Open
 
-## [ ] NEVER-DONE — Run coding-hermes-never-done 11-point audit (tick 2026-07-19 13:15)
+## [ ] NEVER-DONE — Run coding-hermes-never-done 11-point audit (tick 2026-07-19 17:16)
 
 Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc coverage, test gaps, package upgrades, pitfall hunt, performance audit, endpoint verification, CI/CD health, DuckBrain sync, code quality, middle-out wiring. Create a task for EVERY gap found. Do NOT mark this task done until every check passes.
 
@@ -90,6 +90,25 @@ Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc cove
 | 11 | MIDDLE-OUT WIRING | ✅ | CLI: `chimera serve` + `chimera mcp`. All 11 API routes registered. Entry points in pyproject.toml. |
 
 **Idle tick #5 — all 11 checks pass. No new tasks. Counter: 5/7. 4h cooldown since tick #3.**
+
+**Audit Results (2026-07-19 17:20Z): IDLE TICK #6**
+| # | Check | Status | Finding |
+|---|-------|--------|---------|
+| 1 | SPEC ALIGNMENT | ✅ | specs/architecture.md + web-ui.md. No drift. |
+| 2 | DOC COVERAGE | ✅ | docs/ 11 files. README/AGENTS.md accurate. |
+| 3 | TEST GAPS | ✅ | 546 passed, 62 skipped, 97% (2575 stmts, 78 misses). All modules ≥92%. |
+| 4 | PACKAGE UPGRADES | ✅ | Only chimera (local) + pydantic_core 2.46.4 (pinned). pip-audit: 0 vulns. |
+| 5 | PITFALL HUNT | ✅ | Zero TODO/FIXME/HACK in src/ (search_files confirmed). |
+| 6 | PERFORMANCE | ✅ | N/A — CLI/library project. |
+| 7 | ENDPOINT VERIFICATION | ✅ | 11 routes registered: /v1/health, /v1/models, /v1/formations, /v1/deliberate, /v1/chat/completions, /docs, /openapi.json, /redoc, /v1/health/live, /v1/health/ready. |
+| 8 | CI/CD HEALTH | ✅ | Latest CI (c039da1) SUCCESS. Prior DEPS-4 failure (2e27b03) is pre-existing — integration timeout, not a regression. |
+| 9 | DUCKBRAIN SYNC | ✅ | Namespace chimera-v2: 20+ entries. Tick-6 event written. |
+| 10 | CODE QUALITY | ✅ | Workdir clean. .gitignore complete. No untracked files. |
+| 11 | MIDDLE-OUT WIRING | ✅ | CLI + web + MCP all wired. 11 routes. |
+
+**⚠️ COOLDOWN REVERSION DETECTED:** Prior tick #3 set CooldownS to 14400s (4h). Scheduler showed 1800s (30m) at start of tick — daemon restart reverted API-set value. Re-fixed to 14400s. Verified via GET: CooldownS=14400, Enabled=True. 1st detected reversion. Escalation: disable at 2+ reversions.
+
+**Idle tick #6 — all 11 checks pass. No new tasks. Counter: 6/7. Cooldown re-fixed to 14400s. Next tick escalates to Bane if still idle.**
 
 ## [x] CI — CI passing. Latest run (caae7da) completed success: matrix tests pass (3.11/3.12/3.13), lint pass, integration pass. Prior DEPS-4 failure was transient.
 **Found:** 2026-07-19 foreman tick — never-done audit §8 (CI/CD health).
