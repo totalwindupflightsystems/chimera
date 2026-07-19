@@ -37,11 +37,19 @@
 - 482/482 tests pass ✓
 - Guard PASS ✓
 
-## [ ] TEST — observability.py coverage gap (70%, 11 uncovered)
+## [x] TEST — observability.py coverage gap (70%, 11 uncovered) (2026-07-19: 7 new tests, coverage 70%→100%. 485/485 tests pass, guard PASS.)
+
 **Found:** 2026-07-19 discovery sweep — never-done audit §3 (test gaps).
-**Files:** src/chimera/observability.py
+**Files:** tests/test_observability.py (+57 lines, 7 new tests)
 **Priority:** low
-**ACs:** observability.py coverage ≥85% (from 70%)
+**ACs:**
+- observability.py coverage ≥85% ✓ (100%, 37/37 stmts)
+- get_logger() fallback when _LOGGER_CONFIGURED=False ✓
+- _configure_langfuse() import error path ✓
+- _configure_langfuse() disabled/skip/init paths ✓
+- get_langfuse() both branches ✓
+- 485/485 tests pass ✓
+- Guard PASS ✓
 
 ## [x] DEPS-4 — Batch upgrade 37 outdated packages (2026-07-19: 31 project deps upgraded including aiohappyeyeballs 2.6.2→2.7.1, anyio 4.14.1→4.14.2, pip 24.0→26.1.2, setuptools 79.0.1→83.0.0, fastapi 0.137.2→0.139.2, litellm 1.90.0→1.93.0. 431/431 tests, guard PASS, pip-audit clean, server healthy. Two pip resolver warnings non-blocking. pydantic_core pinned at 2.46.4 per DEPS-1.)
 
