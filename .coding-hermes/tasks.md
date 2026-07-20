@@ -167,6 +167,24 @@ Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc cove
 
 **If new work appears, re-enable:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":true,"CooldownS":900}'`
 
+**Audit Results (2026-07-20 13:18Z): IDLE TICK #10 — 4th ESCALATION**
+
+| # | Check | Status | Finding |
+|---|-------|--------|---------|
+| 1 | SPEC ALIGNMENT | ✅ | specs/architecture.md + web-ui.md. No drift. |
+| 2 | DOC COVERAGE | ✅ | docs/ 10+ files + PRD + banner. README + AGENTS.md accurate. |
+| 3 | TEST GAPS | ✅ | 546 passed, 62 skipped, 97% (2575 stmts, 78 misses). All modules >=92%. |
+| 4 | PACKAGE UPGRADES | ⚠️ | 5 minor: filelock 3.31.0->3.31.1, GitPython 3.1.52->3.1.53, pydantic_core 2.46.4->2.47.0 (pinned), sse-starlette 3.4.5->3.4.6, yarl 1.24.2->1.24.5. pip-audit: 0 vulns. |
+| 5 | PITFALL HUNT | ✅ | Zero TODO/FIXME/HACK in src/. |
+| 6 | PERFORMANCE | ✅ | N/A — CLI/library project. |
+| 7 | ENDPOINT VERIFICATION | ✅ | 11 routes registered. Provider discovery: 5012 models/9 providers. |
+| 8 | CI/CD HEALTH | ✅ | HEAD == origin/main (5a95c44). 0 ahead/behind. Workdir clean. |
+| 9 | DUCKBRAIN SYNC | ✅ | 50+ keys across /project/chimera-v2/, /findings/, /infra/, /knowledge/. |
+| 10 | CODE QUALITY | ✅ | .gitignore complete (20 entries). No untracked files. |
+| 11 | MIDDLE-OUT WIRING | ✅ | CLI + web + MCP all wired. 11 routes. |
+
+**🛑 IDLE TICK #10 — 4th ESCALATION. All 11 checks pass. 10 consecutive idle ticks. 5 minor upgrades available — patch-level only, no worker spawn warranted. Foreman MUST NOT self-disable — requires Bane manual action.**
+
 ## [x] CI — CI passing. Latest run (caae7da) completed success: matrix tests pass (3.11/3.12/3.13), lint pass, integration pass. Prior DEPS-4 failure was transient.
 **Found:** 2026-07-19 foreman tick — never-done audit §8 (CI/CD health).
 **Priority:** low
