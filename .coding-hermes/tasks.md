@@ -110,6 +110,27 @@ Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc cove
 
 **Idle tick #6 — all 11 checks pass. No new tasks. Counter: 6/7. Cooldown re-fixed to 14400s. Next tick escalates to Bane if still idle.**
 
+**Audit Results (2026-07-19 21:29Z): IDLE TICK #7 — ESCALATED TO BANE**
+| # | Check | Status | Finding |
+|---|-------|--------|---------|
+| 1 | SPEC ALIGNMENT | ✅ | specs/architecture.md + web-ui.md. No drift. |
+| 2 | DOC COVERAGE | ✅ | docs/ 11 files. README/AGENTS.md accurate. |
+| 3 | TEST GAPS | ✅ | 546 passed, 62 skipped, 97% (2575 stmts, 78 misses). |
+| 4 | PACKAGE UPGRADES | ✅ | Only chimera (local), pydantic_core 2.46.4 (pinned), yarl 1.24.2 (minor). pip-audit: 0 vulns. |
+| 5 | PITFALL HUNT | ✅ | Zero TODO/FIXME/HACK in src/. |
+| 6 | PERFORMANCE | ✅ | N/A — CLI/library project. |
+| 7 | ENDPOINT VERIFICATION | ✅ | 11 routes registered (verified ticks #5-6). |
+| 8 | CI/CD HEALTH | ✅ | Latest CI (c039da1) SUCCESS. DEPS-4 failure (2e27b03) pre-existing. |
+| 9 | DUCKBRAIN SYNC | ✅ | Idle counter 7/7 written. 20+ entries in chimera-v2 ns. |
+| 10 | CODE QUALITY | ✅ | Workdir clean. No untracked files. .gitignore complete. |
+| 11 | MIDDLE-OUT WIRING | ✅ | CLI + web + MCP all wired. 11 routes. |
+
+**🛑 IDLE TICK #7/7 — ESCALATED. All 11 checks pass. No new tasks in 7 consecutive ticks. Project is feature-complete and stable. Per escalation rules (≥7 idle ticks), foreman MUST NOT self-disable — this requires Bane's manual action.**
+
+**Bane: disable this project with:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":false}'`
+
+**If new work appears, re-enable:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":true,"CooldownS":900}'`
+
 ## [x] CI — CI passing. Latest run (caae7da) completed success: matrix tests pass (3.11/3.12/3.13), lint pass, integration pass. Prior DEPS-4 failure was transient.
 **Found:** 2026-07-19 foreman tick — never-done audit §8 (CI/CD health).
 **Priority:** low
