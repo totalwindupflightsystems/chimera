@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,9 +17,8 @@ import pytest
 from chimera.api.server import create_app
 from chimera.config import ChimeraConfig, DeliberationOverrides
 from chimera.engine import Engine
-from chimera.gateway import GatewayError, GatewayResponse
+from chimera.gateway import GatewayError
 from tests.conftest import CONFIG_DICT, FakeGateway, dispatch_json, resp
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Error / edge cases uncovered in the engine module

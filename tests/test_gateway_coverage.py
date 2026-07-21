@@ -289,7 +289,6 @@ class TestLitellmAComplete:
         explicitly use a non-async MagicMock here to exercise the
         ``return result`` branch on line 578.
         """
-        from unittest.mock import MagicMock
         fake_result = _litellm_result("plain")
         with patch("litellm.acompletion", MagicMock(return_value=fake_result)):
             result = await _litellm_acomplete({"model": "x", "messages": []})
