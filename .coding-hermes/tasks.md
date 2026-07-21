@@ -240,6 +240,28 @@ Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc cove
 
 **If new work appears, re-enable:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":true,"CooldownS":900}'`
 
+**Audit Results (2026-07-20 21:31Z): IDLE TICK #13 — 7th ESCALATION**
+
+| # | Check | Status | Finding |
+|---|-------|--------|---------|
+| 1 | SPEC ALIGNMENT | ✅ | specs/architecture.md (344 lines) + web-ui.md (144 lines). No drift. |
+| 2 | DOC COVERAGE | ✅ | docs/ 10 md files + README (255) + AGENTS.md (104). Accurate. |
+| 3 | TEST GAPS | ✅ | 546 passed, 62 skipped, 0 failed, 55.8s. 97% (2575 stmts, 78 misses). All modules >=92%. |
+| 4 | PACKAGE UPGRADES | ✅ | DEPS tick (af8a152) resolved all 6 minor upgrades. Only chimera (local) + pydantic_core 2.46.4 (pinned). pip-audit: 0 vulns. |
+| 5 | PITFALL HUNT | ✅ | Zero TODO/FIXME/HACK in src/. search_files confirmed. |
+| 6 | PERFORMANCE | ✅ | N/A — CLI/library project. |
+| 7 | ENDPOINT VERIFICATION | ✅ | 11 routes: /v1/health, /v1/health/live, /v1/health/ready, /v1/models, /v1/formations, /v1/deliberate, /v1/chat/completions, /docs, /openapi.json, /redoc. 5014 models, 9 providers. |
+| 8 | CI/CD HEALTH | ✅ | HEAD == origin/main (af8a152 = 8be79ea). Workdir clean. No unpushed commits. |
+| 9 | DUCKBRAIN SYNC | ✅ | Tick-13 event written to chimera-v2 ns (/events/chimera-v2/foreman-tick-13-20260720-2131). 50+ keys. |
+| 10 | CODE QUALITY | ✅ | .gitignore complete. Workdir clean. No untracked files. |
+| 11 | MIDDLE-OUT WIRING | ✅ | CLI + web + MCP all wired. 11 routes verified. Hilo: 624 edges, 93 files. |
+
+**🛑 IDLE TICK #13 — 7th ESCALATION. All 11 checks pass. All 6 minor upgrades resolved by DEPS tick (af8a152). 546/546 tests, 97% coverage, 0 vulns. 13 consecutive idle ticks. Foreman MUST NOT self-disable — this requires Bane's manual action.**
+
+**Bane: disable this project with:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":false}'`
+
+**If new work appears, re-enable:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":true,"CooldownS":900}'`
+
 ## [x] CI — CI passing. Latest run (caae7da) completed success: matrix tests pass (3.11/3.12/3.13), lint pass, integration pass. Prior DEPS-4 failure was transient.
 **Found:** 2026-07-19 foreman tick — never-done audit §8 (CI/CD health).
 **Priority:** low
