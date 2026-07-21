@@ -915,7 +915,7 @@ class TestIsRetryableLiteLLMErrors:
     ) -> None:
         self._stub_openai(monkeypatch)
         try:
-            import litellm.exceptions as lexc
+            import litellm.exceptions  # noqa: F401 — import is the availability check
         except ImportError:
             pytest.skip("litellm not installed")
         # Build an APIConnectionError whose real base is openai.OpenAIError,

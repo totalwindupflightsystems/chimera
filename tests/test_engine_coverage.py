@@ -8,6 +8,7 @@ the baseline coverage report.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sys
 from unittest.mock import MagicMock, patch
@@ -36,12 +37,10 @@ def test_model_cost_lookup_unknown_model_returns_zero(config: ChimeraConfig) -> 
 
     # The cost calculator lives at engine._model_cost_rate or similar.
     # Find it and call it with an unknown model name.
-    helper = None
     for name in dir(engine):
         if "cost" in name.lower() and not name.startswith("__"):
             attr = getattr(engine, name, None)
             if callable(attr) and getattr(attr, "__qualname__", "").startswith("Engine"):
-                helper = attr
                 break
     # If no helper found, just verify config.get_model raises on unknown key.
     with pytest.raises(KeyError):
@@ -55,7 +54,7 @@ def test_extract_user_content_falls_back_to_last(config: ChimeraConfig) -> None:
     """When no user-role message exists, fall back to the last message's content
     (line 110)."""
     gw = FakeGateway(lambda m, msgs, **kw: resp("ok", m))
-    engine = Engine(config, gw)
+    Engine(config, gw)
     # _last_user_content is the private module-level helper.
     from chimera.engine import _last_user_content
     msgs = [
@@ -271,7 +270,7 @@ async def test_gateway_error_falls_back_to_plaintext(config: ChimeraConfig) -> N
 
     gw = FakeGateway(respond)
     engine = Engine(config, gw)
-    result = await engine.deliberate("hi")
+    await engine.deliberate("hi")
     assert call_count[0] >= 2, "Engine should have retried after GatewayError"
 
 
@@ -417,7 +416,7 @@ def _make_langfuse_config(enabled: bool = True) -> ChimeraConfig:
 @pytest.mark.asyncio
 async def test_langfuse_publish_succeeds(config: ChimeraConfig) -> None:
     """When Langfuse is enabled and the client works, telemetry fires."""
-    new_cfg = _make_langfuse_config(enabled=True)
+    _make_langfuse_config(enabled=True)
 
     fake_client = MagicMock()
     fake_trace = MagicMock()
@@ -432,16 +431,14 @@ async def test_langfuse_publish_succeeds(config: ChimeraConfig) -> None:
         trace.request_id = "req-1"
         trace.dispatch = MagicMock(model="m", response="r", tokens_input=10, tokens_output=20)
         trace.stages = []
-        try:
+        with contextlib.suppress(Exception):
             _maybe_langfuse(trace, "hi")
-        except Exception:
-            pass  # some mocking may not be enough — best-effort.
 
 
 @pytest.mark.asyncio
 async def test_langfuse_publish_swallows_exceptions(config: ChimeraConfig) -> None:
     """Langfuse client raising during publish is swallowed."""
-    new_cfg = _make_langfuse_config(enabled=True)
+    _make_langfuse_config(enabled=True)
 
     class FlakyClient:
         def trace(self, **kw):
@@ -462,7 +459,7 @@ async def test_langfuse_publish_swallows_exceptions(config: ChimeraConfig) -> No
 
 def test_langfuse_disabled_does_nothing(config: ChimeraConfig) -> None:
     """When Langfuse is disabled, no client is created."""
-    new_cfg = _make_langfuse_config(enabled=False)
+    _make_langfuse_config(enabled=False)
     from chimera.engine import _maybe_langfuse
     trace = MagicMock()
     trace.request_id = "req-1"
