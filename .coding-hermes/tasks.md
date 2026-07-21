@@ -262,6 +262,50 @@ Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc cove
 
 **If new work appears, re-enable:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":true,"CooldownS":900}'`
 
+**Audit Results (2026-07-20 22:04Z): IDLE TICK #14 — 8th ESCALATION + ACTION TAKEN**
+
+| # | Check | Status | Finding |
+|---|-------|--------|---------|
+| 1 | SPEC ALIGNMENT | ✅ | specs/architecture.md (344 lines) + web-ui.md (144 lines). No drift. |
+| 2 | DOC COVERAGE | ✅ | docs/ 8 files. README (255) + AGENTS.md (104). Accurate. |
+| 3 | TEST GAPS | ✅ | 546 passed, 62 skipped, 0 failed, 53.4s. 97% (2575 stmts, 78 misses). All modules ≥92%. |
+| 4 | PACKAGE UPGRADES | ✅ | Only chimera (local) + pydantic_core 2.46.4 (pinned). pip-audit: "No known vulnerabilities found". |
+| 5 | PITFALL HUNT | ✅ | Zero TODO/FIXME/HACK in src/. search_files confirmed. |
+| 6 | PERFORMANCE | ✅ | N/A — CLI/library project. |
+| 7 | ENDPOINT VERIFICATION | ✅ | 13 routes: /v1/health, /v1/health/live, /v1/health/ready, /v1/models, /v1/formations, /v1/deliberate, /v1/chat/completions, /docs, /openapi.json, /redoc, /web/, /web/sessions, etc. All source-verified wired. |
+| 8 | CI/CD HEALTH | ⚠️ → ✅ | LINT job FAILED on tick #13 commit (29781980414): ruff I001 import sort in tests/test_engine_coverage.py:9. **FIXED** — ruff check --fix, committed as 1b03887. 8 pre-existing non-blocking lint warnings remain (F841 unused vars, SIM105, F401 — not failing CI). All 3 matrix tests + integration pass. |
+| 9 | DUCKBRAIN SYNC | ✅ | 50+ keys in chimera-v2 namespace. |
+| 10 | CODE QUALITY | ✅ | .gitignore complete (22 entries). Workdir clean. No untracked files. |
+| 11 | MIDDLE-OUT WIRING | ✅ | CLI + web + MCP all wired. 13 routes verified. |
+
+**⚠️ COOLDOWN REVERSION #3 DETECTED:** CooldownS=1800 at tick start (should be 14400). Re-fixed to 14400s via API PUT. 3rd reversion in 7 ticks (#6, #12, #14) — daemon restarts revert API-set values. ROOT CAUSE: TOML config has CooldownS=1800. API PUT is in-memory only.
+
+**ACTION TAKEN:** CI lint failure (ruff I001) fixed and committed (1b03887). Non-blocking: 8 pre-existing lint warnings in test coverage files (F841 unused vars × 6, SIM105 × 1, F401 × 1 — all in tests/). Creating `## [ ] QUALITY — Fix 8 pre-existing ruff warnings in test coverage files` to track these.
+
+**🛑 IDLE TICK #14 — 8th ESCALATION + ACTION. CI lint fixed. 8 pre-existing lint warnings found (non-blocking). 3rd cooldown reversion. 14 consecutive idle ticks.**
+
+**Bane: disable this project with:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":false}'`
+
+**If new work appears, re-enable:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":true,"CooldownS":900}'`
+
+**Permanent cooldown fix (TOML — durable):** Update scheduler TOML to set chimera-v2 CooldownS=14400.
+
+## [ ] QUALITY — Fix 8 pre-existing ruff warnings in test coverage files (2026-07-20 tick #14)
+
+**Found:** 2026-07-20 never-done audit — check 8 (CI/CD health). `ruff check .` found 8 non-blocking warnings.
+
+**Files:** tests/test_engine_coverage.py (7 issues: 6× F841 unused vars, 1× SIM105), tests/test_gateway_coverage.py (1 issue: F401 unused import)
+
+**Priority:** low
+
+**ACs:**
+- tests/test_engine_coverage.py: remove 6 unused variable assignments (helper:44, engine:58, result:274, new_cfg:420/444/465)
+- tests/test_engine_coverage.py: replace try/except/pass with contextlib.suppress (line 435)
+- tests/test_gateway_coverage.py: remove unused `import litellm.exceptions as lexc` (line 918)
+- ruff check . returns 0 issues
+- 546/546 tests pass
+- Guard PASS
+
 ## [x] CI — CI passing. Latest run (caae7da) completed success: matrix tests pass (3.11/3.12/3.13), lint pass, integration pass. Prior DEPS-4 failure was transient.
 **Found:** 2026-07-19 foreman tick — never-done audit §8 (CI/CD health).
 **Priority:** low
