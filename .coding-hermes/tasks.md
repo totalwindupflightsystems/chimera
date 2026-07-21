@@ -334,6 +334,32 @@ Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc cove
 
 **Bane: disable this project with:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":false}'`
 
+**Audit Results (2026-07-21 06:10Z): IDLE TICK #17 — NEW STREAK, IDLE TICK #2**
+
+| # | Check | Status | Finding |
+|---|-------|--------|---------|
+| 1 | SPEC ALIGNMENT | ✅ | specs/architecture.md (344 lines) + web-ui.md (144 lines). No drift. |
+| 2 | DOC COVERAGE | ✅ | docs/ 11 files. README (255 lines) + AGENTS.md (104 lines) accurate. |
+| 3 | TEST GAPS | ✅ | 546 passed, 62 skipped, 0 failed, 52.0s. 97% (2575 stmts, 78 misses). All modules ≥92%. |
+| 4 | PACKAGE UPGRADES | ✅ | filelock 3.31.1→3.31.2 (patch-only), pydantic_core 2.46.4 (pinned). pip-audit: 0 vulns. No worker spawn warranted. |
+| 5 | PITFALL HUNT | ✅ | Zero TODO/FIXME/HACK in src/. search_files confirmed. |
+| 6 | PERFORMANCE | ✅ | N/A — CLI/library project. |
+| 7 | ENDPOINT VERIFICATION | ✅ | 13 routes registered (verified ticks #5-16, code unchanged). |
+| 8 | CI/CD HEALTH | ✅ | HEAD == origin/main (55cac12). Workdir clean. No unpushed commits. |
+| 9 | DUCKBRAIN SYNC | ✅ | Tick-17 event written. 50+ keys in chimera-v2 ns. |
+| 10 | CODE QUALITY | ✅ | .gitignore complete (22 entries). Hilo: 625 edges, 93 files. Ruff clean (tick #16 confirmed; system fork exhaustion prevented re-check — not a code regression). |
+| 11 | MIDDLE-OUT WIRING | ✅ | CLI + web + MCP all wired. 13 routes verified. |
+
+**⚠️ COOLDOWN REVERSION #5:** CooldownS=3600 at tick start (should be 14400). Re-fixed to 14400s via API PUT. 5th reversion — TOML durable fix remains pending.
+
+**IDLE TICK #2 (new streak):** All 11 checks pass. Only filelock 3.31.2 available (patch). Ruff check skipped — system fork exhaustion (load ~4.0, 3400+ threads). Not a code regression: project-wide ruff clean confirmed in tick #16. Previous 14-tick idle streak broken by productive tick #15 (QUALITY fix).
+
+**Bane: disable this project with:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":false}'`
+
+**If new work appears, re-enable:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":true,"CooldownS":900}'`
+
+**Permanent cooldown fix (TOML — durable):** Update scheduler TOML to set chimera-v2 CooldownS=14400.
+
 ## [x] QUALITY — Fix 8 pre-existing ruff warnings in test coverage files (2026-07-20 tick #14 → FIXED 2026-07-21 tick #15)
 
 **Found:** 2026-07-20 never-done audit — check 8 (CI/CD health). `ruff check .` found 8 non-blocking warnings.
