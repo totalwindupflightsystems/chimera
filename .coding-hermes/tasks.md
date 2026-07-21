@@ -2,6 +2,17 @@
 
 ## Open
 
+## [x] DEPS — Upgrade 6 outdated pip packages (tick 2026-07-20 20:51, foreman-direct)
+- aiohttp 3.14.1 → 3.14.2 ✓
+- botocore 1.43.51 → 1.43.52 ✓
+- filelock 3.31.0 → 3.31.1 ✓
+- GitPython 3.1.52 → 3.1.53 ✓
+- pydantic_core 2.46.4 (PINNED — DEPS-1, pydantic 2.13.4 constraint)
+- sse-starlette 3.4.5 → 3.4.6 ✓
+- yarl 1.24.2 → 1.24.5 ✓
+
+**546/546 tests pass, guard PASS, pip-audit: 0 vulns. 2 pre-existing resolver warnings (pygount+chardet, litellm+importlib-metadata).**
+
 ## [ ] NEVER-DONE — Run coding-hermes-never-done 11-point audit (tick 2026-07-19 17:16)
 
 Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc coverage, test gaps, package upgrades, pitfall hunt, performance audit, endpoint verification, CI/CD health, DuckBrain sync, code quality, middle-out wiring. Create a task for EVERY gap found. Do NOT mark this task done until every check passes.
