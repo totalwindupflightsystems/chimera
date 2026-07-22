@@ -489,11 +489,9 @@ async def _check_providers(
     """Check connectivity to each configured provider.
 
     Returns a dict mapping provider name → {healthy: bool, error?: str}.
-    Does a quick test call to determine if the provider API is reachable.
+    Provider checks run concurrently and share a three-second timeout.
     """
-    status: dict[str, dict[str, Any]] = {}
-
-    for provider_name, _provider_cfg in config.providers.items():
+    async def check_one(provider_name: str) -> tuple[str, dict[str, Any]]:
         try:
             # Use a simple model entry test by picking any model from that provider
             test_model = next(
@@ -502,45 +500,42 @@ async def _check_providers(
                 None,
             )
             if test_model is None:
-                status[provider_name] = {
+                return provider_name, {
                     "healthy": True,
                     "note": "no models configured for provider",
                 }
-                continue
 
-            # Quick ping: try a trivial completion with very short timeout
-            try:
-                await asyncio.wait_for(
-                    gateway.complete(
-                        test_model,
-                        [{"role": "user", "content": "ping"}],
-                        temperature=1,
-                    ),
-                    timeout=15.0,
-                )
-                status[provider_name] = {
-                    "healthy": True,
-                    "model_tested": test_model,
-                }
-            except TimeoutError:
-                status[provider_name] = {
-                    "healthy": False,
-                    "error": "timeout",
-                }
-            except Exception as exc:
-                status[provider_name] = {
-                    "healthy": False,
-                    "error": str(exc)[:200],
-                }
+            await gateway.complete(
+                test_model,
+                [{"role": "user", "content": "ping"}],
+                temperature=1,
+            )
+            return provider_name, {
+                "healthy": True,
+                "model_tested": test_model,
+            }
         except Exception as exc:
-            status[provider_name] = {
+            return provider_name, {
                 "healthy": False,
                 "error": str(exc)[:200],
             }
 
-    # If no providers, still report something useful
-    if not status:
-        status["_none"] = {"healthy": True, "note": "no providers configured"}
+    if not config.providers:
+        return {"_none": {"healthy": True, "note": "no providers configured"}}
+
+    tasks = {
+        asyncio.create_task(check_one(provider_name)): provider_name
+        for provider_name in config.providers
+    }
+    done, pending = await asyncio.wait(tasks, timeout=3.0)
+
+    status = dict(task.result() for task in done)
+    for task in pending:
+        task.cancel()
+        status[tasks[task]] = {"healthy": False, "error": "timeout"}
+
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
 
     return status
 
