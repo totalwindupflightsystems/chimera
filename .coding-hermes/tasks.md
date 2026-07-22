@@ -31,7 +31,7 @@ Server started (5046 models, 9 providers). Endpoint audit found 3 concrete issue
 
 **Commit:** <pending>
 
-## [ ] VALIDATION-001 — Add input validation to DeliberateRequest + ChatCompletionRequest models
+## [x] VALIDATION-001 — Add input validation to DeliberateRequest + ChatCompletionRequest models (fixed tick #29: commit 272f989)
 
 | ID | Task | Pri | Cpx | Deps | Tags | Model | Reasoning | Fallback |
 |----|------|-----|-----|------|------|-------|-----------|----------|
