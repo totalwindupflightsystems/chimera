@@ -502,9 +502,9 @@ Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc cove
 | 10 | CODE QUALITY | ✅ | .gitignore complete (22 entries). Hilo: 625 edges, 93 files. Ruff clean. Workdir clean. |
 | 11 | MIDDLE-OUT WIRING | ✅ | CLI + web + MCP all wired. 13 routes verified. |
 
-**⚠️ COOLDOWN REVERSION #12:** CooldownS=3600 at tick start (should be 14400). Re-fixed to 14400s via API PUT. Verified: CooldownS=14400, Enabled=True, UpdatedAt=2026-07-22T03:48:06Z. 12th reversion across 13 consecutive ticks (#12-#24). Root cause unchanged: daemon restarts revert API-set values. TOML durable fix remains the only permanent solution.
+**✅ NO COOLDOWN REVERSION THIS TICK:** CooldownS=14400 persisted from prior tick (verified via GET: CooldownS=14400, Enabled=True, Weight=10, Priority=8). First tick without reversion since tick #3's original 14400 set.
 
-**🛑 IDLE TICK #9 (new streak):** All 11 checks pass. Zero test failures. 5 minor upgrades (botocore, certifi, filelock, platformdirs — all patch-level; certifi is new this tick). 24 total idle ticks (14+9 across streaks, broken only by tick #15 QUALITY fix). Current streak: 9 idle ticks (ticks #16-24). No new tasks created. **Per graduation rules: ≥7 idle ticks → ESCALATED. Foreman MUST NOT self-disable — requires Bane's manual action.**
+**🛑 IDLE TICK #9 (new streak):** All 11 checks pass. Zero test failures. 5 minor upgrades (botocore, certifi, filelock, platformdirs — all patch-level; certifi is new this tick: 2026.6.17→2026.7.22). 24 total idle ticks (14+9 across streaks, broken only by tick #15 QUALITY fix). Current streak: 9 idle ticks (ticks #16-24). No new tasks created. **Per graduation rules: ≥7 idle ticks → ESCALATED. Foreman MUST NOT self-disable — requires Bane's manual action.**
 
 **Bane: disable this project with:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":false}'`
 
