@@ -49,7 +49,7 @@ Server started (5046 models, 9 providers). Endpoint audit found 3 concrete issue
 
 **Files:** `src/chimera/api/server.py` (request models + deliberate/chat handlers)
 
-## [ ] HEALTH-001 — Make health/readiness checks fast (<3s) instead of timing out
+## [x] HEALTH-001 — Make health/readiness checks fast (<3s) instead of timing out (commit 25722e4, tick 2026-07-22 05:21)
 
 | ID | Task | Pri | Cpx | Deps | Tags | Model | Reasoning | Fallback |
 |----|------|-----|-----|------|------|-------|-----------|----------|
