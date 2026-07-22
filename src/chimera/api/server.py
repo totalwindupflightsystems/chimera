@@ -23,7 +23,7 @@ from typing import Annotated, Any
 
 import structlog
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from chimera.api.dependencies import require_api_key
 from chimera.api.rate_limit import RateLimiter
@@ -153,8 +153,8 @@ def _check_rate_limit(request: Request, key: str) -> None:
 
 
 class DeliberateRequest(BaseModel):
-    prompt: str
-    formation: str = "auto"
+    prompt: str = Field(..., min_length=1)
+    formation: str = Field("auto", min_length=1)
     # Request-level overrides — maximum flexibility
     allowed_models: list[str] | None = None      # Only these models allowed
     disallowed_models: list[str] | None = None    # Exclude these models
@@ -180,8 +180,8 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str = "auto"
-    messages: list[ChatMessage]
+    model: str = Field(..., min_length=1)
+    messages: list[ChatMessage] = Field(..., min_length=1)
     temperature: float | None = None
     response_format: dict[str, Any] | None = None  # OpenAI-compatible structured output
     # Request-level overrides (passed as extra fields)
@@ -346,6 +346,12 @@ def _register_routes(app: FastAPI) -> None:
 
         try:
             engine: Engine = request.app.state.engine
+            cfg: ChimeraConfig = request.app.state.config
+            if body.formation not in cfg.formations:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Unknown formation: {body.formation}",
+                )
             if body.dag is not None and not body.allow_custom_dag:
                 raise HTTPException(
                     status_code=400,

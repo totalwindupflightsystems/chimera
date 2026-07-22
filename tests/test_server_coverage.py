@@ -337,16 +337,16 @@ class TestChatCompletionsEdgeCases:
         )
         assert r.status_code == 200, r.text
 
-    def test_deliberate_value_error_returns_400(
+    def test_deliberate_unknown_formation_returns_422(
         self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
-        """engine.deliberate raising ValueError → HTTP 400."""
-        def exploding(model: str, messages: list, **kw: Any):
+        """Unknown formation on /v1/deliberate → HTTP 422 (VALIDATION-001)."""
+        def _unused(model: str, messages: list, **kw: Any) -> GatewayResponse:
             raise RuntimeError("not used")
+        engine = Engine(config, FakeGateway(_unused))
 
-        engine = Engine(config, FakeGateway(exploding))
-
-        # Patch engine.deliberate to raise ValueError
+        # Patch engine.deliberate to raise ValueError — should never be reached
+        # now because the handler validates formations before calling the engine.
         async def raising_deliberate(*a: Any, **kw: Any) -> Any:
             raise ValueError("bad formation")
 
@@ -354,9 +354,9 @@ class TestChatCompletionsEdgeCases:
         app = create_app(config=config, engine=engine)
         client = TestClient(app)
 
-        r = client.post("/v1/deliberate", json={"prompt": "hi", "formation": "bad"})
-        assert r.status_code == 400
-        assert "bad formation" in r.json()["detail"]
+        r = client.post("/v1/deliberate", json={"prompt": "hi", "formation": "no-such"})
+        assert r.status_code == 422
+        assert "Unknown formation" in r.json()["detail"]
 
 
 # =========================================================================== #

@@ -205,3 +205,76 @@ def test_chat_completions_accepts_custom_dag(config) -> None:  # type: ignore[no
     )
     assert r.status_code == 200, r.text
     assert r.json()["choices"][0]["message"]["content"] == "FINAL ANSWER"
+
+
+# --------------------------------------------------------------------------- #
+# VALIDATION-001: Input validation for DeliberateRequest + ChatCompletionRequest
+# --------------------------------------------------------------------------- #
+
+
+def test_deliberate_empty_prompt_returns_422(config) -> None:  # type: ignore[no-untyped-def]
+    """Empty prompt on /v1/deliberate → 422."""
+    client = _client(config)
+    r = client.post("/v1/deliberate", json={"prompt": "", "formation": "auto"})
+    assert r.status_code == 422
+    assert "prompt" in r.text
+
+
+def test_deliberate_empty_formation_returns_422(config) -> None:  # type: ignore[no-untyped-def]
+    """Empty formation on /v1/deliberate → 422."""
+    client = _client(config)
+    r = client.post("/v1/deliberate", json={"prompt": "hi", "formation": ""})
+    assert r.status_code == 422
+    assert "formation" in r.text
+
+
+def test_deliberate_unknown_formation_returns_422(config) -> None:  # type: ignore[no-untyped-def]
+    """Formation not in cfg.formations → 422."""
+    client = _client(config)
+    r = client.post("/v1/deliberate", json={"prompt": "hi", "formation": "no-such"})
+    assert r.status_code == 422
+    assert "Unknown formation" in r.json()["detail"]
+
+
+def test_deliberate_valid_formation_returns_200(config) -> None:  # type: ignore[no-untyped-def]
+    """A configured formation on /v1/deliberate → 200."""
+    client = _client(config)
+    r = client.post("/v1/deliberate", json={"prompt": "hi", "formation": "simple"})
+    assert r.status_code == 200, r.text
+    assert r.json()["answer"] == "FINAL ANSWER"
+
+
+def test_chat_completions_empty_messages_returns_422(config) -> None:  # type: ignore[no-untyped-def]
+    """Empty messages list on /v1/chat/completions → 422."""
+    client = _client(config)
+    r = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": []},
+    )
+    assert r.status_code == 422
+    assert "messages" in r.text
+
+
+def test_chat_completions_empty_model_returns_422(config) -> None:  # type: ignore[no-untyped-def]
+    """Empty model string on /v1/chat/completions → 422."""
+    client = _client(config)
+    r = client.post(
+        "/v1/chat/completions",
+        json={"model": "", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 422
+    assert "model" in r.text
+
+
+def test_chat_completions_valid_request_returns_200(config) -> None:  # type: ignore[no-untyped-def]
+    """A valid /v1/chat/completions request → 200."""
+    client = _client(config)
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "what is 2+2?"}],
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["choices"][0]["message"]["content"] == "FINAL ANSWER"
