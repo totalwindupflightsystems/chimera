@@ -13,7 +13,59 @@
 
 **546/546 tests pass, guard PASS, pip-audit: 0 vulns. 2 pre-existing resolver warnings (pygount+chardet, litellm+importlib-metadata).**
 
+## [x] U01 — Usability & coverage audit: find gaps in endpoint wiring, UX flow, error handling, edge cases, test coverage (2026-07-22 tick #29 — INVESTIGATED)
+
 | U01 | Usability & coverage audit — find gaps in endpoint wiring, UX flow, error handling, edge cases, test coverage | High | 3±1 | — | +++testing, ++endpoint-verification, ++code-review, +e2e, -vision | DS-V4-Flash | Medium | GLM-5.2 |
+
+**Findings (2026-07-22 tick #29 — PRODUCTIVE):**
+
+Server started (5046 models, 9 providers). Endpoint audit found 3 concrete issues across 2 new tasks:
+
+| # | Issue | Severity | Task |
+|---|-------|----------|------|
+| 1 | `/v1/health` + `/v1/health/ready` timeout (>30s) — `_check_providers()` pings 9 providers sequentially at 15s each. | MEDIUM | HEALTH-001 |
+| 2 | `/v1/deliberate` accepts empty prompt (no `min_length`) and invalid formation (silently falls back to "auto") | HIGH | VALIDATION-001 |
+| 3 | `/v1/chat/completions` triggers LLM calls for empty messages/empty model — validation should reject before engine call | HIGH | VALIDATION-001 |
+
+**What works correctly:** 404 handling (3/3 paths), health/live (instant 200), models/formations endpoints (200 with data), valid deliberate+chat completions (200 with answer+trace), OpenAPI docs (200), web UI (200), missing prompt → 422, missing messages → 422. All 546/546 tests pass, 97% coverage.
+
+**Commit:** <pending>
+
+## [ ] VALIDATION-001 — Add input validation to DeliberateRequest + ChatCompletionRequest models
+
+| ID | Task | Pri | Cpx | Deps | Tags | Model | Reasoning | Fallback |
+|----|------|-----|-----|------|------|-------|-----------|----------|
+| VALIDATION-001 | Add Pydantic validation to request models: min_length=1 on prompt, formation enum validation, min_length=1 on messages, model non-empty | High | 2±1 | — | +++testing, ++python, ++pydantic | MiniMax-M3 | Medium | DS-V4-Flash |
+
+**Found:** U01 usability audit (tick #29). Endpoints accept invalid inputs that should be rejected at the API layer.
+
+**ACs:**
+- `DeliberateRequest.prompt`: add `Field(min_length=1)` — empty prompt → 422
+- `DeliberateRequest.formation`: add `@field_validator` that checks formation exists in config — invalid → 422
+- `ChatCompletionRequest.messages`: add `Field(min_length=1)` — empty → 422
+- `ChatCompletionRequest.model`: add `Field(min_length=1)` — empty → 422
+- Existing tests still pass (546/546)
+- New test(s) for each validation case
+
+**Files:** `src/chimera/api/server.py` (request models + deliberate/chat handlers)
+
+## [ ] HEALTH-001 — Make health/readiness checks fast (<3s) instead of timing out
+
+| ID | Task | Pri | Cpx | Deps | Tags | Model | Reasoning | Fallback |
+|----|------|-----|-----|------|------|-------|-----------|----------|
+| HEALTH-001 | Fix `/v1/health` + `/v1/health/ready` timeout: parallel provider pings with overall 3s cap | Medium | 2±1 | — | ++python, +asyncio, +error-handling | MiniMax-M3 | Medium | DS-V4-Flash |
+
+**Found:** U01 usability audit (tick #29). Health check pings providers sequentially (9 providers × 15s each = 135s worst case), causing timeouts.
+
+**ACs:**
+- `_check_providers()` uses `asyncio.gather()` or `asyncio.wait()` with overall timeout
+- Health check returns within 3 seconds (degraded if providers slow)
+- Readiness check returns within 3 seconds
+- Existing tests still pass (546/546)
+- Integration test: health endpoint responds in <3s when providers are slow
+
+**Files:** `src/chimera/api/server.py` (lines 480-540, `_check_providers` function)
+
 ## [ ] NEVER-DONE — Run coding-hermes-never-done 11-point audit (tick 2026-07-19 17:16)
 
 Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc coverage, test gaps, package upgrades, pitfall hunt, performance audit, endpoint verification, CI/CD health, DuckBrain sync, code quality, middle-out wiring. Create a task for EVERY gap found. Do NOT mark this task done until every check passes.
