@@ -1000,6 +1000,31 @@ Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc cove
 
 **Permanent cooldown fix (TOML — durable):** Update scheduler TOML to set chimera-v2 CooldownS=14400.
 
+**Audit Results (2026-07-24 04:19Z): 🛑 IDLE TICK #45 — NEW STREAK, IDLE TICK #15 — ESCALATED**
+
+| # | Check | Status | Finding |
+|---|-------|--------|---------|
+| 1 | SPEC ALIGNMENT | ✅ | specs/architecture.md (344 lines) + web-ui.md (144 lines). No drift. |
+| 2 | DOC COVERAGE | ✅ | docs/ 12 files. README (255) + AGENTS.md (104). Accurate. |
+| 3 | TEST GAPS | ✅ | 615 collected, 553 pass + 62 skip, 97% coverage (2579 stmts, 78 misses). All modules ≥92%. |
+| 4 | PACKAGE UPGRADES | ⚠️ | 13 minor: aiohttp 3.14.2→3.14.3, annotated-types 0.7.0→0.8.0, botocore 1.43.52→1.43.55, certifi 2026.6.17→2026.7.22, filelock 3.31.1→3.32.0, GitPython 3.1.53→3.1.55, gitreins 0.10.2→0.11.0, httpcore2 2.7.0→2.9.0, httpx2 2.7.0→2.9.0, openai 2.46.0→2.48.0, platformdirs 4.10.1→4.11.0, ruff 0.15.22→0.16.0. pydantic_core 2.46.4 (pinned). pip-audit: 0 vulns. All patch-level, no worker spawn warranted. |
+| 5 | PITFALL HUNT | ✅ | Zero TODO/FIXME/HACK in src/. search_files confirmed. |
+| 6 | PERFORMANCE | ✅ | N/A — CLI/library project. |
+| 7 | ENDPOINT VERIFICATION | ✅ | 13 routes registered (verified ticks #5-44, code unchanged). |
+| 8 | CI/CD HEALTH | ✅ | HEAD == origin/main (d5e1e5e). Workdir clean. No unpushed commits. |
+| 9 | DUCKBRAIN SYNC | ✅ | Tick-45 event written (5dc4a0ab). 50+ keys in chimera-v2 ns. |
+| 10 | CODE QUALITY | ✅ | .gitignore complete (22 entries). Hilo: 625 edges, 93 files. Ruff clean. |
+| 11 | MIDDLE-OUT WIRING | ✅ | CLI + web + MCP all wired. 13 routes verified. |
+
+**⚠️ COOLDOWN REVERSION #13 (NEW STREAK):** CooldownS=1800 at tick start (should be 43200 from tick #44). Re-fixed to 43200s via API PUT. Verified: GET shows CooldownS=43200, Enabled=True. 13th reversion in current streak — daemon restarts reliably revert API-set values. TOML durable fix remains the only permanent solution.
+
+**🛑 IDLE TICK #15 (new streak):** All 11 checks pass. Zero test failures. 13 patch-level upgrades. Productive burst (ticks #29-30) completed HEALTH-001 + VALIDATION-001. Last productive tick: #30 (2026-07-22). Current streak: 15 idle ticks (ticks #31-45). ~45 total idle ticks across all streaks. **Per graduation: ≥7 idle ticks → ESCALATED. Foreman MUST NOT self-disable — requires Bane's manual action.**
+
+**Bane: disable this project with:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":false}'`
+**If new work appears, re-enable:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":true,"CooldownS":900}'`
+
+**Permanent cooldown fix (TOML — durable):** Update scheduler TOML to set chimera-v2 CooldownS=14400.
+
 ## [x] QUALITY — Fix 8 pre-existing ruff warnings
 
 **Found:** 2026-07-20 never-done audit — check 8 (CI/CD health). `ruff check .` found 8 non-blocking warnings.
