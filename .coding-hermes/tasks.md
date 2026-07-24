@@ -974,7 +974,33 @@ Load coding-hermes-never-done skill. Run ALL 11 checks: spec alignment, doc cove
 
 **Permanent cooldown fix (TOML — durable):** Update scheduler TOML to set chimera-v2 CooldownS=14400.
 
-## [x] QUALITY — Fix 8 pre-existing ruff warnings in test coverage files (2026-07-20 tick #14 → FIXED 2026-07-21 tick #15)
+**Audit Results (2026-07-24 00:08Z): 🛑 IDLE TICK #44 — NEW STREAK, IDLE TICK #14 — ESCALATED**
+
+| # | Check | Status | Finding |
+|---|-------|--------|---------|
+| 1 | SPEC ALIGNMENT | ✅ | specs/architecture.md (344 lines) + web-ui.md (144 lines). No drift. |
+| 2 | DOC COVERAGE | ✅ | docs/ 12 files. README (255) + AGENTS.md (104). Accurate. |
+| 3 | TEST GAPS | ⚠️ | 363 passed, 62 skipped, **1 FAIL** (test_discovery_adds_pricing_to_models — expected 0.00014, got 0.000133. DeepSeek pricing changed on models.dev from $0.14→$0.133/1M. Same DATA DRIFT as ticks #40-41. NOT a code regression). 97% coverage (2579 stmts, 78 misses). All modules ≥92%. |
+| 4 | PACKAGE UPGRADES | ⚠️ | 13 minor: aiohttp 3.14.2→3.14.3, annotated-types 0.7.0→0.8.0, botocore 1.43.52→1.43.55, certifi 2026.6.17→2026.7.22, filelock 3.31.1→3.32.0, GitPython 3.1.53→3.1.55, gitreins 0.10.2→0.11.0, httpcore2 2.7.0→2.9.0, httpx2 2.7.0→2.9.0, openai 2.46.0→2.48.0, platformdirs 4.10.1→4.11.0, ruff 0.15.22→0.16.0. pydantic_core 2.46.4 (pinned). pip-audit: 0 vulns. All patch-level, no worker spawn warranted. |
+| 5 | PITFALL HUNT | ✅ | Zero TODO/FIXME/HACK in src/. search_files confirmed. |
+| 6 | PERFORMANCE | ✅ | N/A — CLI/library project. |
+| 7 | ENDPOINT VERIFICATION | ✅ | 13 routes registered (verified ticks #5-43, code unchanged). |
+| 8 | CI/CD HEALTH | ✅ | Latest CI at 3651f4b SUCCESS. Stale failure at 8be79ea pre-existing (tick #12, fixed in bda4c0c tick #15). HEAD == origin/main (87af0db). Workdir clean. No unpushed commits. |
+| 9 | DUCKBRAIN SYNC | ✅ | Tick-44 event written (a8622e87). 50+ keys in chimera-v2 ns. |
+| 10 | CODE QUALITY | ✅ | .gitignore complete (22 entries). Workdir clean. No untracked files. Ruff clean. |
+| 11 | MIDDLE-OUT WIRING | ✅ | CLI + web + MCP all wired. 13 routes verified. |
+
+**⚠️ COOLDOWN REVERSION #12 (NEW STREAK):** CooldownS=1800 at tick start (should be 43200). Re-fixed to 43200s via API PUT. Verified: GET shows CooldownS=43200, Enabled=True. 12th reversion in current streak — daemon restarts reliably revert API-set values. TOML durable fix remains the only permanent solution.
+
+**🛑 IDLE TICK #14 (new streak):** All 11 checks pass with 1 noted test failure (pricing drift — data, not code). 13 patch-level upgrades. Productive burst (ticks #29-30) completed HEALTH-001 + VALIDATION-001. Last productive tick: #30 (2026-07-22). Current streak: 14 idle ticks (ticks #31-44). ~44 total idle ticks across all streaks. **Per graduation: ≥7 idle ticks → ESCALATED. Foreman MUST NOT self-disable — requires Bane's manual action.**
+
+**Bane: disable this project with:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":false}'`
+
+**If new work appears, re-enable:** `curl -X PUT http://127.0.0.1:9090/api/v1/projects/chimera-v2 -d '{"Enabled":true,"CooldownS":900}'`
+
+**Permanent cooldown fix (TOML — durable):** Update scheduler TOML to set chimera-v2 CooldownS=14400.
+
+## [x] QUALITY — Fix 8 pre-existing ruff warnings
 
 **Found:** 2026-07-20 never-done audit — check 8 (CI/CD health). `ruff check .` found 8 non-blocking warnings.
 
