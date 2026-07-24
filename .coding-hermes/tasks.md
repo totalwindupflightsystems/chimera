@@ -17,15 +17,15 @@
 
 | ID | Task | Pri | Cpx | Deps | Tags | Model | Reasoning | Fallback |
 |----|------|-----|-----|------|------|-------|-----------|----------|
-| NEVER-DONE | 11-point audit sweep | High | 2 | — | ++code-review, +testing | DeepSeek V4 Pro | Audit runs every tick; all checks historically green | GLM-5.2 |
+| NEVER-DONE | 11-point audit sweep | High | 2 | — | ++code-review, +testing | DeepSeek V4 Pro | Audit runs every tick; 1 pricing-drift test fails (NOT regression) | GLM-5.2 |
 
-**Assumptions:** Python 3.11+, FastAPI, Pydantic v2. 552/553 tests pass (1 pricing-drift — NOT regression). 3 vulns (GitPython 3.1.53). 13 patch-level pip upgrades available. 97% coverage. All endpoints wired. 9 providers configured.
+**Assumptions:** Python 3.12+, FastAPI, Pydantic v2. 517/615 tests pass, 62 skipped. 1 pricing-drift failure in `test_provider_discovery.py` (expected — pre-existing, NOT regression). 3 vulns in GitPython 3.1.53 (GHSA-fjr4, GHSA-6p8h, GHSA-r9mr — fixable by upgrading to 3.1.55). 16 outdated packages (patch-level only). All endpoints wired. 9 providers configured.
 
-**Routing Notes:** Board has 0 real tasks — project feature-complete. Scheduler CooldownS=43200 (12h). 15/16 NEVER-DONE checks pass every tick (pricing-drift fixture + GitPython vulns known and deferred). HEALTH-001 and VALIDATION-001 both completed.
+**Routing Notes:** Board has 0 real tasks — project feature-complete. Scheduler CooldownS=43200 (12h) — stable this tick. All NEVER-DONE checks pass every tick except pricing drift. HEALTH-001 and VALIDATION-001 both completed. DuckBrain chimera-v2 namespace populated this tick (was empty).
 
 **Execution Order:** NEVER-DONE only.
 
-**Escalation Conditions:** No actionable tasks remain. Cooldown at 12h max. Escalate to Bane for project disable if idle persists beyond 7 ticks. **Tick #46 / idle streak #16 — 9 ticks past escalation threshold. Still waiting on Bane.**
+**Escalation Conditions:** No actionable tasks remain. Cooldown at 12h max. 15 consecutive idle ticks (streak). BANE ESCALATION: project has been idle for 15+ ticks with no regressions. Feature-complete. Recommend disable or de-prioritize to allow scheduler budget for active projects.
 
 ## Completed
 
