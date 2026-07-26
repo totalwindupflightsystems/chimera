@@ -3,7 +3,7 @@
   All tasks MUST use matrix format: | ID | Task | Pri | Cpx | Deps | Tags | Model | Reasoning | Fallback |
   Before editing this file, load the skill: skill_view(name='coding-hermes-model-router')
   Validate: python3 ~/.hermes/scripts/validate-board-format.py .coding-hermes/tasks.md
-- [ ] **GITREINS-JUDGE — Configure LLM evaluator for commit quality review**
+- [x] **GITREINS-JUDGE — Configure LLM evaluator for commit quality review**
   | 🔴 Critical | — | — | deepseek-v4-flash @ deepseek-foreman | GITREINS_LLM_API_KEY in ~/.hermes/.env | foreman-direct |
 
   Run: `python3 ~/.hermes/scripts/check-gitreins-judge.py .` to verify.
@@ -38,11 +38,11 @@
 
 **Assumptions:** Python 3.12+, FastAPI, Pydantic v2. 552/615 tests pass, 62 skipped. 1 pricing-drift failure in `test_provider_discovery.py` (expected — pre-existing, NOT regression). 4 vulns in GitPython 3.1.53 (GHSA-fjr4, GHSA-6p8h, GHSA-r9mr, GHSA-94p4 — fixable by upgrading to 3.1.55+). 16 outdated packages (patch-level only). All endpoints wired. 9 providers configured.
 
-**Routing Notes:** Board has 0 real tasks — project feature-complete. Scheduler CooldownS=43200 (12h) — stable this tick. All NEVER-DONE checks pass every tick except pricing drift and mypy pre-existing errors (6 in engine.py + mcp/server.py). HEALTH-001 and VALIDATION-001 both completed. GitReins dual-source: 9 tasks, all complete — no drift.
+**Routing Notes:** Board has 0 real tasks — project feature-complete. Scheduler CooldownS=43200 (12h) — re-fixed at tick #48 (cooldown reverted to 1800 on scheduler restart, PUT back to 43200). GITREINS-JUDGE ✅ verified configured (deepseek-v4-flash). All NEVER-DONE checks pass every tick except pricing drift and mypy pre-existing errors (6 in engine.py + mcp/server.py). Hilo: 625 edges/93 files. GitReins: 9/9 complete — no drift. 17 outdated packages (patch-level). 4 vulns (GitPython 3.1.53). 97% coverage. Ruff: clean on src/chimera/.
 
 **Execution Order:** NEVER-DONE only.
 
-**Escalation Conditions:** No actionable tasks remain. Cooldown at 12h max. 17 consecutive idle ticks (streak). BANE ESCALATION: project has been idle for 17+ ticks with no regressions. Feature-complete. Recommend disable or de-prioritize to allow scheduler budget for active projects.
+**Escalation Conditions:** No actionable tasks remain. Cooldown at 12h max. 18 consecutive idle ticks (streak). BANE ESCALATION: project has been idle for 18+ ticks with no regressions. Feature-complete. Cooldown reverted to 1800 on scheduler restart — re-fixed to 43200 (tick #48). Recommend disable or de-prioritize to allow scheduler budget for active projects.
 
 ## Completed
 
