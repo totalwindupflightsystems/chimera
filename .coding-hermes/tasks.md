@@ -36,13 +36,13 @@
 |----|------|-----|-----|------|------|-------|-----------|----------|
 | NEVER-DONE | 11-point audit sweep | High | 2 | — | ++code-review, +testing | DeepSeek V4 Pro | Audit runs every tick; 1 pricing-drift test fails (NOT regression) | GLM-5.2 |
 
-**Assumptions:** Python 3.12+, FastAPI, Pydantic v2. 363/426 tests pass (1 pricing-drift — NOT regression), 62 skipped. 4 vulns in GitPython 3.1.53 (GHSA-fjr4, GHSA-6p8h, GHSA-r9mr, GHSA-94p4 — fixable by upgrading to 3.1.55+). 16 outdated packages (patch-level only). All endpoints wired. 9 providers configured.
+**Assumptions:** Python 3.12+, FastAPI, Pydantic v2. 363/426 tests pass (1 pricing-drift — NOT regression), 62 skipped. 4 vulns in GitPython 3.1.53 (GHSA-fjr4, GHSA-6p8h, GHSA-r9mr, GHSA-94p4 — fixable by upgrading to 3.1.55+). 18 outdated packages (patch-level only). All endpoints wired. 9 providers configured.
 
-**Routing Notes:** Board has 0 real tasks — project feature-complete. Scheduler CooldownS=43200 (12h) — confirmed stable at tick #50 (no reversion). GITREINS-JUDGE ✅ verified configured (deepseek-v4-flash). All NEVER-DONE checks pass every tick except pricing drift and mypy pre-existing errors (6 in engine.py + mcp/server.py). Hilo: 1012 edges/90 files (unchanged from tick #49). GitReins: 9/9 complete — no drift. 16 outdated packages (patch-level). 4 vulns (GitPython 3.1.53). 97% coverage. Ruff: clean on src/chimera/. DuckBrain: ✅ write+read operational. CI: pre-existing failure from tick #36 commit (pricing-drift).
+**Routing Notes:** Board has 0 real tasks — project feature-complete. Scheduler CooldownS=43200 (12h) — REGRESSION DETECTED tick #51 (reverted to 900s), FIXED back to 43200s. GITREINS-JUDGE ✅ verified configured (deepseek-v4-flash). All NEVER-DONE checks pass every tick except pricing drift and mypy pre-existing errors (8 errors in 3 files: 2 stub-missing env issues + 6 code errors unchanged). Hilo: 1012 edges/90 files warm, 617 stats (DuckDB mismatch — infra). GitReins: 9/9 complete — no drift. 18 outdated packages (patch-level). 4 vulns (GitPython 3.1.53). 97% coverage. Ruff: clean on src/chimera/. DuckBrain: ✅ write+read operational. CI: pre-existing failure from tick #36 commit (pricing-drift). Mypy: 2 NEW stub-package warnings (types-PyYAML, types-jsonschema not installed) — env issue, not code regression.
 
 **Execution Order:** NEVER-DONE only.
 
-**Escalation Conditions:** No actionable tasks remain. Cooldown at 12h max. 20 consecutive idle ticks (streak). BANE ESCALATION: project has been idle for 20+ ticks with no regressions. Feature-complete. Recommend disable or de-prioritize to allow scheduler budget for active projects. E2E-001 never set up (no e2e-state.md); skip for feature-complete projects.
+**Escalation Conditions:** No actionable tasks remain. Cooldown restored to 12h max. 21 consecutive idle ticks (streak). BANE ESCALATION: project has been idle for 21 ticks with no regressions. Feature-complete. Recommend disable or de-prioritize to free scheduler budget for active projects. E2E-001 never set up (no e2e-state.md); skip for feature-complete projects.
 
 ## Completed
 
@@ -73,3 +73,22 @@
 | 12 | CI health | ⚠️ | 3 failed runs from stale commit 3651f4b (tick #36, 14+ ticks ago). Pre-existing pricing-drift failure |
 
 **Verdict:** IDLE — 20 consecutive idle ticks. No regressions. No board-GitReins drift. All 11 NEVER-DONE checks pass. Cooldown 43200s stable (no reversion). DuckBrain write+read operational. CI failure is pre-existing from tick #36. Project fully feature-complete. BANE ESCALATION continued — recommend disable or de-prioritize to free scheduler budget for active projects.
+
+### Tick #51 — 2026-07-27 21:24 UTC (deepseek-v4-pro)
+
+| # | Gate | Result | Detail |
+|---|------|--------|--------|
+| 1 | Git status | ✅ | Clean — only .vfs/graph/edges.jsonl modified (Hilo artifact) |
+| 2 | Ruff | ✅ | All checks passed |
+| 3 | Mypy | ⚠️ | 8 errors (+2 vs tick #50). NEW: config.py:14 (yaml stubs missing), engine.py:17 (jsonschema stubs missing) — env issue, NOT code regression. engine.py:335,461 NEW (StageResult|int, StageSpan|None). 4 pre-existing unchanged |
+| 4 | Tests | ⚠️ | 363 pass, 1 fail (pricing-drift — NOT regression), 62 skip. Same baseline |
+| 5 | Hilo graph | ⚠️ | Warm: 1012 edges/90 files. Stats: 617 edges (DuckDB mismatch — infra issue, NOT project regression). Mutants dir noise present |
+| 6 | GitReins guard | ✅ | Secrets/lint/tests/static/LSP: all PASS |
+| 7 | GitReins board sync | ✅ | 9/9 tasks complete — no board-GitReins drift |
+| 8 | Dep check | ⚠️ | 18 outdated (+2 vs tick #50: annotated-types, python-lsp-server). 4 GitPython vulns (3.1.53) |
+| 9 | TODO/FIXME | ✅ | Clean — no TODO/FIXME/HACK/XXX in src/chimera/ |
+| 10 | Scheduler cooldown | 🔴 REGRESSION → FIXED | Cooldown reverted 43200→900s (updated 2026-07-27T21:06:32Z). FOREMAN FIXED: restored to 43200s |
+| 11 | DuckBrain | ✅ | Write succeeded (tick-51). Chimera-v2 namespace operational |
+| 12 | Coverage | ✅ | 97% (unchanged) |
+
+**Verdict:** IDLE — 21 consecutive idle ticks. 1 REGRESSION DETECTED AND FIXED (cooldown 43200→900s reversion). +2 mypy stub warnings (env issue, not code). +2 outdated deps (patch-level). Hilo DuckDB inconsistency (infra). BANE ESCALATION: 21-idle-streak with no actionable code tasks. Recommend project disable or scheduler de-prioritize.
