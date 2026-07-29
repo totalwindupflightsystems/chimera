@@ -36,13 +36,13 @@
 |----|------|-----|-----|------|------|-------|-----------|----------|
 | NEVER-DONE | 11-point audit sweep | High | 2 | — | ++code-review, +testing | DeepSeek V4 Pro | Audit runs every tick; 1 pricing-drift test fails (NOT regression) | GLM-5.2 |
 
-**Assumptions:** Python 3.12+, FastAPI, Pydantic v2. 552/615 tests pass (1 pricing-drift — NOT regression), 62 skipped. 4 vulns in GitPython 3.1.53 (GHSA-fjr4, GHSA-6p8h, GHSA-r9mr, GHSA-94p4 — fixable by upgrading to 3.1.55+). 22 outdated packages (patch-level only). All endpoints wired. 9 providers configured.
+**Assumptions:** Python 3.12+, FastAPI, Pydantic v2. 552/615 tests pass (1 pricing-drift — NOT regression), 62 skipped. 4 vulns in GitPython 3.1.53 (GHSA-fjr4, GHSA-6p8h, GHSA-r9mr, GHSA-94p4 — fixable by upgrading to 3.1.55+). 6 outdated packages (patch-level only — fresh pip). All endpoints wired. 9 providers configured.
 
-**Routing Notes:** Board has 0 real tasks — project feature-complete. Scheduler CooldownS=43200 (12h) — stable since tick #51 fix. GITREINS-JUDGE ✅ verified configured (deepseek-v4-flash). All NEVER-DONE checks pass every tick except pricing drift and mypy pre-existing errors (8 errors in 3 files: 2 stub-missing env issues + 6 code errors unchanged). Hilo: 1012 edges/90 files warm, 617 stats (DuckDB mismatch — infra). GitReins: 9/9 complete — no drift. 22 outdated packages (patch-level). 4 vulns (GitPython 3.1.53). 97% coverage. Ruff: clean on src/chimera/. DuckBrain: ✅ write+read operational (tick-54 recorded). CI: pre-existing failure from tick #36 commit (pricing-drift). Mypy: 8 errors unchanged (same as tick #51-53).
+**Routing Notes:** Board has 0 real tasks — project feature-complete. Scheduler CooldownS=43200 (12h) — stable since tick #51 fix. GITREINS-JUDGE ✅ verified configured (deepseek-v4-flash). All NEVER-DONE checks pass every tick except pricing drift and mypy pre-existing errors (8 errors in 3 files: 2 stub-missing env issues + 6 code errors unchanged). Hilo: 1012 edges/90 files warm, 617 stats (DuckDB mismatch — infra). GitReins: 9/9 complete — no drift. 6 outdated packages (patch-level). 4 vulns (GitPython 3.1.53). 97% coverage. Ruff: clean on src/chimera/. DuckBrain: ✅ write+read operational (tick-55 recorded). CI: pre-existing failure from tick #36 commit (pricing-drift). Mypy: 8 errors unchanged (same as tick #51-54).
 
 **Execution Order:** NEVER-DONE only.
 
-**Escalation Conditions:** No actionable tasks remain. Cooldown=43200s stable. 24 consecutive idle ticks (streak). BANE ESCALATION: project has been idle for 24 ticks with no regressions. Feature-complete. Recommend disable or de-prioritize to free scheduler budget for active projects. E2E-001 never set up (no e2e-state.md); skip for feature-complete projects.
+**Escalation Conditions:** No actionable tasks remain. Cooldown=43200s stable. 25 consecutive idle ticks. BANE ESCALATION: project has been idle for 25 ticks with no regressions. Feature-complete. Recommend disable or de-prioritize to free scheduler budget for active projects. E2E-001 never set up (no e2e-state.md); skip for feature-complete projects.
 
 ## Completed
 
