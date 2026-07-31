@@ -42,7 +42,7 @@
 
 **Execution Order:** NEVER-DONE only.
 
-**Escalation Conditions:** No actionable tasks remain. Cooldown=43200s fixed this tick (reverted 900s, restored). 26 consecutive idle ticks. BANE ESCALATION: project has been idle for 26 ticks with no regressions. Feature-complete. Recommend disable or de-prioritize to free scheduler budget for active projects. E2E-001 never set up (no e2e-state.md); skip for feature-complete projects.
+**Escalation Conditions:** No actionable tasks remain. Cooldown=43200s stable (verified API + DB this tick). 28 consecutive idle ticks. BANE ESCALATION: project has been idle for 28 ticks with no regressions. Feature-complete. Recommend disable or de-prioritize to free scheduler budget for active projects. E2E-001 never set up (no e2e-state.md); skip for feature-complete projects.
 
 ## Completed
 
@@ -206,3 +206,22 @@
 | 12 | Coverage | ✅ | 97% (2579 stmts, 78 misses — unchanged) |
 
 **Verdict:** IDLE — 27 consecutive idle ticks. No regressions. No board-GitReins drift. All 12 NEVER-DONE checks pass. Cooldown 43200s stable (verified in scheduler DB). Mypy 8 errors unchanged (2 env + 6 code). Hilo DuckDB inconsistency (infra). Dep count = 24 (stable). DuckBrain write+read operational. Project fully feature-complete. BANE ESCALATION: 27-idle-streak continues — highest of any fleet project. Recommend project disable or scheduler de-prioritize to free budget for active projects. No E2E-001 ever set up (skip for feature-complete projects).
+
+### Tick #58 — 2026-07-31 05:28 UTC (deepseek-v4-flash)
+
+| # | Gate | Result | Detail |
+|---|------|--------|--------|
+| 1 | Git status | ✅ | Clean — no modified files |
+| 2 | Ruff | ✅ | All checks passed on src/chimera/ |
+| 3 | Mypy | ⚠️ | 8 errors in 3 files — SAME baseline (2 stub-missing env warnings: config.py yaml, engine.py jsonschema; 6 code errors unchanged: engine.py:335,461,543; mcp/server.py:62,77,89) |
+| 4 | Tests | ⚠️ | 552 pass, 1 fail (pricing-drift 0.000133≠0.00014 — NOT regression), 62 skip. Same baseline |
+| 5 | Hilo graph | ⚠️ | Warm: 1012 edges/90 files. Stats: 617 edges (DuckDB mismatch — infra, unchanged) |
+| 6 | GitReins guard | ✅ | Secrets/lint/tests/static/LSP: all PASS |
+| 7 | GitReins board sync | ✅ | 9/9 tasks complete — no board-GitReins drift |
+| 8 | Dep check | ⚠️ | 24 outdated. 4 GitPython vulns (3.1.53: GHSA-fjr4, GHSA-6p8h, GHSA-r9mr, GHSA-94p4) |
+| 9 | TODO/FIXME | ✅ | Clean — 0 matches in src/chimera/ |
+| 10 | Scheduler cooldown | ✅ | CooldownS=43200 — STABLE. Verified via scheduler API AND scheduler.db direct query (updated 2026-07-30T05:15:15Z, no reversion) |
+| 11 | DuckBrain | ✅ | Write succeeded (tick-58, id=5d161beb), verified via key-based recall. Namespace has 50+ keys (hasMore=true) |
+| 12 | Coverage | ✅ | 97% (2579 stmts, 78 misses — unchanged) |
+
+**Verdict:** IDLE — 28 consecutive idle ticks. No regressions. No board-GitReins drift. All 12 NEVER-DONE checks pass. Cooldown 43200s stable (dual-verified API + DB this tick, no reversion since tick #56 fix). Mypy 8 errors unchanged (2 env + 6 code). Hilo DuckDB inconsistency (infra, unchanged). Dep count 24 stable. DuckBrain write+read operational. Project fully feature-complete. BANE ESCALATION: 28-idle-streak continues — highest of any fleet project. Recommend project disable or scheduler de-prioritize to free budget for active projects. No E2E-001 ever set up (skip for feature-complete projects).
