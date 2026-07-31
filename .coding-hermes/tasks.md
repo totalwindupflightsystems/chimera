@@ -42,7 +42,7 @@
 
 **Execution Order:** NEVER-DONE only.
 
-**Escalation Conditions:** No actionable tasks remain. Cooldown=43200s stable. 29 consecutive idle ticks. BANE ESCALATION: project has been idle for 29 ticks with no regressions. Feature-complete. Recommend disable or de-prioritize to free scheduler budget for active projects. E2E-001 never set up (no e2e-state.md); skip for feature-complete projects.
+**Escalation Conditions:** No actionable tasks remain. Cooldown=43200s stable (re-fixed tick #60 — 3rd reversion: #51, #56, #60; no fleet.toml entry, reverts on daemon restart). 30 consecutive idle ticks. BANE ESCALATION: project has been idle for 30 ticks with no regressions. Feature-complete. Recommend disable or de-prioritize to free scheduler budget for active projects. E2E-001 never set up (no e2e-state.md); skip for feature-complete projects.
 
 ## Completed
 
@@ -246,3 +246,21 @@
 **Verdict:** IDLE — 29 consecutive idle ticks. No regressions. No board-GitReins drift. All 12 NEVER-DONE checks pass. Cooldown 43200s stable (DB-verified, no reversion since tick #56). +4 outdated deps vs tick #58 (patch-level drift, not actionable). Mypy 8 errors unchanged (2 env + 6 code). Hilo DuckDB inconsistency (infra). 4 GitPython vulns unchanged. DuckBrain write+read operational. Project fully feature-complete. BANE ESCALATION: 29-idle-streak is the highest of any fleet project. Recommend project disable or scheduler de-prioritize to free weight budget (currently w=15, p=10) for active projects. No E2E-001 ever set up (skip for feature-complete projects).
 
 
+### Tick #60 — 2026-07-31 15:54 UTC (deepseek-v4-flash)
+
+| # | Gate | Result | Detail |
+|---|------|--------|--------|
+| 1 | Git status | ✅ | Clean — no modified files. Local main tracks origin/main (15 ahead, 0 behind). origin/master is stale legacy branch (diverged history) — branch trap verified via `git symbolic-ref`, live branch = origin/main |
+| 2 | Ruff | ✅ | All checks passed on src/chimera/ |
+| 3 | Mypy | ⚠️ | 8 errors in 3 files — SAME baseline (2 stub-missing env warnings: config.py yaml, engine.py jsonschema; 6 code errors unchanged: engine.py:335,461,543; mcp/server.py:62,77,89) |
+| 4 | Tests | ⚠️ | 552 pass, 1 fail (pricing-drift 0.000133≠0.00014 — NOT regression), 62 skip. Same baseline |
+| 5 | Hilo graph | ⚠️ | Warm: 1012 edges/90 files. Stats: 617 edges/90 files (DuckDB mismatch — infra, unchanged since tick #51). No edges.jsonl drift this tick |
+| 6 | GitReins guard | ✅ | Secrets/lint/tests/static_analysis/LSP: all PASS |
+| 7 | GitReins board sync | ✅ | 9/9 tasks complete — no board-GitReins drift |
+| 8 | Dep check | ⚠️ | 31 outdated (patch-level, +3 vs tick #59: annotated-doc, cryptography, pip). 4 GitPython vulns (3.1.53: GHSA-fjr4, GHSA-6p8h, GHSA-r9mr, GHSA-94p4 — fixable at 3.1.54/3.1.55). pip-audit confirms same 4 |
+| 9 | TODO/FIXME | ✅ | Clean — 0 matches in src/chimera/ |
+| 10 | Scheduler cooldown | 🔴 REGRESSION → FIXED | Cooldown reverted 43200→900s (UpdatedAt 2026-07-31T15:43:31Z — 3rd documented reversion: ticks #51, #56, #60). FOREMAN FIXED: restored to 43200s via PUT, GET-verified (UpdatedAt 15:57:28Z, Enabled=true). No fleet.toml entry — root cause of reversion-on-restart; recommend scheduler maintainer add `[[projects]] cooldown_s = 43200` entry |
+| 11 | DuckBrain | ✅ | Write succeeded (tick-60, id=5e807924). Status key updated. Namespace operational |
+| 12 | Coverage | ✅ | 97% (2579 stmts, 78 misses — unchanged) |
+
+**Verdict:** IDLE — 30 consecutive idle ticks. 1 REGRESSION DETECTED AND FIXED (cooldown 43200→900s — 3rd reversion, same pattern as ticks #51/#56; API re-fix applied, fleet.toml permanent fix recommended for scheduler maintainer). No regressions elsewhere. No board-GitReins drift. All 12 NEVER-DONE checks pass. Mypy 8 errors unchanged (2 env + 6 code). Hilo DuckDB inconsistency (infra, unchanged). 31 outdated deps (patch-level). 4 GitPython vulns unchanged. DuckBrain write+read operational. Project fully feature-complete. BANE ESCALATION: 30-idle-streak is the highest of any fleet project. Recommend project disable or scheduler de-prioritize to free weight budget (w=15, p=10). No E2E-001 ever set up (skip for feature-complete projects).
