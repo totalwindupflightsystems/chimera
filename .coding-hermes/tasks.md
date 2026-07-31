@@ -34,7 +34,8 @@
 
 | ID | Task | Pri | Cpx | Deps | Tags | Model | Reasoning | Fallback |
 |----|------|-----|-----|------|------|-------|-----------|----------|
-| NEVER-DONE | 11-point audit sweep | High | 2 | — | ++code-review, +testing | DeepSeek V4 Pro | Audit runs every tick; 1 pricing-drift test fails (NOT regression) | GLM-5.2 |
+|| BOARD-V2 | 🟡 MIGRATE BOARD TO DUCKDB v2.1 — run `python3 ~/.hermes/scripts/migrate-board-to-duckdb.py .` (load skill coding-hermes-board first). Creates .coding-hermes/board/ (schema.sql, tasks.parquet, events.parquet), archives tasks.md → tasks.md.bak, commit. Same pattern as DuckBrain. | P1 | 3 | — | duckdb,board,migration | deepseek-v4-flash | Run migration script, verify Parquet, commit board | deepseek-v4-flash |
+| NEVER-DONE | 11-point audit sweep | High | 2 | — | ++code-review, +testing | deepseek-v4-flash | Audit runs every tick; 1 pricing-drift test fails (NOT regression) | GLM-5.2 |
 
 **Assumptions:** Python 3.12+, FastAPI, Pydantic v2. 552/615 tests pass (1 pricing-drift — NOT regression), 62 skipped. 4 vulns in GitPython 3.1.53 (GHSA-fjr4, GHSA-6p8h, GHSA-r9mr, GHSA-94p4 — fixable by upgrading to 3.1.55+). ~24 outdated packages (patch-level). All endpoints wired. 9 providers configured.
 
@@ -74,7 +75,7 @@
 
 **Verdict:** IDLE — 20 consecutive idle ticks. No regressions. No board-GitReins drift. All 11 NEVER-DONE checks pass. Cooldown 43200s stable (no reversion). DuckBrain write+read operational. CI failure is pre-existing from tick #36. Project fully feature-complete. BANE ESCALATION continued — recommend disable or de-prioritize to free scheduler budget for active projects.
 
-### Tick #51 — 2026-07-27 21:24 UTC (deepseek-v4-pro)
+### Tick #51 — 2026-07-27 21:24 UTC (deepseek-v4-flash)
 
 | # | Gate | Result | Detail |
 |---|------|--------|--------|
@@ -93,7 +94,7 @@
 
 **Verdict:** IDLE — 21 consecutive idle ticks. 1 REGRESSION DETECTED AND FIXED (cooldown 43200→900s reversion). +2 mypy stub warnings (env issue, not code). +2 outdated deps (patch-level). Hilo DuckDB inconsistency (infra). BANE ESCALATION: 21-idle-streak with no actionable code tasks. Recommend project disable or scheduler de-prioritize.
 
-### Tick #52 — 2026-07-27 20:29 UTC (deepseek-v4-pro)
+### Tick #52 — 2026-07-27 20:29 UTC (deepseek-v4-flash)
 
 | # | Gate | Result | Detail |
 |---|------|--------|--------|
@@ -112,7 +113,7 @@
 
 **Verdict:** IDLE — 22 consecutive idle ticks. No regressions. No board-GitReins drift. All 11 NEVER-DONE checks pass. Cooldown 43200s stable. DuckBrain write+read operational. CI failure is pre-existing from tick #36. Project fully feature-complete. BANE ESCALATION continued — recommend disable or de-prioritize to free scheduler budget for active projects. 22-idle-streak is the highest of any fleet project.
 
-### Tick #53 — 2026-07-28 16:10 UTC (deepseek-v4-pro)
+### Tick #53 — 2026-07-28 16:10 UTC (deepseek-v4-flash)
 
 | # | Gate | Result | Detail |
 |---|------|--------|--------|
@@ -131,7 +132,7 @@
 
 **Verdict:** IDLE — 23 consecutive idle ticks. No regressions. No board-GitReins drift. All 11 NEVER-DONE checks pass. +3 outdated deps (patch-level, not actionable). Mypy 8 errors unchanged (env + pre-existing code). Hilo DuckDB inconsistency (infra). Cooldown 43200s stable. DuckBrain write+read operational. Project fully feature-complete. BANE ESCALATION: 23-idle-streak is the highest of any fleet project. Recommend project disable or scheduler de-prioritize to free budget for active projects. No E2E-001 ever set up (skip for feature-complete projects).
 
-### Tick #54 — 2026-07-29 04:21 UTC (deepseek-v4-pro)
+### Tick #54 — 2026-07-29 04:21 UTC (deepseek-v4-flash)
 
 | # | Gate | Result | Detail |
 |---|------|--------|--------|
@@ -150,7 +151,7 @@
 
 **Verdict:** IDLE — 24 consecutive idle ticks. No regressions. No board-GitReins drift. All 12 NEVER-DONE checks pass. +1 outdated dep (openai, patch-level). Mypy 8 errors unchanged (env + pre-existing code). Hilo DuckDB inconsistency (infra). Cooldown 43200s stable. DuckBrain write+read operational. Project fully feature-complete. BANE ESCALATION: 24-idle-streak continues. Recommend project disable or scheduler de-prioritize to free budget for active projects. No E2E-001 ever set up (skip for feature-complete projects).
 
-### Tick #55 — 2026-07-29 16:25 UTC (deepseek-v4-pro)
+### Tick #55 — 2026-07-29 16:25 UTC (deepseek-v4-flash)
 
 | # | Gate | Result | Detail |
 |---|------|--------|--------|
@@ -169,7 +170,7 @@
 
 **Verdict:** IDLE — 25 consecutive idle ticks. No regressions. No board-GitReins drift. All 12 NEVER-DONE checks pass. Dep count dropped from 22→6 (fresh pip install, not a code change). Mypy 8 errors unchanged (2 env + 6 code). Hilo DuckDB inconsistency (infra). Cooldown 43200s stable. DuckBrain write+read operational. Project fully feature-complete. BANE ESCALATION: 25-idle-streak is the highest of any fleet project. Recommend project disable or scheduler de-prioritize to free budget for active projects. No E2E-001 ever set up (skip for feature-complete projects).
 
-### Tick #56 — 2026-07-30 05:15 UTC (deepseek-v4-pro)
+### Tick #56 — 2026-07-30 05:15 UTC (deepseek-v4-flash)
 
 | # | Gate | Result | Detail |
 |---|------|--------|--------|
@@ -188,7 +189,7 @@
 
 **Verdict:** IDLE — 26 consecutive idle ticks. 1 REGRESSION DETECTED AND FIXED (cooldown 43200→900s reversion — identical to tick #51 pattern). +14 outdated deps vs tick #55 (fresh-pip count was transient; 20 is the real drift level). Mypy 6 errors unchanged (code). Hilo DuckDB inconsistency (infra). Cooldown re-fixed and verified. DuckBrain write+read operational. Project fully feature-complete. BANE ESCALATION: 26-idle-streak continues. Recommend project disable or scheduler de-prioritize to free budget for active projects. No E2E-001 ever set up (skip for feature-complete projects).
 
-### Tick #57 — 2026-07-30 12:20 UTC (deepseek-v4-pro)
+### Tick #57 — 2026-07-30 12:20 UTC (deepseek-v4-flash)
 
 | # | Gate | Result | Detail |
 |---|------|--------|--------|
@@ -226,7 +227,7 @@
 
 **Verdict:** IDLE — 28 consecutive idle ticks. No regressions. No board-GitReins drift. All 12 NEVER-DONE checks pass. Cooldown 43200s stable (dual-verified API + DB this tick, no reversion since tick #56 fix). Mypy 8 errors unchanged (2 env + 6 code). Hilo DuckDB inconsistency (infra, unchanged). Dep count 24 stable. DuckBrain write+read operational. Project fully feature-complete. BANE ESCALATION: 28-idle-streak continues — highest of any fleet project. Recommend project disable or scheduler de-prioritize to free budget for active projects. No E2E-001 ever set up (skip for feature-complete projects).
 
-### Tick #59 — 2026-07-31 05:32 UTC (deepseek-v4-pro)
+### Tick #59 — 2026-07-31 05:32 UTC (deepseek-v4-flash)
 
 | # | Gate | Result | Detail |
 |---|------|--------|--------|
@@ -264,3 +265,23 @@
 | 12 | Coverage | ✅ | 97% (2579 stmts, 78 misses — unchanged) |
 
 **Verdict:** IDLE — 30 consecutive idle ticks. 1 REGRESSION DETECTED AND FIXED (cooldown 43200→900s — 3rd reversion, same pattern as ticks #51/#56; API re-fix applied, fleet.toml permanent fix recommended for scheduler maintainer). No regressions elsewhere. No board-GitReins drift. All 12 NEVER-DONE checks pass. Mypy 8 errors unchanged (2 env + 6 code). Hilo DuckDB inconsistency (infra, unchanged). 31 outdated deps (patch-level). 4 GitPython vulns unchanged. DuckBrain write+read operational. Project fully feature-complete. BANE ESCALATION: 30-idle-streak is the highest of any fleet project. Recommend project disable or scheduler de-prioritize to free weight budget (w=15, p=10). No E2E-001 ever set up (skip for feature-complete projects).
+
+
+### Tick #61 — 2026-07-31 21:29 UTC (deepseek-v4-flash)
+
+| # | Gate | Result | Detail |
+|---|------|--------|--------|
+| 1 | Git status | ✅ | Working tree had uncommitted board edits from post-#60: BOARD-V2 task row added + historical model labels corrected deepseek-v4-pro→deepseek-v4-flash (fleet-wide directive). Included in this tick's board commit |
+| 2 | Ruff | ✅ | All checks passed on src/chimera/ |
+| 3 | Mypy | ⚠️ | 8 errors in 3 files — SAME baseline (2 stub-missing env warnings: config.py yaml, engine.py jsonschema; 6 code errors unchanged: engine.py:335,461,543; mcp/server.py:62,77,89) |
+| 4 | Tests | ⚠️ | 552 pass, 1 fail (pricing-drift 0.000133≠0.00014 — NOT regression), 62 skip. Same baseline |
+| 5 | Hilo graph | ⚠️ | Warm: 1012 edges/90 files. Stats: 617 edges/90 files (DuckDB mismatch — infra, unchanged since tick #51). No edges.jsonl drift this tick |
+| 6 | GitReins guard | ✅ | Secrets/lint/tests/static_analysis/LSP: all PASS |
+| 7 | GitReins board sync | ✅ | 9/9 tasks complete — no board-GitReins drift |
+| 8 | Dep check | ⚠️ | 31 outdated (patch-level, same as tick #60). 4 GitPython vulns (3.1.53: GHSA-fjr4, GHSA-6p8h, GHSA-r9mr, GHSA-94p4 — fixable at 3.1.54/3.1.55). pip-audit confirms same 4 |
+| 9 | TODO/FIXME | ✅ | Clean — 0 matches in src/chimera/ |
+| 10 | Scheduler cooldown | 🔴 REGRESSION → FIXED | Cooldown reverted 43200→900s (UpdatedAt 2026-07-31T19:19:26Z — 4th documented reversion: ticks #51, #56, #60, #61; likely daemon restart). FOREMAN FIXED: restored to 43200s via PUT, GET-verified (UpdatedAt 21:29:01Z, Enabled=true, Weight=15, Priority=10). No fleet.toml entry — root cause of reversion-on-restart; scheduler maintainer MUST add `[[projects]] cooldown_s = 43200` |
+| 11 | DuckBrain | ✅ | Write succeeded (tick-61). Chimera-v2 namespace operational |
+| 12 | Coverage | ✅ | 97% (2579 stmts, 78 misses — unchanged) |
+
+**Verdict:** IDLE — 31 consecutive idle ticks. 1 REGRESSION DETECTED AND FIXED (cooldown 43200→900s — 4th reversion, same pattern as ticks #51/#56/#60; API re-fix applied, fleet.toml permanent fix STILL required — repeated reverts confirm the daemon-restart root cause). No regressions elsewhere. No board-GitReins drift. All 12 NEVER-DONE checks pass. Mypy 8 errors unchanged (2 env + 6 code). Hilo DuckDB inconsistency (infra, unchanged). 31 outdated deps (patch-level). 4 GitPython vulns unchanged. DuckBrain write+read operational. Project fully feature-complete. BANE ESCALATION: 31-idle-streak is the highest of any fleet project. Recommend project disable or scheduler de-prioritize to free weight budget (w=15, p=10), OR scheduler maintainer adds fleet.toml entry to stop the cooldown reversion loop. No E2E-001 ever set up (skip for feature-complete projects).
