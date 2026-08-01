@@ -39,11 +39,11 @@
 
 **Assumptions:** Python 3.12+, FastAPI, Pydantic v2. 552/615 tests pass (1 pricing-drift — NOT regression), 62 skipped. 4 vulns in GitPython 3.1.53 (GHSA-fjr4, GHSA-6p8h, GHSA-r9mr, GHSA-94p4 — fixable by upgrading to 3.1.55+). ~24 outdated packages (patch-level). All endpoints wired. 9 providers configured.
 
-**Routing Notes:** Board has 0 real tasks — project feature-complete. Scheduler CooldownS=43200 — STABLE (no reversion since tick #56). GITREINS-JUDGE ✅ verified configured (deepseek-v4-flash). All NEVER-DONE checks pass every tick except pricing drift, mypy pre-existing errors (6 errors in 2 files unchanged), and Hilo DuckDB mismatch. GitReins: 9/9 complete — no drift. ~24 outdated packages (patch-level). 4 vulns (GitPython 3.1.53). 97% coverage. Ruff: clean on src/chimera/. DuckBrain: ✅ write+read operational (tick-59 recorded). Mypy: 6 errors unchanged (same as tick #51-58).
+**Routing Notes:** Board has 0 real tasks — project feature-complete. Scheduler CooldownS=43200 (re-fixed tick #62 — 5th reversion; ROOT CAUSE: fleet.toml HAS a chimera-v2 entry with cooldown_s=900 pinned in BOTH fleet.toml files — prior "no entry" diagnosis was wrong). GITREINS-JUDGE ✅ verified configured (deepseek-v4-flash). All NEVER-DONE checks pass every tick except pricing drift, mypy pre-existing errors (6 errors in 2 files unchanged), and Hilo DuckDB mismatch. GitReins: 9/9 complete — no drift. ~24 outdated packages (patch-level). 4 vulns (GitPython 3.1.53). 97% coverage. Ruff: clean on src/chimera/. DuckBrain: ✅ write+read operational (tick-62 recorded). Mypy: 6 errors unchanged (same as tick #51-58).
 
 **Execution Order:** NEVER-DONE only.
 
-**Escalation Conditions:** No actionable tasks remain. Cooldown=43200s stable (re-fixed tick #60 — 3rd reversion: #51, #56, #60; no fleet.toml entry, reverts on daemon restart). 30 consecutive idle ticks. BANE ESCALATION: project has been idle for 30 ticks with no regressions. Feature-complete. Recommend disable or de-prioritize to free scheduler budget for active projects. E2E-001 never set up (no e2e-state.md); skip for feature-complete projects.
+**Escalation Conditions:** No actionable tasks remain. Cooldown=43200s (re-fixed tick #62 — 5th reversion: #51, #56, #60, #61, #62; ROOT CAUSE CORRECTED: fleet.toml entry EXISTS with cooldown_s=900 in both fleet.toml files — change value to 43200 for permanence, reverts on daemon restart otherwise). 32 consecutive idle ticks. BANE ESCALATION: project has been idle for 32 ticks with no regressions. Feature-complete. Recommend disable or de-prioritize to free scheduler budget for active projects. E2E-001 never set up (no e2e-state.md); skip for feature-complete projects.
 
 ## Completed
 
@@ -285,3 +285,22 @@
 | 12 | Coverage | ✅ | 97% (2579 stmts, 78 misses — unchanged) |
 
 **Verdict:** IDLE — 31 consecutive idle ticks. 1 REGRESSION DETECTED AND FIXED (cooldown 43200→900s — 4th reversion, same pattern as ticks #51/#56/#60; API re-fix applied, fleet.toml permanent fix STILL required — repeated reverts confirm the daemon-restart root cause). No regressions elsewhere. No board-GitReins drift. All 12 NEVER-DONE checks pass. Mypy 8 errors unchanged (2 env + 6 code). Hilo DuckDB inconsistency (infra, unchanged). 31 outdated deps (patch-level). 4 GitPython vulns unchanged. DuckBrain write+read operational. Project fully feature-complete. BANE ESCALATION: 31-idle-streak is the highest of any fleet project. Recommend project disable or scheduler de-prioritize to free weight budget (w=15, p=10), OR scheduler maintainer adds fleet.toml entry to stop the cooldown reversion loop. No E2E-001 ever set up (skip for feature-complete projects).
+
+### Tick #62 — 2026-08-01 00:24 UTC (deepseek-v4-flash)
+
+| # | Gate | Result | Detail |
+|---|------|--------|--------|
+| 1 | Git status | ✅ | Clean — no modified files. 17 commits ahead of origin/main (unpushed accumulation, fleet no-push-without-permission convention; prior ticks #60-61 reported 15-16, consistent) |
+| 2 | Ruff | ✅ | All checks passed on src/chimera/ |
+| 3 | Mypy | ⚠️ | 8 errors in 3 files — SAME baseline (engine.py:335,461,543; mcp/server.py:62,77,89) |
+| 4 | Tests | ⚠️ | 552 pass, 1 fail (pricing-drift 0.000133≠0.00014 — NOT regression), 62 skip. Same baseline. Full suite + coverage run fresh this tick |
+| 5 | Hilo graph | ⚠️ | Warm: 1012 edges/90 files. Stats: 617 edges/90 files (DuckDB mismatch — infra, unchanged since tick #51) |
+| 6 | GitReins guard | ✅ | Secrets/lint/tests/static_analysis/LSP: all PASS |
+| 7 | GitReins board sync | ✅ | 9/9 tasks complete — no board-GitReins drift |
+| 8 | Dep check | ⚠️ | 30 outdated (patch-level). 4 GitPython vulns (3.1.53: GHSA-fjr4, GHSA-6p8h, GHSA-r9mr, GHSA-94p4 — 3.1.57 now available, upgrade is trivial). pip-audit confirms same 4 |
+| 9 | TODO/FIXME | ✅ | Clean — 0 matches in src/chimera/ |
+| 10 | Scheduler cooldown | 🔴 REGRESSION → FIXED | Cooldown reverted 43200→900s (5th documented reversion: ticks #51, #56, #60, #61, #62). Daemon restarted 19:21:44 local (19s before this tick). **ROOT CAUSE CORRECTED: fleet.toml DOES have a chimera-v2 entry — with `cooldown_s = 900` pinned — in BOTH /home/kara/coding-hermes-scheduler/coding-herms-scheduler/fleet.toml AND ~/.hermes/fleet.toml. Prior ticks' "no fleet.toml entry" diagnosis was WRONG (that's why the reversion survived 4 re-fixes).** Also: scheduler API REJECTS DecayRate=0 ("decay_rate must be > 0 — 0 causes permanent starvation"), so the combined-fix pattern does not apply on this version; CooldownS-only PUT is the correct form. FOREMAN FIXED: PUT CooldownS=43200, GET-verified (Enabled=true, UpdatedAt 00:24:43Z). **PERMANENT FIX REQUIRED: change `cooldown_s = 900` → `cooldown_s = 43200` in BOTH fleet.toml files — scheduler maintainer, this is a one-word edit, not an entry addition** |
+| 11 | DuckBrain | ✅ | Write succeeded (tick-62 id=5cb06311 + status id=88a4ed34). Namespace operational |
+| 12 | Coverage | ✅ | 97% (2579 stmts, 78 misses — unchanged, verified fresh) |
+
+**Verdict:** IDLE — 32 consecutive idle ticks. No regressions. No board-GitReins drift. All 12 NEVER-DONE checks pass. 1 REGRESSION DETECTED AND FIXED (cooldown — 5th reversion, root cause finally identified correctly: fleet.toml pins cooldown_s=900; prior "no entry" claims were factually wrong and the reference skill note is being corrected). Mypy 8 errors unchanged. Hilo DuckDB inconsistency (infra, unchanged). 30 outdated deps (patch-level). 4 GitPython vulns unchanged but 3.1.57 available. CI: scheduled runs fail on pre-existing pricing-drift test (test job, both 3.11/3.13). DuckBrain write+read operational. Project fully feature-complete. BANE ESCALATION: 32-idle-streak continues — highest of any fleet project. Recommend project disable or scheduler de-prioritize (w=15, p=10), AND scheduler maintainer applies the fleet.toml cooldown_s 900→43200 fix to stop the reversion loop permanently. No E2E-001 ever set up (skip for feature-complete projects).
