@@ -90,6 +90,11 @@ class DeliberationResult(BaseModel):
 
     answer: str
     trace: DeliberationTrace
+    answer_degraded: bool = False
+    """True when the selected answer stage failed and the answer is a
+    degraded placeholder — the API layer translates this into HTTP 502."""
+    answer_error: str | None = None
+    """Upstream failure reason for a degraded answer, when known."""
 
 
 def _stage_cost(model: str, config: ChimeraConfig, tokens_input: int, tokens_output: int) -> float:
@@ -336,6 +341,7 @@ class Engine:
 
         answer, answer_stage_id = self._select_answer(outcome.result.formation, stage_results)
         answer = self._maybe_unwrap_envelope(answer)
+        answer_stage = stage_results.get(answer_stage_id)
         trace = self._assemble_trace(
             request_id=request_id,
             formation=formation,
@@ -348,7 +354,18 @@ class Engine:
         )
         _maybe_langfuse(trace, user_prompt)
         structlog.contextvars.unbind_contextvars("request_id", "formation")
-        return DeliberationResult(answer=answer, trace=trace)
+        answer_degraded = answer_stage.degraded if answer_stage is not None else False
+        answer_error = (
+            answer_stage.response.metadata.get("error")
+            if answer_stage is not None and answer_degraded
+            else None
+        )
+        return DeliberationResult(
+            answer=answer,
+            trace=trace,
+            answer_degraded=answer_degraded,
+            answer_error=answer_error,
+        )
 
     def _resolve_custom_dag(
         self,
@@ -737,6 +754,7 @@ class Engine:
             model=stage.model,
             tokens_input=0,
             tokens_output=0,
+            metadata={"degraded": True, "stage_id": stage.id, "error": str(error)},
         )
         ended = time.monotonic()
         start_ts = started_at if started_at is not None else ended - (latency_ms / 1000.0)

@@ -35,6 +35,17 @@ from chimera.observability import configure_logging
 log = structlog.get_logger("chimera.api")
 
 
+class _NoUsableAnswerError(Exception):
+    """Raised when a deliberation produced no usable answer — the answer
+    stage degraded and only a placeholder was returned. Translated into
+    HTTP 502 with an OpenAI-compatible structured error body."""
+
+    def __init__(self, message: str, request_id: str) -> None:
+        super().__init__(message)
+        self.message = message
+        self.request_id = request_id
+
+
 # --------------------------------------------------------------------------- #
 # F5: Request queue / backpressure
 # --------------------------------------------------------------------------- #
@@ -111,6 +122,28 @@ def create_app(
         yield
 
     app = FastAPI(title="Chimera", version="0.1.0", lifespan=lifespan)
+
+    from fastapi.responses import JSONResponse
+
+    @app.exception_handler(_NoUsableAnswerError)
+    async def _no_answer_handler(request: Request, exc: _NoUsableAnswerError) -> JSONResponse:
+        """HTTP 502 with an OpenAI-compatible structured error body."""
+        log.warning(
+            "deliberation_no_answer",
+            request_id=exc.request_id,
+            error=exc.message,
+        )
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": {
+                    "message": exc.message,
+                    "type": "upstream_error",
+                    "request_id": exc.request_id,
+                }
+            },
+        )
+
     app.state.config = cfg
     app.state.engine = engine or Engine(cfg, LiteLLMGateway(cfg))
     app.state.request_queue = request_queue
@@ -402,6 +435,14 @@ def _register_routes(app: FastAPI) -> None:
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if result.answer_degraded:
+                raise _NoUsableAnswerError(
+                    message=(
+                        "Deliberation failed: no usable answer produced. "
+                        f"Upstream error: {result.answer_error or 'unknown'}"
+                    ),
+                    request_id=result.trace.request_id,
+                )
             return DeliberateResponse(
                 answer=result.answer,
                 trace=result.trace.model_dump(mode="json"),
@@ -462,6 +503,14 @@ def _register_routes(app: FastAPI) -> None:
                 )
             except (KeyError, ValueError) as exc:
                 raise HTTPException(status_code=400, detail=f"Unknown model/formation: {exc}") from exc
+            if result.answer_degraded:
+                raise _NoUsableAnswerError(
+                    message=(
+                        "Deliberation failed: no usable answer produced. "
+                        f"Upstream error: {result.answer_error or 'unknown'}"
+                    ),
+                    request_id=result.trace.request_id,
+                )
             trace = result.trace
             completion_tokens = trace.total_tokens - trace.dispatch.tokens_input
             return ChatCompletionResponse(

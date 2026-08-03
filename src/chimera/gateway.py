@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
@@ -66,6 +66,9 @@ class GatewayResponse:
     raw: Any = None
     finish_reason: str = ""
     is_empty: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
+    """Structured side-band data (e.g. ``{"degraded": True, ...}`` on
+    placeholder responses fabricated by the engine when a stage fails)."""
 
     @property
     def total_tokens(self) -> int:
