@@ -265,7 +265,11 @@ class ChimeraConfig(BaseModel):
     def _resolve_provider_api_keys(self) -> ChimeraConfig:
         for provider in self.providers.values():
             if provider.api_key is None and provider.api_key_env:
+                # Resolution order: process env → repo .env (loaded into the
+                # process env by ``load_config``) → ~/.hermes/.env fallback.
                 provider.api_key = os.environ.get(provider.api_key_env)
+                if provider.api_key is None:
+                    provider.api_key = _load_hermes_dotenv().get(provider.api_key_env)
         return self
 
     def get_model(self, name: str) -> ModelEntry:
@@ -339,6 +343,32 @@ def _load_hermes_dotenv() -> dict[str, str]:
     return _hermes_dotenv_cache
 
 
+def _load_repo_dotenv(config_path: Path) -> None:
+    """Load the repo-level ``.env`` next to *config_path* into ``os.environ``.
+
+    Only variables that are NOT already present in the process environment
+    are populated, so the real environment keeps precedence
+    (``process env > repo .env > ~/.hermes/.env``). Best-effort: a missing
+    file or a missing ``python-dotenv`` install is silently ignored, and a
+    malformed file logs a warning instead of crashing startup.
+    """
+    env_path = config_path.resolve().parent / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        from dotenv import load_dotenv
+    except ImportError:  # pragma: no cover - python-dotenv is a transitive dep
+        return
+    try:
+        load_dotenv(env_path, override=False)
+    except Exception as exc:  # pragma: no cover - malformed .env
+        import logging
+
+        logging.getLogger("chimera.config").warning(
+            "failed to load repo .env at %s: %s", env_path, exc
+        )
+
+
 def _substitute_env(value: Any) -> Any:
     """Recursively replace ``${VAR}`` tokens using ``os.environ``.
 
@@ -402,6 +432,11 @@ def load_config(path: Path | str | None = None) -> ChimeraConfig:
         config_path = Path(_os.environ["CHIMERA_CONFIG"])
     else:
         config_path = find_config_path()
+    # Load the repo-level ``.env`` (next to ``chimera.yaml``) into the
+    # process environment so provider ``api_key_env`` lookups and downstream
+    # SDKs see the same credentials regardless of entry point. Only *unset*
+    # vars are populated — the real process environment keeps precedence.
+    _load_repo_dotenv(config_path)
     raw_text = config_path.read_text(encoding="utf-8")
     raw = yaml.safe_load(raw_text)
     if not isinstance(raw, dict):
