@@ -100,3 +100,87 @@ tasks:
   status: complete
   created_at: '2026-07-10T02:27:46.060934+00:00'
   completed_at: '2026-07-10T02:30:50.553048+00:00'
+- id: dogfood-http-server-no-creds
+  title: 'P0: chimera serve runs with no provider credentials'
+  criteria:
+  - 'chimera serve (api/server.py run path) resolves provider API keys from the same
+    sources as CLI/MCP: process env, repo .env next to chimera.yaml, and ~/.hermes/.env
+    fallback'
+  - _resolve_provider_api_keys in config.py consults the ~/.hermes/.env cache when
+    os.environ lacks the var
+  - Starting the server WITHOUT sourcing .env first yields /v1/health with at least
+    one provider healthy (not all down)
+  - A real /v1/deliberate or /v1/chat/completions call against the served instance
+    succeeds (no 'Missing credentials' error)
+  - 'New regression tests cover: repo .env key resolution when env var absent'
+  status: complete
+  created_at: '2026-08-03T23:27:55.742248+00:00'
+  completed_at: '2026-08-04T00:04:31.222013+00:00'
+- id: dogfood-error-200-as-success
+  title: 'P0: failed deliberations return HTTP 200 with error-string as answer'
+  criteria:
+  - '/v1/deliberate and /v1/chat/completions return a non-2xx status (502 preferred)
+    with a structured error body {"error": {..., "request_id": ...}} when the deliberation
+    produced no usable answer'
+  - 'The OpenAI-compat chat/completions contract is preserved: real answers still
+    return 200 with choices[0].message.content'
+  - "Partial degradation (some workers healthy, answer exists) still returns 200 \u2014\
+    \ only no-answer failures become 502"
+  - New tests in tests/integration/test_error_paths.py or tests/test_api.py cover
+    the no-answer -> 502 path for both endpoints
+  - 'Full test suite: no NEW failures beyond the 1 pre-existing pricing-drift baseline'
+  status: complete
+  created_at: '2026-08-03T23:27:56.758049+00:00'
+  completed_at: '2026-08-04T00:04:32.251480+00:00'
+- id: dogfood-health-lies
+  title: "P1: health probes return false negatives \u2014 providers that work via\
+    \ engine reported down"
+  criteria:
+  - 'C1: _check_providers in src/chimera/api/server.py uses config.server.health_timeout_s
+    (ServerConfig, default 10.0) instead of a hardcoded 3.0s timeout'
+  - 'C2: Probe ping passes max_tokens=1; unhealthy provider details carry an error
+    class (timeout|missing-credentials|auth|api)'
+  - 'C3: Non-timeout provider errors retry up to 3 models from the provider before
+    unhealthy; model_tested reflects the last attempt'
+  - 'C4: Live verification: server with repo .env shows deepseek and anthropic healthy
+    in /v1/health and /v1/health/ready returns HTTP 200 (verified by foreman on :8899:
+    deepseek/anthropic/openrouter/zai healthy, ready 200)'
+  - 'C5: Unit tests cover fast->healthy, slow->timeout class, missing-credentials
+    class (no live call), auth-error retry->unhealthy; tests/test_api.py passes'
+  - 'C6: Full suite: no NEW failures beyond the pre-existing pricing-drift baseline
+    (577 passed, 1 pre-existing fail, 62 skipped on worker run)'
+  - 'C7: /v1/health still always HTTP 200 with status healthy/degraded; /v1/health/ready
+    200 when >=1 provider healthy, 503 otherwise (backward-compatible response shape)'
+  status: complete
+  created_at: '2026-08-04T00:45:54.692335+00:00'
+  completed_at: '2026-08-04T00:45:58.033956+00:00'
+- id: dogfood-dispatcher-malformed-dag-fallback
+  title: 'P1: auto dispatcher emits DAG without aggregator stage -> repair instead
+    of silent single-worker fallback'
+  criteria:
+  - 'C1: parse_dispatch_result repairs an auto DAG that has >=1 worker stage but no
+    aggregator/merge/audit stage: appends an ''aggregator'' stage (default_aggregator
+    model) whose depends_on == all terminal worker ids, adds (worker, aggregator)
+    edges, keeps source==''auto'', preserves worker_prompts and output_schema'
+  - 'C2: The repair sets dispatch_note containing ''repaired'' on the DispatchResult
+    (e.g. ''repaired: added aggregator stage for N worker terminals'')'
+  - "C3: Malformed/unparseable dispatcher output (bad JSON like 'this is not json')\
+    \ -> source=='fallback' with fallback_reason=='malformed_json'. A gateway-failure\
+    \ empty payload ('{}') also falls back with a visible non-None fallback_reason\
+    \ (invalid_dag: dispatch produced no stages \u2014 the empty object parses as\
+    \ valid JSON that has no formation stages)"
+  - 'C4: A DAG with no worker stages -> source==''fallback'' with fallback_reason
+    starting ''invalid_dag'''
+  - 'C5: DeliberationTrace (src/chimera/engine.py) has a dispatch_note field wired
+    in _assemble_trace from dispatch.fallback_reason or dispatch.dispatch_note so
+    API/CLI/MCP consumers see why a fallback/repair happened'
+  - 'C6: Valid dispatcher payload -> fallback_reason is None and dispatch_note is
+    None'
+  - 'C7: Unit tests in tests/test_dispatcher.py cover: 2-worker repair, 1-worker repair,
+    malformed->reason, no-workers->invalid_dag reason, output_schema preserved, valid
+    payload->both None'
+  - 'C8: Full test suite: no NEW failures beyond the pre-existing pricing-drift baseline
+    (1 fail, 62 skip)'
+  status: complete
+  created_at: '2026-08-04T01:24:02.235098+00:00'
+  completed_at: '2026-08-04T01:28:09.582938+00:00'
