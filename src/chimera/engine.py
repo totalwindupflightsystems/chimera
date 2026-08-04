@@ -456,6 +456,9 @@ class Engine:
         iteration_count: int = stage_results.pop("_iteration_count", 1)  # type: ignore[misc]
 
         answer, answer_stage_id = self._select_answer(outcome.result.formation, stage_results)
+        # Strip a wrapping markdown code fence BEFORE envelope unwrap so a
+        # fenced {"answer": ...} envelope still unwraps correctly.
+        answer = self._strip_final_answer_fences(answer)
         answer = self._maybe_unwrap_envelope(answer)
         answer_stage = stage_results.get(answer_stage_id)
         worker_failures = self._collect_worker_failures(stage_results)
@@ -1061,6 +1064,44 @@ class Engine:
             if t.id in results
         ]
         return "\n\n".join(parts), terminals[0].id
+
+    @staticmethod
+    def _strip_final_answer_fences(text: str) -> str:
+        """Remove a single markdown code fence wrapping the whole final answer.
+
+        Conservative by design: stripping only triggers when the ENTIRE
+        (whitespace-stripped) text is wrapped in one fence — an opening
+        fence line (triple backtick, optional bare language tag) and a
+        closing fence line as the last content. Plain answers, and JSON
+        content that merely *contains* backticks, pass through completely
+        unmodified.
+
+        Unlike :func:`chimera.dispatcher._strip_fences` (which aggressively
+        strips fence-looking lines anywhere, for parsing dispatcher JSON),
+        this helper never mutates interior content.
+
+        Non-string input is coerced to a JSON string so
+        ``DeliberationResult(answer: str)`` never fails Pydantic validation
+        (mirrors :meth:`_maybe_unwrap_envelope`).
+        """
+        if not isinstance(text, str):
+            return json.dumps(text) if text is not None else ""
+        stripped = text.strip()
+        if not stripped.startswith("```"):
+            return text
+        first_nl = stripped.find("\n")
+        if first_nl == -1:
+            # Single line starting with ``` — not a wrapping fence.
+            return text
+        opener = stripped[3:first_nl].strip()
+        # Language tag must be a bare word (json, python, ...) or empty.
+        if opener and not re.fullmatch(r"[A-Za-z0-9_+-]+", opener):
+            return text
+        body = stripped[first_nl + 1:]
+        if not body.rstrip().endswith("```"):
+            return text
+        body = body.rstrip()[:-3]
+        return body.strip()
 
     @staticmethod
     def _maybe_unwrap_envelope(text: str) -> str:

@@ -895,6 +895,117 @@ class TestMaybeUnwrapEnvelope:
         assert result == expected, f"Expected {expected!r}, got {result!r}"
 
 
+class TestStripFinalAnswerFences:
+    """Test _strip_final_answer_fences — conservative whole-string fence removal."""
+
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            # Fenced with json tag → fence removed
+            ('```json\n{"summary": "hello"}\n```', '{"summary": "hello"}'),
+            # Fenced, no language tag → fence removed
+            ("```\nplain answer\n```", "plain answer"),
+            # Other language tag also strips
+            ("```python\nprint(1)\n```", "print(1)"),
+            # Surrounding whitespace tolerated
+            ('  ```json\n{"a": 1}\n```  \n', '{"a": 1}'),
+            # Closing fence with trailing spaces on the line tolerated
+            ('```json\n{"a": 1}\n```   ', '{"a": 1}'),
+            # Plain non-fenced answer passes through completely unmodified
+            ("hello world", "hello world"),
+            ('{"summary": "hello"}', '{"summary": "hello"}'),
+            # JSON content that merely CONTAINS backticks is not corrupted
+            (
+                '{"code": "use `foo()` here", "n": 1}',
+                '{"code": "use `foo()` here", "n": 1}',
+            ),
+            # Text starting with ``` but not a wrapping fence: single line
+            ("```json no newline here", "```json no newline here"),
+            # Opening fence but no closing fence → unchanged
+            ("```json\n{\"a\": 1}", '```json\n{"a": 1}'),
+            # Empty body inside a fence → empty string
+            ("```json\n```", ""),
+        ],
+    )
+    def test_strip_semantics(self, text, expected):
+        from chimera.engine import Engine
+        result = Engine._strip_final_answer_fences(text)
+        assert result == expected, f"Expected {expected!r}, got {result!r}"
+
+    def test_fenced_envelope_still_unwraps(self):
+        """Fence-strip THEN envelope-unwrap: a fenced {"answer": ...} unwraps."""
+        from chimera.engine import Engine
+        fenced = '```json\n{"answer": "the real answer"}\n```'
+        stripped = Engine._strip_final_answer_fences(fenced)
+        assert Engine._maybe_unwrap_envelope(stripped) == "the real answer"
+
+    def test_interior_fences_preserved(self):
+        """A fence-wrapped answer keeps its INTERIOR fences intact."""
+        from chimera.engine import Engine
+        inner = "Here is code:\n```python\nx = 1\n```\nDone."
+        wrapped = f"```\n{inner}\n```"
+        result = Engine._strip_final_answer_fences(wrapped)
+        assert result == inner
+
+
+@pytest.mark.asyncio
+async def test_custom_dag_fenced_final_answer_is_stripped(config) -> None:  # type: ignore[no-untyped-def]
+    """Custom DAG (researcher->finalizer): a ```json-wrapped final answer is
+    delivered without the fence (dogfood custom-dag-code-fence)."""
+    fenced = '```json\n{"summary": "the final answer"}\n```'
+    dispatcher_payload = dispatch_json(
+        workers=[("researcher", "deepseek/deepseek-chat")],
+        aggregator_instructions="Merge.",
+    )
+
+    def _responder(model, messages, response_format=None, **kw):
+        if response_format is not None:  # dispatcher fill-in pass
+            return resp(dispatcher_payload, model, tok_in=10, tok_out=10)
+        joined = json.dumps(messages)
+        if "Upstream outputs" in joined:  # finalizer/aggregator
+            return resp(fenced, model, tok_in=10, tok_out=10)
+        return resp("research notes", model, tok_in=10, tok_out=10)
+
+    gw = FakeGateway(_responder)
+    result = await Engine(config, gw).deliberate(
+        "task", "auto", dag=_client_dag_dict(), allow_custom_dag=True,
+    )
+    assert result.trace.source == "custom"
+    assert result.answer == '{"summary": "the final answer"}'
+    json.loads(result.answer)  # strict JSON consumers can parse it
+
+
+@pytest.mark.asyncio
+async def test_auto_path_plain_answer_untouched(config) -> None:  # type: ignore[no-untyped-def]
+    """Normal auto path: a plain (non-fenced) answer passes through unmodified."""
+    gw = FakeGateway(_engine_responder(config))
+    result = await Engine(config, gw).deliberate("Design + build a service", "auto")
+    assert result.answer == "[FINAL MERGED ANSWER from zai-coding-plan/glm-5.2]"
+
+
+@pytest.mark.asyncio
+async def test_auto_path_fenced_envelope_answer_unwrapped(config) -> None:  # type: ignore[no-untyped-def]
+    """Auto path with output_schema-shaped output: a fence-wrapped
+    {"answer": ...} envelope is fence-stripped AND envelope-unwrapped."""
+    fenced_envelope = '```json\n{"answer": "clean answer"}\n```'
+    payload = dispatch_json(
+        workers=[("worker_1", "deepseek/deepseek-chat")],
+        aggregator_instructions="Merge.",
+    )
+
+    def _responder(model, messages, response_format=None, **kw):
+        if response_format is not None:
+            return resp(payload, model, tok_in=10, tok_out=10)
+        joined = json.dumps(messages)
+        if "Upstream outputs" in joined:
+            return resp(fenced_envelope, model, tok_in=10, tok_out=10)
+        return resp("worker output", model, tok_in=10, tok_out=10)
+
+    gw = FakeGateway(_responder)
+    result = await Engine(config, gw).deliberate("task", "auto")
+    assert result.answer == "clean answer"
+
+
 @pytest.mark.asyncio
 async def test_trace_surfaces_dispatch_note_on_repair(config) -> None:  # type: ignore[no-untyped-def]
     """A repaired auto dispatch (missing aggregator) is visible in the trace."""
