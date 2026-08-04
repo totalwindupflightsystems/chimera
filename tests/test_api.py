@@ -278,3 +278,82 @@ def test_chat_completions_valid_request_returns_200(config) -> None:  # type: ig
     )
     assert r.status_code == 200, r.text
     assert r.json()["choices"][0]["message"]["content"] == "FINAL ANSWER"
+
+
+# --------------------------------------------------------------------------- #
+# Dogfood P0 (error-200-as-success): no usable answer → HTTP 502
+# --------------------------------------------------------------------------- #
+#
+# When a deliberation produces no usable answer (the answer stage degraded),
+# /v1/deliberate and /v1/chat/completions must return HTTP 502 with an
+# OpenAI-compatible structured error body instead of 200 with a placeholder
+# string.  Partial degradation (real merged answer exists) must stay 200.
+
+from chimera.gateway import GatewayError  # noqa: E402
+
+
+def _all_stages_fail(model, messages, response_format=None, **kw):  # type: ignore[no-untyped-def]
+    """Dispatcher succeeds; every DAG stage (workers + aggregator) fails."""
+    if response_format is not None:
+        return _resp(dispatch_json(), model, 10, 10)
+    raise GatewayError("upstream exploded")
+
+
+def _partial_degradation(model, messages, response_format=None, **kw):  # type: ignore[no-untyped-def]
+    """Workers fail but the aggregator succeeds with a real merged answer."""
+    if response_format is not None:
+        return _resp(dispatch_json(), model, 10, 10)
+    joined = json.dumps(messages)
+    if "Upstream outputs" in joined:
+        return _resp("REAL MERGED ANSWER", model, 60, 90)
+    raise GatewayError("worker down")
+
+
+def _client_with(config, responder):  # type: ignore[no-untyped-def]
+    engine = Engine(config, FakeGateway(responder))
+    app = create_app(config=config, engine=engine)
+    return TestClient(app)
+
+
+def test_deliberate_no_answer_returns_502(config) -> None:  # type: ignore[no-untyped-def]
+    """Fully degraded answer stage → 502 + structured error (type, request_id, message)."""
+    client = _client_with(config, _all_stages_fail)
+    r = client.post("/v1/deliberate", json={"prompt": "hello", "formation": "auto"})
+    assert r.status_code == 502, r.text
+    err = r.json()["error"]
+    assert err["type"] == "upstream_error"
+    assert "upstream exploded" in err["message"]
+    assert len(err["request_id"]) > 0
+
+
+def test_chat_completions_no_answer_returns_502(config) -> None:  # type: ignore[no-untyped-def]
+    """Fully degraded answer stage → 502 + structured error (type, request_id, message)."""
+    client = _client_with(config, _all_stages_fail)
+    r = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 502, r.text
+    err = r.json()["error"]
+    assert err["type"] == "upstream_error"
+    assert "upstream exploded" in err["message"]
+    assert len(err["request_id"]) > 0
+
+
+def test_deliberate_partial_degradation_still_200(config) -> None:  # type: ignore[no-untyped-def]
+    """Workers fail but a real merged answer exists → /v1/deliberate stays 200."""
+    client = _client_with(config, _partial_degradation)
+    r = client.post("/v1/deliberate", json={"prompt": "hello", "formation": "auto"})
+    assert r.status_code == 200, r.text
+    assert r.json()["answer"] == "REAL MERGED ANSWER"
+
+
+def test_chat_completions_partial_degradation_still_200(config) -> None:  # type: ignore[no-untyped-def]
+    """Workers fail but a real merged answer exists → /v1/chat/completions stays 200."""
+    client = _client_with(config, _partial_degradation)
+    r = client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["choices"][0]["message"]["content"] == "REAL MERGED ANSWER"
