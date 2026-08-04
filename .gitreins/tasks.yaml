@@ -184,3 +184,55 @@ tasks:
   status: complete
   created_at: '2026-08-04T01:24:02.235098+00:00'
   completed_at: '2026-08-04T01:28:09.582938+00:00'
+- id: dogfood-lock-aggregator-silent-override
+  title: 'P1: request-level aggregator_model/worker_model/dispatcher_model overrides
+    honored; config locks discard visibly'
+  criteria:
+  - 'C1: _apply_global_model_overrides exists in engine.py; aggregator_model override
+    forces every aggregator/merge/audit stage when lock_aggregator=false, workers
+    untouched'
+  - 'C2: worker_model override forces every worker stage AND its WorkerPrompt.model
+    stays in sync (gateway calls go out on the override model)'
+  - 'C3: dispatcher_model override routes the dispatcher planning call to that model
+    (dispatcher.dispatch accepts model_override; trace.dispatch.model reflects the
+    actual model)'
+  - 'C4: lock_aggregator=true discards the aggregator_model override, keeps configured
+    default, and records ''override discarded: aggregator_model=... (lock_aggregator=true)''
+    in trace dispatch_note'
+  - 'C5: lock_dispatcher=true discards the dispatcher_model override, keeps configured
+    default, and records the discard in dispatch_note'
+  - 'C6: per-stage stage_models take precedence over the global aggregator_model/worker_model
+    overrides'
+  - 'C7: unknown or disabled model in a global override raises ValueError before any
+    DAG mutation'
+  - 'C8: no overrides -> no spurious dispatch_note; override is per-call (cleared
+    after dispatch returns)'
+  - 'C9: tests in tests/test_engine.py + tests/test_dispatcher.py cover C1-C8 (>=9
+    new tests); full suite has no NEW failures beyond the pre-existing pricing-drift
+    baseline (1 fail, 62 skip)'
+  status: complete
+  created_at: '2026-08-04T03:26:45.814760+00:00'
+  completed_at: '2026-08-04T03:27:03.882831+00:00'
+- id: dogfood-model-guardrail-404
+  title: 'P2: surface dropped-worker failures to the user + stop dispatcher selecting
+    guardrail-blocked models'
+  criteria:
+  - 'C1: cli/main.py prints an unconditional warning (shown WITHOUT --verbose) when
+    worker stages degraded, listing stage id, model, and failure reason truncated
+    to <=200 chars; tests in tests/test_cli.py prove it'
+  - 'C2: DeliberationTrace carries worker_failures (list of {stage_id, model, error})
+    populated when stages degrade with an upstream error; API trace JSON serializes
+    it (tests in tests/test_engine.py + tests/test_api.py)'
+  - 'C3: src/chimera/blocked_models.py ModelBlockRegistry blocks a model for cooldown
+    (300s default, injectable clock) only on guardrail-class errors (regex guardrail|no
+    endpoints available|privacy); dispatcher catalog + selector exclude blocked models;
+    non-guardrail failures do NOT block (tests in tests/test_blocked_models.py, tests/test_dispatcher.py,
+    tests/test_selector.py)'
+  - 'C4: aggregator partial-input merging preserved (degraded deps still merged, no
+    crash); no existing test regressed'
+  - 'C5: at least 8 new tests across offline test files; full suite .venv/bin/python
+    -m pytest -q shows 612 passed, 62 skipped, 1 failed = pre-existing pricing-drift
+    baseline test_provider_discovery (NOT regression)'
+  status: complete
+  created_at: '2026-08-04T04:39:05.059794+00:00'
+  completed_at: '2026-08-04T04:42:09.436081+00:00'
