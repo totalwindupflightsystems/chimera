@@ -753,3 +753,136 @@ def test_parse_dispatch_result_progressive_defaults_false(config) -> None:  # ty
     assert stage.progressive is False
     assert stage.wait_messages == []
     assert stage.trigger == ""
+
+
+# --------------------------------------------------------------------------- #
+# Missing-aggregator repair + visible fallback reasons (dogfood P1)
+# --------------------------------------------------------------------------- #
+
+
+def _workers_only_payload(
+    workers: list[tuple[str, str]],
+    *,
+    custom_prompts: bool = True,
+    output_schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Hand-crafted auto payload with worker stages only — no aggregator."""
+    stages = [
+        {"id": wid, "kind": "worker", "model": wmodel, "depends_on": []}
+        for wid, wmodel in workers
+    ]
+    worker_prompts = [
+        {
+            "stage_id": wid,
+            "model": wmodel,
+            "prompt": f"Custom subtask for {wid}" if custom_prompts else "",
+            "expected_output_schema": None,
+        }
+        for wid, wmodel in workers
+    ]
+    payload: dict[str, Any] = {
+        "formation": {"stages": stages, "edges": []},
+        "worker_prompts": worker_prompts,
+        "aggregator_instructions": "",
+        "stage_instructions": {},
+    }
+    if output_schema is not None:
+        payload["output_schema"] = output_schema
+    return payload
+
+
+def test_parse_dispatch_result_repairs_missing_aggregator(config) -> None:  # type: ignore[no-untyped-def]
+    """A sound worker-only DAG is repaired, not discarded."""
+    raw = _workers_only_payload([
+        ("worker_1", "deepseek/deepseek-chat"),
+        ("worker_2", "openrouter/google/gemini-2.5-flash"),
+    ])
+    result = parse_dispatch_result(raw, config)
+
+    # This is a repair, not a fallback: the dispatcher's design survives.
+    assert result.source == "auto"
+    assert result.fallback_reason is None
+    assert len(result.formation.stages) == 3
+
+    agg = result.formation.stage("aggregator")
+    assert agg.kind == "aggregator"
+    assert agg.model == config.defaults.default_aggregator
+    assert agg.depends_on == ["worker_1", "worker_2"]
+
+    edges = [tuple(e) for e in result.formation.edges]
+    assert edges == [("worker_1", "aggregator"), ("worker_2", "aggregator")]
+
+    # Custom worker prompts are preserved, not templated.
+    prompts = {wp.stage_id: wp.prompt for wp in result.worker_prompts}
+    assert prompts["worker_1"] == "Custom subtask for worker_1"
+    assert prompts["worker_2"] == "Custom subtask for worker_2"
+
+    assert result.aggregator_instructions
+    assert result.dispatch_note is not None
+    assert "repaired" in result.dispatch_note
+
+
+def test_parse_dispatch_result_repair_single_worker(config) -> None:  # type: ignore[no-untyped-def]
+    """Repair works for a single-worker formation too."""
+    raw = _workers_only_payload([("worker_1", "deepseek/deepseek-chat")])
+    result = parse_dispatch_result(raw, config)
+
+    assert result.source == "auto"
+    agg = result.formation.stage("aggregator")
+    assert agg.depends_on == ["worker_1"]
+    assert ("worker_1", "aggregator") in [tuple(e) for e in result.formation.edges]
+    assert result.dispatch_note is not None
+    assert "repaired" in result.dispatch_note
+
+
+def test_parse_dispatch_result_malformed_sets_reason(config) -> None:  # type: ignore[no-untyped-def]
+    """Unparseable dispatcher output falls back with a visible reason."""
+    result = parse_dispatch_result("this is not json {{{", config)
+    assert result.source == "fallback"
+    assert result.fallback_reason == "malformed_json"
+    assert result.dispatch_note is None
+
+
+def test_parse_dispatch_result_no_workers_sets_reason(config) -> None:  # type: ignore[no-untyped-def]
+    """A genuinely broken DAG (no worker stages) still falls back, with reason."""
+    payload = {
+        "formation": {
+            "stages": [
+                {"id": "aggregator", "kind": "aggregator",
+                 "model": "zai-coding-plan/glm-5.2", "depends_on": []},
+            ],
+            "edges": [],
+        },
+        "worker_prompts": [],
+        "aggregator_instructions": "Merge.",
+    }
+    result = parse_dispatch_result(payload, config)
+    assert result.source == "fallback"
+    assert result.fallback_reason is not None
+    assert result.fallback_reason.startswith("invalid_dag")
+    assert "worker" in result.fallback_reason
+
+
+def test_parse_dispatch_result_repair_preserves_output_schema(config) -> None:  # type: ignore[no-untyped-def]
+    """The repair keeps the dispatcher's output_schema intact."""
+    schema = {
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+    }
+    raw = _workers_only_payload(
+        [("worker_1", "deepseek/deepseek-chat")], output_schema=schema
+    )
+    result = parse_dispatch_result(raw, config)
+    assert result.source == "auto"
+    assert result.output_schema == schema
+    assert result.dispatch_note is not None
+    assert "repaired" in result.dispatch_note
+
+
+def test_parse_dispatch_result_valid_payload_no_note(config) -> None:  # type: ignore[no-untyped-def]
+    """A clean parse sets neither fallback_reason nor dispatch_note."""
+    result = parse_dispatch_result(dispatch_json(), config)
+    assert result.source == "auto"
+    assert result.fallback_reason is None
+    assert result.dispatch_note is None

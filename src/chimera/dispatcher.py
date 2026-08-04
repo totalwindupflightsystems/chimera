@@ -162,6 +162,12 @@ class DispatchResult(BaseModel):
     stage_instructions: dict[str, str] = Field(default_factory=dict)
     output_schema: dict[str, Any] | None = None  # JSON Schema for the final answer
     source: str = "auto"  # auto | preset | fallback
+    fallback_reason: str | None = None
+    """Why the result fell back to a generic formation (``"malformed_json"``,
+    ``"invalid_dag: <error>"``). ``None`` for a clean parse or a repair."""
+    dispatch_note: str | None = None
+    """Non-fatal dispatch annotation (e.g. ``"repaired: added aggregator stage
+    for 2 worker terminals"``). ``None`` when nothing notable happened."""
 
     def worker_prompt_for(self, stage_id: str) -> WorkerPrompt | None:
         for wp in self.worker_prompts:
@@ -521,7 +527,9 @@ def parse_dispatch_result(
             data = _extract_json_object(raw)
         except (json.JSONDecodeError, ValueError) as exc:
             log.warning("dispatcher_bad_json", error=str(exc))
-            return _fallback_result(config, fallback_dag, user_prompt="")
+            return _fallback_result(
+                config, fallback_dag, user_prompt="", reason="malformed_json"
+            )
 
     try:
         formation_data = data.get("formation") or {}
@@ -561,26 +569,68 @@ def parse_dispatch_result(
             source="auto",
         )
         _normalize_result(result, config)
-        _validate_result(result)
+        _validate_result(result, config)
         return result
     except (KeyError, TypeError, ValueError, IndexError) as exc:
         log.warning("dispatcher_parse_failed", error=str(exc))
-        return _fallback_result(config, fallback_dag, user_prompt="")
+        return _fallback_result(
+            config, fallback_dag, user_prompt="", reason=f"invalid_dag: {exc}"
+        )
 
+def _validate_result(result: DispatchResult, config: ChimeraConfig | None = None) -> None:
+    """Raise ``ValueError`` if the dispatch plan is structurally unusable.
 
-def _validate_result(result: DispatchResult) -> None:
-    """Raise ``ValueError`` if the dispatch plan is structurally unusable."""
+    A structurally sound plan that merely omits the aggregator/merge/audit
+    stage is REPAIRED in place (a default aggregator depending on every
+    terminal worker is appended) instead of failing validation.
+    """
     if not result.formation.stages:
         raise ValueError("dispatch produced no stages")
     if not any(s.kind == "worker" for s in result.formation.stages):
         raise ValueError("dispatch produced no worker stages")
     if not any(s.kind in {"aggregator", "merge", "audit"} for s in result.formation.stages):
-        raise ValueError("dispatch produced no aggregator/merge/audit stage")
+        _repair_missing_aggregator(result, config)
     ids = set(result.formation.stage_ids())
     for stage in result.formation.stages:
         for dep in stage.depends_on:
             if dep not in ids:
                 raise ValueError(f"stage {stage.id!r} depends on unknown {dep!r}")
+
+
+def _repair_missing_aggregator(
+    result: DispatchResult, config: ChimeraConfig | None = None
+) -> None:
+    """Append a default aggregator stage to a worker-only formation.
+
+    The auto dispatcher sometimes designs 2-4 worker stages but omits the
+    merge stage despite the schema hint. The worker design (stages, prompts,
+    output_schema) is sound, so we keep it and attach one aggregator over all
+    terminal workers rather than discarding the whole plan for a generic
+    single-worker fallback.
+    """
+    dag = result.formation
+    terminal_worker_ids = [s.id for s in dag.terminals() if s.kind == "worker"]
+    if not terminal_worker_ids:
+        raise ValueError("dispatch produced no aggregator/merge/audit stage")
+    aggregator = Stage(
+        id="aggregator",
+        kind="aggregator",
+        model=config.defaults.default_aggregator if config is not None else "default",
+        depends_on=list(terminal_worker_ids),
+    )
+    dag.stages.append(aggregator)
+    for wid in terminal_worker_ids:
+        dag.edges.append((wid, "aggregator"))
+    if not result.aggregator_instructions:
+        result.aggregator_instructions = (
+            "Merge the worker outputs into a single, coherent final answer "
+            "for the user's request."
+        )
+    n = len(terminal_worker_ids)
+    result.dispatch_note = (
+        f"repaired: added aggregator stage for {n} worker terminal{'s' if n != 1 else ''}"
+    )
+    log.info("dispatch_repaired_missing_aggregator", terminals=terminal_worker_ids)
 
 
 def _normalize_result(result: DispatchResult, config: ChimeraConfig) -> None:
@@ -643,8 +693,14 @@ def _fallback_result(
     fallback_dag: FormationDAG | None,
     *,
     user_prompt: str,
+    reason: str | None = None,
 ) -> DispatchResult:
-    """Build a safe 1-worker + 1-aggregator result when parsing fails."""
+    """Build a safe 1-worker + 1-aggregator result when parsing fails.
+
+    ``reason`` records WHY the fallback fired (``"malformed_json"`` or
+    ``"invalid_dag: <error>"``) so consumers can see the collapse instead of
+    a silent ``source="fallback"``.
+    """
     if fallback_dag is not None:
         dag = fallback_dag
     else:
@@ -681,6 +737,7 @@ def _fallback_result(
             "required": ["answer"],
         },
         source="fallback",
+        fallback_reason=reason,
     )
 
 

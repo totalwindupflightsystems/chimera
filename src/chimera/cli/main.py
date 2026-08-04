@@ -167,10 +167,14 @@ def _print_trace(trace: Any) -> None:
     for span in trace.stages:
         row(span)
     console.print(table)
+    note = ""
+    dispatch_note = getattr(trace, "dispatch_note", None)
+    if dispatch_note:
+        note = f", note={dispatch_note}"
     console.print(
         f"total: {trace.total_tokens} tokens, "
         f"{trace.total_duration_ms}ms, ${trace.total_cost:.6f} "
-        f"(source={trace.source}, answer_stage={trace.answer_stage_id})"
+        f"(source={trace.source}, answer_stage={trace.answer_stage_id}{note})"
     )
     console.print(
         Panel(

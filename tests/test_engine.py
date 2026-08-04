@@ -893,3 +893,46 @@ class TestMaybeUnwrapEnvelope:
         result = Engine._maybe_unwrap_envelope(text)
         assert isinstance(result, str), f"Expected str, got {type(result)}: {result!r}"
         assert result == expected, f"Expected {expected!r}, got {result!r}"
+
+
+@pytest.mark.asyncio
+async def test_trace_surfaces_dispatch_note_on_repair(config) -> None:  # type: ignore[no-untyped-def]
+    """A repaired auto dispatch (missing aggregator) is visible in the trace."""
+    payload = json.dumps({
+        "formation": {
+            "stages": [
+                {"id": "worker_1", "kind": "worker",
+                 "model": "deepseek/deepseek-chat", "depends_on": []},
+                {"id": "worker_2", "kind": "worker",
+                 "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+            ],
+            "edges": [],
+        },
+        "worker_prompts": [
+            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
+             "prompt": "Custom subtask for worker_1", "expected_output_schema": None},
+            {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
+             "prompt": "Custom subtask for worker_2", "expected_output_schema": None},
+        ],
+        "aggregator_instructions": "Merge code and design.",
+        "stage_instructions": {},
+    })
+    gw = FakeGateway(_engine_responder(config, payload=payload))
+    result = await Engine(config, gw).deliberate("Design + build a service", "auto")
+
+    assert result.trace.source == "auto"
+    assert result.trace.dispatch_note is not None
+    assert "repaired" in result.trace.dispatch_note
+    assert result.trace.aggregator is not None
+    assert result.trace.answer_stage_id == "aggregator"
+    assert result.answer.startswith("[FINAL MERGED ANSWER")
+
+
+@pytest.mark.asyncio
+async def test_trace_surfaces_fallback_reason(config) -> None:  # type: ignore[no-untyped-def]
+    """A malformed dispatcher payload falls back with a visible trace note."""
+    gw = FakeGateway(_engine_responder(config, payload="this is not json {{{"))
+    result = await Engine(config, gw).deliberate("task", "auto")
+
+    assert result.trace.source == "fallback"
+    assert result.trace.dispatch_note == "malformed_json"

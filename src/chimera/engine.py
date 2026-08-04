@@ -83,6 +83,10 @@ class DeliberationTrace(BaseModel):
     total_tokens: int = 0
     iteration_count: int = 1
     """How many iteration passes were executed (1 = single pass, 2+ = looped)."""
+    dispatch_note: str | None = None
+    """Dispatch fallback reason or repair note (e.g. ``"malformed_json"``,
+    ``"repaired: added aggregator stage for 2 worker terminals"``). ``None``
+    for a clean auto/preset/custom dispatch."""
 
 
 class DeliberationResult(BaseModel):
@@ -1020,6 +1024,7 @@ class Engine:
             total_cost=total_cost,
             total_tokens=total_tokens,
             iteration_count=iteration_count,
+            dispatch_note=dispatch.fallback_reason or dispatch.dispatch_note,
         )
 
 
