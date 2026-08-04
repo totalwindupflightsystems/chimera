@@ -126,6 +126,15 @@ class QueueConfig(BaseModel):
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
+    health_timeout_s: float = 10.0
+    """Wall-clock budget for the provider connectivity probe in
+    ``_check_providers`` (``/v1/health`` + ``/v1/health/ready``).
+
+    Providers that have not responded within this window are reported as
+    ``timeout``.  Default 10.0 s — slow-but-working providers (deepseek,
+    openrouter, ...) were previously misreported as unhealthy under the
+    hardcoded 3.0 s budget.
+    """
 
 
 class AuthKeyEntry(BaseModel):

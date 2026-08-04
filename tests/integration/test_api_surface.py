@@ -5,7 +5,9 @@ Hits ``GET /v1/health``, ``GET /v1/health/ready``, ``GET /v1/models``, and
 require authentication (per ``require_api_key`` docs).
 
 ``/v1/health`` and ``/v1/health/ready`` call ``_check_providers()`` which
-pings each provider with a 5 s timeout — so these can take up to ~15 s.
+pings each provider concurrently under the configurable
+``server.health_timeout_s`` (default 10.0 s, wired from chimera.yaml) — so
+these can take up to ~10 s.
 """
 
 from __future__ import annotations

@@ -1357,6 +1357,11 @@ providers:
 server:
   host: 0.0.0.0
   port: 8765
+  # Budget for provider connectivity probes in /v1/health + /v1/health/ready.
+  # Providers slower than this are reported as timeout. Raised from the
+  # historical hardcoded 3.0 s — slow-but-working providers (deepseek, ...)
+  # were misreported as unhealthy.
+  health_timeout_s: 10.0
 observability:
   log_level: warning
   use_stdout: false

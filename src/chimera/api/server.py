@@ -17,6 +17,7 @@ Resilience features:
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
@@ -532,42 +533,136 @@ def _register_routes(app: FastAPI) -> None:
 # F8: Provider connectivity check helper
 # --------------------------------------------------------------------------- #
 
+#: Env-var fallbacks per provider, mirroring ``gateway.resolve_litellm_model``
+#: and ``_apply_env_overrides`` so the missing-credentials pre-check matches
+#: the key the gateway would actually use.
+_PROVIDER_ENV_KEYS: dict[str, tuple[str, ...]] = {
+    "deepseek": ("DEEPSEEK_API_KEY", "DEEPSEEK_KEY"),
+    "zai": ("ZAI_API_KEY", "ZAI_KEY"),
+    "anthropic": ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY"),
+    "openrouter": ("OPENROUTER_API_KEY", "OPENROUTER_KEY"),
+    "openai": ("OPENAI_API_KEY", "OPENAI_KEY"),
+    "google": ("GEMINI_API_KEY", "GEMINI_KEY", "GOOGLE_API_KEY"),
+    "xai": ("XAI_API_KEY", "XAI_KEY"),
+}
+
+#: How many different models per provider are probed before a non-timeout
+#: failure marks the provider unhealthy (one model may be blocked by a
+#: privacy guardrail / quota while the provider itself works).
+_MAX_PROBE_MODELS = 3
+
+
+def _provider_has_credentials(config: ChimeraConfig, provider_name: str) -> bool:
+    """True when the gateway can resolve an API key for *provider_name*.
+
+    Mirrors the key resolution the gateway actually uses: ``config.api_keys``
+    (env-var shortcuts) → resolved ``Provider.api_key`` (``api_key_env``) →
+    per-provider environment fallbacks.  Anthropic gets the F8 OpenRouter
+    fallback the gateway applies when no Anthropic key is configured.
+    """
+    if config.api_keys.get(provider_name):
+        return True
+    provider = config.providers.get(provider_name)
+    if provider is not None and provider.api_key:
+        return True
+    for env_var in _PROVIDER_ENV_KEYS.get(provider_name, ()):
+        if os.environ.get(env_var):
+            return True
+    if provider_name == "anthropic":
+        # F8: the gateway routes Anthropic models via OpenRouter when no
+        # Anthropic key is configured but an OpenRouter key exists.
+        if config.api_keys.get("openrouter"):
+            return True
+        or_provider = config.providers.get("openrouter")
+        if or_provider is not None and or_provider.api_key:
+            return True
+    return False
+
+
+def _classify_provider_error(exc: BaseException) -> str:
+    """Classify a provider failure as ``timeout`` | ``auth`` | ``api``."""
+    status_code = getattr(exc, "status_code", None)
+    if status_code is None:
+        response = getattr(exc, "response", None)
+        if response is not None:
+            status_code = getattr(response, "status_code", None)
+    if status_code in (401, 403):
+        return "auth"
+    message = str(exc).lower()
+    if "timeout" in message or "timed out" in message:
+        return "timeout"
+    if any(
+        token in message
+        for token in (
+            "401", "403", "unauthorized", "authentication",
+            "invalid api key", "api key", "forbidden", "permission denied",
+        )
+    ):
+        return "auth"
+    return "api"
+
+
 async def _check_providers(
     config: ChimeraConfig, gateway: Any,
 ) -> dict[str, dict[str, Any]]:
     """Check connectivity to each configured provider.
 
-    Returns a dict mapping provider name → {healthy: bool, error?: str}.
-    Provider checks run concurrently and share a three-second timeout.
+    Returns a dict mapping provider name → {healthy: bool, error?: str, ...}.
+
+    Provider checks run concurrently under ``config.server.health_timeout_s``
+    (default 10.0 s).  Providers without resolvable credentials are reported
+    immediately as ``missing-credentials`` (no live call).  For non-timeout
+    failures (``auth`` / ``api``) up to ``_MAX_PROBE_MODELS`` models from the
+    provider are tried before it is marked unhealthy; the last model attempted
+    is reported in ``model_tested``.  A timeout is terminal per provider —
+    one model is enough to prove connectivity.
     """
     async def check_one(provider_name: str) -> tuple[str, dict[str, Any]]:
-        try:
-            # Use a simple model entry test by picking any model from that provider
-            test_model = next(
-                (name for name, entry in config.models.items()
-                 if entry.provider == provider_name),
-                None,
-            )
-            if test_model is None:
-                return provider_name, {
-                    "healthy": True,
-                    "note": "no models configured for provider",
-                }
-
-            await gateway.complete(
-                test_model,
-                [{"role": "user", "content": "ping"}],
-                temperature=1,
-            )
+        model_names = [
+            name for name, entry in config.models.items()
+            if entry.provider == provider_name
+        ]
+        if not model_names:
             return provider_name, {
                 "healthy": True,
-                "model_tested": test_model,
+                "note": "no models configured for provider",
             }
-        except Exception as exc:
+        if not _provider_has_credentials(config, provider_name):
             return provider_name, {
                 "healthy": False,
-                "error": str(exc)[:200],
+                "error": (
+                    "missing-credentials: no API key resolved "
+                    f"for provider '{provider_name}'"
+                ),
             }
+
+        last_error: BaseException | None = None
+        last_model = model_names[0]
+        for test_model in model_names[:_MAX_PROBE_MODELS]:
+            last_model = test_model
+            try:
+                await gateway.complete(
+                    test_model,
+                    [{"role": "user", "content": "ping"}],
+                    temperature=1,
+                    max_tokens=1,
+                )
+                return provider_name, {
+                    "healthy": True,
+                    "model_tested": test_model,
+                }
+            except Exception as exc:
+                last_error = exc
+                if _classify_provider_error(exc) == "timeout":
+                    # Timeout is terminal for the provider within this check.
+                    break
+        assert last_error is not None
+        error_class = _classify_provider_error(last_error)
+        return provider_name, {
+            "healthy": False,
+            "error": f"{error_class}: {str(last_error)[:200]}",
+            "model_tested": last_model,
+        }
 
     if not config.providers:
         return {"_none": {"healthy": True, "note": "no providers configured"}}
@@ -576,12 +671,30 @@ async def _check_providers(
         asyncio.create_task(check_one(provider_name)): provider_name
         for provider_name in config.providers
     }
-    done, pending = await asyncio.wait(tasks, timeout=3.0)
+    done, pending = await asyncio.wait(
+        tasks, timeout=config.server.health_timeout_s,
+    )
 
-    status = dict(task.result() for task in done)
+    timeout_error = (
+        f"timeout: no response within {config.server.health_timeout_s:.1f}s"
+    )
+    status: dict[str, dict[str, Any]] = {}
+    for task in done:
+        provider_name = tasks[task]
+        if task.cancelled():
+            status[provider_name] = {"healthy": False, "error": timeout_error}
+            continue
+        try:
+            _, result = task.result()
+            status[provider_name] = result
+        except Exception as exc:  # defensive — check_one catches everything
+            status[provider_name] = {
+                "healthy": False,
+                "error": f"api: {str(exc)[:200]}",
+            }
     for task in pending:
         task.cancel()
-        status[tasks[task]] = {"healthy": False, "error": "timeout"}
+        status[tasks[task]] = {"healthy": False, "error": timeout_error}
 
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)
