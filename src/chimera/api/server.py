@@ -26,6 +26,7 @@ import structlog
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from chimera import __version__
 from chimera.api.dependencies import require_api_key
 from chimera.api.rate_limit import RateLimiter
 from chimera.config import ChimeraConfig, load_config
@@ -122,7 +123,7 @@ def create_app(
         """Store queue on app state."""
         yield
 
-    app = FastAPI(title="Chimera", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Chimera", version=__version__, lifespan=lifespan)
 
     from fastapi.responses import JSONResponse
 

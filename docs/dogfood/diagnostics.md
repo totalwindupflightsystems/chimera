@@ -107,5 +107,5 @@ User prompt
 - MCP server (`chimera-mcp`) runs from the Hermes venv with the repo's
   `chimera.yaml`; it exposes 4 tools (deliberate/formations/models) and 0
   resources/prompts — tools-only is fine for its purpose.
-- `chimera.__version__` is 0.1.0 while pyproject says 0.2.0 (drift — task
-  dogfood-version-drift).
+- `chimera.__version__` now derives from pyproject.toml via dist metadata
+  (was drifted at 0.1.0 vs pyproject 0.2.0 — fixed by dogfood-version-drift).
