@@ -236,3 +236,21 @@ tasks:
   status: complete
   created_at: '2026-08-04T04:39:05.059794+00:00'
   completed_at: '2026-08-04T04:42:09.436081+00:00'
+- id: dogfood-version-drift
+  title: "P2: eliminate __version__ drift \u2014 chimera reports 0.1.0 vs pyproject\
+    \ 0.2.0"
+  criteria:
+  - 'C1: chimera.__version__ equals the pyproject.toml version (0.2.0) both in installed
+    venv context and from source-tree import (fallback path works)'
+  - "C2: FastAPI app version equals the package __version__ \u2014 no separate hardcoded\
+    \ version string in src/chimera/api/server.py"
+  - "C3: Version is single-sourced \u2014 changing pyproject.toml version is the only\
+    \ edit needed; grep src/ shows zero hardcoded \"0.1.0\""
+  - 'C4: tests/test_version.py proves version consistency offline (matches pyproject,
+    fallback constant matches, FastAPI app version matches); tests/test_init.py still
+    passes'
+  - 'C5: full suite shows 615 passed, 62 skipped, 1 failed = pre-existing pricing-drift
+    baseline test_discovery_adds_pricing_to_models (NOT regression)'
+  status: complete
+  created_at: '2026-08-04T05:18:48.118171+00:00'
+  completed_at: '2026-08-04T05:18:53.090519+00:00'
