@@ -391,3 +391,39 @@ class TestCostWeightedSelection:
         assert "openrouter/disabled-coder" not in result, (
             f"Disabled model should not appear: {result}"
         )
+
+
+# --------------------------------------------------------------------------- #
+# Guardrail blocked-model exclusion from selector candidates (C3)
+# --------------------------------------------------------------------------- #
+
+class TestBlockedModelExclusion:
+    def setup_method(self) -> None:
+        from chimera import blocked_models
+        from chimera.blocked_models import ModelBlockRegistry, set_shared_registry
+
+        self._original = blocked_models.shared_registry
+        set_shared_registry(ModelBlockRegistry())
+        self._registry = blocked_models.shared_registry
+
+    def teardown_method(self) -> None:
+        from chimera.blocked_models import set_shared_registry
+
+        set_shared_registry(self._original)
+
+    def test_blocked_model_excluded_from_selection(self) -> None:
+        self._registry.record_failure(
+            "openrouter/moonshotai/kimi-k2.7-code", "guardrail rejection"
+        )
+        sel = CategorySelector(SAMPLE_MODELS)
+        result = sel.select("Write Python code", count=5)
+        assert "openrouter/moonshotai/kimi-k2.7-code" not in result
+        assert result  # other models still ranked
+
+    def test_blocked_model_excluded_from_score(self) -> None:
+        self._registry.record_failure(
+            "anthropic/claude-sonnet-4", "No endpoints available"
+        )
+        sel = CategorySelector(SAMPLE_MODELS)
+        scores = sel.score("Write Python code")
+        assert "anthropic/claude-sonnet-4" not in scores

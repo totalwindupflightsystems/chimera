@@ -1087,3 +1087,105 @@ async def test_no_overrides_no_note(config) -> None:  # type: ignore[no-untyped-
         "task", "auto", overrides=DeliberationOverrides()
     )
     assert result2.trace.dispatch_note is None
+
+
+# --------------------------------------------------------------------------- #
+# Dropped-worker surfacing (C1/C2) + guardrail block recording (C3)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.asyncio
+async def test_worker_failures_populated_on_degraded_worker(config) -> None:  # type: ignore[no-untyped-def]
+    """C2: trace.worker_failures lists each dropped worker with stage/model/error."""
+    failing_model = "openrouter/google/gemini-2.5-flash"
+
+    class PartialGateway(FakeGateway):
+        async def complete(self, model, messages, response_format=None, **kw):
+            if response_format is not None:
+                return resp(dispatch_json(), model, 10, 10)
+            if "Upstream outputs" in json.dumps(messages):  # aggregator
+                return resp("AGGREGATOR ANSWER", model, 10, 10)
+            if model == failing_model:
+                raise GatewayError(
+                    f"{failing_model} call failed: 404 No endpoints available "
+                    "matching your guardrail restrictions and data policy"
+                )
+            return resp(f"worker output {model}", model, 10, 10)
+
+    gw = PartialGateway()
+    result = await Engine(config, gw).deliberate("task", "auto")
+    # C4: answer still produced from the surviving worker.
+    assert result.answer == "AGGREGATOR ANSWER"
+    failures = result.trace.worker_failures
+    assert len(failures) == 1
+    assert failures[0].stage_id == "worker_2"
+    assert failures[0].model == failing_model
+    assert "guardrail" in failures[0].error
+
+
+@pytest.mark.asyncio
+async def test_worker_failures_empty_when_all_healthy(config) -> None:  # type: ignore[no-untyped-def]
+    gw = FakeGateway(_engine_responder(config))
+    result = await Engine(config, gw).deliberate("task", "auto")
+    assert result.trace.worker_failures == []
+
+
+@pytest.mark.asyncio
+async def test_guardrail_failure_records_model_block(config) -> None:  # type: ignore[no-untyped-def]
+    """C3: a guardrail-class worker failure blocks the model in the registry."""
+    from chimera import blocked_models
+    from chimera.blocked_models import ModelBlockRegistry, set_shared_registry
+
+    original = blocked_models.shared_registry
+    set_shared_registry(ModelBlockRegistry())
+    try:
+        failing_model = "openrouter/google/gemini-2.5-flash"
+
+        class GuardrailGateway(FakeGateway):
+            async def complete(self, model, messages, response_format=None, **kw):
+                if response_format is not None:
+                    return resp(dispatch_json(), model, 10, 10)
+                if "Upstream outputs" in json.dumps(messages):
+                    return resp("AGGREGATOR ANSWER", model, 10, 10)
+                if model == failing_model:
+                    raise GatewayError("guardrail restrictions and data policy")
+                return resp(f"worker output {model}", model, 10, 10)
+
+        result = await Engine(config, GuardrailGateway()).deliberate("task", "auto")
+        assert result.trace.worker_failures
+        assert blocked_models.shared_registry.is_blocked(failing_model)
+        # The other (healthy) worker model is NOT blocked.
+        assert not blocked_models.shared_registry.is_blocked(
+            "deepseek/deepseek-chat"
+        )
+    finally:
+        set_shared_registry(original)
+
+
+@pytest.mark.asyncio
+async def test_transient_failure_does_not_block_model(config) -> None:  # type: ignore[no-untyped-def]
+    """C3(c): non-guardrail failures degrade the stage but do NOT block."""
+    from chimera import blocked_models
+    from chimera.blocked_models import ModelBlockRegistry, set_shared_registry
+
+    original = blocked_models.shared_registry
+    set_shared_registry(ModelBlockRegistry())
+    try:
+        failing_model = "openrouter/google/gemini-2.5-flash"
+
+        class TransientGateway(FakeGateway):
+            async def complete(self, model, messages, response_format=None, **kw):
+                if response_format is not None:
+                    return resp(dispatch_json(), model, 10, 10)
+                if "Upstream outputs" in json.dumps(messages):
+                    return resp("AGGREGATOR ANSWER", model, 10, 10)
+                if model == failing_model:
+                    raise GatewayError("503 service unavailable")
+                return resp(f"worker output {model}", model, 10, 10)
+
+        result = await Engine(config, TransientGateway()).deliberate("task", "auto")
+        # Failure still surfaced on the trace…
+        assert len(result.trace.worker_failures) == 1
+        # …but the model is not blocked from future candidacy.
+        assert not blocked_models.shared_registry.is_blocked(failing_model)
+    finally:
+        set_shared_registry(original)

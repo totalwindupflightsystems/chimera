@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from chimera import blocked_models
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  Task → category path keyword heuristics
 # ═══════════════════════════════════════════════════════════════════════════
@@ -173,13 +175,17 @@ class CategorySelector:
 
         Score = sum over matched paths of ``task_weight[path] * model_score[path]``.
         Falls back to parent-path matching when the exact path isn't scored.
-        Disabled models are skipped (not scored).
+        Disabled models are skipped (not scored), as are models currently
+        blocked by the guardrail failure registry.
         """
         task_weights = task_to_paths(task)
         results: dict[str, float] = {}
+        blocked = blocked_models.shared_registry.blocked()
 
         for model_id, entry in self._models.items():
             if not getattr(entry, "enabled", True):
+                continue
+            if model_id in blocked:
                 continue
             model_cats = getattr(entry, "categories", {})
             if not model_cats:

@@ -18,6 +18,7 @@ import jsonschema
 import structlog
 from pydantic import BaseModel, Field
 
+from chimera import blocked_models
 from chimera.aggregator import Aggregator, StageResult
 from chimera.config import ChimeraConfig, DeliberationOverrides
 from chimera.dispatcher import (
@@ -67,6 +68,18 @@ class StageSpan(BaseModel):
     """``time.monotonic()`` when the stage finished."""
 
 
+class WorkerFailure(BaseModel):
+    """One dropped worker stage — surfaced to the user and the API trace.
+
+    Populated when a stage degrades with an upstream error (gateway failure,
+    timeout, budget exhaustion). ``error`` is the upstream failure reason.
+    """
+
+    stage_id: str
+    model: str
+    error: str
+
+
 class DeliberationTrace(BaseModel):
     """Full trace of a deliberation run."""
 
@@ -87,6 +100,10 @@ class DeliberationTrace(BaseModel):
     """Dispatch fallback reason or repair note (e.g. ``"malformed_json"``,
     ``"repaired: added aggregator stage for 2 worker terminals"``). ``None``
     for a clean auto/preset/custom dispatch."""
+    worker_failures: list[WorkerFailure] = Field(default_factory=list)
+    """Worker (and other) stages that degraded with an upstream error — the
+    machine-readable form of the CLI's dropped-worker warning. Empty when
+    every stage succeeded."""
 
 
 class DeliberationResult(BaseModel):
@@ -441,6 +458,7 @@ class Engine:
         answer, answer_stage_id = self._select_answer(outcome.result.formation, stage_results)
         answer = self._maybe_unwrap_envelope(answer)
         answer_stage = stage_results.get(answer_stage_id)
+        worker_failures = self._collect_worker_failures(stage_results)
         trace = self._assemble_trace(
             request_id=request_id,
             formation=formation,
@@ -450,6 +468,7 @@ class Engine:
             answer_stage_id=answer_stage_id,
             started=started,
             iteration_count=iteration_count,
+            worker_failures=worker_failures,
         )
         _maybe_langfuse(trace, user_prompt)
         structlog.contextvars.unbind_contextvars("request_id", "formation")
@@ -1101,6 +1120,7 @@ class Engine:
         answer_stage_id: str,
         started: float,
         iteration_count: int = 1,
+        worker_failures: list[WorkerFailure] | None = None,
     ) -> DeliberationTrace:
         workers = [s for s in stage_spans.values() if s.kind == "worker"]
         primary_aggregator = next(
@@ -1124,7 +1144,31 @@ class Engine:
             total_tokens=total_tokens,
             iteration_count=iteration_count,
             dispatch_note=dispatch.fallback_reason or dispatch.dispatch_note,
+            worker_failures=list(worker_failures or []),
         )
+
+    @staticmethod
+    def _collect_worker_failures(
+        stage_results: dict[str, StageResult],
+    ) -> list[WorkerFailure]:
+        """Build the dropped-worker list from degraded stage results.
+
+        Every degraded stage carries its upstream error in
+        ``response.metadata["error"]`` (stamped by :meth:`_degraded_stage`).
+        Guardrail-class errors are also recorded in the shared block
+        registry so the dispatcher stops selecting that model for the
+        cooldown window.
+        """
+        failures: list[WorkerFailure] = []
+        for stage_id, result in stage_results.items():
+            if not isinstance(result, StageResult) or not result.degraded:
+                continue
+            error = str(result.response.metadata.get("error") or "unknown error")
+            failures.append(
+                WorkerFailure(stage_id=stage_id, model=result.model, error=error)
+            )
+            blocked_models.shared_registry.record_failure(result.model, error)
+        return failures
 
 
 def _aggregator_prompt_summary(
@@ -1176,4 +1220,5 @@ __all__ = [
     "DeliberationTrace",
     "Engine",
     "StageSpan",
+    "WorkerFailure",
 ]

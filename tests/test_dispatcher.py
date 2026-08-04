@@ -926,3 +926,50 @@ async def test_dispatch_no_model_override_uses_default(config) -> None:  # type:
     await dispatcher.dispatch("task", "auto")
     assert len(gw.calls) == 1
     assert gw.calls[0][0] == config.defaults.dispatcher
+
+
+# --------------------------------------------------------------------------- #
+# Guardrail blocked-model exclusion from the dispatcher catalog (C3)
+# --------------------------------------------------------------------------- #
+
+def test_dispatcher_catalog_excludes_blocked_model(config) -> None:  # type: ignore[no-untyped-def]
+    from chimera import blocked_models
+    from chimera.blocked_models import ModelBlockRegistry, set_shared_registry
+
+    original = blocked_models.shared_registry
+    set_shared_registry(ModelBlockRegistry())
+    try:
+        blocked_models.shared_registry.record_failure(
+            "openrouter/qwen/qwen3-coder",
+            "404 No endpoints available matching your guardrail restrictions",
+        )
+        messages = build_dispatcher_prompt("task", config)
+        system = messages[0]["content"]
+        assert "openrouter/qwen/qwen3-coder" not in system
+        # Healthy models remain visible to the dispatcher.
+        assert "deepseek/deepseek-chat" in system
+        assert "zai-coding-plan/glm-5.2" in system
+    finally:
+        set_shared_registry(original)
+
+
+def test_dispatcher_catalog_unblocked_after_cooldown(config) -> None:  # type: ignore[no-untyped-def]
+    from chimera import blocked_models
+    from chimera.blocked_models import ModelBlockRegistry, set_shared_registry
+
+    clock_now = [1000.0]
+    original = blocked_models.shared_registry
+    set_shared_registry(
+        ModelBlockRegistry(cooldown_s=0.5, clock=lambda: clock_now[0])
+    )
+    try:
+        blocked_models.shared_registry.record_failure(
+            "openrouter/qwen/qwen3-coder", "guardrail rejection"
+        )
+        blocked_catalog = build_dispatcher_prompt("task", config)[0]["content"]
+        assert "openrouter/qwen/qwen3-coder" not in blocked_catalog
+        clock_now[0] += 1.0  # past the cooldown — no sleeping required
+        free_catalog = build_dispatcher_prompt("task", config)[0]["content"]
+        assert "openrouter/qwen/qwen3-coder" in free_catalog
+    finally:
+        set_shared_registry(original)

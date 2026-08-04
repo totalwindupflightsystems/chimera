@@ -48,7 +48,8 @@ def test_cli_bare_prompt_routes_to_run(config_file, monkeypatch) -> None:  # typ
                                    tokens_input=1, tokens_output=2, latency_ms=5, cost=0.0)
             trace = SimpleNamespace(request_id="r1", dispatch=span, stages=[],
                                     total_tokens=3, total_duration_ms=9, total_cost=0.0,
-                                    source="auto", answer_stage_id="aggregator")
+                                    source="auto", answer_stage_id="aggregator",
+                                    worker_failures=[])
             return SimpleNamespace(answer="42", trace=trace)
 
     monkeypatch.setattr("chimera.cli.main.Engine", StubEngine)
@@ -378,3 +379,66 @@ def test_cli_mcp_no_config(config_file, monkeypatch) -> None:
     result = runner.invoke(main, ["mcp"])
     assert result.exit_code == 0, result.output
     assert captured["config_path"] is None
+
+
+# ---------------------------------------------------------------------------
+# Dropped-worker CLI warning (C1) — always printed, not just --verbose
+# ---------------------------------------------------------------------------
+
+def _stub_engine_with_failures(monkeypatch, failures):  # type: ignore[no-untyped-def]
+    class StubEngine:
+        def __init__(self, *a, **k):
+            pass
+
+        async def deliberate(self, prompt, formation):  # noqa: ANN001
+            span = SimpleNamespace(stage_id="dispatch", kind="dispatch", model="m",
+                                   tokens_input=1, tokens_output=2, latency_ms=5, cost=0.0)
+            trace = SimpleNamespace(request_id="r1", dispatch=span, stages=[],
+                                    total_tokens=3, total_duration_ms=9, total_cost=0.0,
+                                    source="auto", answer_stage_id="aggregator",
+                                    worker_failures=failures)
+            return SimpleNamespace(answer="partial answer", trace=trace)
+
+    monkeypatch.setattr("chimera.cli.main.Engine", StubEngine)
+    monkeypatch.setattr("chimera.cli.main.LiteLLMGateway", lambda *a, **k: None)
+
+
+def test_cli_warns_about_dropped_workers_without_verbose(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    failure = SimpleNamespace(
+        stage_id="researcher",
+        model="openrouter/qwen/qwen3.7-plus",
+        error="No endpoints available matching your guardrail restrictions",
+    )
+    _stub_engine_with_failures(monkeypatch, [failure])
+    runner = CliRunner()
+    # NOTE: no --verbose flag — the warning must appear regardless.
+    result = runner.invoke(main, ["-c", str(config_file), "hello"])
+    assert result.exit_code == 0, result.output
+    assert "warning" in result.output
+    assert "researcher" in result.output
+    assert "openrouter/qwen/qwen3.7-plus" in result.output
+    assert "guardrail" in result.output
+    # The (partial) answer panel still prints.
+    assert "partial answer" in result.output
+
+
+def test_cli_no_worker_warning_when_all_healthy(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    _stub_engine_with_failures(monkeypatch, [])
+    runner = CliRunner()
+    result = runner.invoke(main, ["-c", str(config_file), "hello"])
+    assert result.exit_code == 0, result.output
+    assert "warning" not in result.output
+
+
+def test_cli_worker_warning_truncates_long_errors(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    failure = SimpleNamespace(
+        stage_id="worker_1",
+        model="m",
+        error="x" * 500,
+    )
+    _stub_engine_with_failures(monkeypatch, [failure])
+    runner = CliRunner()
+    result = runner.invoke(main, ["-c", str(config_file), "hello"])
+    assert result.exit_code == 0, result.output
+    assert "x" * 500 not in result.output  # truncated to ~200 chars
+    assert "x" * 100 in result.output

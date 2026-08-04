@@ -139,9 +139,30 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
     except ValueError as exc:
         console.print(f"[red]error:[/red] {exc}")
         sys.exit(2)
+    _print_worker_failures(result)
     console.print(Panel(result.answer, title="Chimera", border_style="cyan"))
     if ctx.obj.get("verbose"):
         _print_trace(result.trace)
+
+
+def _print_worker_failures(result: Any) -> None:
+    """Warn (always, not just --verbose) when worker stages were dropped.
+
+    A degraded worker still lets the deliberation produce an answer, but the
+    user must know the panel is partial — otherwise a guardrail/404 failure
+    is silent outside the structlog stream.
+    """
+    failures = getattr(getattr(result, "trace", None), "worker_failures", None) or []
+    for failure in failures:
+        stage_id = getattr(failure, "stage_id", "?")
+        model = getattr(failure, "model", "?")
+        error = str(getattr(failure, "error", "") or "unknown error")
+        if len(error) > 200:
+            error = error[:197] + "..."
+        console.print(
+            f"[yellow]warning:[/yellow] worker '{stage_id}' ({model}) "
+            f"failed: {error}"
+        )
 
 
 def _print_trace(trace: Any) -> None:

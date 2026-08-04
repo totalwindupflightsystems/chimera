@@ -357,3 +357,23 @@ def test_chat_completions_partial_degradation_still_200(config) -> None:  # type
     )
     assert r.status_code == 200, r.text
     assert r.json()["choices"][0]["message"]["content"] == "REAL MERGED ANSWER"
+
+
+def test_deliberate_trace_serializes_worker_failures(config) -> None:  # type: ignore[no-untyped-def]
+    """C2: dropped workers appear in the API trace JSON (machine-readable)."""
+    client = _client_with(config, _partial_degradation)
+    r = client.post("/v1/deliberate", json={"prompt": "hello", "formation": "auto"})
+    assert r.status_code == 200, r.text
+    failures = r.json()["trace"]["worker_failures"]
+    assert len(failures) == 2  # both workers dropped in _partial_degradation
+    for failure in failures:
+        assert failure["stage_id"] in {"worker_1", "worker_2"}
+        assert failure["model"]
+        assert "worker down" in failure["error"]
+
+
+def test_deliberate_trace_worker_failures_empty_when_healthy(config) -> None:  # type: ignore[no-untyped-def]
+    client = _client(config)
+    r = client.post("/v1/deliberate", json={"prompt": "hello", "formation": "auto"})
+    assert r.status_code == 200, r.text
+    assert r.json()["trace"]["worker_failures"] == []

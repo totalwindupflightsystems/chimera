@@ -24,6 +24,7 @@ from typing import Any
 import structlog
 from pydantic import BaseModel, Field
 
+from chimera import blocked_models
 from chimera.config import ChimeraConfig, FormationPreset
 from chimera.gateway import Gateway, GatewayError, GatewayResponse
 
@@ -364,7 +365,10 @@ def build_dispatcher_prompt(
     fixed_dag: FormationDAG | None = None,
 ) -> list[dict[str, str]]:
     """Build the message list for the dispatcher model call."""
-    catalog = config.catalog_description()
+    blocked = blocked_models.shared_registry.blocked()
+    if blocked:
+        log.info("dispatcher_catalog_excludes_blocked", models=sorted(blocked))
+    catalog = config.catalog_description(exclude=blocked)
     schema_str = json.dumps(DISPATCH_SCHEMA_HINT, indent=2)
 
     # STRICT worker-prompt rules — prevent empty / verbatim / generic prompts.

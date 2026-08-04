@@ -300,13 +300,18 @@ class ChimeraConfig(BaseModel):
             return self.defaults.default_worker
         return name
 
-    def catalog_description(self) -> str:
+    def catalog_description(self, *, exclude: set[str] | None = None) -> str:
         """Human-readable model catalog for the dispatcher prompt.
 
-        Disabled models are excluded so the dispatcher never sees them.
+        Disabled models are excluded so the dispatcher never sees them, as
+        are any models named in *exclude* (e.g. models currently blocked by
+        the guardrail failure registry).
         """
+        excluded = exclude or set()
         lines: list[str] = []
         for name, entry in self.enabled_models.items():
+            if name in excluded:
+                continue
             cats = ", ".join(
                 f"{cat}={score:.2f}"
                 for cat, score in sorted(entry.categories.items(), key=lambda kv: -kv[1])
