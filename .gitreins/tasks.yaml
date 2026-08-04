@@ -254,3 +254,23 @@ tasks:
   status: complete
   created_at: '2026-08-04T05:18:48.118171+00:00'
   completed_at: '2026-08-04T05:18:53.090519+00:00'
+- id: dogfood-custom-dag-code-fence
+  title: Strip markdown code fences from final aggregator answer (dogfood P2)
+  criteria:
+  - 'C1: A fence-stripping helper (new or reused from dispatcher._strip_fences) is
+    applied to the FINAL answer in Engine.deliberate() before it is returned (answer
+    field), so a final-stage output wrapped in a ```json ... ``` (or ``` ... ```)
+    code fence is delivered without the fence.'
+  - "C2: Plain non-fenced answers pass through completely unmodified (no false positives\
+    \ \u2014 fence stripping only triggers on actual wrapping fences)."
+  - 'C3: The fix covers the custom-DAG path (client-supplied dag with allow_custom_dag=True)
+    AND the normal auto-formation path with output_schema set, per the dogfood report
+    (researcher->critic->final DAG via MCP returned fenced answer).'
+  - 'C4: Regression tests added (tests/test_engine.py or a focused test file) covering:
+    fenced-with-json-tag, fenced-no-tag, plain answer unchanged, fence-wrapped envelope
+    still unwrapped, and JSON content that merely CONTAINS backticks is not corrupted.
+    Full suite still passes (baseline 615 passed / 62 skipped / 1 pre-existing pricing-drift
+    fail).'
+  status: complete
+  created_at: '2026-08-04T05:50:15.510816+00:00'
+  completed_at: '2026-08-04T06:02:56.441512+00:00'
