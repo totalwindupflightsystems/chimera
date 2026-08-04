@@ -760,6 +760,7 @@ class Dispatcher:
         self.config = config
         self.gateway = gateway
         self.model = config.defaults.dispatcher
+        self._model_override: str | None = None
 
     async def dispatch(
         self,
@@ -767,6 +768,7 @@ class Dispatcher:
         formation: str = "auto",
         *,
         custom_dag: FormationDAG | None = None,
+        model_override: str | None = None,
     ) -> DispatchOutcome:
         """Run the single dispatcher model call.
 
@@ -774,22 +776,30 @@ class Dispatcher:
         the DESIGN phase is skipped: the dispatcher only performs the FILL-IN pass
         (writing per-worker prompts + merge instructions) against that fixed DAG.
         Otherwise the preset (``formation``) or ``auto`` path is used.
+
+        ``model_override`` (a request-level ``dispatcher_model``) routes the
+        dispatcher call itself to that model for this dispatch only; ``None``
+        uses the configured ``defaults.dispatcher``.
         """
-        start = time.monotonic()
-        if custom_dag is not None:
-            messages, response, result = await self._dispatch_custom(user_prompt, custom_dag)
-        else:
-            preset = self._resolve_preset(formation)
-            if preset is not None and not preset.is_auto:
-                messages, response, result = await self._dispatch_preset(
-                    user_prompt, formation, preset
-                )
+        self._model_override = model_override
+        try:
+            start = time.monotonic()
+            if custom_dag is not None:
+                messages, response, result = await self._dispatch_custom(user_prompt, custom_dag)
             else:
-                messages, response, result = await self._dispatch_auto(user_prompt)
-        latency_ms = int((time.monotonic() - start) * 1000)
-        return DispatchOutcome(
-            result=result, messages=messages, response=response, latency_ms=latency_ms
-        )
+                preset = self._resolve_preset(formation)
+                if preset is not None and not preset.is_auto:
+                    messages, response, result = await self._dispatch_preset(
+                        user_prompt, formation, preset
+                    )
+                else:
+                    messages, response, result = await self._dispatch_auto(user_prompt)
+            latency_ms = int((time.monotonic() - start) * 1000)
+            return DispatchOutcome(
+                result=result, messages=messages, response=response, latency_ms=latency_ms
+            )
+        finally:
+            self._model_override = None
 
     def _resolve_preset(self, formation: str) -> FormationPreset | None:
         if formation not in self.config.formations:
@@ -844,16 +854,17 @@ class Dispatcher:
         return messages, response, result
 
     async def _call_dispatcher(self, messages: list[dict[str, str]]) -> GatewayResponse:
+        model = self._model_override or self.model
         try:
             return await self.gateway.complete(
-                self.model,
+                model,
                 messages,
                 temperature=0.1,
                 response_format={"type": "json_object"},
             )
         except GatewayError as exc:
             log.warning("dispatcher_call_failed", error=str(exc), using="fallback")
-            return GatewayResponse(text="{}", model=self.model, tokens_input=0, tokens_output=0)
+            return GatewayResponse(text="{}", model=model, tokens_input=0, tokens_output=0)
 
 
 __all__ = [

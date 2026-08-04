@@ -886,3 +886,43 @@ def test_parse_dispatch_result_valid_payload_no_note(config) -> None:  # type: i
     assert result.source == "auto"
     assert result.fallback_reason is None
     assert result.dispatch_note is None
+
+
+# --------------------------------------------------------------------------- #
+# Per-request dispatcher model override
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_dispatch_model_override_routes_call(config) -> None:  # type: ignore[no-untyped-def]
+    """dispatch(..., model_override=...) sends the dispatcher call to that model."""
+    payload = dispatch_json()
+
+    def responder(model, messages, **kw):
+        return resp(payload, model, tok_in=100, tok_out=200)
+
+    gw = FakeGateway(responder)
+    dispatcher = Dispatcher(config, gw)
+    outcome = await dispatcher.dispatch(
+        "task", "auto", model_override="openrouter/anthropic/claude-sonnet-4"
+    )
+    assert len(gw.calls) == 1
+    assert gw.calls[0][0] == "openrouter/anthropic/claude-sonnet-4"
+    assert outcome.response.model == "openrouter/anthropic/claude-sonnet-4"
+    # override is per-call: cleared after dispatch returns
+    assert dispatcher._model_override is None
+
+
+@pytest.mark.asyncio
+async def test_dispatch_no_model_override_uses_default(config) -> None:  # type: ignore[no-untyped-def]
+    """Without model_override the dispatcher call uses the configured default."""
+    payload = dispatch_json()
+
+    def responder(model, messages, **kw):
+        return resp(payload, model, tok_in=100, tok_out=200)
+
+    gw = FakeGateway(responder)
+    dispatcher = Dispatcher(config, gw)
+    await dispatcher.dispatch("task", "auto")
+    assert len(gw.calls) == 1
+    assert gw.calls[0][0] == config.defaults.dispatcher

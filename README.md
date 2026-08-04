@@ -179,10 +179,21 @@ task domains to model strengths. You can override any model choice per request:
   "model": "auto",
   "messages": [{"role": "user", "content": "..."}],
   "dispatcher_model": "deepseek/deepseek-v4-flash",
+  "aggregator_model": "z-ai/glm-5.2",
+  "worker_model": "deepseek/deepseek-v4-pro",
   "allowed_models": ["deepseek/deepseek-v4-pro", "z-ai/glm-5.2"],
   "stage_models": {"worker_1": "openrouter/anthropic/claude-sonnet-4"}
 }
 ```
+
+* `dispatcher_model` — model for the planning/dispatch call itself.
+* `aggregator_model` — forces every aggregator/merge/audit stage.
+* `worker_model` — forces every worker stage.
+* `stage_models` — per-stage overrides; these **win over** the global ones above.
+* Config locks (`defaults.lock_aggregator: true` / `defaults.lock_dispatcher: true`)
+  force the configured default for that role and discard the request override. A
+  discarded override is never silent: it is recorded in the trace's `dispatch_note`
+  (e.g. `override discarded: aggregator_model='X' ignored (lock_aggregator=true)`).
 
 ## Custom DAGs
 

@@ -206,6 +206,81 @@ def _apply_allowed_models(
                 wp.model = default
 
 
+def _apply_global_model_overrides(
+    dispatch: DispatchResult,
+    overrides: DeliberationOverrides | None,
+    config: ChimeraConfig,
+) -> None:
+    """Apply request-level worker/aggregator model overrides post-dispatch.
+
+    * ``worker_model`` forces every worker stage (and its WorkerPrompt).
+    * ``aggregator_model`` forces every aggregator/merge/audit stage — unless
+      ``defaults.lock_aggregator`` is set, in which case the override is
+      discarded and the discard is recorded in ``dispatch.dispatch_note``.
+    * ``dispatcher_model`` is NOT applied here (it is passed to the
+      dispatcher before the DAG exists); when ``defaults.lock_dispatcher``
+      discards it, the discard is recorded here because the engine owns the
+      lock decision.
+    * Per-stage ``stage_models`` (applied after this) take precedence over
+      these global overrides.
+    * Unknown or disabled models raise ``ValueError`` before any mutation.
+    """
+    if overrides is None:
+        return
+
+    discards: list[str] = []
+
+    apply_worker = overrides.worker_model
+    apply_aggregator: str | None = None
+    if overrides.aggregator_model:
+        if config.defaults.lock_aggregator:
+            discards.append(
+                f"override discarded: aggregator_model={overrides.aggregator_model!r} "
+                f"ignored (lock_aggregator=true)"
+            )
+        else:
+            apply_aggregator = overrides.aggregator_model
+    if overrides.dispatcher_model and config.defaults.lock_dispatcher:
+        discards.append(
+            f"override discarded: dispatcher_model={overrides.dispatcher_model!r} "
+            f"ignored (lock_dispatcher=true)"
+        )
+
+    # Validate everything that will be applied BEFORE mutating the DAG.
+    for field, model in (
+        ("worker_model", apply_worker),
+        ("aggregator_model", apply_aggregator),
+    ):
+        if model is None:
+            continue
+        if model not in config.models:
+            raise ValueError(f"{field} references unknown model {model!r}")
+        if not config.models[model].enabled:
+            raise ValueError(
+                f"{field} references disabled model {model!r}. "
+                f"Set enabled: true in chimera.yaml to re-enable it."
+            )
+
+    if apply_worker is not None:
+        for stage in dispatch.formation.stages:
+            if stage.kind == "worker":
+                stage.model = apply_worker
+                wp = dispatch.worker_prompt_for(stage.id)
+                if wp is not None:
+                    wp.model = apply_worker
+
+    if apply_aggregator is not None:
+        for stage in dispatch.formation.stages:
+            if stage.kind in {"aggregator", "merge", "audit"}:
+                stage.model = apply_aggregator
+
+    if discards:
+        note = "; ".join(discards)
+        dispatch.dispatch_note = (
+            f"{dispatch.dispatch_note}; {note}" if dispatch.dispatch_note else note
+        )
+
+
 class Engine:
     """Runs the full pipeline: dispatcher → workers → aggregator → (merge/audit).
 
@@ -305,10 +380,30 @@ class Engine:
         self._check_config_mutation()
 
         custom_formation = self._resolve_custom_dag(dag, allow_custom_dag)
+
+        # Request-level dispatcher_model override — honored unless the config
+        # locks the dispatcher role (lock_dispatcher=true discards it; the
+        # discard is recorded in the trace by _apply_global_model_overrides).
+        disp_override = (
+            overrides.dispatcher_model
+            if (
+                overrides
+                and overrides.dispatcher_model
+                and not self.config.defaults.lock_dispatcher
+            )
+            else None
+        )
         outcome = await self.dispatcher.dispatch(
-            user_prompt, formation, custom_dag=custom_formation
+            user_prompt, formation,
+            custom_dag=custom_formation, model_override=disp_override,
         )
         dispatch_span = self._build_dispatch_span(outcome, formation)
+
+        # Global request-level overrides (worker/aggregator models). Config
+        # locks (defaults.lock_aggregator / lock_dispatcher) take precedence:
+        # a locked role keeps its configured default and the discarded
+        # override is recorded in the trace via dispatch_note.
+        _apply_global_model_overrides(outcome.result, overrides, self.config)
 
         # Apply per-stage model overrides (Feature 2). Unknown stages warn;
         # unknown models raise ValueError. Done after dispatch so it applies to
@@ -908,17 +1003,21 @@ class Engine:
     def _build_dispatch_span(self, outcome: DispatchOutcome, formation: str) -> StageSpan:
         resp = outcome.response
         prompt_text = _last_user_content(outcome.messages)
+        # The response carries the model actually invoked (which may be a
+        # request-level dispatcher_model override); fall back to the config
+        # default when the response doesn't identify one.
+        dispatch_model = resp.model or self.config.defaults.dispatcher
         return StageSpan(
             stage_id="dispatch",
             kind="dispatch",
-            model=self.config.defaults.dispatcher,
+            model=dispatch_model,
             prompt=prompt_text,
             response=resp.text,
             tokens_input=resp.tokens_input,
             tokens_output=resp.tokens_output,
             latency_ms=outcome.latency_ms,
             cost=_stage_cost(
-                self.config.defaults.dispatcher,
+                dispatch_model,
                 self.config,
                 resp.tokens_input,
                 resp.tokens_output,

@@ -936,3 +936,154 @@ async def test_trace_surfaces_fallback_reason(config) -> None:  # type: ignore[n
 
     assert result.trace.source == "fallback"
     assert result.trace.dispatch_note == "malformed_json"
+
+
+# --------------------------------------------------------------------------- #
+# Global request-level model overrides (worker/aggregator/dispatcher)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_global_aggregator_model_override_applied(config) -> None:  # type: ignore[no-untyped-def]
+    """aggregator_model forces the aggregator stage; workers stay untouched."""
+    from chimera.config import DeliberationOverrides
+
+    gw = FakeGateway(_engine_responder(config))
+    overrides = DeliberationOverrides(
+        aggregator_model="openrouter/anthropic/claude-sonnet-4"
+    )
+    result = await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
+    trace = result.trace
+    assert trace.aggregator is not None
+    assert trace.aggregator.model == "openrouter/anthropic/claude-sonnet-4"
+    assert result.answer == "[FINAL MERGED ANSWER from openrouter/anthropic/claude-sonnet-4]"
+    worker_models = sorted(w.model for w in trace.workers)
+    assert worker_models == ["deepseek/deepseek-chat", "openrouter/google/gemini-2.5-flash"]
+
+
+@pytest.mark.asyncio
+async def test_global_worker_model_override_applied(config) -> None:  # type: ignore[no-untyped-def]
+    """worker_model forces every worker stage (gateway sees it too, proving the
+    worker prompt model stayed in sync); the aggregator is untouched."""
+    from chimera.config import DeliberationOverrides
+
+    gw = FakeGateway(_engine_responder(config))
+    overrides = DeliberationOverrides(worker_model="zai-coding-plan/glm-5.2")
+    result = await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
+    trace = result.trace
+    assert trace.workers
+    assert all(w.model == "zai-coding-plan/glm-5.2" for w in trace.workers)
+    # worker calls actually went out on the override model (WorkerPrompt sync)
+    worker_calls = [
+        c for c in gw.calls
+        if not c[2].get("response_format") and "Your assigned task" in c[1][0]["content"]
+    ]
+    assert worker_calls
+    assert all(c[0] == "zai-coding-plan/glm-5.2" for c in worker_calls)
+    assert trace.aggregator is not None
+    assert trace.aggregator.model == "zai-coding-plan/glm-5.2"  # dispatcher's choice, untouched
+
+
+@pytest.mark.asyncio
+async def test_lock_aggregator_discards_override_with_trace_note(config) -> None:  # type: ignore[no-untyped-def]
+    """lock_aggregator=true keeps the configured default and records the discard."""
+    from chimera.config import DeliberationOverrides
+
+    cfg = config.model_copy(update={
+        "defaults": config.defaults.model_copy(update={"lock_aggregator": True}),
+    })
+    gw = FakeGateway(_engine_responder(cfg))
+    overrides = DeliberationOverrides(
+        aggregator_model="openrouter/anthropic/claude-sonnet-4"
+    )
+    result = await Engine(cfg, gw).deliberate("task", "auto", overrides=overrides)
+    trace = result.trace
+    assert trace.aggregator is not None
+    assert trace.aggregator.model == cfg.defaults.default_aggregator
+    assert trace.dispatch_note is not None
+    assert "override discarded: aggregator_model" in trace.dispatch_note
+    assert "openrouter/anthropic/claude-sonnet-4" in trace.dispatch_note
+    assert "lock_aggregator" in trace.dispatch_note
+
+
+@pytest.mark.asyncio
+async def test_lock_dispatcher_discards_override_with_trace_note(config) -> None:  # type: ignore[no-untyped-def]
+    """lock_dispatcher=true keeps the configured dispatcher and records the discard."""
+    from chimera.config import DeliberationOverrides
+
+    cfg = config.model_copy(update={
+        "defaults": config.defaults.model_copy(update={"lock_dispatcher": True}),
+    })
+    gw = FakeGateway(_engine_responder(cfg))
+    overrides = DeliberationOverrides(
+        dispatcher_model="openrouter/anthropic/claude-sonnet-4"
+    )
+    result = await Engine(cfg, gw).deliberate("task", "auto", overrides=overrides)
+    trace = result.trace
+    # dispatcher call stayed on the configured default
+    dispatcher_calls = [c for c in gw.calls if c[2].get("response_format")]
+    assert len(dispatcher_calls) == 1
+    assert dispatcher_calls[0][0] == cfg.defaults.dispatcher
+    assert trace.dispatch_note is not None
+    assert "override discarded: dispatcher_model" in trace.dispatch_note
+    assert "openrouter/anthropic/claude-sonnet-4" in trace.dispatch_note
+    assert "lock_dispatcher" in trace.dispatch_note
+
+
+@pytest.mark.asyncio
+async def test_global_dispatcher_model_override_applied(config) -> None:  # type: ignore[no-untyped-def]
+    """dispatcher_model routes the planning/dispatch call to the override model."""
+    from chimera.config import DeliberationOverrides
+
+    gw = FakeGateway(_engine_responder(config))
+    overrides = DeliberationOverrides(
+        dispatcher_model="openrouter/anthropic/claude-sonnet-4"
+    )
+    result = await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
+    dispatcher_calls = [c for c in gw.calls if c[2].get("response_format")]
+    assert len(dispatcher_calls) == 1
+    assert dispatcher_calls[0][0] == "openrouter/anthropic/claude-sonnet-4"
+    assert "You are the Chimera dispatcher" in dispatcher_calls[0][1][0]["content"]
+    assert result.trace.dispatch.model == "openrouter/anthropic/claude-sonnet-4"
+
+
+@pytest.mark.asyncio
+async def test_global_override_unknown_model_rejected(config) -> None:  # type: ignore[no-untyped-def]
+    """An unknown model in a global override raises ValueError (validated)."""
+    from chimera.config import DeliberationOverrides
+
+    gw = FakeGateway(_engine_responder(config))
+    overrides = DeliberationOverrides(aggregator_model="no/such/model")
+    with pytest.raises(ValueError, match="aggregator_model references unknown model"):
+        await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
+
+
+@pytest.mark.asyncio
+async def test_stage_models_beats_global_aggregator_override(config) -> None:  # type: ignore[no-untyped-def]
+    """Per-stage stage_models take precedence over the global aggregator_model."""
+    from chimera.config import DeliberationOverrides
+
+    gw = FakeGateway(_engine_responder(config))
+    overrides = DeliberationOverrides(
+        aggregator_model="deepseek/deepseek-chat",
+        stage_models={"aggregator": "openrouter/anthropic/claude-sonnet-4"},
+    )
+    result = await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
+    assert result.trace.aggregator is not None
+    assert result.trace.aggregator.model == "openrouter/anthropic/claude-sonnet-4"
+
+
+@pytest.mark.asyncio
+async def test_no_overrides_no_note(config) -> None:  # type: ignore[no-untyped-def]
+    """No overrides → no spurious dispatch_note."""
+    from chimera.config import DeliberationOverrides
+
+    gw = FakeGateway(_engine_responder(config))
+    result = await Engine(config, gw).deliberate("task", "auto")
+    assert result.trace.dispatch_note is None
+
+    gw2 = FakeGateway(_engine_responder(config))
+    result2 = await Engine(config, gw2).deliberate(
+        "task", "auto", overrides=DeliberationOverrides()
+    )
+    assert result2.trace.dispatch_note is None
