@@ -4,26 +4,26 @@
 
 ```bash
 # Quick deliberation
-chimera deliberate "Explain the CAP theorem"
+chimera run "Explain the CAP theorem"
 
 # With a specific formation
-chimera deliberate "Compare Kubernetes vs Nomad" --formation debate
+chimera run "Compare Kubernetes vs Nomad" --formation debate
 
 # Custom DAG from JSON file
-chimera deliberate "Audit this architecture decision" \
+chimera run "Audit this architecture decision" \
   --dag my-dag.json \
   --allow-custom-dag
 
 # Restrict models to budget tier
-chimera deliberate "Write a Python decorator tutorial" \
+chimera run "Write a Python decorator tutorial" \
   --allowed-models deepseek/deepseek-v4-pro deepseek/deepseek-v4-flash
 
 # Override specific stages
-chimera deliberate "..." \
+chimera run "..." \
   --stage-models '{"worker_1":"z-ai/glm-5.2","aggregator":"openrouter/anthropic/claude-sonnet-4"}'
 
 # Enable debug logging
-chimera deliberate "..." --log-level debug
+chimera run "..." --log-level debug
 
 # List available models
 chimera models
@@ -35,7 +35,7 @@ chimera formations
 chimera serve --port 8080
 
 # With custom config path
-chimera --config /path/to/chimera.yaml deliberate "..."
+chimera --config /path/to/chimera.yaml run "..."
 ```
 
 ## REST API
