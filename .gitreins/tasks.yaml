@@ -290,3 +290,15 @@ tasks:
   status: complete
   created_at: '2026-08-07T06:11:30.889345+00:00'
   completed_at: '2026-08-07T06:13:03.840268+00:00'
+- id: jsonl-norm-001
+  title: 'Board storage: JSONL canonical (git-uploadable)'
+  criteria:
+  - git ls-files .coding-hermes/board/ lists NO board.db or *.parquet
+  - tasks.jsonl and events.jsonl are tracked in git and authoritative (duckdb COPY
+    export done if migrating)
+  - .gitignore covers board.db and *.parquet under .coding-hermes/board/
+  - parity probe JSONL vs any local cache MATCH
+  - commit includes co-author trailer
+  status: complete
+  created_at: '2026-08-07T13:52:55.950141+00:00'
+  completed_at: '2026-08-07T13:53:42.763104+00:00'
