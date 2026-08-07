@@ -45,7 +45,7 @@ Changelog = "https://github.com/totalwindupflightsystems/chimera/blob/main/CHANG
 [project.optional-dependencies]
 server = ["fastapi>=0.115.0", "uvicorn[standard]>=0.30.0"]
 cli = ["click>=8.0", "rich>=13.0"]
-mcp = ["mcp>=1.0.0"]
+mcp = ["mcp>=1.0.0,<2.0"]
 web = ["fastapi>=0.115.0", "uvicorn[standard]>=0.30.0"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24.0", "pytest-cov>=5.0", "ruff>=0.6.0"]
 full = [
@@ -53,7 +53,7 @@ full = [
     "uvicorn[standard]>=0.30.0",
     "click>=8.0",
     "rich>=13.0",
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=5.0",
