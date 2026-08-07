@@ -148,7 +148,7 @@ cp chimera.yaml.example chimera.yaml
 # Edit chimera.yaml with your API keys
 
 # Run
-chimera deliberate "Compare React, Vue, and Svelte for a real-time dashboard"
+chimera run "Compare React, Vue, and Svelte for a real-time dashboard"
 
 # Or as an API server
 chimera serve
@@ -226,7 +226,7 @@ The dispatcher writes custom prompts for each stage but uses YOUR structure exac
 | **REST API** | `POST /v1/deliberate` | Full control (DAG, overrides, trace) |
 | **REST API** | `GET /v1/models` | Model catalog with weights |
 | **REST API** | `GET /v1/formations` | Available formation presets |
-| **CLI** | `chimera deliberate` | Command-line usage |
+| **CLI** | `chimera run` | Command-line usage |
 | **MCP** | `chimera_deliberate` | Hermes / AI agent integration |
 
 ## Response Trace
