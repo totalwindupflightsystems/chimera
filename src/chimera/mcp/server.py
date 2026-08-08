@@ -13,6 +13,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from chimera import __version__
 from chimera.config import ChimeraConfig, load_config
 from chimera.engine import Engine
 from chimera.gateway import LiteLLMGateway
@@ -110,10 +111,34 @@ def run(config_path: str | None = None) -> None:
     """
     import sys
     if config_path is None and len(sys.argv) > 1:
-        config_path = sys.argv[1]
+        for arg in sys.argv[1:]:
+            if arg in ("-h", "--help"):
+                print(_USAGE, end="")
+                return
+            if arg == "--version":
+                print(f"chimera {__version__}")
+                return
+            if not arg.startswith("-"):
+                config_path = arg
+                break
     config = load_config(config_path)
     server = build_server(config)
     server.run()
+
+
+_USAGE = """\
+usage: chimera-mcp [config_path]
+
+Run the Chimera MCP server over stdio.
+
+positional arguments:
+  config_path   path to a Chimera config YAML (optional; when omitted,
+                the config is discovered by walking up from the CWD)
+
+options:
+  -h, --help    show this help message and exit
+  --version     show the package version and exit
+"""
 
 
 __all__ = ["build_server", "run"]

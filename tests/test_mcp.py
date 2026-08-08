@@ -127,3 +127,36 @@ def test_mcp_run_falls_back_to_sys_argv(tmp_path) -> None:
 
     build_mock.assert_called_once()
     fake_server.run.assert_called_once()
+
+
+@pytest.mark.parametrize("flag", ["-h", "--help"])
+def test_mcp_run_help_flag(capsys, flag) -> None:
+    """``chimera-mcp -h/--help`` prints usage and does not build the server."""
+    saved_argv = sys.argv
+    sys.argv = ["chimera-mcp", flag]
+    try:
+        with patch("chimera.mcp.server.build_server") as build_mock:
+            run()
+    finally:
+        sys.argv = saved_argv
+
+    build_mock.assert_not_called()
+    out = capsys.readouterr().out
+    assert "usage: chimera-mcp [config_path]" in out
+    assert "--version" in out
+
+
+def test_mcp_run_version_flag(capsys) -> None:
+    """``chimera-mcp --version`` prints the package version without building the server."""
+    from chimera import __version__
+
+    saved_argv = sys.argv
+    sys.argv = ["chimera-mcp", "--version"]
+    try:
+        with patch("chimera.mcp.server.build_server") as build_mock:
+            run()
+    finally:
+        sys.argv = saved_argv
+
+    build_mock.assert_not_called()
+    assert __version__ in capsys.readouterr().out
