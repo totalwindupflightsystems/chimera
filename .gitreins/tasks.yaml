@@ -328,3 +328,19 @@ tasks:
   status: complete
   created_at: '2026-08-08T06:23:57.044580+00:00'
   completed_at: '2026-08-08T06:31:13.580861+00:00'
+- id: CH-GAP-007
+  title: chimera-mcp CLI --help/--version arg parsing
+  criteria:
+  - 'chimera-mcp --help exits 0 with usage text and no FileNotFoundError/traceback
+    (verified: .venv/bin/chimera-mcp --help shows usage: chimera-mcp [config_path]
+    and EXIT=0)'
+  - chimera-mcp --version prints the package version (chimera 0.2.0) and exits 0
+  - src/chimera/mcp/server.py run() handles -h/--help/--version before config-path
+    fallthrough; explicit config_path kwarg still wins
+  - no new dependencies introduced (stdlib-only manual argv scan); pyproject.toml
+    and uv.lock untouched
+  - tests/test_mcp.py contains offline tests for --help and --version asserting build_server
+    is never called
+  status: complete
+  created_at: '2026-08-08T06:56:42.502350+00:00'
+  completed_at: '2026-08-08T06:56:51.718393+00:00'
