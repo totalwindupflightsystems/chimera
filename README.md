@@ -141,7 +141,7 @@ sequenceDiagram
 
 ```bash
 # Install
-pipx install chimera[full]
+pipx install chimera-deliberation[full]
 
 # Configure
 cp chimera.yaml.example chimera.yaml
