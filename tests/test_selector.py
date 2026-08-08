@@ -7,6 +7,7 @@ import re
 import pytest
 
 from chimera.selector import (
+    CATEGORY_ALIASES,
     PATH_PATTERNS,
     CategorySelector,
     task_to_paths,
@@ -216,6 +217,104 @@ class TestCategorySelector:
         for path, pattern in PATH_PATTERNS:
             assert pattern.strip(), f"Path '{path}' has empty pattern"
             re.compile(pattern)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Short-form category aliases (docs/CONFIG.md, CH-GAP-008)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestShortFormCategoryAliases:
+    """Short-form keys documented in docs/CONFIG.md must resolve to long-form paths.
+
+    Regression for CH-GAP-008: a model configured exactly like the docs/CONFIG.md
+    example (``{code: 0.90, analysis: 0.80, ...}``) used to score 0.0 on every
+    task because short keys never matched PATH_PATTERNS' long-form paths — so
+    selection among such models was effectively random.
+    """
+
+    def test_short_form_only_model_scores_nonzero_on_python_task(self):
+        """A model with ONLY docs/CONFIG.md short-form keys must score > 0.0 on a coding task."""
+        models = {
+            "test/short-form-only": _FakeEntry(
+                {"code": 0.90, "analysis": 0.80}, "test", "budget"
+            ),
+        }
+        sel = CategorySelector(models)
+        scores = sel.score("Write a Python function to sort a list")
+        assert scores["test/short-form-only"] > 0.0, (
+            f"short-form 'code' did not resolve: {scores}"
+        )
+
+    def test_short_form_analysis_scores_nonzero_on_data_task(self):
+        """The documented 'analysis' alias must resolve on a data-analysis task."""
+        models = {
+            "test/short-form-only": _FakeEntry(
+                {"code": 0.90, "analysis": 0.80}, "test", "budget"
+            ),
+        }
+        sel = CategorySelector(models)
+        scores = sel.score("Analyze this dataset and find patterns in the metrics")
+        assert scores["test/short-form-only"] > 0.0, (
+            f"short-form 'analysis' did not resolve: {scores}"
+        )
+
+    def test_short_form_model_is_selected(self):
+        """A short-form-only model must actually be selectable for a matching task."""
+        models = {
+            "test/short-form-only": _FakeEntry({"code": 0.90}, "test", "budget"),
+        }
+        sel = CategorySelector(models)
+        result = sel.select("Write a Flask API endpoint", count=1)
+        assert result == ["test/short-form-only"], (
+            f"short-form model not selected: {result}"
+        )
+
+    def test_resolve_path_short_form_alias_prefix(self):
+        """_resolve_path should apply a short-form alias to any path under its target."""
+        model_cats = {"code": 90.0}
+        assert CategorySelector._resolve_path(
+            model_cats, "technology_code/code_generation/python"
+        ) == 90.0
+        assert CategorySelector._resolve_path(
+            model_cats, "technology_code/testing_debugging/unit_tests"
+        ) == 90.0
+
+    def test_resolve_path_short_form_alias_exact_target(self):
+        """_resolve_path should apply an alias whose target equals the path itself."""
+        model_cats = {"analysis": 80.0}
+        assert CategorySelector._resolve_path(
+            model_cats, "technology_code/data_science/analysis"
+        ) == 80.0
+
+    def test_resolve_path_exact_and_parent_still_win_over_alias(self):
+        """Exact-path and parent-prefix matches must still beat alias resolution."""
+        model_cats = {"technology_code/code_generation/python": 95.0, "code": 90.0}
+        assert CategorySelector._resolve_path(
+            model_cats, "technology_code/code_generation/python"
+        ) == 95.0
+        parent_cats = {"technology_code": 70.0, "code": 90.0}
+        assert CategorySelector._resolve_path(
+            parent_cats, "technology_code/code_generation/python"
+        ) == 70.0
+
+    def test_resolve_path_unknown_short_key_ignored(self):
+        """A short key with no alias entry must not resolve (stays 0.0)."""
+        model_cats = {"nonsense": 90.0}
+        assert CategorySelector._resolve_path(
+            model_cats, "technology_code/code_generation/python"
+        ) == 0.0
+
+    def test_alias_mapping_covers_documented_keys(self):
+        """Every short-form key taught by docs/CONFIG.md must have a mapping."""
+        tree_paths = [p for p, _ in PATH_PATTERNS]
+        for key in ("code", "analysis", "reasoning", "design", "audit"):
+            assert key in CATEGORY_ALIASES, f"alias missing for '{key}'"
+            assert CATEGORY_ALIASES[key], f"alias for '{key}' resolves to nothing"
+            for target in CATEGORY_ALIASES[key]:
+                assert any(p == target or p.startswith(target + "/") for p in tree_paths), (
+                    f"alias '{key}' target {target!r} is not a real long-form prefix"
+                )
 
 
 # ═══════════════════════════════════════════════════════════════════════════

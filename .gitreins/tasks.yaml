@@ -302,3 +302,28 @@ tasks:
   status: complete
   created_at: '2026-08-07T13:52:55.950141+00:00'
   completed_at: '2026-08-07T13:53:42.763104+00:00'
+- id: CH-GAP-008
+  title: "P1 \u2014 CONFIG.md category keys never match selector.py PATH_PATTERNS:\
+    \ short-form keys get zero score"
+  criteria:
+  - src/chimera/selector.py contains a short-form-to-long-form category alias mapping
+    (module-level constant or function) that resolves the docs/CONFIG.md documented
+    keys (code, analysis, reasoning, design, audit) to hierarchical long-form paths
+    like technology_code/code_generation/python, OR docs/CONFIG.md model-categories
+    examples use long-form hierarchical paths instead of short-form keys.
+  - 'tests/test_selector.py contains a unit test where a model entry configured with
+    ONLY short-form category keys as documented in docs/CONFIG.md (e.g. {code: 0.90,
+    analysis: 0.80}) scores NON-ZERO (>0.0) on a task whose keywords match that category
+    (e.g. a python coding task matching code), and the test runs offline (no --run-integration
+    flag needed).'
+  - 'CategorySelector._resolve_path preserves existing behavior: exact-path match
+    and parent-prefix fallback still resolve as before (existing tests like test_parent_path_fallback
+    still pass).'
+  - "docs/CONFIG.md models-section example no longer teaches category keys that can\
+    \ never match selector.py PATH_PATTERNS \u2014 every key shown in the example\
+    \ either resolves via the new alias mapping or is a long-form hierarchical path."
+  - The full project test suite (.venv/bin/python -m pytest) shows no NEW failures
+    beyond the pre-existing pricing-drift baseline (0.000133 vs 0.00014, 1 fail),
+    and the new short-form mapping tests pass.
+  status: pending
+  created_at: '2026-08-08T06:23:57.044580+00:00'

@@ -35,12 +35,22 @@ formations:
 
 models:
   deepseek/deepseek-v4-flash:
-    categories: {code: 0.90, analysis: 0.80, reasoning: 0.75, design: 0.35, audit: 0.55}
+    categories:
+      technology_code/code_generation/python: 0.90
+      technology_code/data_science/analysis: 0.80
+      general_knowledge/reasoning/explanation: 0.75
+      creative_conversational/ux_writing/interface_copy: 0.35
+      technology_code/testing_debugging/error_analysis: 0.55
     cost_tier: budget
     provider: deepseek
 
   z-ai/glm-5.2:
-    categories: {code: 0.92, analysis: 0.90, reasoning: 0.95, design: 0.85, audit: 0.88}
+    categories:
+      technology_code/code_generation/python: 0.92
+      technology_code/data_science/analysis: 0.90
+      general_knowledge/reasoning/explanation: 0.95
+      creative_conversational/ux_writing/interface_copy: 0.85
+      technology_code/testing_debugging/error_analysis: 0.88
     cost_tier: premium
     provider: zai
 
@@ -162,12 +172,12 @@ Each model entry:
 
 ```yaml
 model-id:
-  categories:           # 0.0–1.0 scores per capability category
-    code: 0.90
-    analysis: 0.80
-    reasoning: 0.75
-    design: 0.35
-    audit: 0.55
+  categories:           # 0.0–1.0 scores per category path (leaf or prefix)
+    technology_code/code_generation/python: 0.90
+    technology_code/data_science/analysis: 0.80
+    general_knowledge/reasoning/explanation: 0.75
+    creative_conversational/ux_writing/interface_copy: 0.35
+    technology_code/testing_debugging/error_analysis: 0.55
   cost_tier: budget     # budget | standard | premium
   provider: deepseek    # matches a key in providers:
   # Optional overrides:
@@ -175,6 +185,27 @@ model-id:
   cost_per_1k_input: 0.000098
   cost_per_1k_output: 0.000196
 ```
+
+**Category keys** are slash-delimited hierarchical paths from the selector's
+`PATH_PATTERNS` tree (see `src/chimera/selector.py`), e.g.
+`technology_code/code_generation/python`. A score on a parent path (e.g.
+`technology_code`) applies to every descendant path via prefix fallback, so
+scoring a few broad paths is enough to cover a whole area.
+
+Short-form aliases are also accepted and resolve to the long-form targets
+below — a model configured with `{code: 0.90}` scores on every path under
+`technology_code`:
+
+| Alias | Resolves to |
+|---|---|
+| `code` | `technology_code` |
+| `analysis` | `technology_code/data_science`, `academic_scientific/mathematics/statistics` |
+| `reasoning` | `general_knowledge/reasoning`, `complex_reasoning_agency` |
+| `design` | `creative_conversational/ux_writing/interface_copy`, `technology_code/system_design` |
+| `audit` | `technology_code/testing_debugging/error_analysis`, `business_finance/legal_document/analysis` |
+
+Prefer long-form paths for precise control; aliases are a convenience and
+apply the same score to every path under their target subtree.
 
 **Cost tiers** determine default pricing when `cost_per_1k_*` is not set:
 

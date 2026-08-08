@@ -111,6 +111,29 @@ PATH_PATTERNS: list[tuple[str, str]] = [
 ]
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  Short-form category aliases (docs/CONFIG.md)
+# ═══════════════════════════════════════════════════════════════════════════
+
+#: Maps the short-form capability keys documented in docs/CONFIG.md
+#: (``code``, ``analysis``, ``reasoning``, ``design``, ``audit``) to the
+#: hierarchical long-form paths/prefixes they stand for.  A model configured
+#: with short-form keys gets its score applied to any task path that equals
+#: or lives under one of these targets — so ``{code: 0.90}`` no longer
+#: silently scores 0.0 on every task.
+CATEGORY_ALIASES: dict[str, tuple[str, ...]] = {
+    "code": ("technology_code",),
+    "analysis": ("technology_code/data_science",
+                 "academic_scientific/mathematics/statistics"),
+    "reasoning": ("general_knowledge/reasoning",
+                  "complex_reasoning_agency"),
+    "design": ("creative_conversational/ux_writing/interface_copy",
+               "technology_code/system_design"),
+    "audit": ("technology_code/testing_debugging/error_analysis",
+              "business_finance/legal_document/analysis"),
+}
+
+
 def task_to_paths(task: str) -> dict[str, float]:
     """Map a task description to hierarchical path weights via keyword matching.
 
@@ -206,7 +229,11 @@ class CategorySelector:
 
         If the model has an exact score for ``path``, return it.  Otherwise
         try progressively shorter prefixes (popping the last segment) until
-        a match is found or the root is reached.
+        a match is found or the root is reached.  As a final fallback, a
+        short-form alias key (docs/CONFIG.md: ``code``, ``analysis``,
+        ``reasoning``, ``design``, ``audit``) is resolved through
+        :data:`CATEGORY_ALIASES` so models configured with short-form keys
+        score on every path under the aliased long-form category.
         """
         if path in model_cats:
             return model_cats[path]
@@ -220,6 +247,15 @@ class CategorySelector:
             parent = "/".join(segments)
             if parent in model_cats:
                 return model_cats[parent]
+
+        # Try short-form aliases (last resort: long-form specificity wins)
+        for alias, score in model_cats.items():
+            targets = CATEGORY_ALIASES.get(alias)
+            if not targets:
+                continue
+            for target in targets:
+                if path == target or path.startswith(target + "/"):
+                    return score
 
         return 0.0
 
