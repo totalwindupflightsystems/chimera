@@ -70,6 +70,7 @@ SKIP_FAMILIES: set[str] = {
     "stable-diffusion", "sdxl", "midjourney",
     "video", "video-gen", "sora",
     "bge", "gte", "e5", "stella",
+    "voxtral",  # Mistral speech/STT family (audio-in only; added 2026-08-04)
 }
 
 #: Model name substrings that indicate non-chat models.
@@ -92,6 +93,10 @@ SKIP_NAME_PATTERNS: list[str] = [
     "-tts", "tts-",
     # Image-preview (not text models)
     "-image-preview", "-image-quality",
+    # Image/live/music/video-gen/robotics noise (added 2026-08-04)
+    "-image", "lyria", "veo", "robotics",
+    # Live/streaming modalities
+    "-live", "live-",
 ]
 
 #: Path for tracking already-seen candidate models.
