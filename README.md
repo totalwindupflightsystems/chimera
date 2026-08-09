@@ -17,19 +17,20 @@ deliberation at once.
 ## Quickstart
 
 ```bash
-# Install
-pip install chimera-deliberation[full]
-# Or for just the API server:
-pip install chimera-deliberation[server]
+# Install (choose one)
+pip install chimera-deliberation[full]        # full CLI + server in a venv
+pipx install chimera-deliberation[full]       # same, isolated in its own env
+pip install chimera-deliberation[server]      # API server only
 
 # Configure
 cp chimera.yaml.example chimera.yaml
 # Add your API keys (at minimum: DEEPSEEK_API_KEY)
 
 # Run
-chimera "What is the capital of France?"          # CLI
-chimera serve                                       # REST API + web UI
-chimera-mcp                                        # MCP tools for agents
+chimera "What is the capital of France?"      # CLI deliberation
+chimera run "Compare React and Vue"           # explicit `run` subcommand (same as above)
+chimera serve                                 # REST API + web UI (see Server & MCP)
+chimera-mcp                                   # MCP tools for agents
 ```
 
 Open http://localhost:8765/web/ for the web UI with live DAG visualization.
@@ -137,27 +138,17 @@ sequenceDiagram
     Engine-->>Client: JSON response + trace
 ```
 
-## Quick Start
+## Server & MCP
 
-```bash
-# Install
-pipx install chimera-deliberation[full]
+`chimera serve` starts the REST API plus the web UI:
 
-# Configure
-cp chimera.yaml.example chimera.yaml
-# Edit chimera.yaml with your API keys
+- http://localhost:8765/v1/chat/completions — OpenAI-compatible endpoint
+- http://localhost:8765/docs — OpenAPI docs
+- http://localhost:8765/web/ — web UI with live DAG visualization
 
-# Run
-chimera run "Compare React, Vue, and Svelte for a real-time dashboard"
-
-# Or as an API server
-chimera serve
-# → http://localhost:8765/v1/chat/completions (OpenAI-compatible)
-# → http://localhost:8765/docs (OpenAPI docs)
-
-# Or as MCP server for Hermes/AI agents
-chimera-mcp
-```
+`chimera-mcp` runs the MCP server over stdio so AI agents (Hermes, Claude
+Code, etc.) can call Chimera directly. Both read the same `chimera.yaml`
+configured in Quickstart.
 
 ## Model Selection
 

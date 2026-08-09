@@ -102,3 +102,31 @@ gitreins judge fix-aggregator
 - Skip guards with `--no-verify` for code changes
 - Push if guards failed (let CI catch it if you must, but fix locally)
 - Commit `.gitreins/tasks.yaml` — it's local task state
+
+## Operations — model catalog refresh
+
+`scripts/model_sync.py` scans models.dev for new chat/reasoning models and
+proposes catalog additions for `chimera.yaml`. It filters to 13 core
+providers, skips embeddings/speech/rerank/legacy families, tracks already-
+seen candidates in `.seen_models.json` (`--diff` shows only new finds,
+`--score` LLM-rates the top candidates with `DEEPSEEK_API_KEY`, `--output
+reports/latest.md` writes a markdown report).
+
+`scripts/model_sync_cron.py` is the scheduled wrapper around it: it runs
+`model_sync.py --diff --output reports/latest.md` (and auto-scores when
+`DEEPSEEK_API_KEY` is set), using the repo venv interpreter
+(`.venv/bin/python` — the cron runner's own interpreter lacks the chimera
+deps; see the `_sync_python()` fallback in the script).
+
+**Refresh strategy (intentional — not registered as a system cron):**
+catalog refreshes are ad-hoc by design. The provider cache serves stale data
+(~hours) safely, and `chimera serve`/the gateway refresh on demand; a missed
+or half-configured cron is worse than a manual refresh. To refresh manually:
+
+```bash
+cd ~/chimera-v2 && .venv/bin/python scripts/model_sync.py --diff --output reports/latest.md
+```
+
+If automated refreshes are ever wanted, register
+`scripts/model_sync_cron.py` in the fleet scheduler or a user crontab (it is
+cron-shaped and idempotent; the wrapper's stdout is the report).

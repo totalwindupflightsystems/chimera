@@ -5,6 +5,7 @@ dist/
 *.egg-info/
 chimera.yaml
 .env
+dagger.db
 .pytest_cache/
 .ruff_cache/
 mutants/
