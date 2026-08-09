@@ -52,6 +52,20 @@ curl -X POST http://localhost:8765/v1/chat/completions \
   -d '{"model": "auto", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
+## Documentation
+
+Detailed guides live in `docs/`:
+
+| Guide | Contents |
+|---|---|
+| [docs/CONFIG.md](docs/CONFIG.md) | Full configuration reference (`chimera.yaml`, categories, model selection) |
+| [docs/USAGE.md](docs/USAGE.md) | CLI usage and examples |
+| [docs/OPENAI_API.md](docs/OPENAI_API.md) | OpenAI-compatible API contract |
+| [docs/SECURITY.md](docs/SECURITY.md) | Security model and credential handling |
+| [docs/EDGE_CASES.md](docs/EDGE_CASES.md) | Edge cases and behavior notes |
+| [docs/FAILURE_RESILIENCE.md](docs/FAILURE_RESILIENCE.md) | Failure handling and resilience design |
+| [docs/RESILIENCE.md](docs/RESILIENCE.md) | Resilience guarantees and degradation semantics |
+
 ## Architecture
 
 ```mermaid
