@@ -60,6 +60,7 @@ Detailed guides live in `docs/`:
 |---|---|
 | [docs/CONFIG.md](docs/CONFIG.md) | Full configuration reference (`chimera.yaml`, categories, model selection) |
 | [docs/USAGE.md](docs/USAGE.md) | CLI usage and examples |
+| [docs/INTEGRATION.md](docs/INTEGRATION.md) | Integrate Chimera into your app (deployment, clients, auth, errors) |
 | [docs/OPENAI_API.md](docs/OPENAI_API.md) | OpenAI-compatible API contract |
 | [docs/SECURITY.md](docs/SECURITY.md) | Security model and credential handling |
 | [docs/EDGE_CASES.md](docs/EDGE_CASES.md) | Edge cases and behavior notes |

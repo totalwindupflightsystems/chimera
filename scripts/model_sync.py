@@ -199,7 +199,10 @@ def scan_models_dev() -> dict[str, list[dict[str, Any]]]:
     """
     cache = _load_cache()
     if cache is None:
-        print("ERROR: models.dev cache is stale or missing. Run chimera config load first.")
+        print(
+            "ERROR: models.dev cache is stale or missing. "
+            "Run `chimera models` to refresh the provider cache."
+        )
         sys.exit(1)
 
     chimera_models = _load_chimera_models()
