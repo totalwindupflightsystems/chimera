@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -e
-cd /home/kara/chimera-v2
+cd "$(dirname "$0")/.."
 
 # Source environment
 source .venv/bin/activate
