@@ -344,3 +344,30 @@ tasks:
   status: complete
   created_at: '2026-08-08T06:56:42.502350+00:00'
   completed_at: '2026-08-08T06:56:51.718393+00:00'
+- id: CH-GAP-018
+  title: 'P1: portable repo-root cd in scripts/start.sh'
+  criteria:
+  - grep '/home/kara' scripts/start.sh returns 0 matches (exit 1)
+  - bash -n scripts/start.sh exits 0
+  - start.sh still sources .venv/bin/activate and execs chimera serve after the cd
+    change
+  status: complete
+  created_at: '2026-08-11T19:53:30.134335+00:00'
+  completed_at: '2026-08-11T19:53:44.055969+00:00'
+- id: CH-GAP-019
+  title: 'P2: repo-root placeholder in chimera-usage skill'
+  criteria:
+  - grep '/home/kara' skills/chimera-usage/SKILL.md returns 0 matches (exit 1)
+  - The CLI usage block shows a repo-root-relative placeholder instead of the hardcoded
+    path
+  status: complete
+  created_at: '2026-08-11T19:53:39.184495+00:00'
+  completed_at: '2026-08-11T19:54:06.085945+00:00'
+- id: CH-GAP-020
+  title: 'P2: gitignore model_sync .bak sidecars'
+  criteria:
+  - .gitignore contains a line matching \.seen_models\.json\.bak
+  - git status --short shows no .bak entries
+  status: complete
+  created_at: '2026-08-11T19:53:39.377114+00:00'
+  completed_at: '2026-08-11T19:54:25.734605+00:00'
