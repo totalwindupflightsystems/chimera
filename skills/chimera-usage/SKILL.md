@@ -51,7 +51,7 @@ r = chimera_deliberate(
 ### CLI
 
 ```bash
-cd /home/kara/chimera-v2        # .env must be here and in the process env
+cd <path-to-chimera-v2>   # .env must be here and in the process env
 chimera run "Your prompt"
 chimera -v run "Your prompt"    # trace table: stage | model | tokens | latency | cost
 chimera formations              # simple, debate, audit, speed, spec-writer, auto
