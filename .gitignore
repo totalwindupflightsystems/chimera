@@ -13,6 +13,7 @@ mutants/
 htmlcov/
 reports/
 .seen_models.json
+.seen_models.json.bak*
 
 # Hilo — local cache files (rebuildable)
 .vfs/graph/graph.db
