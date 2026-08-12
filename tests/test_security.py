@@ -71,6 +71,14 @@ class TestAuthEnvMode:
     @pytest.fixture(autouse=True)
     def _setup(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CHIMERA_API_KEY", "test-secret-key")
+        # Hermetic provider keys — test_health_is_open asserts health reports
+        # "healthy", which requires the _check_providers credentials gate to
+        # pass. Without these, the test depends on ambient env leakage from
+        # tests/integration/conftest.py (_load_hermes_env) and fails in CI
+        # (no ~/.hermes/.env there; red since 2026-07-29).
+        for env_var in ("OPENROUTER_API_KEY", "ZAI_API_KEY",
+                        "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY"):
+            monkeypatch.setenv(env_var, "test-key")
 
     def test_health_is_open(self) -> None:
         config = _make_auth_config("env")

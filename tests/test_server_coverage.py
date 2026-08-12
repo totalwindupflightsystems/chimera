@@ -111,6 +111,20 @@ class TestRequestQueueProperties:
 class TestHealthEndpoints:
     """Cover /v1/health, /v1/health/ready, /v1/health/live."""
 
+    @pytest.fixture(autouse=True)
+    def _provider_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Set provider API keys so the credentials gate in _check_providers
+        passes and the gateway path is exercised hermetically.
+
+        Without explicit keys these tests depend on ambient env leakage from
+        tests/integration/conftest.py's _load_hermes_env() (real ~/.hermes/.env
+        keys) — which does not exist in CI and made /v1/health return
+        'degraded' there (CI red since 2026-07-29).
+        """
+        for env_var in ("OPENROUTER_API_KEY", "ZAI_API_KEY",
+                        "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY"):
+            monkeypatch.setenv(env_var, "test-key")
+
     def test_health_live_returns_alive(self, config: ChimeraConfig) -> None:  # type: ignore[no-untyped-def]
         client = _client(config)
         r = client.get("/v1/health/live")
@@ -365,6 +379,17 @@ class TestChatCompletionsEdgeCases:
 
 class TestCheckProviders:
     """Cover _check_providers directly: success, timeout, exception, empty."""
+
+    @pytest.fixture(autouse=True)
+    def _provider_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Set provider API keys so the credentials gate passes hermetically.
+
+        Same rationale as TestHealthEndpoints._provider_credentials — these
+        tests must not depend on ambient env keys from ~/.hermes/.env.
+        """
+        for env_var in ("OPENROUTER_API_KEY", "ZAI_API_KEY",
+                        "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY"):
+            monkeypatch.setenv(env_var, "test-key")
 
     @pytest.mark.asyncio
     async def test_all_providers_healthy(self, config: ChimeraConfig) -> None:  # type: ignore[no-untyped-def]
