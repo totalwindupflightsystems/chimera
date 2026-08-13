@@ -161,6 +161,13 @@ sequenceDiagram
 - http://localhost:8765/docs — OpenAPI docs
 - http://localhost:8765/web/ — web UI with live DAG visualization
 
+Health probes (all return JSON):
+
+- http://localhost:8765/health — alias of the liveness probe (always 200 when the process is alive)
+- http://localhost:8765/v1/health — health check (`healthy` / `degraded` / `unhealthy`)
+- http://localhost:8765/v1/health/ready — readiness probe (200 when ≥1 provider reachable, 503 otherwise)
+- http://localhost:8765/v1/health/live — liveness probe (always 200 when alive)
+
 `chimera-mcp` runs the MCP server over stdio so AI agents (Hermes, Claude
 Code, etc.) can call Chimera directly. Both read the same `chimera.yaml`
 configured in Quickstart.

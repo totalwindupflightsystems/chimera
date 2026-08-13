@@ -251,6 +251,20 @@ class TestDiscoverProviders:
 
 
 class TestConfigDiscoveryIntegration:
+    @pytest.fixture(autouse=True)
+    def _isolate_cache(self, tmp_path, monkeypatch):
+        """Redirect the models.dev cache so tests exercise the fetch path.
+
+        The real ``~/.chimera/models-dev-cache.json`` may exist and be fresh,
+        in which case ``discover_providers`` would consume live cached pricing
+        instead of the patched ``_fetch_models_dev`` fixture, making assertions
+        depend on whatever pricing models.dev last served.
+        """
+        monkeypatch.setattr(
+            "chimera.provider_discovery.CACHE_PATH",
+            str(tmp_path / "models-dev-cache.json"),
+        )
+
     def test_discovery_adds_providers(self, tmp_path, monkeypatch):
         """When provider_discovery is enabled, discovered providers are added."""
         import yaml

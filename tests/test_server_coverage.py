@@ -133,6 +133,15 @@ class TestHealthEndpoints:
         assert data["status"] == "alive"
         assert data["uptime_models"] == len(config.models)
 
+    def test_bare_health_alias_returns_alive(self, config: ChimeraConfig) -> None:  # type: ignore[no-untyped-def]
+        """Bare /health must not 404 — monitoring defaults probe it (CH-GAP-023)."""
+        client = _client(config)
+        r = client.get("/health")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["status"] == "alive"
+        assert data["uptime_models"] == len(config.models)
+
     def test_health_ready_returns_ready(self, config: ChimeraConfig) -> None:  # type: ignore[no-untyped-def]
         """With FakeGateway always succeeding, readiness should return 200."""
         client = _client(config)

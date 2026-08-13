@@ -74,7 +74,7 @@ def _litellm_result(
 class TestGetFormatCapability:
     """Cover _get_format_capability for every provider tier."""
 
-    @pytest.mark.parametrize("provider", ["openai", "anthropic", "google", "zai", "deepseek"])
+    @pytest.mark.parametrize("provider", ["openai", "anthropic", "google", "zai"])
     def test_json_schema_providers(self, provider: str) -> None:
         assert _get_format_capability(provider) == FormatCapability.JSON_SCHEMA
 
@@ -82,12 +82,17 @@ class TestGetFormatCapability:
     def test_json_object_providers(self, provider: str) -> None:
         assert _get_format_capability(provider) == FormatCapability.JSON_OBJECT
 
+    @pytest.mark.parametrize("provider", ["deepseek"])
+    def test_plaintext_providers(self, provider: str) -> None:
+        """deepseek rejects json_schema AND json_object (CH-GAP-024)."""
+        assert _get_format_capability(provider) == FormatCapability.NONE
+
     def test_unknown_provider_is_none(self) -> None:
         assert _get_format_capability("unknown") == FormatCapability.NONE
 
     def test_case_insensitive(self) -> None:
         assert _get_format_capability("OpenAI") == FormatCapability.JSON_SCHEMA
-        assert _get_format_capability("DEEPSEEK") == FormatCapability.JSON_SCHEMA
+        assert _get_format_capability("DEEPSEEK") == FormatCapability.NONE
 
 
 # =========================================================================== #
@@ -108,6 +113,13 @@ class TestNegotiateResponseFormat:
         fmt = {"type": "json_schema", "json_schema": {"name": "x", "schema": {}}}
         result = negotiate_response_format(fmt, "moonshot")
         assert result == {"type": "json_object"}
+
+    def test_json_schema_stripped_for_deepseek(self) -> None:
+        """deepseek rejects json_schema and json_object; F6 must strip the
+        structured attempt entirely so the aggregator runs one plaintext call
+        (CH-GAP-024)."""
+        fmt = {"type": "json_schema", "json_schema": {"name": "x", "schema": {}}}
+        assert negotiate_response_format(fmt, "deepseek") is None
 
     def test_json_object_passthrough_for_json_object_provider(self) -> None:
         fmt = {"type": "json_object"}

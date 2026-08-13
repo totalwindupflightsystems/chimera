@@ -337,6 +337,20 @@ def _register_routes(app: FastAPI) -> None:
             "uptime_models": len(cfg.models),
         }
 
+    @app.get("/health")
+    async def health_alias(request: Request) -> dict[str, Any]:
+        """Bare ``/health`` alias for the liveness probe.
+
+        Monitoring stacks commonly probe ``/health`` by default; without
+        this alias a healthy server would answer 404. Delegates to the same
+        liveness semantics as ``/v1/health/live`` (always 200 when alive).
+        """
+        cfg: ChimeraConfig = request.app.state.config
+        return {
+            "status": "alive",
+            "uptime_models": len(cfg.models),
+        }
+
     @app.get("/v1/formations")
     async def formations(request: Request) -> dict[str, Any]:
         cfg: ChimeraConfig = request.app.state.config

@@ -97,13 +97,13 @@ class Gateway(Protocol):
 class FormatCapability(Enum):
     """What level of structured output a provider supports."""
     JSON_SCHEMA = "json_schema"          # Full JSON Schema (openai, anthropic, google, zai)
-    JSON_OBJECT = "json_object"           # Generic {} only (deepseek, moonshot)
+    JSON_OBJECT = "json_object"           # Generic {} only (moonshot)
     NONE = "none"                         # Plain text only
 
 
 # Providers that support full json_schema
 _JSON_SCHEMA_PROVIDERS: frozenset[str] = frozenset({
-    "openai", "anthropic", "google", "zai", "deepseek",
+    "openai", "anthropic", "google", "zai",
 })
 
 # Providers that support json_object but not json_schema
