@@ -103,3 +103,46 @@ curl -X POST http://127.0.0.1:8765/v1/deliberate \
   models you know the account can reach.
 - Keep prompts small unless you need the multi-model depth — each worker call
   costs money and the dispatcher always pays the catalog-token tax.
+
+---
+
+## Update 2026-08-13 (second dogfood run) — what changed
+
+The engine-level P0s from run 1 are FIXED in current code (verified by real
+use): `/v1/health` reports honestly (real probe calls, `healthy` with 12/12
+providers), `/health` alias works, `/v1/deliberate` returns proper 400s, full
+suite 648 passed / 62 skipped in 17.5s. **But three NEW traps, all hit for
+real:**
+
+### New pitfalls (2026-08-13)
+
+9. **A stale root-owned `chimera serve` (PID 21212, started Aug 2, pre-fix
+   code) squats :8765 on this machine.** `chimera serve` → "address already
+   in use"; every curl on :8765 returns HTTP 200 whose content starts
+   `[stage aggregator ... unavailable: ... Missing credentials ...]`. Check
+   `ss -tlnp | grep 8765` and `ps -o lstart -p <pid>` before trusting the
+   port; test on `--port 8790`+ instead. (Task CH-GAP-025)
+10. **Bare `pip install chimera-deliberation` then the README Python snippet
+    crashes**: `from chimera import Engine` → `ModuleNotFoundError: fastapi`
+    (web routes imported unconditionally). Must install `[full]`. (Task
+    CH-GAP-026)
+11. **`/v1/chat/completions` silently substitutes models**: unknown `model`
+    → HTTP 200 answered by a DIFFERENT model (17k tokens billed). If you
+    request a specific model, verify the response is really from it — or use
+    `/v1/deliberate` (validates → 400) until fixed. (Task CH-GAP-027)
+12. **Use `chimera-mcp` (standalone), NOT `chimera mcp`** — the subcommand
+    crashes with `FileNotFoundError: 'mcp'` (argv bug). (Task CH-GAP-028)
+13. **Custom DAGs go to `/v1/chat/completions` with `model:"custom"`** —
+    `/v1/deliberate` rejects `formation:"custom"` with a bare 422. (Task
+    CH-GAP-029)
+14. **`result.trace` is a pydantic `DeliberationTrace`** — use
+    `model_dump()`, not dict access.
+
+### Updated "right way" patterns
+
+- Server: verify port ownership first; the current code is healthy, the
+  deployment on :8765 is not.
+- Library consumers: always `pip install "chimera-deliberation[full]"`.
+- Agent integration: MCP still best (standalone `chimera-mcp`).
+- Check `trace.source` and per-stage entries; `source=auto` = dispatcher
+  designed the DAG.
