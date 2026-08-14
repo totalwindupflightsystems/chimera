@@ -96,3 +96,31 @@ def test_all_names_are_importable() -> None:
         f"__all__ names not found on chimera module at runtime: {missing}\n"
         f"These names are in __all__ but not importable."
     )
+
+
+def test_core_import_does_not_pull_web_deps() -> None:
+    """Bare wheel installs (no [server]/[full] extras) must import cleanly.
+
+    Regression for CH-GAP-026: the module-level ``from chimera.web.trace_viz
+    import trace_to_mermaid`` dragged fastapi into every bare import of the
+    package (``from chimera import Engine`` crashed with ModuleNotFoundError
+    on a bare install). The symbol is now resolved lazily via PEP 562
+    module ``__getattr__``.
+    """
+    import subprocess
+    import sys
+
+    code = (
+        "import sys, chimera; "
+        "assert 'chimera.web' not in sys.modules, "
+        "'bare import pulled chimera.web (fastapi) into sys.modules'; "
+        "assert callable(chimera.trace_to_mermaid); "
+        "assert chimera.__version__"
+    )
+    r = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert r.returncode == 0, f"bare import failed:\n{r.stdout}\n{r.stderr}"

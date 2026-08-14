@@ -103,14 +103,20 @@ def build_server(
     return server
 
 
-def run(config_path: str | None = None) -> None:
+def run(config_path: str | None = None, parse_argv: bool = True) -> None:
     """Run the MCP server over stdio.
 
     Accepts an optional config path as the first CLI argument, or falls
     back to ``find_config_path()`` (walks up from CWD).
+
+    ``parse_argv`` scans ``sys.argv`` for a positional config path. It is
+    only true for the standalone ``chimera-mcp`` entry point — when the
+    click CLI invokes us (``chimera mcp``), click has already consumed the
+    args and ``sys.argv[1]`` is the subcommand name ``mcp``, which must NOT
+    be treated as a config path (CH-GAP-028).
     """
     import sys
-    if config_path is None and len(sys.argv) > 1:
+    if parse_argv and config_path is None and len(sys.argv) > 1:
         for arg in sys.argv[1:]:
             if arg in ("-h", "--help"):
                 print(_USAGE, end="")

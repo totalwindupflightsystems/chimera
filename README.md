@@ -210,7 +210,10 @@ task domains to model strengths. You can override any model choice per request:
 
 ## Custom DAGs
 
-Send your own formation structure at request time:
+Send your own formation structure at request time. The example below is the
+complete request body for **POST /v1/chat/completions** with
+`"model": "custom"` — that endpoint is the custom-DAG contract
+(`POST /v1/deliberate` does not accept formation `custom`):
 
 ```json
 {

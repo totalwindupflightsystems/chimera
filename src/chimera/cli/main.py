@@ -283,7 +283,10 @@ def mcp(ctx: click.Context) -> None:
     """Run the MCP server over stdio."""
     from chimera.mcp.server import run as run_mcp
 
-    run_mcp(ctx.obj.get("config_path") if ctx.obj else None)
+    run_mcp(
+        ctx.obj.get("config_path") if ctx.obj else None,
+        parse_argv=False,  # click owns argv; sys.argv[1] is 'mcp', not a path
+    )
 
 
 if __name__ == "__main__":

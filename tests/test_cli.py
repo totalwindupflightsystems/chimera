@@ -316,9 +316,9 @@ def _capture_run_api(captured: dict) -> object:
 
 
 def _capture_run_mcp(captured: dict) -> object:
-    """Return a callable that records config_path into *captured*."""
-    def _run(config_path):
-        captured.update({"config_path": config_path})
+    """Return a callable that records config_path + parse_argv into *captured*."""
+    def _run(config_path, parse_argv=True):  # type: ignore[no-untyped-def]
+        captured.update({"config_path": config_path, "parse_argv": parse_argv})
     return _run
 
 
@@ -368,7 +368,7 @@ def test_cli_mcp(config_file, monkeypatch) -> None:
     runner = CliRunner()
     result = runner.invoke(main, ["-c", str(config_file), "mcp"])
     assert result.exit_code == 0, result.output
-    assert captured["config_path"] == str(config_file)
+    assert captured == {"config_path": str(config_file), "parse_argv": False}
 
 
 def test_cli_mcp_no_config(config_file, monkeypatch) -> None:
@@ -378,7 +378,7 @@ def test_cli_mcp_no_config(config_file, monkeypatch) -> None:
     runner = CliRunner()
     result = runner.invoke(main, ["mcp"])
     assert result.exit_code == 0, result.output
-    assert captured["config_path"] is None
+    assert captured == {"config_path": None, "parse_argv": False}
 
 
 # ---------------------------------------------------------------------------

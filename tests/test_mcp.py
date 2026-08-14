@@ -160,3 +160,26 @@ def test_mcp_run_version_flag(capsys) -> None:
 
     build_mock.assert_not_called()
     assert __version__ in capsys.readouterr().out
+
+
+def test_run_parse_argv_flag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """parse_argv=False (click path) must NOT consume sys.argv (CH-GAP-028).
+
+    `chimera mcp` used to crash with FileNotFoundError: 'mcp' because run()
+    re-read sys.argv — where argv[1] is the subcommand name — and treated it
+    as a config path. The standalone chimera-mcp entry point still parses.
+    """
+    import chimera.mcp.server as mcp_server
+
+    monkeypatch.setattr(sys, "argv", ["chimera", "mcp"])
+    calls: list[str | None] = []
+    monkeypatch.setattr(mcp_server, "load_config", lambda p: calls.append(p) or object())
+    dummy = type("Dummy", (), {"run": lambda self: None})()
+    monkeypatch.setattr(mcp_server, "build_server", lambda cfg: dummy)
+
+    mcp_server.run(None, parse_argv=False)
+    assert calls == [None], "click path: config discovery only, 'mcp' NOT consumed"
+
+    calls.clear()
+    mcp_server.run(None, parse_argv=True)
+    assert calls == ["mcp"], "standalone path: first positional arg is the config path"

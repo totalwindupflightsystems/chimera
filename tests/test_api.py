@@ -377,3 +377,36 @@ def test_deliberate_trace_worker_failures_empty_when_healthy(config) -> None:  #
     r = client.post("/v1/deliberate", json={"prompt": "hello", "formation": "auto"})
     assert r.status_code == 200, r.text
     assert r.json()["trace"]["worker_failures"] == []
+
+
+def test_chat_completions_unknown_model_returns_404(config) -> None:  # type: ignore[no-untyped-def]
+    """OpenAI-compat contract: unknown model is a hard error (CH-GAP-027).
+
+    Regression: model='bogus/nonexistent-model-xyz' used to silently
+    substitute the auto formation, billing a real deliberation and returning
+    HTTP 200 with a wrong-model answer.
+    """
+    client = _client(config)
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "bogus/nonexistent-model-xyz",
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+    )
+    assert r.status_code == 404
+    data = r.json()
+    assert data["error"]["code"] == "model_not_found"
+    assert data["error"]["param"] == "model"
+    assert "choices" not in data
+
+
+def test_chat_completions_custom_without_dag_returns_404(config) -> None:  # type: ignore[no-untyped-def]
+    """model='custom' is only valid with a DAG — otherwise hard 404."""
+    client = _client(config)
+    r = client.post(
+        "/v1/chat/completions",
+        json={"model": "custom", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "model_not_found"

@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
 import structlog
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from chimera import __version__
@@ -262,6 +262,7 @@ class ChatCompletionResponse(BaseModel):
 # --------------------------------------------------------------------------- #
 
 def _register_routes(app: FastAPI) -> None:
+    from fastapi.responses import JSONResponse
 
     # ---------------------------------------------------------------- #
     # F8: Enhanced health checks
@@ -472,7 +473,7 @@ def _register_routes(app: FastAPI) -> None:
         request: Request,
         body: ChatCompletionRequest,
         api_key: Annotated[str, Depends(require_api_key)],
-    ) -> ChatCompletionResponse:
+    ) -> Response | ChatCompletionResponse:
         # F2: Rate limiting
         _check_rate_limit(request, api_key)
 
@@ -495,6 +496,29 @@ def _register_routes(app: FastAPI) -> None:
                 )
             prompt = "\n".join(m.content for m in body.messages if m.role != "system")
             formation = body.model or "auto"
+            # OpenAI-compat contract: an unknown model is a hard error, NOT a
+            # silent substitution (CH-GAP-027). Valid values: "auto", a
+            # configured formation preset, or "custom" (only with a DAG).
+            cfg: ChimeraConfig = request.app.state.config
+            if formation not in cfg.formations and formation != "auto" and not (
+                formation == "custom" and body.dag is not None
+            ):
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "error": {
+                            "message": (
+                                f"The model `{formation}` does not exist. "
+                                "Valid values: 'auto', a formation preset "
+                                "(GET /v1/formations), or 'custom' with a DAG "
+                                "via POST /v1/chat/completions."
+                            ),
+                            "type": "invalid_request_error",
+                            "param": "model",
+                            "code": "model_not_found",
+                        }
+                    },
+                )
             from chimera.config import DeliberationOverrides
             overrides = DeliberationOverrides(
                 allowed_models=body.allowed_models,

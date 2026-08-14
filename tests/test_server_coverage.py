@@ -784,10 +784,14 @@ class TestDeliberateTimeoutHeader:
 
 
 class TestChatCompletionUnknownModel:
-    def test_chat_completion_keyerror_returns_400(
+    def test_chat_completion_engine_keyerror_returns_400(
         self, config: ChimeraConfig,
     ) -> None:
-        """engine.deliberate raising KeyError → HTTP 400 from /v1/chat/completions."""
+        """engine.deliberate raising KeyError → HTTP 400 from /v1/chat/completions.
+
+        (Model-name validation happens first — CH-GAP-027 — so this exercises
+        the engine-error path with a VALID model name.)
+        """
         engine = Engine(config, FakeGateway(lambda *a, **kw: _resp("ok", "x")))
 
         async def raising_deliberate(*a: Any, **kw: Any):
@@ -797,11 +801,26 @@ class TestChatCompletionUnknownModel:
         client = _client_with_engine(config, engine)
         r = client.post(
             "/v1/chat/completions",
-            json={"model": "unknown-model",
+            json={"model": "auto",
                   "messages": [{"role": "user", "content": "hi"}]},
         )
         assert r.status_code == 400
         assert "Unknown model" in r.json()["detail"]
+
+    def test_chat_completion_unknown_model_returns_404(
+        self, config: ChimeraConfig,
+    ) -> None:
+        """Unknown model → HTTP 404 model_not_found, no silent substitution (CH-GAP-027)."""
+        client = _client_with_engine(config, Engine(config, FakeGateway(lambda *a, **kw: _resp("ok", "x"))))
+        r = client.post(
+            "/v1/chat/completions",
+            json={"model": "unknown-model",
+                  "messages": [{"role": "user", "content": "hi"}]},
+        )
+        assert r.status_code == 404
+        data = r.json()
+        assert data["error"]["code"] == "model_not_found"
+        assert "choices" not in data
 
 
 class TestCheckProvidersOuterExcept:

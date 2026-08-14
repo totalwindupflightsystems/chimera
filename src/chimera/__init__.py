@@ -13,6 +13,7 @@ from importlib.metadata import (
 from importlib.metadata import (
     version as _dist_version,
 )
+from typing import Any as _Any
 
 from chimera.aggregator import Aggregator
 from chimera.config import (
@@ -34,7 +35,22 @@ from chimera.dispatcher import (
 from chimera.engine import DeliberationResult, DeliberationTrace, Engine, StageSpan
 from chimera.exceptions import BudgetExhaustedError
 from chimera.gateway import Gateway, GatewayResponse, LiteLLMGateway
-from chimera.web.trace_viz import trace_to_mermaid
+
+
+def __getattr__(name: str) -> _Any:
+    """Lazily resolve ``trace_to_mermaid`` (PEP 562).
+
+    Importing the core package must NOT pull in ``chimera.web`` (FastAPI,
+    SSE, session store) — those live in the ``[server]``/``[full]`` extras.
+    The web symbol is only materialized on first attribute access, so a
+    bare ``pip install chimera-deliberation`` + ``from chimera import
+    Engine`` works without fastapi installed (CH-GAP-026).
+    """
+    if name == "trace_to_mermaid":
+        from chimera.web.trace_viz import trace_to_mermaid
+
+        return trace_to_mermaid
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # Single source of truth for the version: pyproject.toml (via installed dist
 # metadata). The fallback only fires for source-tree runs where the
