@@ -188,6 +188,7 @@ class DeliberationOverrides(BaseModel):
     progressive: bool = False                     # Enable progressive prompting on worker stages
     wait_messages: list[str] | None = None       # Context msgs fed one-at-a-time before the main prompt
     trigger: str | None = None                   # Final msg requesting actual output (replaces task prompt)
+    max_tokens: int | None = None                # Cap output tokens per model call (OpenAI-compat max_tokens)
 
 
 class SelectorConfig(BaseModel):

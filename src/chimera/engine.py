@@ -450,6 +450,7 @@ class Engine:
             outcome.result, user_prompt, request_id, effective_schema,
             timeout_total_s=overrides.timeout_total_s if overrides else None,
             timeout_per_stage_s=overrides.timeout_per_stage_s if overrides else None,
+            max_tokens=overrides.max_tokens if overrides else None,
         )
 
         # Extract iteration count from the results sentinel (stored by _run_dag).
@@ -517,6 +518,7 @@ class Engine:
         *,
         timeout_total_s: float | None = None,
         timeout_per_stage_s: float | None = None,
+        max_tokens: int | None = None,
     ) -> tuple[dict[str, StageSpan], dict[str, StageResult]]:
         dag = dispatch.formation
         topo = dag.topo_order()
@@ -554,6 +556,7 @@ class Engine:
                         output_schema,
                         timeout_total_s=timeout_total_s,
                         timeout_per_stage_s=timeout_per_stage_s,
+                        max_tokens=max_tokens,
                         iteration_feedback=feedback_map.get(s.id),
                     )
                 )
@@ -663,6 +666,7 @@ class Engine:
         *,
         timeout_total_s: float | None = None,
         timeout_per_stage_s: float | None = None,
+        max_tokens: int | None = None,
         iteration_feedback: str | None = None,
     ) -> tuple[StageResult, StageSpan]:
         dep_results = [results[d] for d in stage.depends_on if d in results]
@@ -685,7 +689,7 @@ class Engine:
         try:
             messages, response = await asyncio.wait_for(
                 self._call_stage(stage, dispatch, dep_results, user_prompt, output_schema,
-                                 iteration_feedback=iteration_feedback),
+                                 iteration_feedback=iteration_feedback, max_tokens=max_tokens),
                 timeout=per_stage,
             )
         except TimeoutError:
@@ -808,6 +812,7 @@ class Engine:
         output_schema: dict[str, Any] | None = None,
         *,
         iteration_feedback: str | None = None,
+        max_tokens: int | None = None,
     ) -> tuple[list[dict[str, str]], GatewayResponse]:
         """Make the actual model call for a stage; returns (messages, response)."""
         if stage.kind == "worker":
@@ -824,12 +829,19 @@ class Engine:
                 trigger = stage.trigger or messages[-1]["content"]
                 if stage.trigger:
                     messages = [{"role": "user", "content": trigger}]
-            response = await self.gateway.complete(stage.model, messages, temperature=0.3)
+            # CH-GAP-031: honor OpenAI-compat max_tokens — the cap is applied to
+            # every answer-producing call (workers + aggregator), so a drop-in
+            # client bounding cost gets a real bound, not a silent no-op.
+            kwargs: dict[str, Any] = {"temperature": 0.3}
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+            response = await self.gateway.complete(stage.model, messages, **kwargs)
             return messages, response
         response = await self.aggregator.execute(
             stage, dispatch, dep_results, user_prompt,
             output_schema=output_schema,
             max_prompt_tokens=self.config.max_aggregator_context_tokens,
+            max_tokens=max_tokens,
         )
 
         # ── Mechanical schema validation for AUDIT stages ──────────

@@ -23,9 +23,16 @@ def _client(config):  # type: ignore[no-untyped-def]
             return _resp("FINAL ANSWER", model, 60, 90)
         return _resp(f"worker {model}", model, 20, 40)
 
-    engine = Engine(config, FakeGateway(responder))
+    client, _gateway = _client_with_gateway(config, responder)
+    return client
+
+
+def _client_with_gateway(config, responder):  # type: ignore[no-untyped-def]
+    """TestClient + FakeGateway pair so tests can assert on recorded calls."""
+    gateway = FakeGateway(responder)
+    engine = Engine(config, gateway)
     app = create_app(config=config, engine=engine)
-    return TestClient(app)
+    return TestClient(app), gateway
 
 
 def _resp(text, model, ti, to):  # type: ignore[no-untyped-def]
@@ -448,3 +455,81 @@ def test_chat_completions_stream_false_still_200(config) -> None:  # type: ignor
         assert r.status_code == 200, r.text
         assert r.json()["object"] == "chat.completion"
         assert r.json()["choices"][0]["message"]["content"]
+
+
+def _standard_responder(model, messages, response_format=None, **kw):  # type: ignore[no-untyped-def]
+    """Canonical scripted responder: valid dispatcher JSON, then worker/aggregator text."""
+    if response_format is not None:
+        return _resp(dispatch_json(), model, 100, 200)
+    joined = json.dumps(messages)
+    if "Upstream outputs" in joined:
+        return _resp("FINAL ANSWER", model, 60, 90)
+    return _resp(f"worker {model}", model, 20, 40)
+
+
+def test_chat_completions_max_tokens_honored(config) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-031: max_tokens caps every worker/aggregator gateway call.
+
+    Regression: max_tokens used to be absent from ChatCompletionRequest, so a
+    drop-in client bounding cost believed the limit was applied while the
+    deliberation ran unbounded. Now the cap must reach the gateway on all
+    answer-producing calls (2 workers + 1 aggregator for the auto formation).
+    """
+    client, gateway = _client_with_gateway(config, _standard_responder)
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["object"] == "chat.completion"
+    # 4 calls total: 1 dispatcher + 2 workers + 1 aggregator.
+    assert len(gateway.calls) == 4, gateway.calls
+    capped = [c for c in gateway.calls if c[2].get("max_tokens") == 1]
+    assert len(capped) == 3, f"expected 2 workers + 1 aggregator capped, got {gateway.calls}"
+    # The dispatcher design call stays uncapped (small structured output).
+    uncapped = [c for c in gateway.calls if "max_tokens" not in c[2]]
+    assert len(uncapped) == 1, gateway.calls
+    assert uncapped[0][2]["temperature"] == 0.1  # dispatcher signature
+
+
+def test_chat_completions_max_completion_tokens_alias(config) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-031: max_completion_tokens accepted; wins over max_tokens."""
+    client, gateway = _client_with_gateway(config, _standard_responder)
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 999,
+            "max_completion_tokens": 5,
+        },
+    )
+    assert r.status_code == 200, r.text
+    capped = [c for c in gateway.calls if c[2].get("max_tokens") == 5]
+    assert len(capped) == 3, gateway.calls
+
+
+def test_chat_completions_n_and_top_p_accepted(config) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-031: n and top_p accepted for drop-in compat (documented no-ops).
+
+    They must not 422 (pydantic) and must not leak into gateway kwargs — the
+    OpenAI docs table names them as accepted-but-ignored.
+    """
+    client, gateway = _client_with_gateway(config, _standard_responder)
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "hi"}],
+            "n": 2,
+            "top_p": 0.5,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["object"] == "chat.completion"
+    assert len(r.json()["choices"]) == 1  # n>1 unsupported — single choice
+    assert all("n" not in c[2] and "top_p" not in c[2] for c in gateway.calls), gateway.calls

@@ -220,6 +220,10 @@ class ChatCompletionRequest(BaseModel):
     temperature: float | None = None
     response_format: dict[str, Any] | None = None  # OpenAI-compatible structured output
     stream: bool | None = None  # OpenAI-compat field — rejected (streaming not supported, CH-GAP-030)
+    max_tokens: int | None = None  # OpenAI-compat output token cap — honored (CH-GAP-031)
+    max_completion_tokens: int | None = None  # OpenAI alias — wins over max_tokens when both set
+    n: int | None = None  # Accepted for drop-in compat; n>1 unsupported (documented no-op, CH-GAP-031)
+    top_p: float | None = None  # Accepted for drop-in compat; sampling fixed per stage (documented no-op)
     # Request-level overrides (passed as extra fields)
     allowed_models: list[str] | None = None
     disallowed_models: list[str] | None = None
@@ -546,6 +550,7 @@ def _register_routes(app: FastAPI) -> None:
                 aggregator_model=body.aggregator_model,
                 worker_model=body.worker_model,
                 stage_models=body.stage_models,
+                max_tokens=body.max_completion_tokens or body.max_tokens,
             )
             # Extract output schema from OpenAI-style response_format
             output_schema = None

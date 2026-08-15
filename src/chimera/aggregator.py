@@ -280,6 +280,7 @@ class Aggregator:
         *,
         output_schema: dict[str, Any] | None = None,
         max_prompt_tokens: int | None = None,
+        max_tokens: int | None = None,
     ) -> GatewayResponse:
         if max_prompt_tokens is None:
             max_prompt_tokens = getattr(
@@ -309,9 +310,12 @@ class Aggregator:
                     "schema": output_schema,
                 },
             }
-        return await self.gateway.complete(
-            stage.model, messages, temperature=0.2, response_format=response_format,
-        )
+        # CH-GAP-031: honor OpenAI-compat max_tokens on the aggregator call —
+        # the final answer must respect the client's output cap.
+        kwargs: dict[str, Any] = {"temperature": 0.2, "response_format": response_format}
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        return await self.gateway.complete(stage.model, messages, **kwargs)
 
 
 __all__ = ["Aggregator", "StageResult", "build_merge_prompt"]

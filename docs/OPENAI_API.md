@@ -71,6 +71,33 @@ To fail loudly instead of silently ignoring the flag, the server rejects
 Clients that send `"stream": false` or omit the field receive the normal
 synchronous `chat.completion` response.
 
+## Token Limits
+
+`max_tokens` is **honored** — it caps the output of every worker and
+aggregator model call in the deliberation pipeline, so a drop-in client
+bounding cost with `max_tokens` gets a real bound instead of a silent no-op.
+`max_completion_tokens` is accepted as its OpenAI alias and wins when both are
+sent. The dispatcher's internal design call is small and structured and is not
+capped.
+
+```bash
+curl http://localhost:8765/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "auto",
+    "messages": [{"role": "user", "content": "Write a 10-page essay"}],
+    "max_tokens": 100
+  }'
+```
+
+The following standard OpenAI fields are accepted for drop-in compatibility
+but are **documented no-ops** (never errors, never silently misapplied):
+
+| Field | Status |
+|---|---|
+| `n` | Accepted; `n > 1` is unsupported — the response always contains a single `chat.completion` choice |
+| `top_p` | Accepted; ignored — sampling temperature is fixed per stage |
+
 ## Chimera-Specific Fields
 
 These extend the OpenAI spec. They are **optional** — omit them and Chimera
