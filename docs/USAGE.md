@@ -6,24 +6,23 @@
 # Quick deliberation
 chimera run "Explain the CAP theorem"
 
-# With a specific formation
-chimera run "Compare Kubernetes vs Nomad" --formation debate
+# With a specific formation (flags go BEFORE the subcommand)
+chimera --formation debate run "Compare Kubernetes vs Nomad"
 
-# Custom DAG from JSON file
-chimera run "Audit this architecture decision" \
-  --dag my-dag.json \
-  --allow-custom-dag
+# Custom DAG as an inline JSON string (requires --allow-custom-dag)
+chimera --dag '{"stages":[{"id":"researcher","kind":"worker","model":"deepseek/deepseek-v4-flash"},{"id":"finalizer","kind":"aggregator","model":"deepseek/deepseek-v4-pro","depends_on":["researcher"]}],"edges":[["researcher","finalizer"]]}' \
+  --allow-custom-dag run "Audit this architecture decision"
 
-# Restrict models to budget tier
-chimera run "Write a Python decorator tutorial" \
-  --allowed-models deepseek/deepseek-v4-pro deepseek/deepseek-v4-flash
+# Restrict models to budget tier (per-stage overrides)
+chimera --stage-models '{"worker_1":"deepseek/deepseek-v4-flash","aggregator":"deepseek/deepseek-v4-flash"}' \
+  run "Write a Python decorator tutorial"
 
 # Override specific stages
-chimera run "..." \
-  --stage-models '{"worker_1":"z-ai/glm-5.2","aggregator":"openrouter/anthropic/claude-sonnet-4"}'
+chimera --stage-models '{"worker_1":"zai-coding-plan/glm-5.2","aggregator":"deepseek/deepseek-v4-pro"}' \
+  run "..."
 
-# Enable debug logging
-chimera run "..." --log-level debug
+# Print the full deliberation trace
+chimera --verbose run "..."
 
 # List available models
 chimera models

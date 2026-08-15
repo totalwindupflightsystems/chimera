@@ -37,11 +37,13 @@ Open http://localhost:8765/web/ for the web UI with live DAG visualization.
 
 **Python:**
 ```python
-from chimera import Engine, ChimeraConfig, load_config
+import asyncio
+
+from chimera import Engine, LiteLLMGateway, load_config
 
 config = load_config()
 engine = Engine(config, LiteLLMGateway(config))
-result = await engine.deliberate("Explain quantum computing.")
+result = asyncio.run(engine.deliberate("Explain quantum computing."))
 print(result.answer)  # merged output from multiple models
 ```
 
