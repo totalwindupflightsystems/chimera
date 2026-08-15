@@ -371,3 +371,20 @@ tasks:
   status: complete
   created_at: '2026-08-11T19:53:39.377114+00:00'
   completed_at: '2026-08-11T19:54:25.734605+00:00'
+- id: CH-GAP-030
+  title: Reject stream:true on /v1/chat/completions with 400 stream_not_supported
+  criteria:
+  - 'src/chimera/api/server.py ChatCompletionRequest has a stream: bool | None = None
+    field (default None/False)'
+  - "POST /v1/chat/completions with stream:true returns HTTP 400 with JSON error body\
+    \ containing code stream_not_supported and param stream \u2014 never a silent\
+    \ non-stream 200"
+  - POST /v1/chat/completions with stream absent or stream:false still returns the
+    normal 200 ChatCompletionResponse shape
+  - docs/OPENAI_API.md documents that streaming is not supported and stream:true is
+    rejected with 400 stream_not_supported
+  - tests/test_api.py contains at least one regression test asserting the 400 stream_not_supported
+    response
+  status: complete
+  created_at: '2026-08-15T01:36:24.243189+00:00'
+  completed_at: '2026-08-15T01:38:04.879751+00:00'
