@@ -48,6 +48,29 @@ Response:
 }
 ```
 
+## Streaming
+
+Streaming is **not supported**. Chimera deliberates synchronously and returns
+the complete answer in a single JSON body. An OpenAI-compatible client that
+sends `"stream": true` will not receive SSE chunks.
+
+To fail loudly instead of silently ignoring the flag, the server rejects
+`"stream": true` with HTTP 400 and an OpenAI-style error naming the field:
+
+```json
+{
+  "error": {
+    "message": "Streaming is not supported by this server. Omit `stream` or set it to false.",
+    "type": "invalid_request_error",
+    "param": "stream",
+    "code": "stream_not_supported"
+  }
+}
+```
+
+Clients that send `"stream": false` or omit the field receive the normal
+synchronous `chat.completion` response.
+
 ## Chimera-Specific Fields
 
 These extend the OpenAI spec. They are **optional** — omit them and Chimera

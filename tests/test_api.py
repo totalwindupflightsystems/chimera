@@ -410,3 +410,41 @@ def test_chat_completions_custom_without_dag_returns_404(config) -> None:  # typ
     )
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "model_not_found"
+
+
+def test_chat_completions_stream_true_returns_400(config) -> None:  # type: ignore[no-untyped-def]
+    """OpenAI-compat contract: stream:true is a hard 400 (CH-GAP-030).
+
+    Regression: stream used to be silently dropped by pydantic, so an
+    OpenAI-SDK client sending stream=True received a single JSON object
+    where it expected text/event-stream chunks and failed client-side.
+    Now it must get an explicit 400 naming the field — never a silent
+    non-stream 200.
+    """
+    client = _client(config)
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        },
+    )
+    assert r.status_code == 400
+    data = r.json()
+    assert data["error"]["code"] == "stream_not_supported"
+    assert data["error"]["param"] == "stream"
+    assert "choices" not in data
+
+
+def test_chat_completions_stream_false_still_200(config) -> None:  # type: ignore[no-untyped-def]
+    """stream:false and omitted stream keep the synchronous 200 contract."""
+    client = _client(config)
+    for payload in (
+        {"model": "auto", "messages": [{"role": "user", "content": "hi"}], "stream": False},
+        {"model": "auto", "messages": [{"role": "user", "content": "hi"}]},
+    ):
+        r = client.post("/v1/chat/completions", json=payload)
+        assert r.status_code == 200, r.text
+        assert r.json()["object"] == "chat.completion"
+        assert r.json()["choices"][0]["message"]["content"]

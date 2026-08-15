@@ -219,6 +219,7 @@ class ChatCompletionRequest(BaseModel):
     messages: list[ChatMessage] = Field(..., min_length=1)
     temperature: float | None = None
     response_format: dict[str, Any] | None = None  # OpenAI-compatible structured output
+    stream: bool | None = None  # OpenAI-compat field — rejected (streaming not supported, CH-GAP-030)
     # Request-level overrides (passed as extra fields)
     allowed_models: list[str] | None = None
     disallowed_models: list[str] | None = None
@@ -520,6 +521,24 @@ def _register_routes(app: FastAPI) -> None:
                     },
                 )
             from chimera.config import DeliberationOverrides
+            # OpenAI-compat contract: streaming is NOT supported (CH-GAP-030).
+            # A drop-in client sending stream:true must get an explicit 400
+            # naming the field — never a silent non-stream 200.
+            if body.stream:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": {
+                            "message": (
+                                "Streaming is not supported by this server. "
+                                "Omit `stream` or set it to false."
+                            ),
+                            "type": "invalid_request_error",
+                            "param": "stream",
+                            "code": "stream_not_supported",
+                        }
+                    },
+                )
             overrides = DeliberationOverrides(
                 allowed_models=body.allowed_models,
                 disallowed_models=body.disallowed_models,
