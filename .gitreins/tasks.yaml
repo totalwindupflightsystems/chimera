@@ -388,3 +388,15 @@ tasks:
   status: complete
   created_at: '2026-08-15T01:36:24.243189+00:00'
   completed_at: '2026-08-15T01:38:04.879751+00:00'
+- id: model-sync-autorefresh-2026-08-17
+  title: model_sync auto-refresh stale cache + cron zero-candidate check
+  criteria:
+  - model_sync.py auto-refreshes a missing/stale models.dev cache (older than 1800s
+    CACHE_TTL) before scanning instead of exiting 1
+  - falls back to the stale cache (ignore_ttl) when the network is unreachable; exits
+    1 only when no data is available at all
+  - model_sync_cron.py zero-candidate check matches the markdown report marker '**Candidates:**
+    0 new models'
+  status: complete
+  created_at: '2026-08-17T17:57:55.590289+00:00'
+  completed_at: '2026-08-17T17:58:08.446175+00:00'

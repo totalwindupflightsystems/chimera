@@ -22,6 +22,7 @@ reports/
 
 # GitReins verdict history (rebuildable)
 .gitreins/history/
+.gitreins/usage.jsonl
 
 .coding-hermes/board/board.db
 .coding-hermes/board/board.db.wal
