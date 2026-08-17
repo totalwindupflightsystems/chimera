@@ -55,7 +55,12 @@ def main() -> None:
     output_path = REPO_ROOT / "reports" / "latest.md"
     if output_path.exists():
         content = output_path.read_text()
-        if "Candidates: 0 new models" in content:
+        # NB: the file is markdown ("**Candidates:** 0 new models ..."), so
+        # match the shared "0 new models" fragment — the plain-text marker
+        # "Candidates: 0 new models" never appears in the file and let the
+        # auto-score step run on an empty diff (wasted API call + confusing
+        # error output; observed 2026-08-17).
+        if "0 new models" in content:
             print("No new models found. Done.")
             return
 

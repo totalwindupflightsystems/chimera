@@ -29,9 +29,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from chimera.provider_discovery import (  # noqa: E402
+    _fetch_models_dev,
     _load_cache,
     _mtok_to_per_1k,
     _resolve_model_id,
+    _save_cache,
 )
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -199,11 +201,25 @@ def scan_models_dev() -> dict[str, list[dict[str, Any]]]:
     """
     cache = _load_cache()
     if cache is None:
-        print(
-            "ERROR: models.dev cache is stale or missing. "
-            "Run `chimera models` to refresh the provider cache."
-        )
-        sys.exit(1)
+        # Cache missing or stale (CACHE_TTL is 30 min) — refresh from the
+        # network before giving up. Without this, the cron wrapper fails on
+        # almost every scheduled run (observed 3 consecutive weeks, Aug
+        # 15-17 2026) because the cache is only refreshed on demand by
+        # server startup/gateway activity. Fall back to the stale cache if
+        # the network is unreachable — old data beats no data.
+        print("INFO: models.dev cache missing or stale — refreshing from network...")
+        try:
+            _save_cache(_fetch_models_dev())
+            cache = _load_cache()
+        except Exception as exc:
+            print(f"WARNING: models.dev refresh failed ({exc}) — using stale cache")
+            cache = _load_cache(ignore_ttl=True)
+        if cache is None:
+            print(
+                "ERROR: models.dev cache is stale or missing. "
+                "Run `chimera models` to refresh the provider cache."
+            )
+            sys.exit(1)
 
     chimera_models = _load_chimera_models()
 
