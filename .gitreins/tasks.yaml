@@ -410,3 +410,14 @@ tasks:
   status: complete
   created_at: '2026-08-18T18:35:45.474487+00:00'
   completed_at: '2026-08-18T18:41:45.530142+00:00'
+- id: ch-gap-034-036-cli-devx
+  title: Restore console scripts + python -m entry + pytest-timeout
+  criteria:
+  - .venv/bin/chimera --help exits 0 and lists subcommands (formations, mcp, models,
+    run)
+  - .venv/bin/chimera-mcp --help resolves and prints usage text
+  - python -m chimera --help exits 0 showing the same CLI help text
+  - pytest --timeout 30 runs without an unrecognized-arguments error
+  status: complete
+  created_at: '2026-08-19T17:42:32.241100+00:00'
+  completed_at: '2026-08-19T17:42:35.232488+00:00'
