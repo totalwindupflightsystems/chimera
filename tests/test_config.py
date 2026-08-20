@@ -12,6 +12,7 @@ from chimera.config import (
     ChimeraConfig,
     FormationPreset,
     ModelEntry,
+    ServerConfig,
     find_config_path,
     load_config,
 )
@@ -290,6 +291,15 @@ class TestEnvOverrides:
         assert cfg.server.host == "127.0.0.1"
         assert cfg.server.port == 8000
         assert cfg.defaults.dispatcher == "zai-coding-plan/glm-5.2"
+
+    def test_default_server_port_matches_documented_port(self) -> None:
+        """REGRESSION (CH-GAP-038): the code default server port must equal the
+        documented port (8765) so a bare `chimera serve` with no chimera.yaml
+        binds where README / INTEGRATION / SECURITY / OPENAI_API / SKILL.md
+        point their curl examples. It previously defaulted to 8000, silently
+        diverging from every doc (only chimera.yaml's override masked it)."""
+        cfg = ServerConfig()
+        assert cfg.port == 8765
 
 
 # ═══════════════════════════════════════════════════════════════════════════

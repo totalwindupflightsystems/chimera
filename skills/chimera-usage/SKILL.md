@@ -17,12 +17,12 @@ instructions → one answer + a full trace (per-stage model/tokens/cost).
 
 ## Entry points (fastest → slowest)
 
-| Entry | Command / tool | Verdict (2026-08-03) |
+| Entry | Command / tool | Verdict (2026-08-20 re-verified) |
 |---|---|---|
 | **MCP** (for agents) | `chimera_deliberate(prompt=..., formation="auto")` | ✅ best path — full trace, works |
 | **CLI** | `chimera run "prompt"` (or `-v` for trace) | ✅ works, boxed trace table |
-| **REST** | `POST :8765/v1/deliberate` / `/v1/chat/completions` | 🔴 broken on this deployment — server has no provider creds (see Pitfalls) |
-| Web UI | `http://localhost:8765/web/` | served; SSE session-based |
+| **REST** | `POST :8765/v1/deliberate` / `/v1/chat/completions` | ✅ works — live-verified 2026-08-20: `/v1/health` healthy (7/7 providers), `/v1/health/ready` 200, real deliberation answered |
+| Web UI | `http://localhost:8765/web/` | ✅ served (HTTP 200); SSE session-based |
 
 ## Working recipes
 
@@ -58,7 +58,7 @@ chimera formations              # simple, debate, audit, speed, spec-writer, aut
 chimera serve                   # REST + web UI on :8765
 ```
 
-### REST (only after fixing the creds issue — see Pitfall 1)
+### REST (verified working 2026-08-20)
 
 ```bash
 curl -X POST http://127.0.0.1:8765/v1/deliberate \
@@ -69,11 +69,15 @@ curl -X POST http://127.0.0.1:8765/v1/deliberate \
 
 ## Pitfalls (all hit for real)
 
-1. **The REST server may have zero provider credentials.** Symptom: every
-   request returns HTTP 200 whose content starts `[stage aggregator ... 
-   unavailable: ... Missing credentials ...]`. The MCP/CLI load the repo
-   `.env`; `serve` may not. Fix: `set -a; source .env; set +a; chimera serve`,
-   then verify `curl /v1/health/ready` == ready. (Task: dogfood-http-server-no-creds)
+1. **REST creds issue — RESOLVED on this deployment (2026-08-20).** The old
+   failure mode was: every request returns HTTP 200 whose content starts
+   `[stage aggregator ... unavailable: ... Missing credentials ...]` because
+   `serve` didn't load the repo `.env` (the MCP/CLI did). Current deployment
+   runs `chimera serve` as a supervised service with full creds —
+   `/v1/health` = healthy (7/7 providers), `/v1/health/ready` = ready. If a
+   fresh manual `serve` ever shows the symptom again: `set -a; source .env;
+   set +a; chimera serve`, then verify `curl /v1/health/ready` == ready.
+   (Historical task: dogfood-http-server-no-creds; CH-GAP-037 re-verified)
 2. **A failed deliberation still returns HTTP 200** with the error text as
    assistant content — an OpenAI-compat contract violation. Check content for
    `[stage ... unavailable` before trusting a 200. (Task: dogfood-error-200-as-success)
@@ -98,7 +102,7 @@ curl -X POST http://127.0.0.1:8765/v1/deliberate \
 ## The "right way" patterns
 
 - Always read `trace.source` and `trace.workers` before trusting an answer.
-- For agent use, prefer MCP over REST (creds + contract issues are MCP-immune).
+- For agent use, prefer MCP over REST (MCP handles creds/contract details for you).
 - For deterministic pipelines, use custom DAGs + `formation="custom"` and pin
   models you know the account can reach.
 - Keep prompts small unless you need the multi-model depth — each worker call
@@ -116,12 +120,15 @@ real:**
 
 ### New pitfalls (2026-08-13)
 
-9. **A stale root-owned `chimera serve` (PID 21212, started Aug 2, pre-fix
-   code) squats :8765 on this machine.** `chimera serve` → "address already
-   in use"; every curl on :8765 returns HTTP 200 whose content starts
-   `[stage aggregator ... unavailable: ... Missing credentials ...]`. Check
-   `ss -tlnp | grep 8765` and `ps -o lstart -p <pid>` before trusting the
-   port; test on `--port 8790`+ instead. (Task CH-GAP-025)
+9. **Port squatting on :8765 — RESOLVED.** A stale root-owned `chimera serve`
+   (PID 21212, started Aug 2, pre-fix code) used to squat :8765 on this
+   machine: `chimera serve` → "address already in use"; every curl on :8765
+   returned HTTP 200 whose content starts `[stage aggregator ... unavailable:
+   ... Missing credentials ...]`. That zombie was killed and the port is now
+   owned by the supervised service (verified healthy 2026-08-20). Keep the
+   habit anyway: `ss -tlnp | grep 8765` + `ps -o lstart -p <pid>` before
+   trusting the port; test on `--port 8790`+ if a stranger owns it.
+   (Task CH-GAP-025; CH-GAP-037 re-verified)
 10. **Bare `pip install chimera-deliberation` then the README Python snippet
     crashes**: `from chimera import Engine` → `ModuleNotFoundError: fastapi`
     (web routes imported unconditionally). Must install `[full]`. (Task
@@ -140,8 +147,8 @@ real:**
 
 ### Updated "right way" patterns
 
-- Server: verify port ownership first; the current code is healthy, the
-  deployment on :8765 is not.
+- Server: verify port ownership first; the supervised deployment on :8765 is
+  healthy (7/7 providers, live-verified 2026-08-20).
 - Library consumers: always `pip install "chimera-deliberation[full]"`.
 - Agent integration: MCP still best (standalone `chimera-mcp`).
 - Check `trace.source` and per-stage entries; `source=auto` = dispatcher

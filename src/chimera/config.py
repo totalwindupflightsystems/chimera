@@ -125,7 +125,10 @@ class QueueConfig(BaseModel):
 
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
-    port: int = 8000
+    # 8765 is the port every doc (README, INTEGRATION, SECURITY, OPENAI_API,
+    # skills/chimera-usage) uses in its curl examples. A bare `chimera serve`
+    # with no chimera.yaml must bind there, not silently squat 8000 (CH-GAP-038).
+    port: int = 8765
     health_timeout_s: float = 10.0
     """Wall-clock budget for the provider connectivity probe in
     ``_check_providers`` (``/v1/health`` + ``/v1/health/ready``).

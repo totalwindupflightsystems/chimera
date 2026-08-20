@@ -10,9 +10,29 @@ FAILED=0
 
 # ── 1. Secrets Scan ──────────────────────────────────────
 SECRET_PATTERNS='sk-[a-zA-Z0-9_-]{20,}|ghp_[a-zA-Z0-9]{36}|-----BEGIN (RSA |EC |OPENSSH )PRIVATE KEY-----|(OPENROUTER|DEEPSEEK|ZAI|ANTHROPIC)_API_KEY\s*=\s*\S'
+# Honor .gitreins/secrets-ignore (same semantics as `gitreins guard`): a
+# staged file is skipped when its path equals an entry, or starts with an
+# entry ending in '/', or its path-part matches '<path>:<pattern>'.
+is_ignored() {
+  local file="$1" entry pathpart
+  [ -f .gitreins/secrets-ignore ] || return 1
+  while IFS= read -r entry; do
+    [ -z "$entry" ] && continue
+    case "$entry" in \#*) continue ;; esac
+    pathpart="${entry%%:*}"
+    [ "$file" = "$pathpart" ] && return 0
+    case "$pathpart" in */) case "$file" in "$pathpart"*) return 0 ;; esac ;; esac
+  done < .gitreins/secrets-ignore
+  return 1
+}
+
 while IFS= read -r file; do
   [ ! -f "$file" ] && continue
   git check-ignore -q "$file" 2>/dev/null && continue
+  if is_ignored "$file"; then
+    echo "  (skipped by .gitreins/secrets-ignore: $file)"
+    continue
+  fi
   if grep -Pn "$SECRET_PATTERNS" "$file" 2>/dev/null; then
     echo "⚠ SECRET DETECTED in $file" >&2
     FAILED=1
