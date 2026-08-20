@@ -421,3 +421,15 @@ tasks:
   status: complete
   created_at: '2026-08-19T17:42:32.241100+00:00'
   completed_at: '2026-08-19T17:42:35.232488+00:00'
+- id: ch-gap-037-038-port-docs
+  title: 'CH-GAP-037+038: SKILL.md REST verdicts match reality; server default port
+    8765'
+  criteria:
+  - src/chimera/config.py ServerConfig.port defaults to 8765 (not 8000), matching
+    the documented port
+  - a test asserts the default server port equals the documented port 8765
+  - skills/chimera-usage/SKILL.md has no 'no provider creds' or 'broken' text for
+    REST; the REST verdict row says it works
+  status: complete
+  created_at: '2026-08-20T16:55:55.765893+00:00'
+  completed_at: '2026-08-20T16:58:03.235034+00:00'
