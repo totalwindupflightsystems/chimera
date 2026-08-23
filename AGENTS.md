@@ -48,6 +48,25 @@ pip install -e ".[dev]"
 .venv/bin/python -m pytest --cov=src/chimera --cov-report=term-missing
 ```
 
+## Deploy / restart (supervised :8765 service)
+
+`chimera serve` runs as a systemd system unit (`chimera.service`, User=kara,
+WorkingDirectory=/home/kara/chimera-v2, Restart=always). New code is NOT
+loaded until the unit restarts — `Restart=always` only recovers crashes, so
+a plain `git pull` leaves the running process on the OLD code (staleness was
+invisible before CH-GAP-039 added the running commit to /health).
+
+```bash
+git pull            # or switch to the target commit
+sudo systemctl restart chimera
+curl -s localhost:8765/health   # must show "commit": "<new HEAD>"
+```
+
+Health endpoints now expose the running git commit (`/health`,
+`/v1/health/live`, `/v1/health` details) — compare it against
+`git rev-parse --short HEAD` to prove the deployed process matches the
+checkout. Foreman light-audits do exactly this check on every tick.
+
 ---
 
 ## GitReins Quality Harness (MANDATORY)

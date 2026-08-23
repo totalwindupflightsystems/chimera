@@ -78,12 +78,22 @@ curl -X POST http://127.0.0.1:8765/v1/deliberate \
    fresh manual `serve` ever shows the symptom again: `set -a; source .env;
    set +a; chimera serve`, then verify `curl /v1/health/ready` == ready.
    (Historical task: dogfood-http-server-no-creds; CH-GAP-037 re-verified)
-2. **A failed deliberation still returns HTTP 200** with the error text as
-   assistant content — an OpenAI-compat contract violation. Check content for
-   `[stage ... unavailable` before trusting a 200. (Task: dogfood-error-200-as-success)
-3. **`/v1/health` lies.** It can report all providers down while real calls
-   succeed (probe uses different params/creds). Don't kill the service on it.
-   (Task: dogfood-health-lies)
+2. **Failed deliberation → HTTP 502 (RESOLVED 2026-08-23).** The old failure
+   mode (HTTP 200 with `[stage ... unavailable` error text as assistant
+   content) is gone: `server.py` raises `_NoUsableAnswerError` when
+   `result.answer_degraded` and the handler returns 502 with an
+   OpenAI-compatible structured error body (both `/v1/deliberate` and
+   `/v1/chat/completions`). Re-verified live 2026-08-23: unknown model →
+   404 `model_not_found`, unknown formation → 422; no 200-with-bracketed-error
+   path remains. (Tasks: dogfood-error-200-as-success, CH-GAP-043)
+3. **`/v1/health` lies — RESOLVED 2026-08-23.** The old failure mode (health
+   reporting all providers down while real calls succeed) is fixed: probes
+   now run real per-provider LLM pings with the same creds/params as the
+   engine. Re-verified live 2026-08-23: `/v1/health` = healthy 7/7 with
+   per-provider `model_tested` in details. If it reads `degraded`, that is a
+   REAL signal now (transient under concurrent probes — re-probe
+   sequentially 2-3× before escalating). (Tasks: dogfood-health-lies,
+   CH-GAP-043)
 4. **`lock_aggregator: true` silently beats request overrides.** Set
    `aggregator_model` in the request and it will be ignored if config locks
    the aggregator. Read chimera.yaml first. (Task: dogfood-lock-aggregator-silent-override)
@@ -133,12 +143,15 @@ real:**
     crashes**: `from chimera import Engine` → `ModuleNotFoundError: fastapi`
     (web routes imported unconditionally). Must install `[full]`. (Task
     CH-GAP-026)
-11. **`/v1/chat/completions` silently substitutes models**: unknown `model`
-    → HTTP 200 answered by a DIFFERENT model (17k tokens billed). If you
-    request a specific model, verify the response is really from it — or use
-    `/v1/deliberate` (validates → 400) until fixed. (Task CH-GAP-027)
-12. **Use `chimera-mcp` (standalone), NOT `chimera mcp`** — the subcommand
-    crashes with `FileNotFoundError: 'mcp'` (argv bug). (Task CH-GAP-028)
+11. **`/v1/chat/completions` silently substitutes models — RESOLVED
+    2026-08-23.** Unknown `model` → HTTP 404 `model_not_found` with a
+    structured OpenAI-style error (re-verified live 2026-08-23); no silent
+    substitution remains. (Task CH-GAP-027)
+12. **Use `chimera-mcp` (standalone), NOT `chimera mcp` — FIXED in HEAD
+    (2026-08-23).** The subcommand crashed with `FileNotFoundError: 'mcp'`
+    (argv bug, CH-GAP-028); the handshake now works via `chimera mcp` too —
+    the standalone entry point remains preferred for agent use. (Task
+    CH-GAP-028)
 13. **Custom DAGs go to `/v1/chat/completions` with `model:"custom"`** —
     `/v1/deliberate` rejects `formation:"custom"` with a bare 422. (Task
     CH-GAP-029)
@@ -181,17 +194,31 @@ Re-ran everything for real against HEAD wheel (486a409) + live :8765.
 18. **README.md ends with a literal `# test comment`** — ignore it; it's a
     leftover artifact. (Task CH-GAP-042)
 
-### Stale pitfalls from earlier runs (verify before trusting)
+### Stale pitfalls from earlier runs — re-verified 2026-08-23 (CH-GAP-043)
 
-- Pitfall #2 ("failed deliberation returns HTTP 200 with error text") and #3
-  ("/v1/health lies") could NOT be reproduced on 2026-08-23: health is honest
-  7/7, unknown model 404s, unknown formation 422s, and HEAD server.py has no
-  `[stage ... unavailable` serialization path. Treat #2/#3 as historical
-  until the foreman re-verifies them (Task CH-GAP-043).
-- Pitfall #12 ("use `chimera-mcp`, NOT `chimera mcp`") is FIXED in HEAD —
+- Pitfall #2 ("failed deliberation returns HTTP 200 with error text") —
+  **RESOLVED**: 502 structured error now (verified above).
+- Pitfall #3 ("/v1/health lies") — **RESOLVED**: health honest 7/7 with
+  per-provider `model_tested` (verified above).
+- Pitfall #12 ("use `chimera-mcp`, NOT `chimera mcp`") — **FIXED in HEAD**:
   `chimera mcp` handshake verified working 2026-08-23 (CH-GAP-028).
+- Pitfall #11 (silent model substitution) — **RESOLVED**: 404
+  `model_not_found` live-verified 2026-08-23 (CH-GAP-027).
 - Pitfall #6 (`source=fallback`): observed on 1 of 2 auto runs 2026-08-23 —
-  more common than "rare"; retry once (Task CH-GAP-044).
+  still true; more common than "rare"; retry once (Task CH-GAP-044).
+- Pitfall #5 (OpenRouter guardrail 404): not re-hit 2026-08-23, but it is an
+  account-setting failure mode, not a code bug — keep as-is (Task
+  dogfood-model-guardrail-404).
+- Pitfall #9 (port squatting): supervised service owns :8765, unit active —
+  habit (ss/ps check) still recommended (CH-GAP-025/037).
+- Pitfall #10 (bare install fastapi crash): FIXED at HEAD (CH-GAP-026 lazy
+  import) but STILL TRUE for PyPI 0.2.0 (Jul 19) — install from a HEAD-built
+  wheel until 0.2.1 publishes (Task CH-GAP-040).
+- Pitfall #13 (custom DAGs only via `/v1/chat/completions` model:"custom"):
+  still true 2026-08-23 — deliberate rejects formation custom with 422
+  (live-verified; CH-GAP-029).
+- Pitfall #14 (`result.trace` is a pydantic `DeliberationTrace`): still true
+  2026-08-23 — use `model_dump()`, not dict access.
 
 ### Verified-still-true (2026-08-23)
 

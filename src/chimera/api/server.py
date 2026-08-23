@@ -17,9 +17,12 @@ Resilience features:
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
+import subprocess
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated, Any
 
 import structlog
@@ -35,6 +38,29 @@ from chimera.gateway import LiteLLMGateway
 from chimera.observability import configure_logging
 
 log = structlog.get_logger("chimera.api")
+
+
+@functools.lru_cache(maxsize=1)
+def _running_commit() -> str:
+    """Short git commit the running code was built from, or 'unknown'.
+
+    Resolved once per process from the repository HEAD. Outside a git
+    checkout (e.g. pip-installed wheel) returns 'unknown' so monitoring
+    can still tell staleness apart from an unknown build.
+    """
+    try:
+        repo_root = Path(__file__).resolve().parents[3]
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        commit = out.stdout.strip()
+        return commit if commit else "unknown"
+    except Exception:
+        return "unknown"
 
 
 class _NoUsableAnswerError(Exception):
@@ -285,6 +311,7 @@ def _register_routes(app: FastAPI) -> None:
             "config_loaded": True,
             "models_configured": len(cfg.models),
             "providers_configured": len(cfg.providers),
+            "commit": _running_commit(),
         }
 
         # Optional provider connectivity check
@@ -341,6 +368,7 @@ def _register_routes(app: FastAPI) -> None:
         return {
             "status": "alive",
             "uptime_models": len(cfg.models),
+            "commit": _running_commit(),
         }
 
     @app.get("/health")
@@ -355,6 +383,7 @@ def _register_routes(app: FastAPI) -> None:
         return {
             "status": "alive",
             "uptime_models": len(cfg.models),
+            "commit": _running_commit(),
         }
 
     @app.get("/v1/formations")

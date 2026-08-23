@@ -142,6 +142,31 @@ class TestHealthEndpoints:
         assert data["status"] == "alive"
         assert data["uptime_models"] == len(config.models)
 
+    def test_health_exposes_running_commit(self, config: ChimeraConfig) -> None:  # type: ignore[no-untyped-def]
+        """Health endpoints expose the running git commit (CH-GAP-039).
+
+        Monitoring/foreman audits compare this against the repo HEAD to
+        detect a stale deployment. In a git checkout it must be the short
+        HEAD hash; outside one it degrades to 'unknown' without crashing.
+        """
+        import subprocess
+        from pathlib import Path
+
+        client = _client(config)
+        for path in ("/health", "/v1/health/live"):
+            r = client.get(path)
+            assert r.status_code == 200
+            assert r.json()["commit"]  # non-empty string
+        # In this repo the value must be the real short HEAD.
+        repo_root = Path(__file__).resolve().parents[2]
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo_root, capture_output=True, text=True, timeout=3,
+        )
+        expected = out.stdout.strip()
+        if expected:
+            assert client.get("/health").json()["commit"] == expected
+
     def test_health_ready_returns_ready(self, config: ChimeraConfig) -> None:  # type: ignore[no-untyped-def]
         """With FakeGateway always succeeding, readiness should return 200."""
         client = _client(config)
