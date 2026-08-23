@@ -198,3 +198,77 @@ OpenAI contract.
    tasks.jsonl`. NOTE: JSONL had 34 rows vs DB 24 (pre-existing drift —
    reconcile with `fleet-board-audit.py`; don't re-export FROM the DB or the
    JSONL-only rows vanish).
+
+---
+
+# Diagnostic trail — 2026-08-23 (third dogfood run)
+
+## How the deployment is built and why it went stale
+
+`chimera serve` runs as a systemd unit (`/etc/systemd/system/chimera.service`,
+`Restart=always`, started 2026-08-14 14:53) using the repo's `.venv` editable
+install. An editable install means the FILES are always HEAD — but a Python
+process only loads code at start time, and `Restart=always` restarts only on
+crash. Nothing ever restarts the service after new code lands, so the running
+process is whatever HEAD was at 14:53 on Aug 14. Every runtime fix merged
+after that (CH-GAP-030 stream 400, CH-GAP-031 max_tokens, CH-GAP-038 port
+8765) exists in the source tree but NOT in the running process. The
+foreman's light-audit health probes cannot detect this: `/v1/health` is
+"healthy 7/7" on old code. Fixes were PASS-verified on throwaway servers
+(:8790/:8799) that were started fresh from HEAD — which is exactly why the
+verification passed while production stayed broken. **The lesson: verify
+deployments, not just code. "PASS verified live" must name the process
+(start time / commit) it was verified against.**
+
+Evidence (live, 2026-08-23):
+- `stream:true` → HTTP 200 full non-stream completion (HEAD would 400
+  `stream_not_supported`; server.py:542).
+- `max_tokens:1` → 3548-token essay (HEAD honors it; server.py:224/553).
+- Unknown model → 404 `model_not_found` WORKS — CH-GAP-027 (Aug 13) landed
+  before the service start; consistent with the staleness window.
+
+## Release pipeline reality
+
+`pip install chimera-deliberation` (PyPI) gives 0.2.0 from **Jul 19**: the
+CH-GAP-026 bare-import crash reproduces exactly (`from chimera import Engine`
+→ `ModuleNotFoundError: fastapi`). HEAD is 186 commits / ~5 weeks ahead of
+origin (no-push convention, see INT-CI-001). CH-GAP-026's PASS criterion was
+verified against a locally-built wheel, not the artifact that ships — the
+classic "verified the build, not the release" gap. **Lesson: smoke-test the
+exact artifact you publish (PyPI upload), not a fresh local build.**
+
+## Packaging contract keeps breaking (third instance)
+
+`[project.scripts]` declares `chimera`/`chimera-mcp` in the base package;
+their deps (`click`, `rich`, `mcp`) are extras-only. Bare install → entry
+points present but crash (`No module named 'rich'`). Same class as CH-GAP-026
+(fastapi) and CH-GAP-034 (venv scripts missing). **Root pattern: no
+bare-install smoke test exists, so every extras/deps shuffle breaks the base
+install silently.** Fix direction: a CI job that bare-installs the wheel in a
+fresh venv and runs import + `--help` + MCP handshake.
+
+## Dispatcher malformed-DAG fallback (observed, not new)
+
+1 of 2 auto runs on the fresh wheel: dispatcher emitted `edges:
+[["worker_1","aggregator"],["worker_2","aggregator"]]` with NO aggregator
+stage in `stages` → `dispatcher_parse_failed` → `source=fallback` (1 worker
++ aggregator). Known pitfall #6; the answer was still correct, so a user
+cannot tell without reading `trace.source`. Frequency on this run: 50%.
+
+## Updated right-way checklist (2026-08-23 state — supersedes the 08-13 list)
+
+1. Keys: `set -a; source ~/.hermes/.env; set +a` (or repo `.env`); config
+   substitutes `${VAR}` tokens from process env.
+2. CLI: `.venv/bin/chimera run "prompt"` (repo) or `chimera` from a `[full]`
+   install. First call is slow (provider catalog refresh).
+3. Server: check `systemctl show chimera -p ActiveEnterTimestamp` BEFORE
+   trusting :8765 behavior — if it predates the fix you care about, restart
+   the unit (there is no auto-deploy).
+4. Library: `pip install chimera-deliberation[full]` from PyPI is BROKEN
+   (bare import crash, Jul 19 release); build from HEAD or wait for 0.2.1.
+5. MCP: `chimera mcp` subcommand is FIXED in HEAD (CH-GAP-028); standalone
+   `chimera-mcp` also works.
+6. Board: `.coding-hermes/board/tasks.jsonl` is canonical (JSONL-NORM-001);
+   `board.db` is a DuckDB cache, gitignored.
+7. Trace trust: read `trace.source`; `DeliberationTrace` is pydantic —
+   `model_dump()`.

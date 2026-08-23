@@ -62,3 +62,36 @@ behavior to every curl.
 deployment (zombie port) and packaging (bare wheel) block the documented
 paths. 5 tasks added (3 P1, 2 P2). Cooldown 7200s — below wake threshold;
 foreman will pick tasks up on its normal 2h tick.
+
+## 2026-08-23 — 🟡 PROMISING-BUT-ROUGH (third run)
+
+**Promise:** "One API call. A team of models. One answer." — multi-model
+deliberation gateway; entry points CLI, REST (OpenAI-compat + full),
+library, MCP, web UI.
+
+**Reality:** The engine is in excellent shape at HEAD — CLI deliberation
+(correct answer, 17.7s, $0.004), REST chat/completions + deliberate with
+proper 404/422 errors, web UI + /docs live, MCP handshake works, and the
+LIBRARY path is now genuinely good: a real consumer tool built on
+Engine+LiteLLMGateway with a custom 3-stage DAG produced an excellent
+merged answer with full trace (4m15s wall — budget minutes for sequential
+DAGs). BUT the distribution layer is broken in two independent ways:
+(a) the live :8765 systemd service has run Aug-14 code since Aug 14 14:53 —
+`stream:true` returns 200 non-stream and `max_tokens:1` returns a 3548-token
+essay, i.e. board-closed fixes CH-GAP-030/031 never reached users; (b) PyPI
+0.2.0 (Jul 19) still crashes on bare import (`ModuleNotFoundError: fastapi`),
+and even a fresh HEAD wheel's bare install ships console scripts that crash
+(`No module named 'rich'`). README also ends with a literal `# test comment`.
+
+**Top 3 findings:**
+1. P1 CH-GAP-039 — live :8765 runs Aug-14 code; stream/max_tokens fixes never deployed (no restart/deploy step exists; fixes verified only on throwaway servers).
+2. P1 CH-GAP-040 — PyPI 0.2.0 (Jul 19) still has the bare-import crash; 186 commits unpushed, every Aug fix unreleased.
+3. P1 CH-GAP-041 — bare install ships crashing console scripts (rich/click/mcp extras-only); third packaging/extras mismatch this month.
+
+**Time-to-first-success:** ~2 min (server health + formations probe; first
+CLI deliberation 17.7s). **Friction count:** 6.
+
+**Verdict:** PROMISING-BUT-ROUGH — core engine value real and the library
+path finally works, but the two ways users actually get Chimera (the
+deployed server, the published package) both lag HEAD by weeks. 6 tasks
+added (CH-GAP-039..044). Cooldown 21600s → woken to 900s.

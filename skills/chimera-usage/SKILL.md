@@ -153,3 +153,50 @@ real:**
 - Agent integration: MCP still best (standalone `chimera-mcp`).
 - Check `trace.source` and per-stage entries; `source=auto` = dispatcher
   designed the DAG.
+
+---
+
+## Update 2026-08-23 (third dogfood run) — what changed
+
+Re-ran everything for real against HEAD wheel (486a409) + live :8765.
+
+### New pitfalls (all hit for real)
+
+15. **The live :8765 service runs STALE code.** systemd `chimera.service` has
+    been up since 2026-08-14 14:53; every fix merged after that (stream 400,
+    max_tokens, port default) is NOT in the running process. Live symptoms on
+    :8765: `stream:true` → 200 non-stream full completion; `max_tokens:1` →
+    3548-token essay. HEAD code behaves correctly — the deployed process
+    doesn't. **Always check `systemctl show chimera -p ActiveEnterTimestamp`
+    before trusting live behavior; restart the unit to get HEAD.** (Task
+    CH-GAP-039)
+16. **PyPI 0.2.0 (Jul 19) is the July product.** `pip install
+    chimera-deliberation` → `from chimera import Engine` →
+    `ModuleNotFoundError: fastapi` (CH-GAP-026 fix never shipped). Install
+    from a HEAD-built wheel or wait for 0.2.1. (Task CH-GAP-040)
+17. **Bare install's console scripts crash**: `chimera --help` after bare
+    install → `ModuleNotFoundError: rich` (click/rich/mcp are extras-only but
+    the entry points ship in the base package). Always install `[full]`.
+    (Task CH-GAP-041)
+18. **README.md ends with a literal `# test comment`** — ignore it; it's a
+    leftover artifact. (Task CH-GAP-042)
+
+### Stale pitfalls from earlier runs (verify before trusting)
+
+- Pitfall #2 ("failed deliberation returns HTTP 200 with error text") and #3
+  ("/v1/health lies") could NOT be reproduced on 2026-08-23: health is honest
+  7/7, unknown model 404s, unknown formation 422s, and HEAD server.py has no
+  `[stage ... unavailable` serialization path. Treat #2/#3 as historical
+  until the foreman re-verifies them (Task CH-GAP-043).
+- Pitfall #12 ("use `chimera-mcp`, NOT `chimera mcp`") is FIXED in HEAD —
+  `chimera mcp` handshake verified working 2026-08-23 (CH-GAP-028).
+- Pitfall #6 (`source=fallback`): observed on 1 of 2 auto runs 2026-08-23 —
+  more common than "rare"; retry once (Task CH-GAP-044).
+
+### Verified-still-true (2026-08-23)
+
+- Pitfalls #1 (creds — the supervised service has full creds; 7/7 healthy),
+  #4 (lock_aggregator), #7 (first call slow), #8 (cost floor ~$0.003).
+- Custom DAG via library: `engine.deliberate(prompt, formation="custom",
+  dag=..., allow_custom_dag=True)` works and returns excellent results —
+  but a 3-stage sequential DAG took **4m15s** wall. Budget minutes.
