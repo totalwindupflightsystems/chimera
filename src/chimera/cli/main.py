@@ -140,6 +140,7 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
         console.print(f"[red]error:[/red] {exc}")
         sys.exit(2)
     _print_worker_failures(result)
+    _print_dispatch_degradation(result)
     console.print(Panel(result.answer, title="Chimera", border_style="cyan"))
     if ctx.obj.get("verbose"):
         _print_trace(result.trace)
@@ -163,6 +164,35 @@ def _print_worker_failures(result: Any) -> None:
             f"[yellow]warning:[/yellow] worker '{stage_id}' ({model}) "
             f"failed: {error}"
         )
+
+
+def _print_dispatch_degradation(result: Any) -> None:
+    """Warn (always, not just --verbose) when the dispatch degraded.
+
+    Two degradation classes surface here:
+
+    * ``trace.source == \"fallback\"`` — the dispatcher plan was discarded
+      and the deliberation collapsed to a generic single-worker formation.
+      The answer may look fine; this is the ONLY signal (CH-GAP-044).
+    * a repair note (``dispatch_note`` containing \"repaired\"/\"injected\") —
+      the dispatcher's DAG was structurally repaired (e.g. an aggregator
+      stage referenced by edges but missing from stages was injected), so
+      the design survived but the user should know it was patched.
+    """
+    trace = getattr(result, "trace", None)
+    if trace is None:
+        return
+    source = getattr(trace, "source", None)
+    note = getattr(trace, "dispatch_note", None)
+    if source == "fallback":
+        reason = note or "unknown reason"
+        console.print(
+            f"[yellow]warning:[/yellow] dispatch degraded — source=fallback "
+            f"({reason}); the deliberation collapsed to a generic "
+            f"single-worker formation"
+        )
+    elif note and ("repaired" in note or "injected" in note):
+        console.print(f"[yellow]warning:[/yellow] dispatch repaired: {note}")
 
 
 def _print_trace(trace: Any) -> None:
@@ -192,10 +222,12 @@ def _print_trace(trace: Any) -> None:
     dispatch_note = getattr(trace, "dispatch_note", None)
     if dispatch_note:
         note = f", note={dispatch_note}"
+    source = getattr(trace, "source", "?")
+    source_str = f"[red]source={source}[/red]" if source == "fallback" else f"source={source}"
     console.print(
         f"total: {trace.total_tokens} tokens, "
         f"{trace.total_duration_ms}ms, ${trace.total_cost:.6f} "
-        f"(source={trace.source}, answer_stage={trace.answer_stage_id}{note})"
+        f"({source_str}, answer_stage={trace.answer_stage_id}{note})"
     )
     console.print(
         Panel(

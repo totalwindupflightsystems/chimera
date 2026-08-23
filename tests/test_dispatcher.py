@@ -18,6 +18,7 @@ from chimera.dispatcher import (
     DispatchOutcome,
     FormationDAG,
     Stage,
+    _repair_formation,
     build_dag_from_dict,
     build_dispatcher_prompt,
     build_preset_dag,
@@ -833,6 +834,127 @@ def test_parse_dispatch_result_repair_single_worker(config) -> None:  # type: ig
     assert ("worker_1", "aggregator") in [tuple(e) for e in result.formation.edges]
     assert result.dispatch_note is not None
     assert "repaired" in result.dispatch_note
+
+
+def test_parse_dispatch_result_repairs_edge_referenced_missing_aggregator(config) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-044: edges to an aggregator absent from stages → injected, not fallback.
+
+    The observed bug: the auto dispatcher emitted
+    ``edges [[worker_1, aggregator], [worker_2, aggregator]]`` while the
+    ``stages`` list contained only the two workers. The phantom edge made
+    ``terminals()`` treat every worker as an edge source, so the old
+    missing-aggregator repair found no terminal workers, raised, and the
+    whole design collapsed to the generic 1-worker fallback
+    (``trace.source=fallback`` — invisible to the user). The repair must
+    keep the dispatcher's worker design and inject the referenced stage.
+    """
+    raw = {
+        "formation": {
+            "stages": [
+                {"id": "worker_1", "kind": "worker",
+                 "model": "deepseek/deepseek-chat", "depends_on": []},
+                {"id": "worker_2", "kind": "worker",
+                 "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+            ],
+            "edges": [["worker_1", "aggregator"], ["worker_2", "aggregator"]],
+        },
+        "worker_prompts": [
+            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
+             "prompt": "Custom subtask for worker_1", "expected_output_schema": None},
+            {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
+             "prompt": "Custom subtask for worker_2", "expected_output_schema": None},
+        ],
+        "aggregator_instructions": "",
+        "stage_instructions": {},
+    }
+    result = parse_dispatch_result(raw, config)
+
+    # This is a repair, NOT a fallback: the 2-worker design survives.
+    assert result.source == "auto"
+    assert result.fallback_reason is None
+    assert result.formation.stage_ids() == ["worker_1", "worker_2", "aggregator"]
+
+    agg = result.formation.stage("aggregator")
+    assert agg.kind == "aggregator"
+    assert agg.model == config.defaults.default_aggregator
+    assert agg.depends_on == ["worker_1", "worker_2"]
+
+    # The dispatcher's edges survive (no duplicates appended by the repair).
+    assert [tuple(e) for e in result.formation.edges] == [
+        ("worker_1", "aggregator"), ("worker_2", "aggregator"),
+    ]
+
+    # Custom worker prompts are preserved, not templated.
+    prompts = {wp.stage_id: wp.prompt for wp in result.worker_prompts}
+    assert prompts["worker_1"] == "Custom subtask for worker_1"
+    assert prompts["worker_2"] == "Custom subtask for worker_2"
+
+    assert result.aggregator_instructions
+    assert result.dispatch_note is not None
+    assert "repaired" in result.dispatch_note
+    assert "aggregator" in result.dispatch_note
+
+
+def test_parse_dispatch_result_edge_repair_is_idempotent(config) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-044: re-running the repair on an already-repaired result is a no-op."""
+    raw = {
+        "formation": {
+            "stages": [
+                {"id": "worker_1", "kind": "worker",
+                 "model": "deepseek/deepseek-chat", "depends_on": []},
+                {"id": "worker_2", "kind": "worker",
+                 "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+            ],
+            "edges": [["worker_1", "aggregator"], ["worker_2", "aggregator"]],
+        },
+        "worker_prompts": [
+            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
+             "prompt": "p1", "expected_output_schema": None},
+            {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
+             "prompt": "p2", "expected_output_schema": None},
+        ],
+        "aggregator_instructions": "",
+        "stage_instructions": {},
+    }
+    result = parse_dispatch_result(raw, config)
+    stages_before = len(result.formation.stages)
+    edges_before = [tuple(e) for e in result.formation.edges]
+    note_before = result.dispatch_note
+
+    _repair_formation(result, config)
+
+    assert len(result.formation.stages) == stages_before
+    assert [tuple(e) for e in result.formation.edges] == edges_before
+    assert result.dispatch_note == note_before
+
+
+def test_parse_dispatch_result_repairs_missing_non_aggregator_edge_target(config) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-044: any edge target missing from stages is injected, even when
+    an aggregator stage already exists."""
+    raw = {
+        "formation": {
+            "stages": [
+                {"id": "worker_1", "kind": "worker",
+                 "model": "deepseek/deepseek-chat", "depends_on": []},
+                {"id": "aggregator", "kind": "aggregator",
+                 "model": "zai-coding-plan/glm-5.2", "depends_on": ["worker_1"]},
+            ],
+            "edges": [["worker_1", "aggregator"], ["worker_1", "reviewer"]],
+        },
+        "worker_prompts": [],
+        "aggregator_instructions": "Merge.",
+        "stage_instructions": {},
+    }
+    result = parse_dispatch_result(raw, config)
+
+    assert result.source == "auto"
+    assert result.formation.stage_ids() == ["worker_1", "aggregator", "reviewer"]
+    reviewer = result.formation.stage("reviewer")
+    assert reviewer.kind == "aggregator"
+    assert reviewer.model == config.defaults.default_aggregator
+    assert reviewer.depends_on == ["worker_1"]
+    assert result.dispatch_note is not None
+    assert "reviewer" in result.dispatch_note
 
 
 def test_parse_dispatch_result_malformed_sets_reason(config) -> None:  # type: ignore[no-untyped-def]

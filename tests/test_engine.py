@@ -1040,6 +1040,64 @@ async def test_trace_surfaces_dispatch_note_on_repair(config) -> None:  # type: 
 
 
 @pytest.mark.asyncio
+async def test_phantom_edge_aggregator_repaired_not_fallback(config) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-044: edges to an aggregator absent from stages → source=auto with
+    the injected aggregator in the trace, never a silent source=fallback.
+
+    The observed dogfood bug: the dispatcher emitted
+    ``edges [[worker_1, aggregator], [worker_2, aggregator]]`` while the
+    ``stages`` list contained only worker_1/worker_2. Before the fix the
+    phantom edge made ``terminals()`` return no workers, the repair raised,
+    and the engine silently degraded to a generic 1-worker fallback — the
+    answer looked fine and ``trace.source=fallback`` was the only signal.
+    This test drives the exact malformed payload through the full engine
+    (offline, scripted gateway) and asserts the 2-worker design survives.
+    """
+    payload = json.dumps({
+        "formation": {
+            "stages": [
+                {"id": "worker_1", "kind": "worker",
+                 "model": "deepseek/deepseek-chat", "depends_on": []},
+                {"id": "worker_2", "kind": "worker",
+                 "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+            ],
+            "edges": [["worker_1", "aggregator"], ["worker_2", "aggregator"]],
+        },
+        "worker_prompts": [
+            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
+             "prompt": "Custom subtask for worker_1", "expected_output_schema": None},
+            {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
+             "prompt": "Custom subtask for worker_2", "expected_output_schema": None},
+        ],
+        "aggregator_instructions": "",
+        "stage_instructions": {},
+    })
+    gw = FakeGateway(_engine_responder(config, payload=payload))
+    result = await Engine(config, gw).deliberate("Design + build a service", "auto")
+
+    # source=auto with a repair note — NOT a silent fallback.
+    assert result.trace.source == "auto"
+    assert result.trace.dispatch_note is not None
+    assert "repaired" in result.trace.dispatch_note
+    assert "aggregator" in result.trace.dispatch_note
+
+    # Both workers ran, and the injected aggregator produced the answer.
+    assert len(result.trace.workers) == 2
+    worker_models = sorted(w.model for w in result.trace.workers)
+    assert worker_models == ["deepseek/deepseek-chat", "openrouter/google/gemini-2.5-flash"]
+    assert result.trace.aggregator is not None
+    assert result.trace.aggregator.kind == "aggregator"
+    assert result.trace.aggregator.model == config.defaults.default_aggregator
+    assert result.trace.answer_stage_id == "aggregator"
+    assert result.answer.startswith("[FINAL MERGED ANSWER")
+
+    # The dispatcher's custom worker prompts survived the repair.
+    prompts = {w.stage_id: w.prompt for w in result.trace.workers}
+    assert "Custom subtask for worker_1" in prompts["worker_1"]
+    assert "Custom subtask for worker_2" in prompts["worker_2"]
+
+
+@pytest.mark.asyncio
 async def test_trace_surfaces_fallback_reason(config) -> None:  # type: ignore[no-untyped-def]
     """A malformed dispatcher payload falls back with a visible trace note."""
     gw = FakeGateway(_engine_responder(config, payload="this is not json {{{"))

@@ -442,3 +442,71 @@ def test_cli_worker_warning_truncates_long_errors(config_file, monkeypatch) -> N
     assert result.exit_code == 0, result.output
     assert "x" * 500 not in result.output  # truncated to ~200 chars
     assert "x" * 100 in result.output
+
+
+# ---------------------------------------------------------------------------
+# Dispatch degradation CLI warning (CH-GAP-044) — always printed, not --verbose
+# ---------------------------------------------------------------------------
+
+def _stub_engine_with_trace(monkeypatch, source, dispatch_note):  # type: ignore[no-untyped-def]
+    class StubEngine:
+        def __init__(self, *a, **k):
+            pass
+
+        async def deliberate(self, prompt, formation):  # noqa: ANN001
+            span = SimpleNamespace(stage_id="dispatch", kind="dispatch", model="m",
+                                   tokens_input=1, tokens_output=2, latency_ms=5, cost=0.0)
+            trace = SimpleNamespace(request_id="r1", dispatch=span, stages=[],
+                                    total_tokens=3, total_duration_ms=9, total_cost=0.0,
+                                    source=source, answer_stage_id="aggregator",
+                                    worker_failures=[], dispatch_note=dispatch_note)
+            return SimpleNamespace(answer="looks-fine answer", trace=trace)
+
+    monkeypatch.setattr("chimera.cli.main.Engine", StubEngine)
+    monkeypatch.setattr("chimera.cli.main.LiteLLMGateway", lambda *a, **k: None)
+
+
+def test_cli_warns_on_fallback_without_verbose(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-044: a silent source=fallback is surfaced as a prominent warning.
+
+    The answer can look fine while the dispatch collapsed to a generic
+    single-worker formation — before this fix the CLI never flagged it.
+    """
+    _stub_engine_with_trace(monkeypatch, source="fallback",
+                            dispatch_note="invalid_dag: dispatch produced no aggregator/merge/audit stage")
+    runner = CliRunner()
+    # NOTE: no --verbose flag — the degradation warning must appear regardless.
+    result = runner.invoke(main, ["-c", str(config_file), "hello"])
+    assert result.exit_code == 0, result.output
+    assert "warning" in result.output
+    assert "dispatch degraded" in result.output
+    assert "source=fallback" in result.output
+    assert "invalid_dag" in result.output
+    # The answer panel still prints normally.
+    assert "looks-fine answer" in result.output
+
+
+def test_cli_warns_on_dispatch_repair_without_verbose(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-044: a repaired dispatch (injected aggregator) is surfaced too."""
+    _stub_engine_with_trace(
+        monkeypatch, source="auto",
+        dispatch_note=("repaired: injected aggregator stage(s) aggregator "
+                       "referenced by dispatcher edges but missing from stages"),
+    )
+    runner = CliRunner()
+    result = runner.invoke(main, ["-c", str(config_file), "hello"])
+    assert result.exit_code == 0, result.output
+    assert "warning" in result.output
+    assert "dispatch repaired" in result.output
+    assert "injected aggregator stage" in result.output
+    assert "looks-fine answer" in result.output
+
+
+def test_cli_no_degradation_warning_when_clean(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A clean auto dispatch (no note) prints no degradation warning."""
+    _stub_engine_with_trace(monkeypatch, source="auto", dispatch_note=None)
+    runner = CliRunner()
+    result = runner.invoke(main, ["-c", str(config_file), "hello"])
+    assert result.exit_code == 0, result.output
+    assert "dispatch degraded" not in result.output
+    assert "dispatch repaired" not in result.output

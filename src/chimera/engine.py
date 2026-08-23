@@ -27,6 +27,7 @@ from chimera.dispatcher import (
     DispatchResult,
     FormationDAG,
     Stage,
+    _repair_formation,
     build_dag_from_dict,
 )
 from chimera.exceptions import BudgetExhaustedError
@@ -415,6 +416,19 @@ class Engine:
             custom_dag=custom_formation, model_override=disp_override,
         )
         dispatch_span = self._build_dispatch_span(outcome, formation)
+
+        # CH-GAP-044: engine-side repair safety net. The dispatcher sometimes
+        # emits edges referencing an aggregator/merge stage it omitted from
+        # the stages list (e.g. edges [[worker_1, aggregator],
+        # [worker_2, aggregator]] with a worker-only stages list). Without a
+        # repair the engine would silently degrade to the generic 1-worker
+        # fallback (trace.source=fallback, invisible to the user). The parse
+        # path repairs this already; this second pass is idempotent and
+        # guarantees any dispatcher-produced DAG reaching the engine is
+        # structurally sound, so a phantom-edge DAG can never collapse or
+        # crash answer selection. Runs BEFORE model overrides so an
+        # aggregator_model override also applies to an injected stage.
+        _repair_formation(outcome.result, self.config)
 
         # Global request-level overrides (worker/aggregator models). Config
         # locks (defaults.lock_aggregator / lock_dispatcher) take precedence:

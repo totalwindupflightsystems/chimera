@@ -586,19 +586,78 @@ def _validate_result(result: DispatchResult, config: ChimeraConfig | None = None
 
     A structurally sound plan that merely omits the aggregator/merge/audit
     stage is REPAIRED in place (a default aggregator depending on every
-    terminal worker is appended) instead of failing validation.
+    terminal worker is appended) instead of failing validation. Likewise, a
+    plan whose ``edges`` reference an aggregator/merge stage that is absent
+    from ``stages`` (CH-GAP-044) is repaired by injecting that stage rather
+    than collapsing to the generic fallback.
     """
     if not result.formation.stages:
         raise ValueError("dispatch produced no stages")
     if not any(s.kind == "worker" for s in result.formation.stages):
         raise ValueError("dispatch produced no worker stages")
-    if not any(s.kind in {"aggregator", "merge", "audit"} for s in result.formation.stages):
-        _repair_missing_aggregator(result, config)
+    _repair_formation(result, config)
     ids = set(result.formation.stage_ids())
     for stage in result.formation.stages:
         for dep in stage.depends_on:
             if dep not in ids:
                 raise ValueError(f"stage {stage.id!r} depends on unknown {dep!r}")
+
+
+def _repair_formation(
+    result: DispatchResult, config: ChimeraConfig | None = None
+) -> None:
+    """Idempotently repair a structurally incomplete formation in place.
+
+    Order matters: edges referencing stage ids absent from ``stages`` must
+    be repaired FIRST — a phantom edge target makes ``terminals()`` return
+    no workers (every worker is an edge source), which would abort the
+    missing-aggregator repair with ``ValueError`` and collapse the whole
+    dispatcher design to the generic 1-worker fallback.
+    """
+    _repair_missing_edge_targets(result, config)
+    if not any(s.kind in {"aggregator", "merge", "audit"} for s in result.formation.stages):
+        _repair_missing_aggregator(result, config)
+
+
+def _repair_missing_edge_targets(
+    result: DispatchResult, config: ChimeraConfig | None = None
+) -> None:
+    """Inject default-model aggregator stages for edge targets missing from ``stages``.
+
+    The auto dispatcher sometimes emits ``edges`` referencing an
+    aggregator/merge stage it forgot to include in the ``stages`` list
+    (observed: ``edges [[worker_1, aggregator], [worker_2, aggregator]]``
+    with a worker-only stages list — CH-GAP-044, skill pitfall #6).  Before
+    this repair the phantom edge made ``terminals()`` treat every worker as
+    an edge source, so the missing-aggregator repair found no terminal
+    workers and raised, and the entire dispatcher design was discarded for
+    the generic 1-worker fallback (``trace.source=fallback``, invisible to
+    the user).  Instead of falling back, keep the dispatcher's worker design
+    and inject the referenced stage with the default aggregator model.
+    """
+    dag = result.formation
+    ids = set(dag.stage_ids())
+    missing = sorted({tgt for _, tgt in dag.edges if tgt not in ids})
+    if not missing:
+        return
+    model = config.defaults.default_aggregator if config is not None else "default"
+    for tgt in missing:
+        sources = [src for src, t in dag.edges if t == tgt and src in ids]
+        dag.stages.append(
+            Stage(id=tgt, kind="aggregator", model=model, depends_on=list(sources))
+        )
+    if not result.aggregator_instructions:
+        result.aggregator_instructions = (
+            "Merge the worker outputs into a single, coherent final answer "
+            "for the user's request."
+        )
+    n = len(missing)
+    result.dispatch_note = (
+        f"repaired: injected aggregator stage(s) {', '.join(missing)} "
+        f"referenced by dispatcher edges but missing from stages "
+        f"({n} edge target{'s' if n != 1 else ''})"
+    )
+    log.info("dispatch_repaired_missing_edge_targets", injected=missing)
 
 
 def _repair_missing_aggregator(
