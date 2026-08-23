@@ -74,6 +74,32 @@ jobs:
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
+  packaging-smoke:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheel
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip build
+          .venv/bin/python -m build --wheel
+
+      - name: Bare install + smoke (CH-GAP-041 gate)
+        run: |
+          python -m venv /tmp/smoke-venv
+          /tmp/smoke-venv/bin/pip install --upgrade pip
+          /tmp/smoke-venv/bin/pip install dist/*.whl
+          /tmp/smoke-venv/bin/python -c "from chimera import Engine; print('import OK')"
+          /tmp/smoke-venv/bin/chimera --help >/dev/null
+          echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' | /tmp/smoke-venv/bin/chimera-mcp 2>/dev/null | grep -m1 '"jsonrpc":"2.0"' | grep -q '"serverInfo"' && echo 'mcp handshake OK'
+
   publish:
     needs: [lint, test]
     runs-on: ubuntu-latest

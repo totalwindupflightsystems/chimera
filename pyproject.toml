@@ -34,6 +34,13 @@ dependencies = [
     "httpx2>=2.0",
     "structlog>=24.0",
     "jsonschema>=4.0",
+    # Console-script deps live in the BASE package (CH-GAP-041): the
+    # [project.scripts] entry points ship with a bare install, so click/rich/mcp
+    # must be present without extras — otherwise `chimera --help` and the
+    # chimera-mcp handshake crash on a bare wheel.
+    "click>=8.0",
+    "rich>=13.0",
+    "mcp>=1.0.0,<2.0",
 ]
 
 [project.urls]
