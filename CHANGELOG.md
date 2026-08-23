@@ -2,6 +2,26 @@
 
 All notable changes to Chimera will be documented in this file.
 
+## [0.2.1] — 2026-08-23
+
+### Fixed
+
+- **Bare install works again** (CH-GAP-026/041): `from chimera import Engine`
+  no longer crashes with `ModuleNotFoundError: fastapi` (lazy web imports),
+  and the `chimera` / `chimera-mcp` console scripts work on a bare wheel
+  install (click/rich/mcp moved into base dependencies).
+- **`stream:true` is rejected with HTTP 400 `stream_not_supported`**
+  (CH-GAP-030) instead of silently returning a non-stream completion.
+- **`max_tokens` is honored** (CH-GAP-031) — no more 3548-token essays when
+  `max_tokens:1` is requested.
+- **Unknown models return HTTP 404 `model_not_found`** (CH-GAP-027) instead
+  of silently substituting another model.
+- **Server default port is 8765** (CH-GAP-038).
+- **Health endpoints expose the running git commit** (CH-GAP-039) so a
+  stale deployment is visible (`/v1/health` → `details.commit`).
+- **CI packaging smoke gate** (CH-GAP-041): fresh venv + bare wheel install
+  → import + `chimera --help` + `chimera-mcp` initialize handshake.
+
 ## [0.1.0] — 2026-06-18
 
 ### Added
