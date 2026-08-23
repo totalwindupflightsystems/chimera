@@ -63,6 +63,15 @@ class Defaults(BaseModel):
     lock_dispatcher: bool = False
     lock_aggregator: bool = False
 
+    @classmethod
+    def empty(cls) -> "Defaults":
+        """A placeholder defaults block for config-less operation (CH-GAP-041)."""
+        return cls(
+            dispatcher="",
+            default_worker="",
+            default_aggregator="",
+        )
+
 
 class FormationPreset(BaseModel):
     """A named formation template.

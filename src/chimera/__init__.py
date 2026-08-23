@@ -55,7 +55,7 @@ def __getattr__(name: str) -> _Any:
 # Single source of truth for the version: pyproject.toml (via installed dist
 # metadata). The fallback only fires for source-tree runs where the
 # ``chimera-deliberation`` dist metadata is missing.
-_FALLBACK_VERSION = "0.2.0"
+_FALLBACK_VERSION = "0.2.1"
 
 try:
     __version__ = _dist_version("chimera-deliberation")

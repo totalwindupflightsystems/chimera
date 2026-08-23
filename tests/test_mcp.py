@@ -110,6 +110,27 @@ def test_mcp_run_with_explicit_config_path(tmp_path) -> None:
     fake_server.run.assert_called_once()
 
 
+def test_mcp_run_tolerates_missing_config(tmp_path, monkeypatch) -> None:
+    """Bare installs have no chimera.yaml — the handshake must still work (CH-GAP-041).
+
+    ``run()`` with no config file anywhere falls back to an empty default
+    config instead of crashing with FileNotFoundError.
+    """
+    from chimera.config import ChimeraConfig
+
+    fake_server = MagicMock(spec=FastMCP)
+    fake_server.run = MagicMock()
+    monkeypatch.chdir(tmp_path)  # no chimera.yaml in cwd or any parent
+    with patch("chimera.mcp.server.build_server", return_value=fake_server) as build_mock:
+        run(config_path=None, parse_argv=False)
+
+    build_mock.assert_called_once()
+    cfg_arg = build_mock.call_args.args[0]
+    assert isinstance(cfg_arg, ChimeraConfig)
+    assert cfg_arg.defaults.dispatcher == ""
+    fake_server.run.assert_called_once()
+
+
 def test_mcp_run_falls_back_to_sys_argv(tmp_path) -> None:
     """When ``config_path`` is None and ``sys.argv[1]`` is set, it is used as the path."""
     cfg_file = tmp_path / "alt-chimera.yaml"

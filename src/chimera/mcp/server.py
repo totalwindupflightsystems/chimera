@@ -14,7 +14,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from chimera import __version__
-from chimera.config import ChimeraConfig, load_config
+from chimera.config import ChimeraConfig, Defaults, load_config
 from chimera.engine import Engine
 from chimera.gateway import LiteLLMGateway
 from chimera.observability import configure_logging
@@ -127,7 +127,15 @@ def run(config_path: str | None = None, parse_argv: bool = True) -> None:
             if not arg.startswith("-"):
                 config_path = arg
                 break
-    config = load_config(config_path)
+    try:
+        config = load_config(config_path)
+    except FileNotFoundError:
+        # Bare installs have no chimera.yaml (CH-GAP-041): the MCP
+        # initialize handshake must still answer. Fall back to a default
+        # config — tool calls then fail with a clear no-providers error
+        # instead of crashing at handshake time.
+        config = ChimeraConfig(defaults=Defaults.empty())
+        configure_logging(config.observability)
     server = build_server(config)
     server.run()
 
