@@ -433,3 +433,41 @@ tasks:
   status: complete
   created_at: '2026-08-20T16:55:55.765893+00:00'
   completed_at: '2026-08-20T16:58:03.235034+00:00'
+- id: ch-gap-041-bare-wheel-console-scripts
+  title: Bare install ships crashing console scripts
+  criteria:
+  - 'Fresh venv + bare wheel install: chimera --help exits 0 AND chimera-mcp answers
+    an initialize handshake'
+  status: complete
+  created_at: '2026-08-23T10:23:08.615393+00:00'
+  completed_at: '2026-08-23T10:55:26.079376+00:00'
+- id: ch-gap-039-live-8765-deploy-staleness
+  title: Live 8765 deployment staleness
+  criteria:
+  - POST :8765/v1/chat/completions stream:true -> 400 stream_not_supported AND max_tokens:1
+    -> answer <=50 tokens AND /health (or /v1/health) exposes the running git commit
+  status: complete
+  created_at: '2026-08-23T10:23:08.952073+00:00'
+  completed_at: '2026-08-23T10:53:23.697315+00:00'
+- id: ch-gap-044-dispatcher-aggregator-repair
+  title: 'CH-GAP-044: dispatcher DAG undefined-aggregator fallback repair'
+  criteria:
+  - 3 consecutive auto deliberations on a fresh wheel produce source=auto, OR a fallback
+    run shows an injected/repair aggregator stage in the trace
+  - When the dispatcher emits DAG edges referencing an aggregator/merge stage absent
+    from stages, the engine injects a default-model aggregator stage (or retries dispatch
+    once) instead of silently falling back
+  - The CLI trace surfaces the degradation prominently when fallback occurs
+  status: complete
+  created_at: '2026-08-23T10:52:54.368564+00:00'
+  completed_at: '2026-08-23T11:04:55.582986+00:00'
+- id: ch-gap-040-pypi-release
+  title: 'CH-GAP-040: publish 0.2.1 with Aug fixes + release gate'
+  criteria:
+  - Fresh venv + pip install chimera-deliberation from PyPI -> import OK AND chimera
+    --help exits 0
+  - A release gate exists that builds the artifact-to-be-published and smoke-tests
+    it (bare import + chimera --help + stream:true 400)
+  status: complete
+  created_at: '2026-08-23T10:55:25.989051+00:00'
+  completed_at: '2026-08-23T11:04:55.617640+00:00'
