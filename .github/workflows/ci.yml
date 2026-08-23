@@ -100,6 +100,31 @@ jobs:
           /tmp/smoke-venv/bin/chimera --help >/dev/null
           echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' | /tmp/smoke-venv/bin/chimera-mcp 2>/dev/null | grep -m1 '"jsonrpc":"2.0"' | grep -q '"serverInfo"' && echo 'mcp handshake OK'
 
+      - name: Server smoke — stream:true 400 (CH-GAP-040 gate)
+        run: |
+          WHEEL=$(ls dist/*.whl | head -1)
+          /tmp/smoke-venv/bin/pip install "${WHEEL}[server]"
+          mkdir -p /tmp/gate-cfg
+          cat > /tmp/gate-cfg/chimera.yaml <<'YAML'
+          server:
+            port: 8899
+            host: 127.0.0.1
+          defaults:
+            dispatcher: "auto"
+            default_worker: "auto"
+            default_aggregator: "auto"
+          YAML
+          cd /tmp/gate-cfg
+          CHIMERA_CONFIG=/tmp/gate-cfg/chimera.yaml /tmp/smoke-venv/bin/chimera serve --port 8899 &
+          SERVE_PID=$!
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /tmp/stream_resp.json -w '%{http_code}' -X POST localhost:8899/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"auto","messages":[{"role":"user","content":"hi"}],"stream":true}' || true)
+            [ "$code" = "400" ] && break
+            sleep 1
+          done
+          kill $SERVE_PID 2>/dev/null || true
+          [ "$code" = "400" ] && grep -q 'stream_not_supported' /tmp/stream_resp.json && echo 'stream:true -> 400 OK' || (echo 'stream gate FAILED'; exit 1)
+
   publish:
     needs: [lint, test]
     runs-on: ubuntu-latest
