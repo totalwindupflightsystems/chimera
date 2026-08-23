@@ -64,7 +64,7 @@ class Defaults(BaseModel):
     lock_aggregator: bool = False
 
     @classmethod
-    def empty(cls) -> "Defaults":
+    def empty(cls) -> Defaults:
         """A placeholder defaults block for config-less operation (CH-GAP-041)."""
         return cls(
             dispatcher="",
