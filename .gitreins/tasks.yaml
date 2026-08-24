@@ -471,3 +471,13 @@ tasks:
   status: complete
   created_at: '2026-08-23T10:55:25.989051+00:00'
   completed_at: '2026-08-23T11:04:55.617640+00:00'
+- id: ch-gap-048-live-smoke
+  title: Live deployment smoke test (CH-GAP-048)
+  criteria:
+  - scripts/smoke_live.py exists and is documented in AGENTS.md as the live smoke
+    command
+  - The documented command runs a live deliberation against the deployed service and
+    returns a merged answer or a clear actionable failure
+  status: complete
+  created_at: '2026-08-24T22:18:00.779141+00:00'
+  completed_at: '2026-08-24T22:18:45.555876+00:00'
