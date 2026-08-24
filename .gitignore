@@ -18,6 +18,7 @@ reports/
 # Hilo — local cache files (rebuildable)
 .vfs/graph/graph.db
 .vfs/graph/graph.db.wal
+.vfs/graph/edges.jsonl
 .vfs/graph/.last_warm
 
 # GitReins verdict history (rebuildable)

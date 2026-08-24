@@ -27,7 +27,7 @@ src/chimera/
   web/              — Web UI (SSE, session, trace viz)
   cli/              — CLI entry point
 tests/
-  unit/             — Unit tests
+  test_*.py         — Unit tests (flat in tests/, with __init__.py + conftest.py)
   integration/      — Integration tests
   compat/           — Compatibility tests
 ```
