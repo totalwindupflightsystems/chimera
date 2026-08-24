@@ -67,6 +67,25 @@ Health endpoints now expose the running git commit (`/health`,
 `git rev-parse --short HEAD` to prove the deployed process matches the
 checkout. Foreman light-audits do exactly this check on every tick.
 
+### Live smoke test (one command, end-to-end)
+
+`/v1/health` saying "alive" does NOT prove a deliberation works — provider
+billing, auth, or format regressions (INT-ZAI-001 class) only surface on a
+real call. Run the live smoke test after every deploy (and any time you
+suspect the deployment):
+
+```bash
+python scripts/smoke_live.py            # localhost:8765, formation=simple
+python scripts/smoke_live.py --formation auto   # full dispatcher path
+CHIMERA_API_KEY=... python scripts/smoke_live.py  # if auth is enabled
+```
+
+It checks liveness + running commit (warns if the deployed commit diverges
+from local HEAD), probes `/v1/health`, then POSTs a real `/v1/deliberate`
+and prints the merged answer. Exit 0 = merged answer received; exit 1 =
+failure with an actionable message (auth/formation/busy/provider hints);
+exit 2 = usage error. Stdlib-only, no extra dependencies.
+
 ---
 
 ## GitReins Quality Harness (MANDATORY)
