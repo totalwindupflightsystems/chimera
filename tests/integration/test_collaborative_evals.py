@@ -38,19 +38,42 @@ TIMEOUT = 180.0  # These are complex tasks — allow 3 min
 # weakening any assertion.
 
 
+def _is_validation_failure_object(response: httpx.Response) -> bool:
+    """True when a 200 body's answer is the aggregator's validation-failure
+    object (``{"passed": False, "errors": [...]}``).
+
+    This shape is NEVER a legitimate deliberation answer — it means a provider
+    transiently degraded and the aggregator's structured-output validation
+    rejected the output. Retrying is always safe, with or without
+    ``output_schema`` in the payload: the CI flake hit the NON-schema
+    static-website test with exactly this body (the aggregator ran its
+    validation path regardless of the request's schema).
+    """
+    if response.status_code != 200:
+        return False
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    answer = body.get("answer") if isinstance(body, dict) else None
+    if not isinstance(answer, str):
+        return False
+    try:
+        parsed = _json.loads(answer)
+    except _json.JSONDecodeError:
+        return False
+    return isinstance(parsed, dict) and parsed.get("passed") is False
+
+
 def _is_degraded_schema_answer(response: httpx.Response) -> bool:
-    """True when a 200 body signals transient structured-output degradation.
+    """True when a 200 body's answer is neither JSON nor HTML.
 
-    With ``output_schema`` set, a healthy 200 answer is either a JSON object
-    (the schema fields) or a plain-HTML fallback the test asserts directly.
-    Two degraded shapes are retryable instead of hard test failures:
-
-    * ``{"passed": False, "errors": [...]}`` — the aggregator's structured-
-      output validation failed because a provider transiently degraded the
-      output (the CI "Missing 'html' field" flake).
-    * an answer that parses to neither JSON nor HTML — truncated or
-      malformed JSON blocks (the CI "JSON parse failure" flake: an
-      unhandled JSONDecodeError at the test's own json.loads).
+    Only meaningful for schema payloads, where the answer must be a JSON
+    object (the schema fields) or a plain-HTML fallback the test asserts
+    directly; a truncated or malformed block (the CI "JSON parse failure"
+    flake: an unhandled JSONDecodeError at the test's own json.loads) is
+    retryable. NOT applied to non-schema payloads — the math-proof test's
+    prose answer would match the no-HTML heuristic and burn all retries.
     """
     if response.status_code != 200:
         return False
@@ -72,7 +95,7 @@ def _is_degraded_schema_answer(response: httpx.Response) -> bool:
             except _json.JSONDecodeError:
                 parsed = None
     if isinstance(parsed, dict):
-        return parsed.get("passed") is False
+        return False  # validation-failure objects handled by _is_validation_failure_object
     lower = answer.lower()
     return "<html" not in lower and "<!doctype" not in lower
 
@@ -89,11 +112,11 @@ async def _post_with_retry(
     """POST *payload*, retrying transient provider/aggregator failures.
 
     Retryable conditions: ``httpx.TimeoutException`` (ReadTimeout /
-    ConnectTimeout / ...), 5xx responses, and — for schema payloads — a 200
-    whose answer is degraded structured output (``{"passed": False}`` or an
-    unparseable non-HTML answer; see
-    :func:`_is_degraded_schema_answer`). Anything else (2xx/3xx/4xx) is
-    returned immediately.
+    ConnectTimeout / ...), 5xx responses, a 200 whose answer is the
+    aggregator's validation-failure object (``{"passed": False}`` — always
+    retried, schema or not), and — for schema payloads — a 200 whose answer
+    is neither JSON nor HTML (see :func:`_is_degraded_schema_answer`).
+    Anything else (2xx/3xx/4xx) is returned immediately.
 
     Raises the last timeout exception, or an ``AssertionError`` summarizing
     the last HTTP failure, once *attempts* are exhausted.
@@ -109,7 +132,10 @@ async def _post_with_retry(
             last_detail = f"timeout on attempt {attempt}/{attempts}: {exc!r}"
         else:
             last_error = None
-            degraded = check_degraded and _is_degraded_schema_answer(r)
+            degraded = (
+                _is_validation_failure_object(r)
+                or (check_degraded and _is_degraded_schema_answer(r))
+            )
             if r.status_code < 500 and not degraded:
                 return r
             why = f"HTTP {r.status_code}" if r.status_code >= 500 else "degraded"
