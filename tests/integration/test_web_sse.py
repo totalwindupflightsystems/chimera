@@ -30,6 +30,93 @@ pytestmark = [pytest.mark.integration, pytest.mark.slow]
 TIMEOUT = 180.0  # generous — real LLM calls take 30-120s, DeepSeek occasionally >120s
 
 
+# ── Transient-failure retry (INT-CI-003) ───────────────────────────────────
+# These tests hit real provider APIs through the live server: latency spikes
+# surface as httpx.ReadTimeout on POST /web/sessions/{sid}/chat, and the
+# aggregator occasionally returns a degraded validation object instead of an
+# answer. A short dependency-free retry with backoff absorbs the transient
+# failures without weakening any assertion. (Same pattern as INT-CI-002 in
+# test_collaborative_evals.py.)
+
+
+def _is_validation_failure_object(response: httpx.Response) -> bool:
+    """True when a 200 body's answer is the aggregator's validation-failure
+    object (``{"passed": False, "errors": [...]}``).
+
+    This shape is NEVER a legitimate deliberation answer — it means a provider
+    transiently degraded and the aggregator's structured-output validation
+    rejected the output. Chat payloads here carry no ``output_schema``, but
+    the detector still applies unconditionally: the aggregator runs its
+    validation path regardless of the request's schema (proven on the
+    NON-schema static-website eval in INT-CI-002).
+    """
+    if response.status_code != 200:
+        return False
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    answer = body.get("answer") if isinstance(body, dict) else None
+    if not isinstance(answer, str):
+        return False
+    try:
+        parsed = json.loads(answer)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(parsed, dict) and parsed.get("passed") is False
+
+
+async def _post_with_retry(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    payload: dict,
+    attempts: int = 3,
+    backoff: float = 5.0,
+    timeout: float = TIMEOUT,
+) -> httpx.Response:
+    """POST *payload*, retrying transient provider/aggregator failures.
+
+    Retryable conditions: ``httpx.TimeoutException`` (ReadTimeout /
+    ConnectTimeout / ...), 5xx responses, and a 200 whose answer is the
+    aggregator's validation-failure object (``{"passed": False}`` — retried
+    unconditionally; these chat payloads carry no ``output_schema``).
+    Anything else (2xx/3xx/4xx) is returned immediately.
+
+    Do NOT use for tests that assert strict per-session turn semantics
+    (see ``test_multi_turn_chat_response_includes_turn_number``): a
+    timeout-then-retry double-submits and shifts the turn numbers under
+    assertion.
+
+    Raises the last timeout exception, or an ``AssertionError`` summarizing
+    the last HTTP failure, once *attempts* are exhausted.
+    """
+    last_error: Exception | None = None
+    last_detail = ""
+    for attempt in range(1, attempts + 1):
+        try:
+            r = await client.post(url, json=payload, timeout=timeout)
+        except httpx.TimeoutException as exc:
+            last_error = exc
+            last_detail = f"timeout on attempt {attempt}/{attempts}: {exc!r}"
+        else:
+            last_error = None
+            degraded = _is_validation_failure_object(r)
+            if r.status_code < 500 and not degraded:
+                return r
+            why = f"HTTP {r.status_code}" if r.status_code >= 500 else "degraded"
+            last_detail = (
+                f"{why} on attempt {attempt}/{attempts}: {r.text[:300]}"
+            )
+        if attempt < attempts:
+            await asyncio.sleep(backoff * attempt)
+    if last_error is not None:
+        raise last_error
+    raise AssertionError(
+        f"POST {url} still failing after {attempts} attempts — {last_detail}"
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  Helpers
 # ═══════════════════════════════════════════════════════════════════════════
@@ -121,14 +208,14 @@ async def test_sse_receives_all_events(live_server: str) -> None:
             await asyncio.sleep(0.5)
 
             chat_task = tg.create_task(
-                client.post(
+                _post_with_retry(
+                    client,
                     f"{live_server}/web/sessions/{sid}/chat",
-                    json={
+                    payload={
                         "prompt": "What is 3+4? Just the number.",
                         "formation": "simple",
                         "allowed_models": BUDGET_MODELS,
                     },
-                    timeout=httpx.Timeout(TIMEOUT),
                 )
             )
 
@@ -219,14 +306,14 @@ async def test_sse_multiple_clients_no_crash(live_server: str) -> None:
             await asyncio.sleep(0.5)
 
             chat = tg.create_task(
-                client.post(
+                _post_with_retry(
+                    client,
                     f"{live_server}/web/sessions/{sid}/chat",
-                    json={
+                    payload={
                         "prompt": "What is 6+7? Just the number.",
                         "formation": "simple",
                         "allowed_models": BUDGET_MODELS,
                     },
-                    timeout=httpx.Timeout(TIMEOUT),
                 )
             )
 
@@ -268,14 +355,14 @@ async def test_sse_dag_designed_has_mermaid(live_server: str) -> None:
             )
             await asyncio.sleep(0.5)
             chat_task = tg.create_task(
-                client.post(
+                _post_with_retry(
+                    client,
                     f"{live_server}/web/sessions/{sid}/chat",
-                    json={
+                    payload={
                         "prompt": "What is 1+2? Just the number.",
                         "formation": "simple",
                         "allowed_models": BUDGET_MODELS,
                     },
-                    timeout=httpx.Timeout(TIMEOUT),
                 )
             )
 
@@ -315,14 +402,14 @@ async def test_sse_deliberation_done_has_all_metrics(live_server: str) -> None:
             )
             await asyncio.sleep(0.5)
             chat_task = tg.create_task(
-                client.post(
+                _post_with_retry(
+                    client,
                     f"{live_server}/web/sessions/{sid}/chat",
-                    json={
+                    payload={
                         "prompt": "What is 9+8? Just the number.",
                         "formation": "simple",
                         "allowed_models": BUDGET_MODELS,
                     },
-                    timeout=httpx.Timeout(TIMEOUT),
                 )
             )
 
@@ -438,6 +525,9 @@ async def test_multi_turn_chat_response_includes_turn_number(live_server: str) -
     async with httpx.AsyncClient() as client:
         sid = _create_session(live_server)
 
+        # NOTE: intentionally NOT retried on transient failures (INT-CI-003):
+        # a timeout-then-retry would double-submit and return turn 2 where
+        # turn 1 is expected — strict per-session turn semantics.
         for expected_turn in (1, 2):
             r = await client.post(
                 f"{live_server}/web/sessions/{sid}/chat",
@@ -470,14 +560,14 @@ async def test_chat_response_includes_mermaid_and_trace(live_server: str) -> Non
     """
     async with httpx.AsyncClient() as client:
         sid = _create_session(live_server)
-        r = await client.post(
+        r = await _post_with_retry(
+            client,
             f"{live_server}/web/sessions/{sid}/chat",
-            json={
+            payload={
                 "prompt": "What is 10+10? Just the number.",
                 "formation": "simple",
                 "allowed_models": BUDGET_MODELS,
             },
-            timeout=httpx.Timeout(TIMEOUT),
         )
         assert r.status_code == 200
         data = r.json()
@@ -552,14 +642,14 @@ async def test_sse_event_data_is_valid_json(live_server: str) -> None:
             )
             await asyncio.sleep(0.5)
             chat_task = tg.create_task(
-                client.post(
+                _post_with_retry(
+                    client,
                     f"{live_server}/web/sessions/{sid}/chat",
-                    json={
+                    payload={
                         "prompt": "What is 1+1? Just number.",
                         "formation": "simple",
                         "allowed_models": BUDGET_MODELS,
                     },
-                    timeout=httpx.Timeout(TIMEOUT),
                 )
             )
 
@@ -664,14 +754,14 @@ async def test_sse_during_active_deliberation(live_server: str) -> None:
         # Start deliberation, then open SSE mid-flight
         async with asyncio.TaskGroup() as tg:
             chat_task = tg.create_task(
-                client.post(
+                _post_with_retry(
+                    client,
                     f"{live_server}/web/sessions/{sid}/chat",
-                    json={
+                    payload={
                         "prompt": "What is 15+27? Just the number.",
                         "formation": "simple",
                         "allowed_models": BUDGET_MODELS,
                     },
-                    timeout=httpx.Timeout(TIMEOUT),
                 )
             )
             # Wait a few seconds for deliberation to start, then connect SSE
@@ -722,14 +812,14 @@ async def test_sse_event_ordering_guaranteed(live_server: str) -> None:
             )
             await asyncio.sleep(0.5)
             chat_task = tg.create_task(
-                client.post(
+                _post_with_retry(
+                    client,
                     f"{live_server}/web/sessions/{sid}/chat",
-                    json={
+                    payload={
                         "prompt": "What is 5+5? Just the number.",
                         "formation": "simple",
                         "allowed_models": BUDGET_MODELS,
                     },
-                    timeout=httpx.Timeout(TIMEOUT),
                 )
             )
 
@@ -767,14 +857,14 @@ async def test_sse_subscriber_session_isolation(live_server: str) -> None:
             )
             await asyncio.sleep(0.5)
             chat_task = tg.create_task(
-                client.post(
+                _post_with_retry(
+                    client,
                     f"{live_server}/web/sessions/{sid_a}/chat",
-                    json={
+                    payload={
                         "prompt": "What is 9+9? Just the number.",
                         "formation": "simple",
                         "allowed_models": BUDGET_MODELS,
                     },
-                    timeout=httpx.Timeout(TIMEOUT),
                 )
             )
 
@@ -811,14 +901,14 @@ async def test_sse_events_never_duplicated(live_server: str) -> None:
             )
             await asyncio.sleep(0.5)
             chat_task = tg.create_task(
-                client.post(
+                _post_with_retry(
+                    client,
                     f"{live_server}/web/sessions/{sid}/chat",
-                    json={
+                    payload={
                         "prompt": "What is 3+3? Just the number.",
                         "formation": "simple",
                         "allowed_models": BUDGET_MODELS,
                     },
-                    timeout=httpx.Timeout(TIMEOUT),
                 )
             )
 
@@ -851,14 +941,14 @@ async def test_chat_response_trace_includes_elapsed_ms(live_server: str) -> None
     """
     async with httpx.AsyncClient() as client:
         sid = _create_session(live_server)
-        r = await client.post(
+        r = await _post_with_retry(
+            client,
             f"{live_server}/web/sessions/{sid}/chat",
-            json={
+            payload={
                 "prompt": "What is 7+7? Just the number.",
                 "formation": "simple",
                 "allowed_models": BUDGET_MODELS,
             },
-            timeout=httpx.Timeout(TIMEOUT),
         )
         assert r.status_code == 200
         data = r.json()
@@ -900,14 +990,14 @@ async def test_sse_two_consecutive_deliberations(live_server: str) -> None:
                 )
                 await asyncio.sleep(0.5)
                 chat_task = tg.create_task(
-                    client.post(
+                    _post_with_retry(
+                        client,
                         f"{live_server}/web/sessions/{sid}/chat",
-                        json={
+                        payload={
                             "prompt": f"{prompt} Just the number.",
                             "formation": "simple",
                             "allowed_models": BUDGET_MODELS,
                         },
-                        timeout=httpx.Timeout(TIMEOUT),
                     )
                 )
 
@@ -937,14 +1027,14 @@ async def test_chat_special_characters_prompt(live_server: str) -> None:
     """
     async with httpx.AsyncClient() as client:
         sid = _create_session(live_server)
-        r = await client.post(
+        r = await _post_with_retry(
+            client,
             f"{live_server}/web/sessions/{sid}/chat",
-            json={
+            payload={
                 "prompt": 'What is 2+2? Unicode: café • naïveté — "quoted" \'single\' <tag>',
                 "formation": "simple",
                 "allowed_models": BUDGET_MODELS,
             },
-            timeout=httpx.Timeout(TIMEOUT),
         )
         assert r.status_code == 200
         data = r.json()
@@ -972,14 +1062,14 @@ async def test_sse_emoji_in_prompt(live_server: str) -> None:
             )
             await asyncio.sleep(0.5)
             chat_task = tg.create_task(
-                client.post(
+                _post_with_retry(
+                    client,
                     f"{live_server}/web/sessions/{sid}/chat",
-                    json={
+                    payload={
                         "prompt": "What is 1+1? 🦁🔥 Just the number.",
                         "formation": "simple",
                         "allowed_models": BUDGET_MODELS,
                     },
-                    timeout=httpx.Timeout(TIMEOUT),
                 )
             )
 
@@ -1009,14 +1099,14 @@ async def test_sse_formation_affects_dag(live_server: str) -> None:
 
         for formation in ("simple", "debate", "audit"):
             sid = _create_session(live_server)
-            r = await client.post(
+            r = await _post_with_retry(
+                client,
                 f"{live_server}/web/sessions/{sid}/chat",
-                json={
+                payload={
                     "prompt": "What is 10+10? Just the number.",
                     "formation": formation,
                     "allowed_models": BUDGET_MODELS,
                 },
-                timeout=httpx.Timeout(TIMEOUT),
             )
             assert r.status_code == 200
             mermaids[formation] = r.json()["mermaid"]
@@ -1051,14 +1141,14 @@ async def test_concurrent_chat_requests_same_session(live_server: str) -> None:
         sid = _create_session(live_server)
 
         async def send(prompt: str) -> dict:
-            r = await client.post(
+            r = await _post_with_retry(
+                client,
                 f"{live_server}/web/sessions/{sid}/chat",
-                json={
+                payload={
                     "prompt": prompt,
                     "formation": "simple",
                     "allowed_models": BUDGET_MODELS,
                 },
-                timeout=httpx.Timeout(TIMEOUT),
             )
             assert r.status_code == 200
             return r.json()
