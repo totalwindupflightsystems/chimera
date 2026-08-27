@@ -491,3 +491,13 @@ tasks:
   status: complete
   created_at: '2026-08-27T19:19:22.686071+00:00'
   completed_at: '2026-08-27T20:33:09.292034+00:00'
+- id: INT-CI-003
+  title: Apply INT-CI-002 retry pattern to SSE chat integration tests (test_web_sse.py)
+  criteria:
+  - Direct chat POSTs in tests/integration/test_web_sse.py retry httpx.TimeoutException
+    and 5xx responses (attempts=3, backoff) instead of failing on first latency spike
+  - test_chat_special_characters_prompt uses the retry path
+  - Unit suite stays green and guard passes
+  status: complete
+  created_at: '2026-08-27T22:55:14.143600+00:00'
+  completed_at: '2026-08-27T23:02:25.517954+00:00'
