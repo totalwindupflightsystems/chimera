@@ -428,6 +428,32 @@ def find_config_path(start: Path | str | None = None) -> Path:
     )
 
 
+def find_example_config_path(start: Path | str | None = None) -> Path:
+    """Locate the shipped ``chimera.yaml.example`` bootstrap template.
+
+    Resolution order:
+    1. Walk up from ``start`` (default cwd) — covers repo checkouts and
+       any directory where the user already keeps a copy.
+    2. The wheel-shipped copy inside the installed package
+       (CH-GAP-049 force-include: ``chimera/chimera.yaml.example``), so
+       ``chimera config init`` works for bare pip installs in an empty dir.
+
+    Raises ``FileNotFoundError`` when the template cannot be found.
+    """
+    here = Path(start or os.getcwd()).resolve()
+    for candidate in [here, *here.parents]:
+        target = candidate / "chimera.yaml.example"
+        if target.is_file():
+            return target
+    pkg_copy = Path(__file__).resolve().parent / "chimera.yaml.example"
+    if pkg_copy.is_file():
+        return pkg_copy
+    raise FileNotFoundError(
+        "chimera.yaml.example not found — reinstall chimera-deliberation "
+        "to restore the template."
+    )
+
+
 def load_config(path: Path | str | None = None) -> ChimeraConfig:
     """Load and validate a Chimera config from YAML.
 
@@ -579,5 +605,6 @@ __all__ = [
     "ServerConfig",
     "DEFAULT_COST_RATES",
     "find_config_path",
+    "find_example_config_path",
     "load_config",
 ]

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +13,7 @@ pytest.importorskip("click")
 from click.testing import CliRunner  # noqa: E402
 
 from chimera.cli.main import main  # noqa: E402
+from chimera.config import load_config  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Existing tests (unchanged)
@@ -510,3 +513,99 @@ def test_cli_no_degradation_warning_when_clean(config_file, monkeypatch) -> None
     assert result.exit_code == 0, result.output
     assert "dispatch degraded" not in result.output
     assert "dispatch repaired" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# CH-GAP-050: config-less first-run — clean one-line error + `config init`
+# ---------------------------------------------------------------------------
+
+_CONFIGLESS_MSG = "No chimera.yaml found. Copy chimera.yaml.example to chimera.yaml."
+
+
+def _assert_configless_error(result) -> None:  # type: ignore[no-untyped-def]
+    """Fresh dir + config-needing command → one-line error, exit 2, no traceback."""
+    assert result.exit_code == 2, result.output
+    assert _CONFIGLESS_MSG in result.output
+    assert "Traceback" not in result.output
+
+
+def _fresh_dir(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """chdir to an empty dir with no chimera.yaml and no CHIMERA_CONFIG env."""
+    monkeypatch.delenv("CHIMERA_CONFIG", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+
+def test_cli_models_missing_config_one_line_error(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-050: `chimera models` with no chimera.yaml → clean one-line error."""
+    _fresh_dir(monkeypatch, tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(main, ["models"])
+    _assert_configless_error(result)
+
+
+def test_cli_serve_missing_config_one_line_error(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-050: `chimera serve` with no chimera.yaml → clean one-line error."""
+    _fresh_dir(monkeypatch, tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(main, ["serve"])
+    _assert_configless_error(result)
+
+
+def test_cli_formations_missing_config_one_line_error(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-050: `chimera formations` with no chimera.yaml → clean one-line error."""
+    _fresh_dir(monkeypatch, tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(main, ["formations"])
+    _assert_configless_error(result)
+
+
+def test_cli_run_missing_config_one_line_error(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-050: bare prompt (run) with no chimera.yaml → clean one-line error."""
+    _fresh_dir(monkeypatch, tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(main, ["what is 2+2?"])
+    _assert_configless_error(result)
+
+
+def test_cli_config_init_creates_working_config(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-050: `chimera config init` copies the example → load_config parses it.
+
+    The copy uses the repo-root/wheel-shipped ``chimera.yaml.example``, and the
+    resulting ``chimera.yaml`` must round-trip through ``load_config``.
+    """
+    example = Path(__file__).resolve().parent.parent / "chimera.yaml.example"
+    assert example.is_file(), "repo-root chimera.yaml.example must exist"
+    shutil.copyfile(example, tmp_path / "chimera.yaml.example")
+    monkeypatch.delenv("CHIMERA_CONFIG", raising=False)
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(main, ["config", "init"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "chimera.yaml").is_file()
+    cfg = load_config(tmp_path / "chimera.yaml")
+    assert cfg.defaults.dispatcher == "deepseek/deepseek-v4-flash"
+    assert "simple" in cfg.formations
+
+
+def test_cli_config_init_refuses_overwrite(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-050: existing chimera.yaml is not clobbered without --force."""
+    (tmp_path / "chimera.yaml.example").write_text("defaults: {}\n", encoding="utf-8")
+    (tmp_path / "chimera.yaml").write_text("existing: true\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(main, ["config", "init"])
+    assert result.exit_code == 2, result.output
+    assert "already exists" in result.output
+    assert "--force" in result.output
+    assert (tmp_path / "chimera.yaml").read_text() == "existing: true\n"
+
+
+def test_cli_config_init_force_overwrites(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """CH-GAP-050: --force replaces an existing chimera.yaml."""
+    (tmp_path / "chimera.yaml.example").write_text("defaults: {}\n", encoding="utf-8")
+    (tmp_path / "chimera.yaml").write_text("old: true\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(main, ["config", "init", "--force"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "chimera.yaml").read_text() == "defaults: {}\n"

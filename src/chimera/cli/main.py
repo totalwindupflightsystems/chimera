@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import sys
+from pathlib import Path
 from typing import Any
 
 import click
@@ -104,8 +106,19 @@ def _parse_json_opt(value: str | None, opt_name: str) -> Any:
 
 
 def _load_cfg(ctx: click.Context) -> ChimeraConfig:
+    """Load the config, failing with a clean one-line error when missing.
+
+    CH-GAP-050: a fresh dir with no ``chimera.yaml`` used to surface a raw
+    FileNotFoundError traceback from every config-needing command. Now the
+    missing-config case prints the actionable one-liner and exits 2
+    (``chimera config init`` is the remedy).
+    """
     config_path = ctx.obj.get("config_path") if ctx.obj else None
-    return load_config(config_path)
+    try:
+        return load_config(config_path)
+    except FileNotFoundError as exc:
+        console.print(f"[red]error:[/red] {exc}")
+        sys.exit(2)
 
 
 def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
@@ -113,11 +126,7 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
     if not prompt:
         click.echo(ctx.get_help())
         return
-    try:
-        config = _load_cfg(ctx)
-    except FileNotFoundError as exc:
-        console.print(f"[red]error:[/red] {exc}")
-        sys.exit(2)
+    config = _load_cfg(ctx)
     engine = Engine(config, LiteLLMGateway(config))
     # Only forward the new kwargs when they are actually set, so the default
     # call shape stays ``deliberate(prompt, formation)`` (backward compatible).
@@ -301,9 +310,13 @@ def serve(ctx: click.Context, host: str | None, port: int | None) -> None:
     """Run the REST API server."""
     import os as _os
 
+    # Load the config BEFORE importing the API server module: the config-less
+    # error must be the clean one-liner even on bare wheels where the
+    # [server] extra (fastapi/uvicorn) is not installed (CH-GAP-050).
+    config = _load_cfg(ctx)
+
     from chimera.api.server import run as run_api
 
-    config = _load_cfg(ctx)
     host = host or _os.environ.get("CHIMERA_HOST") or config.server.host
     port = port or int(_os.environ.get("CHIMERA_PORT", 0)) or config.server.port
     run_api(host, port)
@@ -319,6 +332,46 @@ def mcp(ctx: click.Context) -> None:
         ctx.obj.get("config_path") if ctx.obj else None,
         parse_argv=False,  # click owns argv; sys.argv[1] is 'mcp', not a path
     )
+
+
+@main.group()
+def config() -> None:
+    """Configuration helpers."""
+
+
+@config.command("init")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Overwrite an existing chimera.yaml.",
+)
+def config_init(force: bool) -> None:
+    """Bootstrap chimera.yaml from the shipped chimera.yaml.example.
+
+    CH-GAP-050: the first-run dead-end was that every config-needing
+    command crashed with a raw traceback when chimera.yaml was missing —
+    and the error's own remedy (\"Copy chimera.yaml.example to
+    chimera.yaml\") was impossible for pip users because the example file
+    was not in the wheel. This command performs the copy for them, using
+    the wheel-shipped template (CH-GAP-049 force-include) when no local
+    copy exists.
+    """
+    target = Path("chimera.yaml")
+    if target.exists() and not force:
+        console.print(
+            "[red]error:[/red] chimera.yaml already exists. "
+            "Use --force to overwrite it."
+        )
+        sys.exit(2)
+    from chimera.config import find_example_config_path
+
+    try:
+        example = find_example_config_path()
+    except FileNotFoundError as exc:
+        console.print(f"[red]error:[/red] {exc}")
+        sys.exit(2)
+    shutil.copyfile(example, target)
+    console.print(f"[green]Created {target}[/green] from {example}.")
 
 
 if __name__ == "__main__":

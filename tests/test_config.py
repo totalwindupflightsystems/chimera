@@ -10,10 +10,12 @@ import yaml
 from chimera.config import (
     DEFAULT_COST_RATES,
     ChimeraConfig,
+    Defaults,
     FormationPreset,
     ModelEntry,
     ServerConfig,
     find_config_path,
+    find_example_config_path,
     load_config,
 )
 
@@ -111,6 +113,67 @@ def test_find_config_path_walks_upwards(tmp_path: Path) -> None:
 def test_find_config_path_raises_when_missing(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         find_config_path(tmp_path)
+
+
+def test_find_config_path_missing_message_is_actionable(tmp_path: Path) -> None:
+    """CH-GAP-050: the missing-config error names the exact remedy."""
+    with pytest.raises(FileNotFoundError) as excinfo:
+        find_config_path(tmp_path)
+    assert (
+        "No chimera.yaml found. Copy chimera.yaml.example to chimera.yaml."
+        in str(excinfo.value)
+    )
+
+
+def test_defaults_empty_placeholder() -> None:
+    """CH-GAP-041/050: Defaults.empty() is the config-less fallback block."""
+    d = Defaults.empty()
+    assert d.dispatcher == ""
+    assert d.default_worker == ""
+    assert d.default_aggregator == ""
+
+
+def test_find_example_config_path_walks_up(tmp_path: Path) -> None:
+    """find_example_config_path finds a chimera.yaml.example up the tree."""
+    (tmp_path / "chimera.yaml.example").write_text("defaults: {}\n", encoding="utf-8")
+    nested = tmp_path / "a" / "b"
+    nested.mkdir(parents=True)
+    assert find_example_config_path(nested) == tmp_path / "chimera.yaml.example"
+
+
+def test_find_example_config_path_repo_root() -> None:
+    """The repo-root chimera.yaml.example is discoverable (CH-GAP-049/050)."""
+    repo_root = Path(__file__).resolve().parent.parent
+    assert (repo_root / "chimera.yaml.example").is_file()
+    assert find_example_config_path(repo_root) == repo_root / "chimera.yaml.example"
+
+
+def test_find_example_config_path_package_copy(tmp_path: Path, monkeypatch) -> None:
+    """Wheel-shipped copy inside the package dir is the last-resort source.
+
+    CH-GAP-049 force-includes chimera.yaml.example into the wheel at
+    ``chimera/chimera.yaml.example``; ``config init`` must find that copy
+    when no local example exists (bare pip install in an empty dir).
+    """
+    fake_pkg = tmp_path / "chimera"
+    fake_pkg.mkdir()
+    (fake_pkg / "chimera.yaml.example").write_text("defaults: {}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "chimera.config.__file__", str(fake_pkg / "__init__.py")
+    )
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert find_example_config_path(empty) == fake_pkg / "chimera.yaml.example"
+
+
+def test_find_example_config_path_missing(tmp_path: Path, monkeypatch) -> None:
+    """No local copy and no package copy → actionable FileNotFoundError."""
+    monkeypatch.setattr(
+        "chimera.config.__file__", str(tmp_path / "config.py")
+    )
+    with pytest.raises(FileNotFoundError) as excinfo:
+        find_example_config_path(tmp_path)
+    assert "chimera.yaml.example not found" in str(excinfo.value)
 
 
 def test_load_config_rejects_non_mapping(tmp_path: Path) -> None:
