@@ -71,7 +71,11 @@ pip install chimera-deliberation[server] # API server only
 Configure:
 
 ```bash
-cp chimera.yaml.example chimera.yaml
+chimera config init                    # pip/pipx installs — template ships in the wheel
+# Repo checkouts can instead copy the checked-in template:
+# cp chimera.yaml.example chimera.yaml
+# Missing template? Reinstall to restore it:
+# error: chimera.yaml.example not found — reinstall chimera-deliberation to restore the template.
 # add provider API keys — at minimum DEEPSEEK_API_KEY
 # (see the api_keys / providers sections of CONFIG.md)
 ```
