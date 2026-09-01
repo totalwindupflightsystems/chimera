@@ -95,3 +95,4 @@ CLI deliberation 17.7s). **Friction count:** 6.
 path finally works, but the two ways users actually get Chimera (the
 deployed server, the published package) both lag HEAD by weeks. 6 tasks
 added (CH-GAP-039..044). Cooldown 21600s → woken to 900s.
+2026-09-01 | PROMISING-BUT-ROUGH | 15s t2fs | friction 7 | 5 findings
