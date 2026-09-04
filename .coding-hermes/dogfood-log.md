@@ -97,3 +97,4 @@ deployed server, the published package) both lag HEAD by weeks. 6 tasks
 added (CH-GAP-039..044). Cooldown 21600s → woken to 900s.
 2026-09-01 | PROMISING-BUT-ROUGH | 15s t2fs | friction 7 | 5 findings
 2026-09-04 | PROMISING-BUT-ROUGH | 6s t2fs | friction 11 | 5 findings
+2026-09-04 (run B) | PROMISING-BUT-ROUGH | 18s t2fs (HEAD wheel path) | friction 4 | 6 findings | install: pypi=20s(dead-end)/headwheel=17s(ok) | bunker=SKIPPED (port-pool exhausted) | smoke=ok(live REST battery 5/5)

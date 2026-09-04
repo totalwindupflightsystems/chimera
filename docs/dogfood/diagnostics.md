@@ -272,3 +272,65 @@ cannot tell without reading `trace.source`. Frequency on this run: 50%.
    `board.db` is a DuckDB cache, gitignored.
 7. Trace trust: read `trace.source`; `DeliberationTrace` is pydantic —
    `model_dump()`.
+
+---
+
+# Diagnostic trail — 2026-09-04 run B (install legs + bunker skip)
+
+**Why the PyPI leg exists.** Chimera shipped broken packaging to users three
+times in August (fastapi bare-import crash CH-GAP-026; rich console-scripts
+crash CH-GAP-041; wheel missing chimera.yaml.example CH-GAP-049). Each fix
+was "PASS verified" against a locally-built wheel — and CH-GAP-040's 0.2.1
+release proved verification ≠ publication. Run B therefore tests the
+PUBLISHED artifact and the HEAD wheel separately, in fresh venvs:
+
+- PyPI 0.2.1, install 20s: import OK, --help OK, but the config story is
+  broken twice over — the wheel force-includes only chimera.yaml.docker
+  (pyproject force-include maps the example only in unreleased HEAD), and
+  `config init` does not exist as a command. The error message's own remedy
+  ("Copy chimera.yaml.example") is impossible → dead end.
+- HEAD 0.2.3 wheel, install 17s: example ships, `chimera config init`
+  writes a working 67,740-byte chimera.yaml, and a bare `chimera run` with
+  only DEEPSEEK_API_KEY returned a real merged answer.
+
+**Right way (today):** install from a HEAD-built wheel; `config init`;
+export the provider key; expect possible guardrail warnings from auto
+formation (see DF-CHIMERA-0906-3). REST quickstart against the supervised
+:8765 is the other verified path — its full contract battery passed live.
+
+**MCP root-cause trail (3 runs).** 09-01: tools/list+call → -32602 after a
+clean initialize (cause never pinned). 09-04 run A: loguru lines on stdout
+before the initialize response. 09-04 run B: pinned precisely with
+scripts/probe_mcp_stdio.py against the 0.2.3 wheel — stdout lines 1–2 are
+`provider_cache_hit` / `provider_discovery_done` info logs; the JSON-RPC
+initialize response is line 3. Conforming clients read line 1 and die. The
+fix must be structural (every sink → stderr + a packaging stdout-purity
+test), not another patch — three different proximate causes have now hit
+the same surface. Re-run anytime: `python3 scripts/probe_mcp_stdio.py
+<path-to-chimera-mcp>` and count how many stdout lines parse as JSON-RPC.
+
+**Deploy-drift forensics (recurrence #3).** `systemctl show chimera -p
+ActiveEnterTimestamp` + the `/health` commit field: process from Aug 28
+(b087769) vs HEAD 8a3d4ea = 30 commits. This run classified the delta:
+CLI/packaging/board-only — and live-verified the deployed REST contract
+anyway (stream 400 / max_tokens honored / 404 / real deliberation all
+correct). Lesson: the drift is now chronic because restart is manual;
+visibility (AGENTS.md procedure + /health commit) demonstrably does not
+prevent it — CH-GAP-039/047 closed twice and it recurred. Enforcement
+(a scheduler-driven deploy step) is the filed fix (DF-CHIMERA-0906-4),
+not a third reopen.
+
+**Bunker leg skip (SKIPPED-install-bunker).** bunkerd is active but its
+port pool is exhausted: spawn → "port range allocation: no free port ranges
+available (pool exhausted: 10 ranges)" (4th+ byte-identical recurrence;
+journal shows SpawnAgent 500s). Independently, ssh :22 to bunker-las-03
+times out while root SSH (bunker3-root alias) and ICMP work — partial
+network degradation. Chimera-side installability was still verified
+locally; what remains unproven is the bare-Debian no-toolchain-from-zero
+path. Infra fixes filed in DF-CHIMERA-0906-6 (bunkerd allocation
+recycling, sshd :22 reachability).
+
+**Run B evidence files** (ephemeral, /tmp/dogfood-chimera/):
+fresh-user-run.sh, live-rest-probe.sh, mcp-probe.sh, timed-install.sh,
+run-pypi021.out, run-head023.out, stream.out, mt.out, bogus.out, real.out,
+chimera_deliberation-0.2.3-py3-none-any.whl. Re-runnable verbatim.

@@ -227,3 +227,46 @@ Re-ran everything for real against HEAD wheel (486a409) + live :8765.
 - Custom DAG via library: `engine.deliberate(prompt, formation="custom",
   dag=..., allow_custom_dag=True)` works and returns excellent results —
   but a 3-stage sequential DAG took **4m15s** wall. Budget minutes.
+
+---
+
+## Update 2026-09-04 (runs A + B) — MCP is BROKEN again; REST is the verified path
+
+Re-verified everything live against the deployed :8765 (b087769) and a fresh
+HEAD 0.2.3 wheel install. The entry-point verdict table above is STALE:
+
+| Entry | Status 2026-09-04 | Evidence |
+|---|---|---|
+| **REST :8765** | ✅ **USE THIS** | stream:true→400, max_tokens:1→honored, unknown model→404, real deliberation 200 "Paris" 18.6s, health 7/7 |
+| Web UI /docs | ✅ works | HTTP 200 both |
+| CLI (HEAD wheel) | ✅ works, noisy | answer + loguru logs interleave on stdout; no --quiet |
+| CLI (PyPI 0.2.1) | ❌ dead-end | no chimera.yaml.example in wheel + no `config init` |
+| **MCP** | ❌ **BROKEN at HEAD** | loguru writes to stdout → initialize JSON-RPC arrives as stdout line 3; every real client fails framing (DF-CHIMERA-0906-2) |
+| PyPI 0.2.1 quickstart | ❌ dead-end | README `cp chimera.yaml.example` impossible; fixes unreleased (0.2.3 local only) |
+
+### New pitfalls (2026-09-04)
+
+19. **Do not use chimera-mcp until DF-CHIMERA-0906-2 lands.** Third run in a
+    row with a fatal MCP failure (09-01 -32602; 09-04 stdout pollution).
+    Agent integration: use REST `POST /v1/chat/completions` — verified
+    correct live 2026-09-04, including proper 4xx errors.
+20. **PyPI lags HEAD by weeks — the fixes you read about may not be
+    published.** PyPI latest 0.2.1 (Aug 23) still dead-ends the README
+    quickstart; the repair (wheel ships example + `config init`) exists in
+    HEAD 0.2.3 but is unreleased. Build/install from a HEAD wheel:
+    `pip wheel --no-deps -w dist . && pip install dist/*.whl`.
+21. **Auto formation picks models your key cannot reach.** With only
+    DEEPSEEK_API_KEY, the dispatcher still chose openrouter/qwen3.7-plus →
+    guardrail 404 → 300s cooldown → degraded merge. The answer is usually
+    still right (surviving worker), but check for
+    `model_blocked_guardrail` / `aggregator_partial_inputs` and prefer
+    pinning `worker_model`/`stage_models` for one-provider setups.
+22. **Check deploy parity before trusting live behavior.** `/health` exposes
+    the running commit; compare with `git rev-parse --short HEAD`. Found
+    30 commits behind on 2026-09-04 (third recurrence; delta was
+    CLI/packaging-only that time, REST contract was correct — but you must
+    check, not assume). Restart `chimera.service` to load HEAD.
+23. **The supervised :8765 REST surface is currently the most trustworthy
+    thing in the repo** — every OpenAI-compat contract behavior re-verified
+    live 2026-09-04 (stream 400, max_tokens honored, unknown-model 404,
+    honest health). Older skill notes calling REST risky are outdated.
