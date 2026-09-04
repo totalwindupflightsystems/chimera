@@ -204,3 +204,30 @@ def test_run_parse_argv_flag(monkeypatch) -> None:  # type: ignore[no-untyped-de
     calls.clear()
     mcp_server.run(None, parse_argv=True)
     assert calls == ["mcp"], "standalone path: first positional arg is the config path"
+
+
+def test_build_server_forces_stderr_ignoring_config_use_stdout(
+    monkeypatch, config  # type: ignore[no-untyped-def]
+) -> None:
+    """The MCP path pins every log sink to stderr even when the injected
+    config says ``use_stdout=True`` — a STRUCTURAL override for the stdio
+    transport (DF-CHIMERA-0906-2), not a chimera.yaml flip.
+    """
+    import chimera.observability as obs_mod
+
+    monkeypatch.setattr(obs_mod, "_LOGGER_CONFIGURED", False)
+    monkeypatch.setattr(obs_mod, "_CONFIGURED_STREAM", None)
+    monkeypatch.setattr(obs_mod, "_CONFIGURED_LEVEL", None)
+
+    cfg = config.model_copy(
+        update={
+            "observability": config.observability.model_copy(
+                update={"use_stdout": True}
+            )
+        }
+    )
+    assert cfg.observability.use_stdout is True
+    server = _make_server(cfg)
+    assert server is not None
+    # build_server(config=...) must have forced stderr despite use_stdout=True.
+    assert obs_mod._CONFIGURED_STREAM is sys.stderr

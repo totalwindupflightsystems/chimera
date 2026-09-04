@@ -298,16 +298,34 @@ export the provider key; expect possible guardrail warnings from auto
 formation (see DF-CHIMERA-0906-3). REST quickstart against the supervised
 :8765 is the other verified path — its full contract battery passed live.
 
-**MCP root-cause trail (3 runs).** 09-01: tools/list+call → -32602 after a
-clean initialize (cause never pinned). 09-04 run A: loguru lines on stdout
-before the initialize response. 09-04 run B: pinned precisely with
-scripts/probe_mcp_stdio.py against the 0.2.3 wheel — stdout lines 1–2 are
-`provider_cache_hit` / `provider_discovery_done` info logs; the JSON-RPC
-initialize response is line 3. Conforming clients read line 1 and die. The
-fix must be structural (every sink → stderr + a packaging stdout-purity
-test), not another patch — three different proximate causes have now hit
-the same surface. Re-run anytime: `python3 scripts/probe_mcp_stdio.py
-<path-to-chimera-mcp>` and count how many stdout lines parse as JSON-RPC.
+**MCP root-cause trail (3 runs) + 4th-run resolution.** 09-01:
+tools/list+call → -32602 after a clean initialize (cause never pinned).
+09-04 run A: loguru lines on stdout before the initialize response. 09-04
+run B: pinned precisely with scripts/probe_mcp_stdio.py against the 0.2.3
+wheel — stdout lines 1–2 are `provider_cache_hit` / `provider_discovery_done`
+info logs; the JSON-RPC initialize response is line 3. Conforming clients
+read line 1 and die. Three different proximate causes hit the same surface.
+**4th run (DF-CHIMERA-0906-2 fix, landed at HEAD):** root cause pinned to
+an ORDERING bug, not a config bug — the repo chimera.yaml resolves
+`observability.use_stdout: false` correctly, but provider auto-discovery
+runs INSIDE `load_config()` → `_apply_env_overrides()` → `discover_providers()`,
+i.e. BEFORE `build_server()` reaches `configure_logging()`. With structlog
+unconfigured at that moment, its 26.x default emits ConsoleRenderer lines to
+sys.stdout (line 1 `provider_cache_hit`, line 2 `provider_discovery_done`,
+initialize shifted to line 3). STRUCTURAL FIX (explicitly NOT a chimera.yaml
+`use_stdout` flip): the MCP path forces every log sink to stderr before
+`load_config` — `observability.configure_logging(obs, force_stderr=True)` +
+`mcp/server.py` `run()`/`build_server()` bootstrap, which also overrides a
+config that asks for `use_stdout: true`. Verified at HEAD:
+`python3 scripts/probe_mcp_stdio.py .venv/bin/chimera-mcp` AND
+`python3 scripts/probe_mcp_stdio.py .venv/bin/chimera mcp` both report
+`NON_JSON_RPC_STDOUT_LINES=0` with initialize as stdout line 1. Regression
+gate: `tests/test_mcp_stdio_purity.py` spawns both real entry points over
+stdio with a config that FORCES `use_stdout: true` and asserts every stdout
+line is JSON-RPC 2.0 (fails on pre-fix code, passes at HEAD). Re-run
+anytime: `python3 scripts/probe_mcp_stdio.py <path-to-chimera-mcp>` — the
+probe now exits non-zero on any non-JSON-RPC stdout line and prints
+`NON_JSON_RPC_STDOUT_LINES=0` at HEAD.
 
 **Deploy-drift forensics (recurrence #3).** `systemctl show chimera -p
 ActiveEnterTimestamp` + the `/health` commit field: process from Aug 28

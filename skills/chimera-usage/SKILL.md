@@ -230,7 +230,7 @@ Re-ran everything for real against HEAD wheel (486a409) + live :8765.
 
 ---
 
-## Update 2026-09-04 (runs A + B) — MCP is BROKEN again; REST is the verified path
+## Update 2026-09-04 (runs A + B) — MCP BROKEN, then FIXED at HEAD; REST remains a verified path
 
 Re-verified everything live against the deployed :8765 (b087769) and a fresh
 HEAD 0.2.3 wheel install. The entry-point verdict table above is STALE:
@@ -241,15 +241,23 @@ HEAD 0.2.3 wheel install. The entry-point verdict table above is STALE:
 | Web UI /docs | ✅ works | HTTP 200 both |
 | CLI (HEAD wheel) | ✅ works, noisy | answer + loguru logs interleave on stdout; no --quiet |
 | CLI (PyPI 0.2.1) | ❌ dead-end | no chimera.yaml.example in wheel + no `config init` |
-| **MCP** | ❌ **BROKEN at HEAD** | loguru writes to stdout → initialize JSON-RPC arrives as stdout line 3; every real client fails framing (DF-CHIMERA-0906-2) |
+| **MCP** | ✅ **FIXED at HEAD** (DF-CHIMERA-0906-2) | stdout is pure JSON-RPC again — initialize is line 1, no structlog/SDK lines; both `chimera-mcp` and `chimera mcp` verified via scripts/probe_mcp_stdio.py (NON_JSON_RPC_STDOUT_LINES=0); regression test tests/test_mcp_stdio_purity.py |
 | PyPI 0.2.1 quickstart | ❌ dead-end | README `cp chimera.yaml.example` impossible; fixes unreleased (0.2.3 local only) |
 
 ### New pitfalls (2026-09-04)
 
-19. **Do not use chimera-mcp until DF-CHIMERA-0906-2 lands.** Third run in a
-    row with a fatal MCP failure (09-01 -32602; 09-04 stdout pollution).
-    Agent integration: use REST `POST /v1/chat/completions` — verified
-    correct live 2026-09-04, including proper 4xx errors.
+19. **chimera-mcp stdout pollution — RESOLVED at HEAD (DF-CHIMERA-0906-2).**
+    Root cause: provider auto-discovery logs (`provider_cache_hit` /
+    `provider_discovery_done`) fire inside `load_config()`/`_apply_env_overrides`
+    BEFORE `configure_logging()` runs, so structlog's unconfigured default
+    wrote ConsoleRenderer lines to stdout (initialize shifted to line 3).
+    Structural fix: the MCP path forces EVERY log sink to stderr before
+    `load_config` (`observability.configure_logging(force_stderr=True)` +
+    `mcp/server.py`), overriding even a config that asks for
+    `use_stdout: true` — not a chimera.yaml flip. Regression gate:
+    `tests/test_mcp_stdio_purity.py` (spawns both real entry points;
+    fails on pre-fix code). Agents may resume MCP as the flagship path;
+    REST `POST /v1/chat/completions` remains a verified alternative.
 20. **PyPI lags HEAD by weeks — the fixes you read about may not be
     published.** PyPI latest 0.2.1 (Aug 23) still dead-ends the README
     quickstart; the repair (wheel ships example + `config init`) exists in
@@ -266,7 +274,8 @@ HEAD 0.2.3 wheel install. The entry-point verdict table above is STALE:
     30 commits behind on 2026-09-04 (third recurrence; delta was
     CLI/packaging-only that time, REST contract was correct — but you must
     check, not assume). Restart `chimera.service` to load HEAD.
-23. **The supervised :8765 REST surface is currently the most trustworthy
-    thing in the repo** — every OpenAI-compat contract behavior re-verified
-    live 2026-09-04 (stream 400, max_tokens honored, unknown-model 404,
-    honest health). Older skill notes calling REST risky are outdated.
+23. **The supervised :8765 REST surface remains a verified alternative** —
+    every OpenAI-compat contract behavior re-verified live 2026-09-04
+    (stream 400, max_tokens honored, unknown-model 404, honest health).
+    With DF-CHIMERA-0906-2 fixed, MCP is the flagship again for agents;
+    REST stays verified for deployments that prefer HTTP.

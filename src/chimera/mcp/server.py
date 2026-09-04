@@ -14,7 +14,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from chimera import __version__
-from chimera.config import ChimeraConfig, Defaults, load_config
+from chimera.config import ChimeraConfig, Defaults, Observability, load_config
 from chimera.engine import Engine
 from chimera.gateway import LiteLLMGateway
 from chimera.observability import configure_logging
@@ -27,9 +27,23 @@ def build_server(
     """Construct the MCP ``FastMCP`` server.
 
     ``config``/``engine`` are injectable for tests.
+
+    MCP stdio purity (DF-CHIMERA-0906-2): every log sink is forced to stderr
+    — when ``config`` is None this happens BEFORE ``load_config()`` because
+    provider auto-discovery logs (``provider_cache_hit`` /
+    ``provider_discovery_done``) fire inside the config load and would
+    otherwise hit structlog's unconfigured stdout default and corrupt the
+    JSON-RPC stream. ``force_stderr=True`` also overrides a chimera.yaml
+    ``observability.use_stdout: true``, so the purity is structural and cannot
+    be undone by a config flip.
     """
-    cfg = config or load_config()
-    configure_logging(cfg.observability)
+    if config is None:
+        configure_logging(Observability(use_stdout=False), force_stderr=True)
+        cfg = load_config()
+    else:
+        cfg = config
+    # Re-pin with the real config (honors log_level/langfuse) — still stderr.
+    configure_logging(cfg.observability, force_stderr=True)
     server = FastMCP("chimera")
     state = {"engine": engine or Engine(cfg, LiteLLMGateway(cfg)), "config": cfg}
 
@@ -127,6 +141,12 @@ def run(config_path: str | None = None, parse_argv: bool = True) -> None:
             if not arg.startswith("-"):
                 config_path = arg
                 break
+    # MCP stdio purity (DF-CHIMERA-0906-2): force every log sink to stderr
+    # BEFORE load_config — provider auto-discovery runs inside the config
+    # load and its structlog lines must never reach stdout ahead of the
+    # JSON-RPC initialize response. build_server re-applies force_stderr with
+    # the real config (log_level/langfuse) once it is loaded.
+    configure_logging(Observability(use_stdout=False), force_stderr=True)
     try:
         config = load_config(config_path)
     except FileNotFoundError:
@@ -135,7 +155,6 @@ def run(config_path: str | None = None, parse_argv: bool = True) -> None:
         # config — tool calls then fail with a clear no-providers error
         # instead of crashing at handshake time.
         config = ChimeraConfig(defaults=Defaults.empty())
-        configure_logging(config.observability)
     server = build_server(config)
     server.run()
 

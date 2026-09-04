@@ -4,6 +4,11 @@ structlog emits JSON to stderr by default, or to stdout when
 ``observability.use_stdout`` is true (the default, since Chimera is a CLI tool,
 not a daemon). Langfuse is enabled only when configured and the ``langfuse``
 package is importable.
+
+``configure_logging(..., force_stderr=True)`` pins every log sink (structlog
+AND stdlib ``logging``) to stderr regardless of ``obs.use_stdout`` — the MCP
+stdio transport uses this (DF-CHIMERA-0906-2) so provider-discovery and SDK
+log lines can never corrupt the JSON-RPC stream on stdout.
 """
 
 from __future__ import annotations
@@ -17,6 +22,11 @@ import structlog
 from chimera.config import Observability
 
 _LOGGER_CONFIGURED = False
+#: Last stream/level applied by configure_logging — the once-guard is keyed on
+#: these so a forced re-pin (MCP → stderr) still re-applies structlog while
+#: identical re-applies stay cheap.
+_CONFIGURED_STREAM: TextIO | None = None
+_CONFIGURED_LEVEL: int | None = None
 _LANGFUSE_CLIENT: Any = None
 
 
@@ -25,13 +35,31 @@ def _log_stream(obs: Observability) -> TextIO:
     return sys.stdout if obs.use_stdout else sys.stderr
 
 
-def configure_logging(obs: Observability) -> structlog.stdlib.BoundLogger:
-    """Configure structlog once and return a bound logger."""
-    global _LOGGER_CONFIGURED
-    level = getattr(logging, obs.log_level.upper(), logging.INFO)
+def configure_logging(
+    obs: Observability, *, force_stderr: bool = False
+) -> structlog.stdlib.BoundLogger:
+    """Configure structlog (once per stream/level) and return a bound logger.
 
-    if not _LOGGER_CONFIGURED:
-        stream: TextIO = _log_stream(obs)
+    ``force_stderr`` pins every log sink (structlog and stdlib ``logging``)
+    to stderr regardless of ``obs.use_stdout``. The MCP stdio transport calls
+    with ``force_stderr=True`` (DF-CHIMERA-0906-2) so no log line can reach
+    stdout ahead of a JSON-RPC response — even when the user's chimera.yaml
+    says ``observability.use_stdout: true``. CLI/API callers never pass
+    ``force_stderr`` and keep the configured (stdout-by-default) behavior.
+
+    The once-guard is keyed on the last-applied ``(stream, level)``: identical
+    re-applies are skipped, but a forced re-pin to a different stream (MCP
+    stderr after a CLI/API stdout configure) still re-applies structlog's
+    configuration so earlier-created module loggers rebind to the new stream
+    on their next use.
+    """
+    global _LOGGER_CONFIGURED, _CONFIGURED_STREAM, _CONFIGURED_LEVEL
+    level = getattr(logging, obs.log_level.upper(), logging.INFO)
+    stream: TextIO = sys.stderr if force_stderr else _log_stream(obs)
+
+    if not (
+        _LOGGER_CONFIGURED and _CONFIGURED_STREAM is stream and level == _CONFIGURED_LEVEL
+    ):
         logging.basicConfig(
             format="%(message)s",
             stream=stream,
@@ -51,6 +79,8 @@ def configure_logging(obs: Observability) -> structlog.stdlib.BoundLogger:
             cache_logger_on_first_use=True,
         )
         _LOGGER_CONFIGURED = True
+        _CONFIGURED_STREAM = stream
+        _CONFIGURED_LEVEL = level
 
     _configure_langfuse(obs)
     return structlog.get_logger("chimera")
