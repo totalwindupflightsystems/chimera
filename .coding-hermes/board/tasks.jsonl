@@ -92,3 +92,90 @@
 {"status": "pending", "id": "DF-CHIMERA-0906-5", "title": "[dogfood:P2] CLI answer intermixed with log lines: loguru info/warning/debug writes to stdout around the boxed answer; no --quiet/--json", "detail": "HEAD wheel fresh run output: engine_stage_done (info), aggregator_partial_inputs (warning), gateway_format_removed (info), gateway_call (debug) lines all interleave with the answer box on stdout; a scripting user piping `chimera run` output gets logs glued to the answer. No --quiet/--json/--log-file flag exists. FIX: default run-mode logs to stderr (answer to stdout), add --quiet and --json. PASS: `chimera run \"...\" 2>/dev/null | some-consumer` yields only the answer.", "priority": "P2", "source": "dogfood-dagger", "reasoning": {"note": "dogfood cycle 2026-09-04 run B (refines DF-CHIMERA-V2-3/V2-4 with the concrete stdout/stderr fix direction)."}, "review_notes": null, "ts": "2026-09-04T05:20:00.000Z"}
 {"status": "pending", "id": "DF-CHIMERA-0906-6", "title": "[dogfood:P2] Bunker ephemeral-install leg UNVERIFIED 6th run straight: bunkerd port-pool exhaustion (10/10 ranges) blocks all spawn; control-host local install used as substitute", "detail": "bunker spawn --server bunker-las-03 --ttl 2h -> 'bunker: spawn agent: internal: port range allocation: no free port ranges available (pool exhausted: 10 ranges)' (4th+ byte-identical recurrence, cf. QA-CHIMERA-V2-1 2026-09-03). Also observed: ssh bunker3 (port 22) times out while bunker3-root SSH works and ping works — port-22 path degraded on the bunker host. Chimera's own fresh-installability was instead verified locally (PyPI + HEAD wheel batteries above), but the bunker-from-zero leg (bare Debian, no toolchains) remains unproven for chimera. Two infrastructure fixes needed, neither is a chimera defect: (a) recycle stale in-memory port-range allocations on bunkerd (or widen port_range per_agent); (b) restore ssh :22 reachability on bunker-las-03. PASS: a dogfood/QA run spawns a bunker agent on bunker-las-03 and completes a fresh `pip install` + `chimera config init` + real deliberation end-to-end.", "priority": "P2", "source": "dogfood-dagger", "reasoning": {"note": "dogfood cycle 2026-09-04 run B — SKIPPED-install-bunker filed explicitly per skill doctrine; local substitute legs run so installability is not silently unverified."}, "review_notes": "Evidence: bunker spawn stderr 2026-09-04 05:04Z; ssh timeout to 100.69.3.13:22 while :22-root and ICMP OK; bunkerd active, SpawnAgent 500s in journal.", "ts": "2026-09-04T05:20:00.000Z"}
 {"status":"pending","id":"QA-CHIMERA-V2-1","title":"[P1] run_battery FAIL — port range pool exhausted with only 2/8 agents live (real leak, third occurrence)","detail":"cell: 'spawn failed on bunker-las-03: spawn attempt 2 failed: bunker: spawn agent: internal: port range allocation: no free port ranges available (pool exhausted: 10 ranges)'. Verified live: env HOME=/home/kara bunker status --server bunker-las-03 → ONLINE, Agents 2/8, uptime 14h 11m — 2 live agents but all 10 ranges held ⇒ leaked, not capacity. Source evidence internal/agent/manager_destroy.go:85-99 (TTL reaper userdel-failed leak) from 09-04 triage. Same symptom re-hit 09-05 after fix landed in repo.","priority":"P1","source":"qa-dagger","reasoning":{"note":"QA foreman cycle 2026-09-05 — fresh-system CI pass (bunker cell: run_battery)"},"review_notes":"cell: 'spawn failed on bunker-las-03: spawn attempt 2 failed: bunker: spawn agent: internal: port range allocation: no free port ranges available (pool exhausted: 10 ranges)'. Verified live: env HOME=/home/kara bunker status --server bunker-las-03 → ONLINE, Agents 2/8, uptime 14h 11m — 2 live agents but all 10 ranges held ⇒ leaked, not capacity. Source evidence internal/agent/manager_destroy.go:85","ts":"2026-09-05T02:14:52.888Z"}
+{"status":"pending","id":"QA-CHIMERA-V2-1","title":"[P1] run_battery FAIL — bunker-las-03 at 8/8 capacity, battery never ran","detail":"Cell: [run_battery] FAIL — spawn failed on bunker-las-03: 'spawn attempt 2 failed: bunker: spawn agent: internal: capacity full: 8/8 agents'. Verified REAL, not sandbox-HOME artifact: HOME=/home/kara, /home/kara/.bunker/config.yaml present, ── bunker-las-03 ──
+  Hostname: bunker-las-03
+  URL:      http://100.69.3.13:10002
+  Version:  0.1.3
+  Status:   ONLINE
+  Uptime:   14h 17m 17s
+  Agents:   8/8
+  CPU:      114.1%
+  Memory:   10.4 GB / 31.1 GB
+  Disk:     31% (69.5 GB/220.6 GB)
+  Docker:   10 containers → ONLINE, Agents 8/8, Docker 10 containers. 
+══════════ Agents ══════════
+
+  Agent ID       Status     Disk                   Created                   Public URL
+  ────────       ──────     ────────────────────   ───────                   ──────────
+  aacd25ea       running    1% (470.4 MB/64.0 GB)  2026-09-05T08:27:37-07:00 (no URL)
+  326a963f       running    5% (3.1 GB/64.0 GB)    2026-09-05T09:19:44-07:00 (no URL)
+  42386e20       running    12% (8.0 GB/64.0 GB)   2026-09-05T11:00:37-07:00 (no URL)
+  2bbab93a       running    0% (314.2 MB/64.0 GB)  2026-09-05T11:35:03-07:00 (no URL)
+  e1f16bd5       running    1% (328.7 MB/64.0 GB)  2026-09-05T09:16:13-07:00 (no URL)
+  b1a27da6       running    1% (537.2 MB/64.0 GB)  2026-09-05T07:47:51-07:00 (no URL)
+  9657dfdb       running    15% (9.8 GB/64.0 GB)   2026-09-05T07:55:24-07:00 (no URL)
+  07082dee       running    0% (249.8 MB/64.0 GB)  2026-09-05T09:56:49-07:00 (no URL)
+
+Total: 8 agents (server: bunker-las-03) shows 8 live agents (created 2026-09-05 07:47–11:35). Spawn could not acquire a slot; battery produced 0 cells — UNVERIFIED.","priority":"P1","source":"qa-dagger","reasoning":{"note":"QA foreman cycle 2026-09-05 — fresh-system CI pass (bunker cell: ?)"},"review_notes":"Cell: [run_battery] FAIL — spawn failed on bunker-las-03: 'spawn attempt 2 failed: bunker: spawn agent: internal: capacity full: 8/8 agents'. Verified REAL, not sandbox-HOME artifact: HOME=/home/kara, /home/kara/.bunker/config.yaml present, ── bunker-las-03 ──
+  Hostname: bunker-las-03
+  URL:      http://100.69.3.13:10002
+  Version:  0.1.3
+  Status:   ONLINE
+  Uptime:   14h 17m 21s
+  Agents:   8/8
+  CPU:      193.4%
+  Memory:   10.4 GB / 31.1 GB
+  Disk:     31% (69.5 GB/220.6 GB)
+  Docker:   10 containers → ONLINE, Agents 8/8, Docker 10 containers. 
+══════════ Agents ══════════
+
+  Agent ID       Status     Disk                   Created                   Public URL
+  ────────       ──────     ────────────────────   ───────                   ──────────
+  326a963f       running    5% (3.1 GB/64.0 GB)    2026-09-05T09:19:44-07:00 (no URL)
+  42386e20       running    12% (8.0 GB/64.0 GB)   2026-09-05T11:00:37-07:00 (no URL)
+  2bbab93a       running    0% (314.2 MB/64.0 GB)  2026-09-05T11:35:03-07:00 (no URL)
+  e1f16bd5       running    1% (328.7 MB/64.0 GB)  2026-09-05T09:16:13-07:00 (no URL)
+  b1a27da6       running    1% (537.2 MB/64.0 GB)  2026-09-05T07:47:51-07:00 (no URL)
+  9657dfdb       running    15% (9.8 GB/64.0 GB)   2026-09-05T07:55:24-07:00 (no URL)
+  07082dee       running    0% (249.8 MB/64.0 GB)  2026-09-05T09:56:49-07:00 (no URL)
+  aacd25ea       running    1% (470.4 MB/64.0 GB)  2026-09-05T08:27:37-07:00 (no URL)
+
+Total: 8 agents (server: bunker-las-03) shows 8 live agents (created 2026-09-05 07:47–11:35). Spawn co","ts":"2026-09-05T18:37:40.181Z"}
+{"status":"pending","id":"QA-CHIMERA-V2-2","title":"[P3] 8/8 agents live on bunker-las-03 — possible orphaned agents from prior batteries","detail":"Cell: [run_battery] FAIL. 
+══════════ Agents ══════════
+
+  Agent ID       Status     Disk                   Created                   Public URL
+  ────────       ──────     ────────────────────   ───────                   ──────────
+  aacd25ea       running    1% (470.4 MB/64.0 GB)  2026-09-05T08:27:37-07:00 (no URL)
+  326a963f       running    5% (3.1 GB/64.0 GB)    2026-09-05T09:19:44-07:00 (no URL)
+  42386e20       running    12% (8.0 GB/64.0 GB)   2026-09-05T11:00:37-07:00 (no URL)
+  2bbab93a       running    0% (314.2 MB/64.0 GB)  2026-09-05T11:35:03-07:00 (no URL)
+  e1f16bd5       running    1% (328.7 MB/64.0 GB)  2026-09-05T09:16:13-07:00 (no URL)
+  b1a27da6       running    1% (537.2 MB/64.0 GB)  2026-09-05T07:47:51-07:00 (no URL)
+  9657dfdb       running    15% (9.8 GB/64.0 GB)   2026-09-05T07:55:24-07:00 (no URL)
+  07082dee       running    0% (249.8 MB/64.0 GB)  2026-09-05T09:56:49-07:00 (no URL)
+
+Total: 8 agents (server: bunker-las-03) shows 8 running agents (326a963f, 42386e20, 2bbab93a, e1f16bd5, b1a27da6, 9657dfdb, 07082dee, aacd25ea), all created today 07:47–11:35, none with public URLs — no evidence any were destroyed after their batteries finished, saturating the pool for the chimera-v2 run.","priority":"P3","source":"qa-dagger","reasoning":{"note":"QA foreman cycle 2026-09-05 — fresh-system CI pass (bunker cell: ?)"},"review_notes":"Cell: [run_battery] FAIL. 
+══════════ Agents ══════════
+
+  Agent ID       Status     Disk                   Created                   Public URL
+  ────────       ──────     ────────────────────   ───────                   ──────────
+  326a963f       running    5% (3.1 GB/64.0 GB)    2026-09-05T09:19:44-07:00 (no URL)
+  42386e20       running    12% (8.0 GB/64.0 GB)   2026-09-05T11:00:37-07:00 (no URL)
+  2bbab93a       running    0% (314.2 MB/64.0 GB)  2026-09-05T11:35:03-07:00 (no URL)
+  e1f16bd5       running    1% (328.7 MB/64.0 GB)  2026-09-05T09:16:13-07:00 (no URL)
+  b1a27da6       running    1% (537.2 MB/64.0 GB)  2026-09-05T07:47:51-07:00 (no URL)
+  9657dfdb       running    15% (9.8 GB/64.0 GB)   2026-09-05T07:55:24-07:00 (no URL)
+  07082dee       running    0% (249.8 MB/64.0 GB)  2026-09-05T09:56:49-07:00 (no URL)
+  aacd25ea       running    1% (470.4 MB/64.0 GB)  2026-09-05T08:27:37-07:00 (no URL)
+
+Total: 8 agents (server: bunker-las-03) shows 8 running agents (326a963f, 42386e20, 2bbab93a, e1f16bd5, b1a27da6, 9657dfdb, 07082dee, aacd25ea), all created today 07:47–11:35, none with public URLs — no evidence any were destroyed after their batteries finished, saturating the pool for the chimera-v2 run.","ts":"2026-09-05T18:37:40.181Z"}
+{"status":"pending","id":"QA-CHIMERA-V2-3","title":"[P3] bunker-las-03 still runs 0.1.3 @ 4af949d (built 08-27) — port-range leak fix b4c3c48 not deployed","detail":"Cell: [run_battery] FAIL. bunker 0.1.3
+  commit:     4af949d
+  built:      2026-08-27T18:39:44Z
+  go version: go1.26.5
+  platform:   linux/amd64 → 0.1.3, commit 4af949d, built 2026-08-27T18:39:44Z; server uptime 14h 16m. The 09-04 leak fix (b4c3c48) is absent from the running binary — same stale-binary state flagged 09-04/09-05; capacity management on this host remains on the old allocator.","priority":"P3","source":"qa-dagger","reasoning":{"note":"QA foreman cycle 2026-09-05 — fresh-system CI pass (bunker cell: ?)"},"review_notes":"Cell: [run_battery] FAIL. bunker 0.1.3
+  commit:     4af949d
+  built:      2026-08-27T18:39:44Z
+  go version: go1.26.5
+  platform:   linux/amd64 → 0.1.3, commit 4af949d, built 2026-08-27T18:39:44Z; server uptime 14h 16m. The 09-04 leak fix (b4c3c48) is absent from the running binary — same stale-binary state flagged 09-04/09-05; capacity management on this host remains on the old allocator.","ts":"2026-09-05T18:37:40.181Z"}
