@@ -29,3 +29,14 @@ Promise: "One API call. A team of models. One answer." — multi-model deliberat
 - [P1] DF-CHIMERA-0906-4: deploy drift recurrence #3 — live :8765 runs b087769 (Aug 28), 30 commits behind HEAD. Mitigation found this cycle: the delta is CLI/packaging/board-only; ALL deployed REST contract behavior re-verified correct live (stream:true -> 400 stream_not_supported; max_tokens:1 -> honored (2-char answer); unknown model -> 404 model_not_found; real deliberation 200 "Paris" in 18.6s; web UI + /docs 200; /v1/health healthy 7/7). Enforcement (auto deploy step) is the missing piece, not another reopen. Task filed.
 - [P2] DF-CHIMERA-0906-5: CLI answers intermixed with loguru log lines on stdout; no --quiet/--json. Task filed (refines DF-CHIMERA-V2-3/4).
 - [P2] SKIPPED-install-bunker (DF-CHIMERA-0906-6): bunkerd port-pool exhausted (10/10 ranges, 4th+ recurrence) blocks spawn on las-bunker-03; ssh :22 to the host also timing out (root SSH + ICMP fine). Local fresh-venv install batteries run as substitute (PyPI 20s / HEAD wheel 17s). Bunker infra fix needed (bunkerd allocation recycling + sshd on :22).
+
+
+## Dogfood Findings (2026-09-07)
+Verdict: SHIPPABLE
+Promise: {"entry_point":"Multiple: CLI binary `chimera` (run/serve/models/formations), FastAPI HTTP server on :8765 (POST /v1/chat/completions OpenAI-compatible, POST /v1/deliberate, /v1/models, /v1/formations, /v1/health, /web/ UI), MCP server `chimera-mcp` over stdio, and Python library (Engine + LiteLLMGa
+
+- [P1] auto formation routes workers to guardrail-blocked models on first runs — Verified live: first /v1/deliberate formation=auto picked openrouter/openai/gpt-5.6-luna (guardrail-blocked per report) as worker_1; second run 24.3s later picked deepseek/deepseek-v4-pro + openrouter
+- [P1] chimera models table is unreadable — Verified: `chimera models` renders 36 columns each truncated to ~3 chars (mo…, pr…, ti…, ac…, bu…, co…) — no model name, provider, or score is legible; same rich-table truncation pattern in `chimera f
+- [P1] chimera config init is a dead end for repo checkouts — Verified in fresh dir: 'error: chimera.yaml.example not found — reinstall chimera-deliberation to restore the template.' README documents the cp chimera.yaml.example workaround directly below, but the
+- [P2] Docs gaps: ${ENV_VAR} substitution, smoke_live flags, MCP tool names, degraded health, --version — Verified: config.py implements ${VAR} env substitution (line 400) but README never mentions it or .env auto-load; smoke_live.py uses --base-url (line 86) not --port, undocumented; README interface tab
+- [P2] Test suite drift: 1 failing test — pytest -x: 437 passed, 1 failed (tests/test_mcp.py::test_mcp_run_tolerates_missing_config — asserts dispatcher default '' but code now defaults to 'deepseek/deepseek-v4-flash'). Config-default drift, 
