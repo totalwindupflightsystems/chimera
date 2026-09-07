@@ -1,3 +1,16 @@
 #!/bin/bash
-# Chimera MCP wrapper for Hermes
-exec /home/kara/.hermes/hermes-agent/venv/bin/chimera-mcp /home/kara/chimera-v2/chimera.yaml
+# Chimera MCP wrapper for Hermes.
+# Durable wrapper rule (DF-CHIMERA-V2-1): resolve the repo root from this
+# script's own location and exec the repo venv binary — never an absolute
+# path into another venv (the hermes-agent venv does not install
+# chimera-deliberation; a hardcoded path there dies at exec and every real
+# MCP client fails).
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ ! -x "$ROOT/.venv/bin/chimera-mcp" ]; then
+  echo "chimera-mcp not found at $ROOT/.venv/bin/chimera-mcp (install: .venv pip install -e '.[mcp]')" >&2
+  exit 1
+fi
+# Honor CHIMERA_CONFIG when set (standard env override, used by tests and
+# CI); otherwise pass the repo config explicitly so find_config_path's
+# CWD-walk can never pick a wrong chimera.yaml.
+exec "$ROOT/.venv/bin/chimera-mcp" "${CHIMERA_CONFIG:-$ROOT/chimera.yaml}"

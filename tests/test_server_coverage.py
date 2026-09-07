@@ -158,7 +158,9 @@ class TestHealthEndpoints:
             assert r.status_code == 200
             assert r.json()["commit"]  # non-empty string
         # In this repo the value must be the real short HEAD.
-        repo_root = Path(__file__).resolve().parents[2]
+        # parents[0]=tests/, parents[1]=repo root (parents[2] is the parent
+        # dir, which may itself be a git repo with a different HEAD).
+        repo_root = Path(__file__).resolve().parents[1]
         out = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             cwd=repo_root, capture_output=True, text=True, timeout=3,

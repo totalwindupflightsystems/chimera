@@ -64,6 +64,10 @@ SPAWN_STYLES = {
     "standalone": [sys.executable, "-c", "from chimera.mcp.server import run; run()"],
     # Click path: `chimera mcp` (parse_argv=False in cli/main.py).
     "cli": [sys.executable, "-m", "chimera.cli.main", "mcp"],
+    # The configured Hermes launch path (DF-CHIMERA-V2-1): the wrapper
+    # script itself. A dead-exec wrapper (hardcoded path into another venv)
+    # must fail here even when the python entry points are green.
+    "wrapper": [str(REPO / "bin" / "chimera-mcp-hermes")],
 }
 
 
