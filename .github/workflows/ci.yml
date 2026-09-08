@@ -148,3 +148,36 @@ jobs:
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+
+  release-verify:
+    needs: publish
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Fresh-venv install of the PUBLISHED version (DF-CHIMERA-0906-1 gate)
+        run: |
+          python -m venv /tmp/release-venv
+          /tmp/release-venv/bin/pip install --upgrade pip
+          /tmp/release-venv/bin/pip install "chimera-deliberation[full]"
+          /tmp/release-venv/bin/python -c "import chimera; print('installed', chimera.__version__)"
+
+      - name: Quickstart E2E — config init + bare run (DF-CHIMERA-0906-1 PASS)
+        run: |
+          cd /tmp
+          /tmp/release-venv/bin/chimera config init
+          test -f chimera.yaml && echo 'config init OK'
+          timeout 180 /tmp/release-venv/bin/chimera run "Reply with exactly: GATE-OK" 2>&1 | tee /tmp/gate_run.out
+          grep -q "GATE-OK" /tmp/gate_run.out && echo 'bare run merged answer OK'
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+      - name: MCP stdio purity probe (DF-CHIMERA-0906-2 gate)
+        run: |
+          echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"gate","version":"0"}}}' | /tmp/release-venv/bin/chimera-mcp 2>/dev/null | head -1 | grep -q '"serverInfo"' && echo 'mcp stdout purity OK'

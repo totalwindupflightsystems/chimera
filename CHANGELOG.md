@@ -2,6 +2,32 @@
 
 All notable changes to Chimera will be documented in this file.
 
+## [0.2.3] — 2026-09-08
+
+### Added
+
+- **`chimera config init`** (CH-GAP-050): first-run without a config is no
+  longer a dead-end raw traceback — the CLI prints a friendly remedy and
+  `chimera config init` scaffolds a working `chimera.yaml` from the shipped
+  template.
+- **`chimera.yaml.example` ships inside the wheel** (CH-GAP-049,
+  force-include) so the README Quickstart `cp chimera.yaml.example
+  chimera.yaml` works for every pip/pipx consumer.
+- **MCP stdio purity** (DF-CHIMERA-0906-2): the `chimera-mcp` entry point
+  forces every log sink to stderr, so stdout carries ONLY JSON-RPC frames —
+  real MCP clients no longer die on structlog lines before the initialize
+  response. Regression-covered by `tests/test_mcp_stdio_purity.py`
+  (subprocess handshake against the real console scripts).
+- **Durable MCP wrapper** (DF-CHIMERA-V2-1): `bin/chimera-mcp-hermes` execs
+  the repo venv binary instead of dead-exec'ing a missing one.
+
+### Fixed
+
+- **README Quickstart is live again for pip consumers** (DF-CHIMERA-0906-1):
+  fresh venv + `pip install chimera-deliberation[full]` → `chimera config
+  init` → bare `chimera run` with only `DEEPSEEK_API_KEY` returns a merged
+  answer.
+
 ## [0.2.1] — 2026-08-23
 
 ### Fixed
