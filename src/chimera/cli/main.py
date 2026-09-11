@@ -25,9 +25,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from chimera.config import ChimeraConfig, FormationPreset, load_config
+from chimera.config import ChimeraConfig, FormationPreset, Observability, load_config
 from chimera.engine import Engine
 from chimera.gateway import LiteLLMGateway
+from chimera.observability import configure_logging
 
 # When output is piped (tests, redirection), use a wide console so tables and
 # model names never get truncated. Interactive use auto-detects the terminal.
@@ -112,13 +113,35 @@ def _load_cfg(ctx: click.Context) -> ChimeraConfig:
     FileNotFoundError traceback from every config-needing command. Now the
     missing-config case prints the actionable one-liner and exits 2
     (``chimera config init`` is the remedy).
+
+    DF-CHIMERA-V2-3 (CLI stdout purity): the CLI never called
+    ``configure_logging``, so provider auto-discovery (which runs INSIDE
+    ``load_config`` → ``_apply_env_overrides``) hit structlog's unconfigured
+    default and wrote ``provider_cache_hit`` / ``provider_fetch_ok`` /
+    ``provider_discovery_done`` straight onto stdout, ahead of the rich
+    table/panel. Two-phase pin, mirroring ``mcp/server.py`` (DF-CHIMERA-0906-2):
+
+    * phase 1 — BEFORE ``load_config``: pin every log sink to stderr with a
+      minimal ``Observability(use_stdout=False)`` so pre-config discovery
+      logs can never touch stdout;
+    * phase 2 — after a successful load: re-pin with the REAL observability
+      settings (log_level/langfuse), still forced to stderr.
+
+    ``force_stderr=True`` is structural: it overrides a chimera.yaml
+    ``observability.use_stdout: true``, so CLI stdout purity cannot be
+    undone by a config flip. Logs still work — on stderr.
     """
+    # Phase 1: pre-config pin (catches provider-discovery logs during load).
+    configure_logging(Observability(use_stdout=False), force_stderr=True)
     config_path = ctx.obj.get("config_path") if ctx.obj else None
     try:
-        return load_config(config_path)
+        cfg = load_config(config_path)
     except FileNotFoundError as exc:
         console.print(f"[red]error:[/red] {exc}")
         sys.exit(2)
+    # Phase 2: re-pin with the real observability config — still stderr.
+    configure_logging(cfg.observability, force_stderr=True)
+    return cfg
 
 
 def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
