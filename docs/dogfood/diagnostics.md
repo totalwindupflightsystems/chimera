@@ -352,3 +352,74 @@ recycling, sshd :22 reachability).
 fresh-user-run.sh, live-rest-probe.sh, mcp-probe.sh, timed-install.sh,
 run-pypi021.out, run-head023.out, stream.out, mt.out, bogus.out, real.out,
 chimera_deliberation-0.2.3-py3-none-any.whl. Re-runnable verbatim.
+
+## 2026-09-11 (7th run) — wheel-vs-HEAD bisection, real-client MCP proof, bunker transport forensics
+
+**How the MCP pollution was finally cornered on the published artifact.**
+The repo's purity gate (probe + test) was real-call depth, so the remaining
+question was "what does a fresh user actually get from PyPI?" Method: one
+raw stdio client (`/tmp/dogfood-chimera/mcp_probe.py`) that speaks
+initialize → tools/list → tools/call over a pipe, classifies EVERY stdout
+line as JSON-RPC vs pollution, and exits non-zero on any pollution. Run
+against both binaries same hour:
+
+| Binary | stdout lines | pollution | result |
+|---|---|---|---|
+| HEAD venv `chimera-mcp` (post-27f0b35) | 3 | 0 | initialize=line 1, tools/list=line 2, tools/call=line 3, answer "17 × 23 = 391" |
+| PyPI 0.2.3 wheel `chimera-mcp` | 11 | 8 | handshake clean (lines 1-2); LiteLLM INFO lines (#3-#10) start lazily on the first real tools/call; response buried at line 11 |
+
+Two lessons encoded here. (1) **Pollution is lazy**: it begins when the
+first deliberation triggers LiteLLM, so initialize-only smoke checks pass
+green on a broken wheel — purity probes MUST make a real call. (2) **The
+release gate tests the checkout, not the artifact**: 0.2.3 published 09-08,
+fix landed 09-10, nobody ran the existing probe against the wheel. Both
+lesson-objects are filed (DF-CHIMERA-0911-1 publish, DF-CHIMERA-0911-2
+release canary).
+
+**Real external client proof (what "works" should mean).** Hermes' own MCP
+client drove the repo wrapper (`bin/chimera-mcp-hermes`) end-to-end:
+`chimera_deliberate(prompt, formation="simple")` on a DuckDB-vs-SQLite
+question → dispatcher selected 2× `deepseek/deepseek-v4-pro` workers +
+`deepseek/deepseek-v4-flash` aggregator, wrote two genuinely different
+worker prompts (engine-level brief vs decision-criteria brief) and merge
+instructions enforcing exactly-3-sentences; merged answer complied;
+66.1s, $0.0162, 26,795 tokens, `worker_failures: []`. Trace trust note:
+the full dispatcher/workers/aggregator transcript is returned in the
+response — auditable without server logs.
+
+**Deploy parity (recurrence #3) resolved this run.** Live `/health` commit
+e4c7a30 vs HEAD 3b6ae77: the 2-commit delta is board/gitreins chores only —
+all REST contract behavior re-verified correct on the deployed binary
+(stream 400, unknown-model 404, auto chat 200 "42" 14.2s). DF-CHIMERA-0906-4
+(chronic drift) is now fixed in practice: deployed commit is current, and
+`/health` made the check trivial. Also verified at HEAD: `chimera models`
+legible (DF-CHIMERA-V2-2 fix), `chimera run` stdout = answer box only,
+0 stray lines, 18 stderr lines (DF-CHIMERA-V2-3 fix), `test_mcp.py` 13/13
+(09-07 drift failure gone).
+
+**Bunker transport forensics (new signature, 7th skip).** Prior skips were
+`port range allocation: pool exhausted` at spawn. This run got further:
+`bunker list --server bunker-las-03` succeeds (bunkerd :19090 reachable,
+CLI 0.1.3/4af949d), then `bunker spawn` fails one hop deeper —
+`deadline_exceeded: Post http://100.69.3.13:10001/bunker.v1.Bunkerd/SpawnAgent:
+dial tcp 100.69.3.13:10001: i/o timeout` — while ssh :22 times out during
+banner exchange (ICMP fine). Two agent transports down + bunkerd API up =
+firewall/ACL regression on the host, not bunkerd health. Filed
+DF-CHIMERA-0911-4 (supersedes the port-pool framing in DF-CHIMERA-0906-6).
+Installability evidence this run is local: fresh venv →
+`pip install chimera-deliberation[full]==0.2.3` = 95s, `chimera config init`
+works from the wheel template, `chimera run` → "Paris" boxed, 14s, exit 0.
+
+**OpenAI drop-in semantics wrinkle.** `model:"deepseek/deepseek-v4-flash"`
+on /v1/chat/completions → 404 `model_not_found` even though the ID is a
+valid GET /v1/models key; `model` accepts formations only, per-model force
+lives in `worker_model`/`stage_models`/`allowed_models`. Docs are
+self-consistent (OPENAI_API.md field table) — the surprise is the
+reflex, not a contradiction; minor doc drift: the doc says unknown model
+names "return 400" (line 183), reality is 404. Filed DF-CHIMERA-0911-3.
+
+**Run evidence files** (ephemeral, /tmp/dogfood-chimera/): mcp_probe.py
+(raw stdio classifier), rest_battery.py (urllib REST battery),
+fresh-venv/ (the PyPI 0.2.3 install), fresh-run-stderr.log,
+head-cli-stdout.log / head-cli-stderr.log (HEAD CLI purity proof).
+Re-runnable verbatim.

@@ -279,3 +279,47 @@ HEAD 0.2.3 wheel install. The entry-point verdict table above is STALE:
     (stream 400, max_tokens honored, unknown-model 404, honest health).
     With DF-CHIMERA-0906-2 fixed, MCP is the flagship again for agents;
     REST stays verified for deployments that prefer HTTP.
+
+## Update 2026-09-11 (7th run) — MCP flagship CONFIRMED by a real external client; PyPI quickstart fixed IN THE WHEEL; wheel-MCP caveat
+
+Re-verified every entry point live (deployed :8765 = e4c7a30, 7/7 providers
+healthy; repo HEAD 3b6ae77). The entry-point verdict table as of this run:
+
+| Entry | Status 2026-09-11 | Evidence |
+|---|---|---|
+| **MCP (HEAD venv / `bin/chimera-mcp-hermes`)** | ✅ **FLAGSHIP — works from a real third-party client** | Hermes' own MCP client ran `chimera_deliberate` end-to-end: correct 3-sentence merged answer, 2× v4-pro workers + v4-flash aggregator, 66.1s, $0.0162, `worker_failures: []`; raw stdio probe = 3 stdout lines, 0 pollution |
+| CLI (HEAD venv) | ✅ works, CLEAN stdout | stdout = answer box only (0 non-box lines), 18 log lines on stderr; `chimera models` legible (model/provider/tier); `test_mcp.py` 13/13 |
+| REST :8765 | ✅ works | stream:true→400 `stream_not_supported`; unknown model→404; `model:"auto"`→200 "42" in 14.2s |
+| PyPI 0.2.3 quickstart | ✅ **FIXED IN THE PUBLISHED WHEEL** | fresh venv: install 95s → `chimera --help` → `config init` → `chimera run` → "Paris" in 14s |
+| **MCP (PyPI 0.2.3 wheel)** | ❌ **STILL POLLUTED — do not use the wheel's chimera-mcp** | raw probe: handshake clean (lines 1-2), but the real tools/call response is line 11 buried under 8 LiteLLM INFO lines on stdout. Pollution is LAZY — handshake-only smoke tests give a false green. Fix 27f0b35 (09-10) postdates the 09-08 release → use repo venv MCP until 0.2.4 publishes (DF-CHIMERA-0911-1) |
+
+### New pitfalls (2026-09-11)
+
+24. **The published wheel can be days behind the fix you read about —
+    probe the wheel, not the checkout.** 0.2.3 shipped 09-08; the MCP
+    stdout fix landed 09-10. `scripts/probe_mcp_stdio.py` already does
+    real-call depth (tools/call, not just initialize) and exits non-zero
+    on any non-JSON-RPC stdout line — run it against a fresh
+    `pip install chimera-deliberation` venv when judging what users
+    actually get. Release-canary task: DF-CHIMERA-0911-2.
+25. **`model` on /v1/chat/completions takes FORMATION names, not model
+    IDs.** POSTing `model:"deepseek/deepseek-v4-flash"` (a valid
+    GET /v1/models key) 404s with `model_not_found` — the natural
+    OpenAI-drop-in reflex dead-ends (DF-CHIMERA-0911-3). To force models,
+    use `worker_model` / `stage_models` / `allowed_models` (docs/OPENAI_API.md).
+26. **bunker-las-03 agent transports are down (:22 banner timeout AND
+    gRPC :10001 dial timeout) while bunkerd :19090 responds** — the
+    ephemeral-install leg stays SKIPPED (7th run; new signature narrows it
+    to firewall/ACL, not bunkerd health; DF-CHIMERA-0911-4). Local
+    fresh-venv install batteries stand in.
+
+### Verified-still-true (2026-09-11)
+
+- The dispatcher's per-worker prompt specialization is real value: for the
+  DuckDB-vs-SQLite question it wrote an engine-level brief and a
+  decision-criteria brief plus "exactly 3 sentences" merge instructions —
+  and the merged answer complied, first try, no worker failures.
+- Cost envelope for small deliberations: $0.003–0.02 (this run: $0.0162
+  for a 2-worker auto/simple formation; $0.016 total_tokens ≈ 26.8k).
+- `bin/chimera-mcp-hermes` wrapper (repo-root-resolving, explicit config)
+  is the durable way to wire agents to the repo venv MCP server.
