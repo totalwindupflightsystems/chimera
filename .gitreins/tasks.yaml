@@ -501,3 +501,16 @@ tasks:
   status: complete
   created_at: '2026-08-27T22:55:14.143600+00:00'
   completed_at: '2026-08-27T23:02:25.517954+00:00'
+- id: df-chimera-v2-2-models-table
+  title: Fix unreadable chimera models table (36 columns truncated to ~3 chars)
+  criteria:
+  - chimera models renders model name, provider, and tier fully legible with no ~3-char
+    truncation in an 80-column terminal and when piped
+  - chimera models no longer renders one column per category (36 columns); category
+    weights are presented legibly (e.g. transposed rows or summarized top categories)
+  - chimera formations definition column renders legibly (no truncated JSON blob)
+  - Full test suite passes with new regression tests covering the models/formations
+    table rendering
+  status: complete
+  created_at: '2026-09-11T10:07:51.668940+00:00'
+  completed_at: '2026-09-11T10:41:47.899542+00:00'

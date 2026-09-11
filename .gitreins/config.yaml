@@ -37,7 +37,7 @@ pipeline:
     - sandbox
     - detect_dead_code
 evaluator:
-  max_iterations: 100
+  max_iterations: 200
   max_time: 30m
   max_input_tokens: 16M
   max_output_tokens: 4M
