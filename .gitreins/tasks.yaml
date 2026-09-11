@@ -514,3 +514,15 @@ tasks:
   status: complete
   created_at: '2026-09-11T10:07:51.668940+00:00'
   completed_at: '2026-09-11T10:41:47.899542+00:00'
+- id: df-chimera-v2-3-cli-stdout-purity
+  title: Stop structlog pollution of chimera CLI stdout (DF-CHIMERA-V2-3)
+  criteria:
+  - chimera -c chimera.yaml models writes zero structlog/log lines to stdout (split-probe
+    verified); logs go to stderr
+  - Regression tests assert stdout purity via subprocess split probes (not CliRunner
+    mix_stderr)
+  - 'Full test suite green: pytest tests/ -q shows 0 failed'
+  - ruff check . clean
+  status: complete
+  created_at: '2026-09-11T17:04:57.422722+00:00'
+  completed_at: '2026-09-11T17:25:14.089273+00:00'
