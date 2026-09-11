@@ -516,6 +516,103 @@ def test_cli_no_degradation_warning_when_clean(config_file, monkeypatch) -> None
 
 
 # ---------------------------------------------------------------------------
+# DF-CHIMERA-V2-2: readable models/formations tables
+# ---------------------------------------------------------------------------
+
+def test_cli_models_no_truncation_at_80_cols(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Regression: `chimera models` used to add one column per category (32+),
+    so an 80-column terminal truncated every cell to ~3 chars ("mo…", "pr…")
+    with no legible model/provider/tier. The identity columns must render
+    every long model name, provider, and tier in full at 80 columns.
+    """
+    monkeypatch.setenv("COLUMNS", "80")
+    runner = CliRunner()
+    result = runner.invoke(main, ["-c", str(config_file), "models"])
+    assert result.exit_code == 0, result.output
+    # Longest names/providers in the fixture must appear in full (no "…").
+    assert "deepseek/deepseek-chat" in result.output
+    assert "openrouter/qwen/qwen3-coder" in result.output
+    assert "openrouter/google/gemini-2.5-flash" in result.output
+    assert "openrouter/anthropic/claude-sonnet-4" in result.output
+    assert "zai-coding-plan/glm-5.2" in result.output
+    assert "deepseek/deepseek-v4-flash" in result.output
+    # Provider + tier columns legible.
+    assert "openrouter" in result.output
+    assert "premium" in result.output
+    assert "budget" in result.output
+    # Rich truncation marker must not appear anywhere.
+    assert "…" not in result.output
+    # No per-category columns: a bare "code" header cell is gone (categories
+    # only appear inside "model · category" rows in the detail table).
+    assert "code" in result.output
+
+
+def test_cli_models_transposed_weights_present(config_file) -> None:  # type: ignore[no-untyped-def]
+    """Category weights are still presented, transposed as (model · category,
+    weight) rows instead of one column per category."""
+    runner = CliRunner()
+    result = runner.invoke(main, ["-c", str(config_file), "models"])
+    assert result.exit_code == 0, result.output
+    assert "Category weights" in result.output
+    # One transposed row per (model, category).
+    assert "deepseek/deepseek-chat · code" in result.output
+    assert "openrouter/google/gemini-2.5-flash · design" in result.output
+    assert "0.90" in result.output  # gemini design weight
+    assert "0.95" in result.output  # glm-5.2 reasoning weight
+
+
+def test_cli_models_weights_sorted_strongest_first(config_file) -> None:  # type: ignore[no-untyped-def]
+    """Within each model's block, weights sort strongest-first."""
+    runner = CliRunner()
+    result = runner.invoke(main, ["-c", str(config_file), "models"])
+    assert result.exit_code == 0, result.output
+    # glm-5.2: reasoning=0.95 > code=0.92 > analysis=0.90 > audit=0.88 >
+    # design=0.85 — rows must appear in that order.
+    order = [
+        "zai-coding-plan/glm-5.2 · reasoning",
+        "zai-coding-plan/glm-5.2 · code",
+        "zai-coding-plan/glm-5.2 · analysis",
+        "zai-coding-plan/glm-5.2 · audit",
+        "zai-coding-plan/glm-5.2 · design",
+    ]
+    positions = [result.output.find(row) for row in order]
+    assert all(p >= 0 for p in positions), result.output
+    assert positions == sorted(positions)
+
+
+def test_cli_formations_no_json_blob(config_file) -> None:  # type: ignore[no-untyped-def]
+    """Regression: the definition column contained a raw json.dumps blob that
+    rich truncated illegibly. It must now be a compact readable summary."""
+    runner = CliRunner()
+    result = runner.invoke(main, ["-c", str(config_file), "formations"])
+    assert result.exit_code == 0, result.output
+    assert "workers=2" in result.output
+    assert "mode=auto" in result.output
+    assert "merge=best_of_n" in result.output
+    assert "aggregators=default" in result.output
+    assert "worker_models=" in result.output
+    # No JSON syntax from the old blob survives.
+    assert '{"workers"' not in result.output
+    assert "null" not in result.output
+
+
+def test_cli_formations_dag_summarized(config_file) -> None:  # type: ignore[no-untyped-def]
+    """A DAG formation renders as a compact stage count, not a JSON dump."""
+    from chimera.cli.main import _summarize_preset
+    from chimera.config import FormationPreset
+
+    dag = {
+        "stages": [
+            {"id": "a", "kind": "worker", "model": "m1", "depends_on": []},
+            {"id": "b", "kind": "aggregator", "model": "m2", "depends_on": ["a"]},
+        ],
+        "edges": [["a", "b"]],
+    }
+    summary = _summarize_preset(FormationPreset(dag=dag))
+    assert summary == "dag: 2 stages"
+
+
+# ---------------------------------------------------------------------------
 # CH-GAP-050: config-less first-run — clean one-line error + `config init`
 # ---------------------------------------------------------------------------
 

@@ -25,7 +25,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from chimera.config import ChimeraConfig, load_config
+from chimera.config import ChimeraConfig, FormationPreset, load_config
 from chimera.engine import Engine
 from chimera.gateway import LiteLLMGateway
 
@@ -255,6 +255,32 @@ def run(ctx: click.Context, prompt: tuple[str, ...]) -> None:
     _deliberate(ctx, prompt)
 
 
+def _summarize_preset(preset: FormationPreset) -> str:
+    """One-line human-readable summary of a formation preset (DF-CHIMERA-V2-2).
+
+    Replaces the raw ``json.dumps`` blob that rich truncated illegibly.
+    """
+    d = preset.model_dump(exclude_none=True)
+    dag = d.get("dag")
+    parts: list[str] = []
+    if dag is not None:
+        parts.append(f"dag: {len(dag.get('stages', []))} stages")
+    if d.get("workers") is not None:
+        parts.append(f"workers={d['workers']}")
+    if d.get("mode") is not None:
+        parts.append(f"mode={d['mode']}")
+    for key in ("aggregator", "audit", "merge"):
+        if d.get(key) is not None:
+            parts.append(f"{key}={d[key]}")
+    # ", " joins (not bare ",") keep the tokens breakable so rich WRAPS the
+    # definition across lines at 80 columns instead of cropping it.
+    if d.get("aggregators"):
+        parts.append("aggregators=" + ", ".join(d["aggregators"]))
+    if d.get("worker_models"):
+        parts.append("worker_models=" + ", ".join(d["worker_models"]))
+    return "; ".join(parts) if parts else "(empty)"
+
+
 @main.command()
 @click.pass_context
 def formations(ctx: click.Context) -> None:
@@ -264,7 +290,7 @@ def formations(ctx: click.Context) -> None:
     table.add_column("name", style="bold")
     table.add_column("definition")
     for name, preset in config.formations.items():
-        table.add_row(name, json.dumps(preset.model_dump(exclude_none=True)))
+        table.add_row(name, _summarize_preset(preset))
     console.print(table)
 
 
@@ -273,24 +299,38 @@ def formations(ctx: click.Context) -> None:
 def models(ctx: click.Context) -> None:
     """List available models with category weights."""
     config = _load_cfg(ctx)
-    categories: set[str] = set()
-    for entry in config.models.values():
-        categories.update(entry.categories.keys())
-    sorted_cats = sorted(categories)
+
+    # DF-CHIMERA-V2-2: the old table added one column per category (32+ in the
+    # shipped config), so an 80-column terminal truncated every cell to ~3
+    # characters ("mo…", "pr…") — nothing legible. Render two tables instead:
+    #
+    # 1. an overview (model / provider / tier) — the three identity columns
+    #    alone need only ~62 columns at natural width, so names stay fully
+    #    legible even at 80 columns;
+    # 2. the weight matrix TRANSPOSED: one row per (model, category) instead
+    #    of one column per category — a fixed 4-column layout at any catalog
+    #    size. Long model·category rows are combined into ONE foldable cell
+    #    (rich wraps a single long cell across lines instead of cropping) and
+    #    weights sort strongest-first per model, so truncation never returns
+    #    as the catalog grows.
     table = Table(title="Models")
-    table.add_column("model", style="bold")
-    table.add_column("provider")
-    table.add_column("tier")
-    for cat in sorted_cats:
-        table.add_column(cat, justify="right")
+    table.add_column("model", style="bold", no_wrap=True)
+    table.add_column("provider", no_wrap=True)
+    table.add_column("tier", no_wrap=True)
     for name, entry in config.models.items():
-        table.add_row(
-            name,
-            entry.provider,
-            entry.cost_tier,
-            *(f"{entry.categories.get(cat, 0):.2f}" for cat in sorted_cats),
-        )
+        table.add_row(name, entry.provider, entry.cost_tier)
     console.print(table)
+
+    detail = Table(title="Category weights (model · category)")
+    detail.add_column("model · category", no_wrap=False)
+    detail.add_column("weight", justify="right", no_wrap=True)
+    for name, entry in config.models.items():
+        pairs = sorted(
+            entry.categories.items(), key=lambda kv: (-kv[1], kv[0])
+        )
+        for cat, weight in pairs:
+            detail.add_row(f"{name} · {cat}", f"{weight:.2f}")
+    console.print(detail)
 
 
 @main.command()
