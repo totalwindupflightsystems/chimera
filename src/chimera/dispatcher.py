@@ -25,7 +25,7 @@ import structlog
 from pydantic import BaseModel, Field
 
 from chimera import blocked_models
-from chimera.config import ChimeraConfig, FormationPreset
+from chimera.config import ChimeraConfig, FormationPreset, credentialed_enabled_models
 from chimera.gateway import Gateway, GatewayError, GatewayResponse
 
 log = structlog.get_logger("chimera.dispatcher")
@@ -368,7 +368,41 @@ def build_dispatcher_prompt(
     blocked = blocked_models.shared_registry.blocked()
     if blocked:
         log.info("dispatcher_catalog_excludes_blocked", models=sorted(blocked))
-    catalog = config.catalog_description(exclude=blocked)
+    exclude = set(blocked)
+    if fixed_dag is None and config.auto_formation.restrict_to_credentialed_providers:
+        # AUTO mode only: the dispatcher designs the DAG, so the catalog it
+        # sees decides which models can reach worker stages. Restrict it to
+        # models whose provider has resolved credentials so a one-key install
+        # never picks guardrail-blocked models (DF-CHIMERA-0906-3). Preset /
+        # custom DAGs (fixed_dag given) keep the full catalog — their
+        # structure is already fixed and credential-filtering them would
+        # silently rewrite explicit config.
+        usable = credentialed_enabled_models(config)
+        if usable:
+            uncredentialed = set(config.enabled_models) - set(usable)
+            if uncredentialed:
+                exclude |= uncredentialed
+                log.info(
+                    "dispatcher_catalog_credentialed_only",
+                    excluded=sorted(uncredentialed),
+                )
+        else:
+            # Empty candidate set: falling back to the full catalog keeps
+            # the formation runnable (every provider call will surface a
+            # real auth error) and this warning tells the operator exactly
+            # what to fix.
+            log.warning(
+                "dispatcher_catalog_no_credentialed_models",
+                msg=(
+                    "No enabled catalog model has resolved provider "
+                    "credentials; auto formation will use the full enabled "
+                    "catalog and provider calls will fail with auth errors. "
+                    "Set at least one provider API key (e.g. DEEPSEEK_API_KEY) "
+                    "or set auto_formation.restrict_to_credentialed_providers: "
+                    "false in chimera.yaml."
+                ),
+            )
+    catalog = config.catalog_description(exclude=exclude)
     schema_str = json.dumps(DISPATCH_SCHEMA_HINT, indent=2)
 
     # STRICT worker-prompt rules — prevent empty / verbatim / generic prompts.

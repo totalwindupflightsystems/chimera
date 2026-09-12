@@ -166,6 +166,52 @@ Stage kinds: `worker`, `aggregator`, `merge`, `audit`.
 
 ---
 
+## `auto_formation`
+
+Controls how the **default `auto` formation** (dispatcher-designed DAGs) picks
+worker models.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `restrict_to_credentialed_providers` | `bool` | `true` | Limit the dispatcher's catalog — and the auto worker stages that result — to enabled models whose provider has resolved credentials |
+
+```yaml
+auto_formation:
+  restrict_to_credentialed_providers: true   # default
+```
+
+**Default routing by configured provider.** With the default `true`, the auto
+dispatcher only sees (and the engine only executes) worker models whose
+provider key is configured — resolved from `api_keys:` (`${VAR}` substitution
+or the `*_API_KEY` env shortcuts) or a provider's `api_key` / `api_key_env`.
+A fresh install with only `DEEPSEEK_API_KEY` set will therefore design
+DeepSeek-only formations instead of picking OpenRouter models that fail with
+guardrail/auth errors (`model_blocked_guardrail` → dropped workers →
+`aggregator_partial_inputs` degraded merges). Anthropic models count as
+usable when an OpenRouter key exists, matching the gateway's
+Anthropic→OpenRouter fallback.
+
+**Explicit all-catalog opt-in.** Set the flag to `false` (or export
+`CHIMERA_AUTO_ALLOW_ALL_CATALOG=true`) to give the auto dispatcher the full
+enabled catalog — the pre-restriction behavior.
+
+**Scope.** Only dispatcher-generated `auto` formations are restricted:
+
+- Named presets and custom DAGs are never rewritten — their structure is
+  explicit configuration and is honored verbatim.
+- Request-level overrides remain authoritative:
+  `allowed_models`, `worker_model`, `stage_models`, `dispatcher_model`, and
+  `aggregator_model` behave exactly as documented and can force any catalog
+  model, credentialed or not.
+- `defaults.dispatcher` / `defaults.default_worker` /
+  `defaults.default_aggregator` are operator choices and are not filtered
+  (a failed aggregator stage still retries with `default_aggregator`).
+- If *no* provider has resolved credentials, the restriction is skipped with
+  an actionable warning so the failure surface stays the real provider auth
+  error rather than an empty catalog.
+
+---
+
 ## `models`
 
 Each model entry:

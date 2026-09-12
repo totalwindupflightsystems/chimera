@@ -20,7 +20,11 @@ from pydantic import BaseModel, Field
 
 from chimera import blocked_models
 from chimera.aggregator import Aggregator, StageResult
-from chimera.config import ChimeraConfig, DeliberationOverrides
+from chimera.config import (
+    ChimeraConfig,
+    DeliberationOverrides,
+    credentialed_enabled_models,
+)
 from chimera.dispatcher import (
     Dispatcher,
     DispatchOutcome,
@@ -222,6 +226,68 @@ def _apply_allowed_models(
             wp = dispatch.worker_prompt_for(stage.id)
             if wp is not None:
                 wp.model = default
+
+
+def _apply_credentialed_worker_models(
+    dispatch: DispatchResult,
+    config: ChimeraConfig,
+) -> None:
+    """Remap auto-formation worker stages whose provider has no credentials.
+
+    Safety net for the dispatcher's credential-filtered catalog
+    (DF-CHIMERA-0906-3): even if the dispatcher emits a model outside the
+    filtered catalog (hallucinated name that fuzzy-matches an uncredentialed
+    catalog entry), no uncredentialed model reaches a default auto worker
+    stage, so the dispatcher prompt and the executed DAG cannot disagree.
+
+    * Runs ONLY for dispatcher-generated auto formations
+      (``dispatch.source == "auto"``) when
+      ``auto_formation.restrict_to_credentialed_providers`` is on.  Preset
+      and custom DAGs are never rewritten by this pass.
+    * Remap target: ``defaults.default_worker`` when usable, else the first
+      credentialed enabled model in catalog order.  Aggregator/merge/audit
+      stages and the dispatcher model are untouched — the engine already
+      retries a failed aggregator with ``defaults.default_aggregator``.
+    * Explicit request overrides (``worker_model`` / ``stage_models`` /
+      ``allowed_models``) are applied AFTER this pass in
+      :meth:`Engine.deliberate`, so they remain authoritative.
+    * Worker prompt model entries are kept in sync with the stage model.
+    * When no model is credentialed at all, nothing is remapped and an
+      actionable warning is logged (every provider call will surface a
+      real auth error).
+    """
+    if dispatch.source != "auto":
+        return
+    if not config.auto_formation.restrict_to_credentialed_providers:
+        return
+    usable = credentialed_enabled_models(config)
+    if not usable:
+        log.warning(
+            "engine_auto_no_credentialed_models",
+            msg=(
+                "No enabled catalog model has resolved provider credentials; "
+                "auto worker stages are left as dispatched and provider calls "
+                "will fail with auth errors. Set at least one provider API "
+                "key (e.g. DEEPSEEK_API_KEY) or set "
+                "auto_formation.restrict_to_credentialed_providers: false "
+                "in chimera.yaml."
+            ),
+        )
+        return
+    default_worker = config.defaults.default_worker
+    fallback = default_worker if default_worker in usable else next(iter(usable))
+    for stage in dispatch.formation.stages:
+        if stage.kind == "worker" and stage.model not in usable:
+            log.info(
+                "engine_auto_credentialed_remap",
+                stage=stage.id,
+                original=stage.model,
+                remapped=fallback,
+            )
+            stage.model = fallback
+            wp = dispatch.worker_prompt_for(stage.id)
+            if wp is not None:
+                wp.model = fallback
 
 
 def _apply_global_model_overrides(
@@ -429,6 +495,13 @@ class Engine:
         # crash answer selection. Runs BEFORE model overrides so an
         # aggregator_model override also applies to an injected stage.
         _repair_formation(outcome.result, self.config)
+
+        # DF-CHIMERA-0906-3: credential-derived safety net for default auto
+        # formations. Runs BEFORE the explicit request overrides below so
+        # allowed_models / worker_model / stage_models remain authoritative,
+        # and only touches dispatcher-generated auto DAGs (presets and
+        # custom DAGs keep their configured structure).
+        _apply_credentialed_worker_models(outcome.result, self.config)
 
         # Global request-level overrides (worker/aggregator models). Config
         # locks (defaults.lock_aggregator / lock_dispatcher) take precedence:

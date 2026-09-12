@@ -222,6 +222,27 @@ class SelectorConfig(BaseModel):
     )
 
 
+class AutoFormationConfig(BaseModel):
+    """Behavior of the default ``auto`` formation (dispatcher-designed DAGs).
+
+    ``restrict_to_credentialed_providers`` (default ``True``) limits the
+    dispatcher's model catalog — and the auto worker stages that result —
+    to enabled models whose provider has resolved credentials
+    (:func:`provider_credential_resolved`).  This prevents a fresh install
+    with e.g. only ``DEEPSEEK_API_KEY`` from burning calls on
+    guardrail-blocked OpenRouter models (``model_blocked_guardrail`` →
+    ``aggregator_partial_inputs``).
+
+    Set to ``False`` to explicitly opt in to the full enabled catalog
+    (the pre-restriction behavior).  Named presets and custom DAGs are
+    never affected by this switch, and request-level overrides
+    (``allowed_models`` / ``worker_model`` / ``stage_models`` /
+    ``dispatcher_model`` / ``aggregator_model``) remain authoritative.
+    """
+
+    restrict_to_credentialed_providers: bool = True
+
+
 class StageTimeoutConfig(BaseModel):
     """Per-stage and end-to-end timeout controls.
 
@@ -273,6 +294,7 @@ class ChimeraConfig(BaseModel):
     circuit_breakers: dict[str, CircuitBreakerConfig] = Field(default_factory=dict)
     api_keys: dict[str, str] = Field(default_factory=dict)
     selector: SelectorConfig = Field(default_factory=SelectorConfig)
+    auto_formation: AutoFormationConfig = Field(default_factory=AutoFormationConfig)
     provider_discovery: bool = True  # auto-discover providers from models.dev
     timeout: StageTimeoutConfig = Field(default_factory=StageTimeoutConfig)
     # Optional soft cap on the *aggregator* prompt size in estimated tokens
@@ -334,6 +356,61 @@ class ChimeraConfig(BaseModel):
                 f"strengths: {cats}"
             )
         return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# Credential-derived model usability (DF-CHIMERA-0906-3)
+# --------------------------------------------------------------------------- #
+
+def provider_credential_resolved(config: ChimeraConfig, provider_name: str) -> bool:
+    """True when the config can resolve an API key for *provider_name*.
+
+    This is the canonical, deterministic credential view used for routing
+    decisions (default ``auto`` formation filtering).  It mirrors the
+    resolution order the gateway uses for its primary key source:
+
+    1. ``config.api_keys[provider_name]`` — env shortcuts / ``${VAR}``
+       substitution (``_apply_env_overrides`` mirrors the standard
+       ``*_API_KEY`` env vars here at load time).
+    2. ``providers[provider_name].api_key`` — resolved from ``api_key_env``
+       by the model validator.
+    3. F8 Anthropic → OpenRouter fallback: Anthropic models route through
+       OpenRouter when only an OpenRouter key is configured.
+
+    Raw ``os.environ`` fallbacks (LiteLLM's own env handling) are
+    deliberately NOT consulted here so the answer depends only on the
+    loaded config object.  The REST health surface
+    (``api.server._provider_has_credentials``) layers those env probes on
+    top of this helper for connectivity reporting.
+    """
+    if config.api_keys.get(provider_name):
+        return True
+    provider = config.providers.get(provider_name)
+    if provider is not None and provider.api_key:
+        return True
+    if provider_name == "anthropic":
+        # F8: the gateway routes Anthropic models via OpenRouter when no
+        # Anthropic key is configured but an OpenRouter key exists.
+        if config.api_keys.get("openrouter"):
+            return True
+        or_provider = config.providers.get("openrouter")
+        if or_provider is not None and or_provider.api_key:
+            return True
+    return False
+
+
+def credentialed_enabled_models(config: ChimeraConfig) -> dict[str, ModelEntry]:
+    """Enabled catalog models whose provider has resolved credentials.
+
+    These are the models the default ``auto`` formation may assign to
+    worker stages when
+    ``auto_formation.restrict_to_credentialed_providers`` is on.
+    """
+    return {
+        name: entry
+        for name, entry in config.enabled_models.items()
+        if provider_credential_resolved(config, entry.provider)
+    }
 
 
 #: Cached contents of ~/.hermes/.env, loaded once as fallback for env-var
@@ -474,6 +551,9 @@ def load_config(path: Path | str | None = None) -> ChimeraConfig:
     * ``CHIMERA_LOG_LEVEL`` → ``observability.log_level``
     * ``CHIMERA_AUTH_ENABLED`` → ``auth.enabled`` (``\"true\"`` / ``\"false\"``)
     * ``CHIMERA_RATE_LIMIT_ENABLED`` → ``rate_limit.enabled``
+    * ``CHIMERA_AUTO_ALLOW_ALL_CATALOG`` → disables the default auto
+      formation's credential-derived catalog restriction
+      (``auto_formation.restrict_to_credentialed_providers = False``)
     * ``DEEPSEEK_KEY`` / ``OPENROUTER_KEY`` / ``ZAI_KEY``
       → ``api_keys.*`` shortcuts
     """
@@ -536,6 +616,10 @@ def _apply_env_overrides(config: ChimeraConfig) -> None:
         config.auth.enabled = True
     if _os.environ.get("CHIMERA_RATE_LIMIT_ENABLED", "").lower() in ("true", "1"):
         config.rate_limit.enabled = True
+    if _os.environ.get("CHIMERA_AUTO_ALLOW_ALL_CATALOG", "").lower() in ("true", "1"):
+        # Explicit opt-in to the full enabled catalog for default auto
+        # formation (disables the credential-derived restriction).
+        config.auto_formation.restrict_to_credentialed_providers = False
 
     # ── API key shortcuts (Docker-friendly names) ──
     for env_var, key_name in (
@@ -590,6 +674,7 @@ def _apply_env_overrides(config: ChimeraConfig) -> None:
 __all__ = [
     "AuthConfig",
     "AuthKeyEntry",
+    "AutoFormationConfig",
     "ChimeraConfig",
     "CircuitBreakerConfig",
     "Defaults",
@@ -604,7 +689,9 @@ __all__ = [
     "SelectorConfig",
     "ServerConfig",
     "DEFAULT_COST_RATES",
+    "credentialed_enabled_models",
     "find_config_path",
     "find_example_config_path",
     "load_config",
+    "provider_credential_resolved",
 ]

@@ -263,12 +263,17 @@ HEAD 0.2.3 wheel install. The entry-point verdict table above is STALE:
     quickstart; the repair (wheel ships example + `config init`) exists in
     HEAD 0.2.3 but is unreleased. Build/install from a HEAD wheel:
     `pip wheel --no-deps -w dist . && pip install dist/*.whl`.
-21. **Auto formation picks models your key cannot reach.** With only
-    DEEPSEEK_API_KEY, the dispatcher still chose openrouter/qwen3.7-plus →
-    guardrail 404 → 300s cooldown → degraded merge. The answer is usually
-    still right (surviving worker), but check for
-    `model_blocked_guardrail` / `aggregator_partial_inputs` and prefer
-    pinning `worker_model`/`stage_models` for one-provider setups.
+21. **Auto formation picks models your key cannot reach — RESOLVED at HEAD
+    (DF-CHIMERA-0906-3).** Default `auto` formation now restricts the
+    dispatcher catalog AND the executed worker stages to models whose
+    provider has resolved credentials (`auto_formation.restrict_to_credentialed_providers: true`
+    by default), so a DEEPSEEK_API_KEY-only install designs DeepSeek-only
+    formations. Named presets/custom DAGs and explicit request overrides
+    (`allowed_models`/`worker_model`/`stage_models`) are unaffected. Set the
+    flag to `false` (or `CHIMERA_AUTO_ALLOW_ALL_CATALOG=true`) to opt back
+    into the full enabled catalog. On older builds the symptom is
+    `model_blocked_guardrail` → 300s cooldown → `aggregator_partial_inputs`;
+    the workaround there is pinning `worker_model`/`stage_models`.
 22. **Check deploy parity before trusting live behavior.** `/health` exposes
     the running commit; compare with `git rev-parse --short HEAD`. Found
     30 commits behind on 2026-09-04 (third recurrence; delta was

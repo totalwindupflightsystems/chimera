@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 from chimera import __version__
 from chimera.api.dependencies import require_api_key
 from chimera.api.rate_limit import RateLimiter
-from chimera.config import ChimeraConfig, load_config
+from chimera.config import ChimeraConfig, load_config, provider_credential_resolved
 from chimera.engine import Engine
 from chimera.gateway import LiteLLMGateway
 from chimera.observability import configure_logging
@@ -647,28 +647,16 @@ _MAX_PROBE_MODELS = 3
 def _provider_has_credentials(config: ChimeraConfig, provider_name: str) -> bool:
     """True when the gateway can resolve an API key for *provider_name*.
 
-    Mirrors the key resolution the gateway actually uses: ``config.api_keys``
-    (env-var shortcuts) → resolved ``Provider.api_key`` (``api_key_env``) →
-    per-provider environment fallbacks.  Anthropic gets the F8 OpenRouter
-    fallback the gateway applies when no Anthropic key is configured.
+    Health-only superset of the canonical routing helper
+    (:func:`chimera.config.provider_credential_resolved`, which covers
+    ``config.api_keys`` → resolved ``Provider.api_key`` → F8
+    Anthropic→OpenRouter fallback): additionally probes the per-provider
+    environment fallbacks LiteLLM reads directly, so the connectivity
+    pre-check matches every key the gateway could actually use.
     """
-    if config.api_keys.get(provider_name):
+    if provider_credential_resolved(config, provider_name):
         return True
-    provider = config.providers.get(provider_name)
-    if provider is not None and provider.api_key:
-        return True
-    for env_var in _PROVIDER_ENV_KEYS.get(provider_name, ()):
-        if os.environ.get(env_var):
-            return True
-    if provider_name == "anthropic":
-        # F8: the gateway routes Anthropic models via OpenRouter when no
-        # Anthropic key is configured but an OpenRouter key exists.
-        if config.api_keys.get("openrouter"):
-            return True
-        or_provider = config.providers.get("openrouter")
-        if or_provider is not None and or_provider.api_key:
-            return True
-    return False
+    return any(os.environ.get(env_var) for env_var in _PROVIDER_ENV_KEYS.get(provider_name, ()))
 
 
 def _classify_provider_error(exc: BaseException) -> str:
