@@ -28,6 +28,43 @@ from chimera.exceptions import BudgetExhaustedError
 
 log = structlog.get_logger("chimera.gateway")
 
+#: LiteLLM ships process-global debug switches whose DEFAULT state writes
+#: straight to stdout:
+#:   * ``suppress_debug_info=False`` makes
+#:     ``litellm_core_utils.get_llm_provider_logic`` print an ANSI
+#:     ``Provider List: https://docs.litellm.ai/docs/providers`` banner when a
+#:     provider-less model string reaches it. LiteLLM calls that helper
+#:     internally from provider transformations (e.g. OpenRouter's
+#:     ``get_supported_openai_params`` -> ``utils.supports_reasoning``), where a
+#:     provider-less lookup is routine — so the banner can fire on a perfectly
+#:     successful deliberation.
+#:   * ``exception_mapping_utils.exception_type`` prints a
+#:     ``Give Feedback / Get Help`` block for every mapped provider error.
+#: Stdout is the JSON-RPC wire for the MCP stdio transport (and piped output
+#: for the CLI), so a single banner corrupts a live session. We flip the
+#: switches on the litellm module itself — the one seam every provider call
+#: already flows through — instead of patching site-packages or redirecting
+#: process stdout globally.
+
+
+def ensure_litellm_quiet(litellm_module: Any | None = None) -> Any:
+    """Silence LiteLLM's stdout debug banners, process-wide.
+
+    Sets ``suppress_debug_info = True`` (and ``set_verbose = False``) on the
+    LiteLLM module and returns it. Idempotent and cheap, so it runs
+    immediately before EVERY completion — the async path, the sync fallback,
+    and therefore the exception-mapping path, which executes inside
+    ``litellm.completion`` / ``acompletion``. ``litellm_module`` is injectable
+    so tests can assert the ordering without importing LiteLLM.
+    """
+    if litellm_module is None:
+        import litellm as litellm_module
+
+    litellm_module.suppress_debug_info = True
+    litellm_module.set_verbose = False
+    return litellm_module
+
+
 #: Dedicated pool for residual sync LiteLLM work. Sized for concurrent stage
 #: waves (multiple workers + progressive wait-messages) so default-executor
 #: saturation cannot serialize independent stage calls.
@@ -290,7 +327,7 @@ def _is_retryable(exc: BaseException) -> bool:
 
     # litellm exceptions can wrap httpx/openai
     try:
-        import litellm
+        litellm = ensure_litellm_quiet()
         if isinstance(exc, litellm.exceptions.APIError) and hasattr(exc, "status_code"):
             return getattr(exc, "status_code", 0) in _RETRYABLE_STATUS_CODES
         if isinstance(exc, litellm.exceptions.APIConnectionError):
@@ -555,8 +592,13 @@ def _build_response(result: Any, model: str) -> GatewayResponse:
 
 
 def _litellm_sync_complete(call_kwargs: dict[str, Any]) -> Any:
-    """Blocking LiteLLM completion (used by tests and sync fallback)."""
-    import litellm
+    """Blocking LiteLLM completion (used by tests and sync fallback).
+
+    Silences LiteLLM's stdout debug banners first (see
+    :func:`ensure_litellm_quiet`) so an error-mapping or provider-lookup
+    print can never reach the MCP JSON-RPC wire.
+    """
+    litellm = ensure_litellm_quiet()
 
     return litellm.completion(**call_kwargs)
 
@@ -568,8 +610,13 @@ async def _litellm_acomplete(call_kwargs: dict[str, Any]) -> Any:
     serialize on a thread pool. Falls back to ``asyncio.to_thread`` + sync
     ``completion`` on a dedicated large executor if acompletion is missing
     or returns a non-awaitable.
+
+    LiteLLM's process-global debug banners are silenced first (see
+    :func:`ensure_litellm_quiet`): the ANSI "Provider List" print and the
+    "Give Feedback / Get Help" block are stdout writes that would corrupt the
+    MCP stdio JSON-RPC stream on any provider lookup miss or mapped error.
     """
-    import litellm
+    litellm = ensure_litellm_quiet()
 
     acomplete = getattr(litellm, "acompletion", None)
     if acomplete is not None:
@@ -673,6 +720,7 @@ __all__ = [
     "_is_retryable",
     "_litellm_acomplete",
     "_litellm_sync_complete",
+    "ensure_litellm_quiet",
     "negotiate_response_format",
     "resolve_litellm_model",
 ]

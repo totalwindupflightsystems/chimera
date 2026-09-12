@@ -288,8 +288,9 @@ def test_main_success_exit_contract(capsys, monkeypatch) -> None:  # type: ignor
     """A clean conversation prints evidence lines and exits 0."""
     captured: dict = {}
 
-    def fake_drive(cmd, env, cwd):  # noqa: ANN001
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
         captured["cmd"] = cmd
+        captured["formation"] = formation
         lines, order, responses = _handshake_lines()
         return lines, order, responses, ""
 
@@ -298,6 +299,8 @@ def test_main_success_exit_contract(capsys, monkeypatch) -> None:  # type: ignor
     out = capsys.readouterr().out
     assert rc == 0
     assert captured["cmd"] == ["/fake/venv/bin/chimera-mcp"]
+    assert captured["formation"] == "simple"
+    assert "FORMATION=simple" in out
     assert "NON_JSON_RPC_STDOUT_LINES=0" in out
     assert "RESPONSE_IDS=[1, 2, 3]" in out
     assert "TOOL_NAMES=['chimera_deliberate', 'chimera_formations', 'chimera_models']" in out
@@ -309,7 +312,7 @@ def test_main_success_exit_contract(capsys, monkeypatch) -> None:  # type: ignor
 def test_main_failure_exit_contract(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """A polluted run prints the failing evidence and exits 1."""
 
-    def fake_drive(cmd, env, cwd):  # noqa: ANN001
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
         lines, order, responses = _handshake_lines()
         return ["provider_cache_hit event=provider_cache_hit"] + lines, order, responses, "stderr-text"
 
@@ -327,7 +330,7 @@ def test_main_failure_exit_contract(capsys, monkeypatch) -> None:  # type: ignor
 def test_main_depth_failure_exit_contract(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """A handshake-clean but empty-answer run still fails (depth gate)."""
 
-    def fake_drive(cmd, env, cwd):  # noqa: ANN001
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
         lines = [
             json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}}),
             json.dumps({"jsonrpc": "2.0", "id": 2, "result": _TOOLS_LIST_RESULT}),
@@ -349,6 +352,136 @@ def test_read_deadline_minutes_not_seconds() -> None:
     """The depth call is network-bound — the deadline must allow minutes."""
     assert probe.READ_DEADLINE_S >= 120
     assert probe.DRAIN_DEADLINE_S >= 10
+
+
+# --- formation override (DF-CHIMERA-0911-1) ---------------------------------- #
+#
+# The 0.2.4 leak was formation-dependent: formation=simple stayed clean while
+# formation=speed's OpenRouter leg made LiteLLM print an ANSI "Provider List"
+# banner onto stdout. The release gate must therefore be able to drive a
+# NON-default formation — through a probe-owned token that cannot be confused
+# with the child server's argv, or through an env var.
+
+FORMATION_ENV = "CHIMERA_PROBE_FORMATION"
+
+
+def test_default_formation_is_simple() -> None:
+    assert probe.DEPTH_FORMATION == "simple"
+    formation, cmd = probe.parse_formation(["/fake/venv/bin/chimera-mcp"], env={})
+    assert formation == "simple"
+    assert cmd == ["/fake/venv/bin/chimera-mcp"]
+
+
+def test_formation_option_is_parsed_and_stripped_from_child_cmd() -> None:
+    formation, cmd = probe.parse_formation(
+        ["--formation=speed", "/fake/venv/bin/chimera-mcp", "chimera.yaml"], env={}
+    )
+    assert formation == "speed"
+    assert cmd == ["/fake/venv/bin/chimera-mcp", "chimera.yaml"]
+
+
+def test_formation_option_works_in_any_position() -> None:
+    formation, cmd = probe.parse_formation(["chimera", "mcp", "--formation=auto"], env={})
+    assert formation == "auto"
+    assert cmd == ["chimera", "mcp"]
+
+
+def test_formation_env_var_selects_formation() -> None:
+    formation, cmd = probe.parse_formation(["/fake/venv/bin/chimera-mcp"], env={FORMATION_ENV: "speed"})
+    assert formation == "speed"
+    assert cmd == ["/fake/venv/bin/chimera-mcp"]
+
+
+def test_formation_option_beats_env_var() -> None:
+    formation, _ = probe.parse_formation(
+        ["--formation=debate", "/fake/bin/chimera-mcp"], env={FORMATION_ENV: "speed"}
+    )
+    assert formation == "debate"
+
+
+def test_formation_env_var_blank_falls_back_to_default() -> None:
+    formation, _ = probe.parse_formation(["/fake/bin/chimera-mcp"], env={FORMATION_ENV: "  "})
+    assert formation == "simple"
+
+
+def test_empty_option_value_keeps_the_env_formation() -> None:
+    formation, cmd = probe.parse_formation(
+        ["--formation=", "/fake/bin/chimera-mcp"], env={FORMATION_ENV: "speed"}
+    )
+    assert formation == "speed"
+    assert cmd == ["/fake/bin/chimera-mcp"]
+
+
+def test_other_flags_and_paths_survive_untouched() -> None:
+    """Only the probe-owned token is consumed — the child command is preserved."""
+    argv = ["/fake/venv/bin/chimera-mcp", "/etc/chimera.yaml", "--verbose"]
+    formation, cmd = probe.parse_formation(argv, env={})
+    assert formation == "simple"
+    assert cmd == argv
+
+
+def test_formation_override_is_injected_into_the_tools_call() -> None:
+    """The selected formation must reach the chimera_deliberate arguments."""
+    call = [m for m in probe.build_messages("speed") if m.get("method") == "tools/call"][0]
+    args = call["params"]["arguments"]
+    assert args["formation"] == "speed"
+    assert args["prompt"] == probe.DEPTH_PROMPT
+    # Default stays simple, and the module-level constant stays in lockstep.
+    default_call = [m for m in probe.build_messages() if m.get("method") == "tools/call"][0]
+    assert default_call["params"]["arguments"] == probe.DEPTH_ARGUMENTS
+    assert probe.depth_arguments() == probe.DEPTH_ARGUMENTS
+    assert probe.depth_arguments("speed")["formation"] == "speed"
+
+
+def test_main_threads_the_formation_to_the_driver(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict = {}
+
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
+        captured["cmd"] = cmd
+        captured["formation"] = formation
+        lines, order, responses = _handshake_lines()
+        return lines, order, responses, ""
+
+    monkeypatch.setattr(probe, "drive_stdio", fake_drive)
+    rc = probe.main(["--formation=speed", "/fake/venv/bin/chimera-mcp"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert captured["cmd"] == ["/fake/venv/bin/chimera-mcp"]
+    assert captured["formation"] == "speed"
+    assert "FORMATION=speed" in out
+    assert "CHILD_CMD=/fake/venv/bin/chimera-mcp" in out
+
+
+def test_main_env_override_threads_to_the_driver(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict = {}
+
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
+        captured["formation"] = formation
+        lines, order, responses = _handshake_lines()
+        return lines, order, responses, ""
+
+    monkeypatch.setenv(FORMATION_ENV, "speed")
+    monkeypatch.setattr(probe, "drive_stdio", fake_drive)
+    rc = probe.main(["/fake/venv/bin/chimera-mcp"])
+    assert rc == 0
+    assert captured["formation"] == "speed"
+
+
+def test_bare_formation_flag_is_a_usage_error(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A space-separated ``--formation speed`` is ambiguous — refuse it.
+
+    The token after ``--formation`` could equally be the child's config path,
+    so the probe must not guess: exit 2 and never spawn anything.
+    """
+
+    def explode(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("drive_stdio must not run on a usage error")
+
+    monkeypatch.setattr(probe, "drive_stdio", explode)
+    rc = probe.main(["--formation", "speed", "/fake/venv/bin/chimera-mcp"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "--formation=NAME" in err
 
 
 def test_tool_inventory_constant_matches_mcp_server() -> None:

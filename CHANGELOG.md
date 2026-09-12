@@ -2,6 +2,48 @@
 
 All notable changes to Chimera will be documented in this file.
 
+## [0.2.5] — 2026-09-11
+
+### Fixed
+
+- **LiteLLM's stdout debug banners are suppressed on every deliberation path**
+  (DF-CHIMERA-0911-1). A real `formation=speed` deliberation on the published
+  0.2.4 wheel emitted three ANSI
+  `Provider List: https://docs.litellm.ai/docs/providers` lines straight onto
+  stdout — i.e. into the MCP JSON-RPC wire — while `formation=simple` stayed
+  clean, which is why the 0.2.4 gate (simple only) missed it. Both LiteLLM
+  print paths are gated on the process-global `litellm.suppress_debug_info`,
+  which defaults to `False` and which Chimera never set:
+  `litellm_core_utils/get_llm_provider_logic.py` (the ANSI banner, reached via
+  LiteLLM's own internal provider lookups — e.g. OpenRouter's
+  `get_supported_openai_params` → `utils.supports_reasoning` — so it fires even
+  on a *successful* call) and `litellm_core_utils/exception_mapping_utils.py`
+  (the `Give Feedback / Get Help` block printed for every mapped provider
+  error).
+
+  `chimera.gateway` — the single module that calls LiteLLM — now sets
+  `suppress_debug_info = True` (and `set_verbose = False`) through
+  `ensure_litellm_quiet()` immediately before **every** completion, in the
+  async path and the sync fallback. That covers MCP, CLI and HTTP-API callers
+  without patching site-packages or redirecting process stdout globally, and it
+  runs before the exception-mapping path, which executes inside
+  `completion()`/`acompletion()`. Regression coverage:
+  `tests/test_litellm_stdout_suppression.py` (ordering with an injected litellm
+  module, exception-path ordering, and a behavioural test that drives the real
+  gateway against an unroutable model and asserts no banner reaches stdout).
+
+### Changed
+
+- **The release probe can drive any formation** (DF-CHIMERA-0911-1):
+  `scripts/probe_mcp_stdio.py` now accepts `--formation=NAME` (a single
+  probe-owned token that is stripped from the child command, so it can never be
+  confused with the server argv) or the `CHIMERA_PROBE_FORMATION` environment
+  variable; the default stays `simple`. The release gate verifies **both**
+  `simple` and `speed` — the leak was formation-dependent. Offline contract
+  tests: `tests/test_probe_mcp_stdio.py`.
+- The `litellm>=1.50.0,<1.100` cap stays: it and the suppression above guard
+  two *different* regressions (see the corrected 0.2.4 entry).
+
 ## [0.2.4] — 2026-09-11
 
 ### Fixed
@@ -21,8 +63,15 @@ All notable changes to Chimera will be documented in this file.
   record *below* WARNING to `sys.stdout`). `force_stderr` only pins chimera's
   own sinks, so the first real `completion()` re-polluted the MCP JSON-RPC
   wire for any consumer — the exact failure the release probe exists to catch.
-  The requirement is now `litellm>=1.50.0,<1.100` (1.99.0 verified
-  stderr-only); regression tests pin both the range and the lockfile version.
+  The requirement is now `litellm>=1.50.0,<1.100`; regression tests pin both
+  the range and the lockfile version.
+
+  **Correction (0.2.5):** this entry originally claimed 1.99.0 was "verified
+  stderr-only". That is false, and the 0.2.5 gate proved it: the cap only
+  removes the 1.100+ *logging-handler* regression, while 1.99.0 keeps the
+  separate, always-on `suppress_debug_info=False` bare-`print()` banner path
+  that leaked three ANSI lines onto the MCP stdout wire on `formation=speed`.
+  Both guards are needed — the cap **and** the suppression added in 0.2.5.
 
 ### Changed
 

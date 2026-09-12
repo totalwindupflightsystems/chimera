@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chimera-deliberation"
-version = "0.2.4"
+version = "0.2.5"
 description = "Dynamic multi-model deliberation gateway"
 requires-python = ">=3.11"
 authors = [
@@ -33,6 +33,13 @@ dependencies = [
     # pollutes stdout on the first real completion() — fatal for the MCP stdio
     # transport, whose stdout is the JSON-RPC wire (force_stderr only pins
     # chimera's own sinks). 1.99.0 still uses the stderr handler.
+    #
+    # The cap is NOT sufficient on its own: every release in range keeps the
+    # separate, always-on bare-print paths gated by the process-global
+    # ``litellm.suppress_debug_info`` (False by default) — the ANSI "Provider
+    # List" banner and the "Give Feedback / Get Help" block, both plain
+    # ``print()`` to stdout. chimera.gateway.ensure_litellm_quiet() sets that
+    # flag before every completion; keep both guards.
     "litellm>=1.50.0,<1.100",
     "pydantic>=2.0",
     "pyyaml>=6.0",
