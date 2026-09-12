@@ -1,18 +1,32 @@
 #!/usr/bin/env python3
-"""Raw stdio MCP stdout-purity probe / gate (DF-CHIMERA-0906-2).
+"""Raw stdio MCP stdout-purity probe / gate (DF-CHIMERA-0906-2, DF-CHIMERA-0911-1).
 
 Spawns the real chimera MCP entry point over stdio and drives
 initialize -> notifications/initialized -> tools/list -> tools/call
-chimera_models. FAILS (exit 1) if ANY stdout line is not a valid JSON-RPC
+chimera_deliberate. FAILS (exit 1) if ANY stdout line is not a valid JSON-RPC
 2.0 message — provider-discovery / structlog / SDK lines must never reach
 stdout ahead of the initialize response.
+
+Depth call: a REAL ``chimera_deliberate`` tools/call (small deterministic
+arithmetic prompt, formation=simple). A handshake/catalog probe
+(``chimera_models``) never triggers the lazy LiteLLM import, so the
+published 0.2.3 wheel passed a models-only probe while still polluting
+stdout on a real deliberation call. This probe must NEVER regress to a
+shallow call — tests/test_probe_mcp_stdio.py pins the request contract.
+
+The request/validation contract lives in importable pure functions
+(``build_messages``, ``is_jsonrpc_line``, ``collect_responses``,
+``extract_tool_text``, ``check_depth_result``, ``check_handshake``) so the
+offline regression suite can verify it without spawning chimera or touching
+the network; only ``main``/``drive_stdio`` do subprocess I/O.
 
 Usage:
     python3 scripts/probe_mcp_stdio.py .venv/bin/chimera-mcp
     python3 scripts/probe_mcp_stdio.py .venv/bin/chimera mcp
 
 Exit codes: 0 = stdout pure (all JSON-RPC, responses 1/2/3 in order, 3
-tools, chimera_models returns JSON); 1 = pollution or malformed response.
+tools, chimera_deliberate returns JSON with a non-empty answer);
+1 = pollution or malformed response.
 """
 
 from __future__ import annotations
@@ -24,160 +38,253 @@ import subprocess
 import sys
 import time
 
-_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-cmd = sys.argv[1:]
-if not cmd:
-    cmd = [os.path.join(_REPO, ".venv", "bin", "chimera-mcp")]
+DEPTH_TOOL = "chimera_deliberate"
+DEPTH_PROMPT = "What is 17 * 23? Show the computation."
+DEPTH_FORMATION = "simple"
+DEPTH_ARGUMENTS: dict = {"prompt": DEPTH_PROMPT, "formation": DEPTH_FORMATION}
+DEPTH_MARKER = "391"
+DEPTH_MARKER_NOTE = "17 * 23 = 391"
 
-env = dict(os.environ)
-env["PYTHONUNBUFFERED"] = "1"
-proc = subprocess.Popen(
-    cmd,
-    stdin=subprocess.PIPE,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    env=env,
-    cwd=_REPO,
-)
-assert proc.stdin is not None and proc.stdout is not None
+TOOL_INVENTORY = {"chimera_deliberate", "chimera_formations", "chimera_models"}
+EXPECTED_ORDER = [1, 2, 3]
 
-msgs = [
-    {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2025-03-26",
-            "capabilities": {},
-            "clientInfo": {"name": "probe", "version": "0.0.1"},
+# A real deliberation spans dispatcher -> worker(s) -> aggregator LLM calls
+# (network-bound), so the read deadline is minutes, not seconds.
+READ_DEADLINE_S = 300
+DRAIN_DEADLINE_S = 30
+
+
+def build_messages() -> list[dict]:
+    """The exact JSON-RPC conversation the probe drives: ids 1..3 in order."""
+    return [
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "probe", "version": "0.0.1"},
+            },
         },
-    },
-    {"jsonrpc": "2.0", "method": "notifications/initialized"},
-    {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-    {
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "tools/call",
-        "params": {"name": "chimera_models", "arguments": {}},
-    },
-]
-
-proc.stdin.write("".join(json.dumps(m) + "\n" for m in msgs).encode())
-proc.stdin.flush()
-
-stdout_lines: list[str] = []
-buf = b""
-responses: dict[int, dict] = {}
-order: list[int] = []
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {"name": DEPTH_TOOL, "arguments": DEPTH_ARGUMENTS},
+        },
+    ]
 
 
-def _drain() -> None:
-    global buf
+def is_jsonrpc_line(line: str) -> bool:
+    """A stdout line is 'pure' iff it parses as a JSON-RPC 2.0 object."""
     try:
-        ready, _, _ = select.select([proc.stdout], [], [], 0)
-    except (ValueError, OSError):
-        return
-    if not ready:
-        return
-    chunk = os.read(proc.stdout.fileno(), 65536)
-    if not chunk:
-        return
-    buf += chunk
-    while b"\n" in buf:
-        line, buf = buf.split(b"\n", 1)
-        text = line.decode(errors="replace").strip()
-        if not text:
-            continue
-        stdout_lines.append(text)
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(obj, dict) and obj.get("jsonrpc") == "2.0"
+
+
+def collect_responses(stdout_lines: list[str]) -> tuple[list[int], dict[int, dict]]:
+    """Extract response ids (in arrival order) and responses by id."""
+    order: list[int] = []
+    responses: dict[int, dict] = {}
+    for text in stdout_lines:
         try:
             obj = json.loads(text)
         except json.JSONDecodeError:
             continue
-        if (
-            isinstance(obj, dict)
-            and obj.get("jsonrpc") == "2.0"
-            and obj.get("id") is not None
-        ):
+        if isinstance(obj, dict) and obj.get("jsonrpc") == "2.0" and obj.get("id") is not None:
             responses[int(obj["id"])] = obj
             order.append(int(obj["id"]))
+    return order, responses
 
 
-deadline = time.monotonic() + 30
-while len(responses) < 3 and time.monotonic() < deadline:
-    ready, _, _ = select.select([proc.stdout], [], [], 0.5)
-    if ready:
-        _drain()
-proc.stdin.close()
-while time.monotonic() < deadline + 10:
-    if proc.poll() is not None:
-        _drain()
-        break
-    ready, _, _ = select.select([proc.stdout], [], [], 0.5)
-    if ready:
-        _drain()
-try:
-    proc.wait(timeout=5)
-except subprocess.TimeoutExpired:
-    proc.kill()
-    proc.wait()
-err = (proc.stderr.read() if proc.stderr else b"").decode(errors="replace")
+def extract_tool_text(result: dict) -> str:
+    """Extract the tool's text payload from an MCP CallToolResult shape."""
+    content = result.get("content")
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(item.get("text", ""))
+        if parts:
+            return "".join(parts)
+    text = result.get("text")
+    if isinstance(text, str):
+        return text
+    return ""
 
-bad: list[tuple[int, str]] = []
-for i, line in enumerate(stdout_lines, 1):
+
+def check_depth_result(r3: dict) -> tuple[list[str], dict]:
+    """Validate the tools/call chimera_deliberate result.
+
+    Returns (problems, info). ``info["answer"]`` carries the merged answer
+    when the call succeeded; ``info["marker_hit"]`` says whether the
+    deterministic arithmetic marker (17 * 23 = 391) appears in it.
+    """
+    problems: list[str] = []
+    info: dict = {}
+    if r3.get("isError"):
+        problems.append(f"{DEPTH_TOOL} returned an error result")
+    text = extract_tool_text(r3)
+    if not text:
+        problems.append(f"{DEPTH_TOOL} returned no text content")
+        return problems, info
     try:
-        obj = json.loads(line)
+        payload = json.loads(text)
     except json.JSONDecodeError:
-        bad.append((i, line[:160]))
-        continue
-    if not isinstance(obj, dict) or obj.get("jsonrpc") != "2.0":
-        bad.append((i, line[:160]))
+        problems.append(f"{DEPTH_TOOL} did not return JSON content")
+        return problems, info
+    if not isinstance(payload, dict):
+        problems.append(f"{DEPTH_TOOL} JSON is not an object")
+        return problems, info
+    answer = payload.get("answer", "")
+    if not (isinstance(answer, str) and answer.strip()):
+        problems.append(f"{DEPTH_TOOL} returned an empty answer")
+        return problems, info
+    info["answer"] = answer
+    info["marker_hit"] = DEPTH_MARKER in answer
+    return problems, info
 
-problems: list[str] = []
-if bad:
-    problems.append(f"non-JSON-RPC stdout lines: {bad}")
-if order != [1, 2, 3]:
-    problems.append(f"responses missing/out of order: got ids {order}, expected [1, 2, 3]")
-if stdout_lines:
+
+def check_handshake(stdout_lines: list[str], order: list[int], responses: dict[int, dict]) -> list[str]:
+    """Purity + ordering + inventory checks shared by every probe run."""
+    problems: list[str] = []
+    bad = [(i, line[:160]) for i, line in enumerate(stdout_lines, 1) if not is_jsonrpc_line(line)]
+    if bad:
+        problems.append(f"non-JSON-RPC stdout lines: {bad}")
+    if order != EXPECTED_ORDER:
+        problems.append(f"responses missing/out of order: got ids {order}, expected {EXPECTED_ORDER}")
+    if stdout_lines:
+        try:
+            first_id = json.loads(stdout_lines[0]).get("id")
+            if first_id != 1:
+                problems.append("initialize response is not stdout line 1")
+        except json.JSONDecodeError:
+            problems.append("stdout line 1 is not JSON")
+    tool_names = {t.get("name") for t in responses.get(2, {}).get("result", {}).get("tools", [])}
+    if tool_names != TOOL_INVENTORY:
+        problems.append(f"tools/list returned {tool_names}")
+    return problems
+
+
+def drive_stdio(
+    cmd: list[str], env: dict[str, str], cwd: str
+) -> tuple[list[str], list[int], dict[int, dict], str]:
+    """Run the JSON-RPC conversation against ``cmd`` over real stdio pipes.
+
+    Paced like a real MCP client: stdin stays open while responses are read
+    (closing stdin early races the mcp SDK's EOF shutdown and can drop the
+    last response), then stdin is closed and the process is allowed to exit.
+    """
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        cwd=cwd,
+    )
+    assert proc.stdin is not None and proc.stdout is not None
+
+    msgs = build_messages()
+    proc.stdin.write("".join(json.dumps(m) + "\n" for m in msgs).encode())
+    proc.stdin.flush()
+
+    stdout_lines: list[str] = []
+    buf = b""
+
+    def _drain() -> None:
+        nonlocal buf
+        try:
+            ready, _, _ = select.select([proc.stdout], [], [], 0)
+        except (ValueError, OSError):
+            return
+        if not ready:
+            return
+        chunk = os.read(proc.stdout.fileno(), 65536)
+        if not chunk:
+            return
+        buf += chunk
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            text = line.decode(errors="replace").strip()
+            if text:
+                stdout_lines.append(text)
+
+    deadline = time.monotonic() + READ_DEADLINE_S
+    while len(collect_responses(stdout_lines)[0]) < 3 and time.monotonic() < deadline:
+        ready, _, _ = select.select([proc.stdout], [], [], 0.5)
+        if ready:
+            _drain()
+    proc.stdin.close()
+    while time.monotonic() < deadline + DRAIN_DEADLINE_S:
+        if proc.poll() is not None:
+            _drain()
+            break
+        ready, _, _ = select.select([proc.stdout], [], [], 0.5)
+        if ready:
+            _drain()
     try:
-        first_id = json.loads(stdout_lines[0]).get("id")
-        if first_id != 1:
-            problems.append("initialize response is not stdout line 1")
-    except json.JSONDecodeError:
-        problems.append("stdout line 1 is not JSON")
-tool_names = {
-    t.get("name")
-    for t in responses.get(2, {}).get("result", {}).get("tools", [])
-}
-if tool_names != {"chimera_deliberate", "chimera_formations", "chimera_models"}:
-    problems.append(f"tools/list returned {tool_names}")
-r3 = responses.get(3, {}).get("result", {})
-r3_text = ""
-for item in r3.get("content", []) if isinstance(r3.get("content"), list) else []:
-    if isinstance(item, dict) and item.get("type") == "text":
-        r3_text += item.get("text", "")
-if not r3_text:
-    r3_text = r3.get("text", "") if isinstance(r3.get("text"), str) else ""
-try:
-    models_data = json.loads(r3_text)
-    if not isinstance(models_data, dict) or not models_data:
-        problems.append("chimera_models returned empty/non-dict JSON")
-except json.JSONDecodeError:
-    problems.append("chimera_models did not return JSON content")
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+    err = (proc.stderr.read() if proc.stderr else b"").decode(errors="replace")
+    order, responses = collect_responses(stdout_lines)
+    return stdout_lines, order, responses, err
 
-print(f"NON_JSON_RPC_STDOUT_LINES={len(bad)}")
-print(f"RESPONSE_IDS={order}")
-print(f"TOOL_NAMES={sorted(tool_names)}")
-print(f"MODEL_COUNT={len(models_data) if 'models_data' in dir() and isinstance(models_data, dict) else 0}")
-for i, line in enumerate(stdout_lines, 1):
-    print(f"  stdout[{i}]: {line[:120]}")
-if problems:
-    print("PROBE FAIL:")
-    for p in problems:
-        print(f"  - {p}")
-    print("=== STDERR (last 30 lines) ===")
-    print("\n".join(err.splitlines()[-30:]))
-    sys.exit(1)
-print("PROBE OK: all stdout lines are JSON-RPC 2.0; initialize is line 1; "
-      "3 tools; chimera_models returns valid JSON")
-sys.exit(0)
+
+def main(argv: list[str] | None = None) -> int:
+    cmd = list(argv) if argv is not None else sys.argv[1:]
+    if not cmd:
+        cmd = [os.path.join(REPO, ".venv", "bin", "chimera-mcp")]
+
+    env = dict(os.environ)
+    env["PYTHONUNBUFFERED"] = "1"
+    stdout_lines, order, responses, err = drive_stdio(cmd, env, _repo_cwd())
+
+    problems = check_handshake(stdout_lines, order, responses)
+    depth_problems, depth_info = check_depth_result(responses.get(3, {}).get("result", {}))
+    problems.extend(depth_problems)
+
+    tool_names = {t.get("name") for t in responses.get(2, {}).get("result", {}).get("tools", [])}
+    print(f"NON_JSON_RPC_STDOUT_LINES={sum(1 for ln in stdout_lines if not is_jsonrpc_line(ln))}")
+    print(f"RESPONSE_IDS={order}")
+    print(f"TOOL_NAMES={sorted(tool_names)}")
+    print(f"DEPTH_TOOL={DEPTH_TOOL}")
+    answer = depth_info.get("answer", "")
+    if isinstance(answer, str) and answer.strip():
+        first_line = next((ln.strip() for ln in answer.splitlines() if ln.strip()), "")
+        marker = "hit" if depth_info.get("marker_hit") else "NOT stated verbatim"
+        print(f"ANSWER_CHARS={len(answer)}")
+        print(f"ANSWER_MARKER={DEPTH_MARKER_NOTE}: {marker}")
+        print(f"ANSWER_HEAD={first_line[:120]!r}")
+    for i, line in enumerate(stdout_lines, 1):
+        print(f"  stdout[{i}]: {line[:120]}")
+    if problems:
+        print("PROBE FAIL:")
+        for p in problems:
+            print(f"  - {p}")
+        print("=== STDERR (last 30 lines) ===")
+        print("\n".join(err.splitlines()[-30:]))
+        return 1
+    print(
+        f"PROBE OK: all stdout lines are JSON-RPC 2.0; initialize is line 1; "
+        f"3 tools; {DEPTH_TOOL} returned a non-empty merged answer"
+    )
+    return 0
+
+
+def _repo_cwd() -> str:
+    """cwd for the spawned server: the repo root (finds its chimera.yaml)."""
+    return REPO
+
+
+if __name__ == "__main__":
+    sys.exit(main())

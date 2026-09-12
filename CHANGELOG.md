@@ -2,6 +2,39 @@
 
 All notable changes to Chimera will be documented in this file.
 
+## [0.2.4] — 2026-09-11
+
+### Fixed
+
+- **First published artifact carrying the CLI/MCP stderr pin** (fix 27f0b35,
+  DF-CHIMERA-V2-3): the two-phase `configure_logging(..., force_stderr=True)`
+  pin on the CLI path — which stops provider auto-discovery / structlog lines
+  from polluting stdout ahead of real output — shipped in-repo after the
+  0.2.3 upload, so no published wheel contained it. 0.2.4 is the first PyPI
+  release whose `chimera` / `chimera-mcp` entry points are stdout-clean.
+
+- **`litellm` capped below 1.100** (found by the strengthened probe,
+  DF-CHIMERA-0911-1): the first fresh-venv run of the probe against the 0.2.4
+  wheel failed with 8 non-JSON-RPC stdout lines. `litellm>=1.50.0` let a clean
+  install resolve **1.100.1**, which replaced its stderr
+  `logging.StreamHandler()` with `LevelRoutingStreamHandler` (routes every
+  record *below* WARNING to `sys.stdout`). `force_stderr` only pins chimera's
+  own sinks, so the first real `completion()` re-polluted the MCP JSON-RPC
+  wire for any consumer — the exact failure the release probe exists to catch.
+  The requirement is now `litellm>=1.50.0,<1.100` (1.99.0 verified
+  stderr-only); regression tests pin both the range and the lockfile version.
+
+### Changed
+
+- **Release probe reaches a real deliberation call** (DF-CHIMERA-0911-1):
+  `scripts/probe_mcp_stdio.py` now drives its depth call against
+  `chimera_deliberate` (deterministic `17 * 23` prompt, formation=simple)
+  instead of the catalog-only `chimera_models` call. A handshake/catalog
+  call never triggers the lazy LiteLLM import, so the published 0.2.3 wheel
+  passed the old probe while still polluting stdout on a real deliberation.
+  The probe now fails unless the call returns JSON with a non-empty merged
+  answer; offline contract tests live in `tests/test_probe_mcp_stdio.py`.
+
 ## [0.2.3] — 2026-09-08
 
 ### Added

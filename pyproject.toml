@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chimera-deliberation"
-version = "0.2.3"
+version = "0.2.4"
 description = "Dynamic multi-model deliberation gateway"
 requires-python = ">=3.11"
 authors = [
@@ -27,7 +27,13 @@ classifiers = [
 ]
 
 dependencies = [
-    "litellm>=1.50.0",
+    # Upper bound is load-bearing: litellm 1.100.0 replaced its plain
+    # ``logging.StreamHandler()`` (stderr) with ``LevelRoutingStreamHandler``,
+    # which routes every record BELOW WARNING to sys.stdout. That silently
+    # pollutes stdout on the first real completion() — fatal for the MCP stdio
+    # transport, whose stdout is the JSON-RPC wire (force_stderr only pins
+    # chimera's own sinks). 1.99.0 still uses the stderr handler.
+    "litellm>=1.50.0,<1.100",
     "pydantic>=2.0",
     "pyyaml>=6.0",
     "httpx>=0.27.0",
