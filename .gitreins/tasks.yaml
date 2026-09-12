@@ -539,3 +539,19 @@ tasks:
   status: complete
   created_at: '2026-09-12T01:04:54.006345+00:00'
   completed_at: '2026-09-12T01:05:05.387132+00:00'
+- id: DF-CHIMERA-0906-3
+  title: Auto formation excludes unconfigured providers
+  criteria:
+  - Default auto formation excludes worker models whose provider has no resolved credentials;
+    explicit allowed_models, worker_model, and stage_models overrides retain their
+    documented behavior.
+  - With only DEEPSEEK_API_KEY available, five consecutive real auto-formation runs
+    emit zero model_blocked_guardrail events and zero aggregator_partial_inputs warnings.
+  - Offline regression tests prove the credential-derived default allowlist, explicit
+    opt-in behavior, and no mutation of preset/custom formations outside the task's
+    stated scope.
+  - docs/CONFIG.md documents configured-provider default routing, explicit all-catalog
+    opt-in, and guardrail interplay.
+  status: complete
+  created_at: '2026-09-12T16:49:46.999922+00:00'
+  completed_at: '2026-09-12T17:56:15.235283+00:00'
