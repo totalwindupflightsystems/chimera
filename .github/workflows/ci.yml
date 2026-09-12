@@ -161,14 +161,38 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Fresh-venv install of the PUBLISHED version (DF-CHIMERA-0906-1 gate)
+      - name: Derive the exact expected version from the triggering tag (DF-CHIMERA-0911-2)
+        run: |
+          # Strips the leading v, rejects unsafe/non-PEP-440 tags, and fails
+          # unless the tag exactly matches pyproject.toml's declared version.
+          VERSION=$(python scripts/release_expected_version.py "${GITHUB_REF_NAME}")
+          echo "expected published version: ${VERSION}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Fresh-venv install of the EXACT published version (DF-CHIMERA-0911-2 gate)
         run: |
           python -m venv /tmp/release-venv
           /tmp/release-venv/bin/pip install --upgrade pip
-          /tmp/release-venv/bin/pip install "chimera-deliberation[full]"
-          /tmp/release-venv/bin/python -c "import chimera; print('installed', chimera.__version__)"
+          # Bounded retry for PyPI index propagation lag after twine upload.
+          # The requirement is pinned ==${VERSION} on EVERY attempt, so the
+          # loop can never silently fall through to a different/latest version.
+          installed=0
+          for attempt in $(seq 1 20); do
+            if /tmp/release-venv/bin/pip install "chimera-deliberation[full]==${VERSION}"; then
+              installed=1
+              break
+            fi
+            echo "attempt ${attempt}/20: chimera-deliberation==${VERSION} not yet on PyPI; sleeping 15s"
+            sleep 15
+          done
+          if [ "${installed}" != "1" ]; then
+            echo "FATAL: chimera-deliberation[full]==${VERSION} never became installable after 20 attempts (~5 min)"
+            exit 1
+          fi
+          # Belt-and-braces: the imported package must BE the tag version.
+          /tmp/release-venv/bin/python -c "import chimera, sys; v = chimera.__version__; print('installed', v); sys.exit(0 if v == '${VERSION}' else 'installed %r != tag version ${VERSION}' % v)"
 
-      - name: Quickstart E2E — config init + bare run (DF-CHIMERA-0906-1 PASS)
+      - name: Quickstart E2E — config init + bare run at the exact tag version (DF-CHIMERA-0906-1 gate)
         run: |
           cd /tmp
           /tmp/release-venv/bin/chimera config init
@@ -178,6 +202,16 @@ jobs:
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
-      - name: MCP stdio purity probe (DF-CHIMERA-0906-2 gate)
+      - name: MCP stdio purity probe — real tools/call depth, both gate formations (DF-CHIMERA-0911-2 gate)
         run: |
-          echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"gate","version":"0"}}}' | /tmp/release-venv/bin/chimera-mcp 2>/dev/null | head -1 | grep -q '"serverInfo"' && echo 'mcp stdout purity OK'
+          # scripts/probe_mcp_stdio.py drives initialize -> tools/list -> a REAL
+          # chimera_deliberate tools/call and exits 1 on ANY non-JSON-RPC stdout
+          # line. The leak this gates is formation-dependent (0.2.3's 'speed'
+          # OpenRouter leg printed LiteLLM's banner to stdout while 'simple'
+          # stayed clean), and the old initialize-only handshake grep passed
+          # 0.2.3 — so both formations are probed at full depth.
+          python scripts/probe_mcp_stdio.py --formation=simple /tmp/release-venv/bin/chimera-mcp
+          python scripts/probe_mcp_stdio.py --formation=speed /tmp/release-venv/bin/chimera-mcp
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
