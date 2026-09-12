@@ -526,3 +526,16 @@ tasks:
   status: complete
   created_at: '2026-09-11T17:04:57.422722+00:00'
   completed_at: '2026-09-11T17:25:14.089273+00:00'
+- id: DF-CHIMERA-0911-1
+  title: Publish corrected MCP stdout-pure release 0.2.5
+  criteria:
+  - PyPI reports chimera-deliberation 0.2.5 as latest
+  - A clean venv installs chimera-deliberation[full]==0.2.5 from PyPI
+  - The installed chimera-mcp completes initialize, tools/list, and real chimera_deliberate
+    tools/call for both simple and speed formations with zero non-JSON-RPC stdout
+    lines and non-empty merged answers
+  - Chimera centrally sets LiteLLM suppress_debug_info before completion and exception-mapping
+    paths, with regression coverage
+  status: complete
+  created_at: '2026-09-12T01:04:54.006345+00:00'
+  completed_at: '2026-09-12T01:05:05.387132+00:00'
