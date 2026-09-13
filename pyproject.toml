@@ -67,7 +67,19 @@ server = ["fastapi>=0.115.0", "uvicorn[standard]>=0.30.0"]
 cli = ["click>=8.0", "rich>=13.0"]
 mcp = ["mcp>=1.0.0,<2.0"]
 web = ["fastapi>=0.115.0", "uvicorn[standard]>=0.30.0"]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.24.0", "pytest-cov>=5.0", "pytest-timeout>=2.3.0", "ruff>=0.6.0"]
+dev = [
+    # Test collection imports the FastAPI app (tests/test_engine_coverage.py ->
+    # chimera.api.server), so the documented `pip install -e ".[dev]"` must carry
+    # the same runtime pins as the server/web extras — otherwise collection dies
+    # with ModuleNotFoundError: No module named 'fastapi' (QA-CHIMERA-001).
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0",
+    "pytest-timeout>=2.3.0",
+    "ruff>=0.6.0",
+]
 full = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
