@@ -555,3 +555,18 @@ tasks:
   status: complete
   created_at: '2026-09-12T16:49:46.999922+00:00'
   completed_at: '2026-09-12T17:56:15.235283+00:00'
+- id: df-chimera-v2-3-config-init-deadend
+  title: chimera config init dead end for repo checkouts (DF-CHIMERA-V2-3)
+  criteria:
+  - chimera config init run from a fresh empty directory using the repo editable install
+    creates chimera.yaml (no misleading reinstall error)
+  - the fallback resolves the checked-in repo template by walking up from the package
+    file location; no duplicated template copy is added under src/
+  - 'existing resolution order preserved: cwd walk-up first, wheel force-include copy
+    second, package-location walk-up as new fallback; --force and already-exists behavior
+    unchanged'
+  - regression tests cover the fresh-dir editable-install repro and pass; full suite
+    stays green
+  status: complete
+  created_at: '2026-09-13T00:16:09.406141+00:00'
+  completed_at: '2026-09-13T00:26:55.287359+00:00'
