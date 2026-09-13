@@ -176,6 +176,57 @@ def test_find_example_config_path_missing(tmp_path: Path, monkeypatch) -> None:
     assert "chimera.yaml.example not found" in str(excinfo.value)
 
 
+def test_find_example_config_path_editable_install_fresh_dir(tmp_path: Path) -> None:
+    """Editable install from a fresh empty dir resolves the repo template.
+
+    DF-CHIMERA-V2-3 repro: an editable install has no wheel force-include
+    copy at ``src/chimera/chimera.yaml.example``, so a run from a directory
+    outside the repo tree used to hit the misleading "reinstall" error.
+    The package-location walk-up must find the checked-in repo template.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    repo_template = repo_root / "chimera.yaml.example"
+    assert repo_template.is_file()
+    # Sanity: this editable checkout has no wheel-style package copy, so the
+    # fallback below is genuinely what resolves the template.
+    assert not (repo_root / "src" / "chimera" / "chimera.yaml.example").exists()
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert find_example_config_path(empty) == repo_template
+
+
+def test_find_example_config_path_cwd_walk_up_wins_over_repo(tmp_path: Path) -> None:
+    """A local chimera.yaml.example in/above start beats the repo fallback."""
+    local = tmp_path / "chimera.yaml.example"
+    local.write_text("defaults: {}\n", encoding="utf-8")
+    nested = tmp_path / "a" / "b"
+    nested.mkdir(parents=True)
+    assert find_example_config_path(nested) == local
+
+
+def test_find_example_config_path_package_location_walk_up(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Step 3: walking up from the module location finds a repo template.
+
+    Simulates an editable install whose package lives at
+    ``<fake-repo>/src/chimera/config.py`` with the template checked in at
+    ``<fake-repo>/chimera.yaml.example``.
+    """
+    fake_repo = tmp_path / "fake-repo"
+    fake_pkg = fake_repo / "src" / "chimera"
+    fake_pkg.mkdir(parents=True)
+    (fake_repo / "chimera.yaml.example").write_text(
+        "defaults: {}\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        "chimera.config.__file__", str(fake_pkg / "config.py")
+    )
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert find_example_config_path(empty) == fake_repo / "chimera.yaml.example"
+
+
 def test_load_config_rejects_non_mapping(tmp_path: Path) -> None:
     path = tmp_path / "chimera.yaml"
     path.write_text("- just\n- a\n- list\n", encoding="utf-8")

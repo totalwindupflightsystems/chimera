@@ -514,6 +514,10 @@ def find_example_config_path(start: Path | str | None = None) -> Path:
     2. The wheel-shipped copy inside the installed package
        (CH-GAP-049 force-include: ``chimera/chimera.yaml.example``), so
        ``chimera config init`` works for bare pip installs in an empty dir.
+    3. Walk up from this module's own location — covers editable installs,
+       where ``__file__`` lives at ``<repo>/src/chimera/config.py`` and the
+       checked-in template sits at ``<repo>/chimera.yaml.example``
+       (DF-CHIMERA-V2-3).
 
     Raises ``FileNotFoundError`` when the template cannot be found.
     """
@@ -525,9 +529,15 @@ def find_example_config_path(start: Path | str | None = None) -> Path:
     pkg_copy = Path(__file__).resolve().parent / "chimera.yaml.example"
     if pkg_copy.is_file():
         return pkg_copy
+    pkg_here = Path(__file__).resolve().parent
+    for candidate in [*pkg_here.parents]:
+        target = candidate / "chimera.yaml.example"
+        if target.is_file():
+            return target
     raise FileNotFoundError(
-        "chimera.yaml.example not found — reinstall chimera-deliberation "
-        "to restore the template."
+        "chimera.yaml.example not found — copy the template from a chimera-v2 "
+        "repo checkout (chimera.yaml.example at the repo root) or reinstall "
+        "chimera-deliberation to restore the packaged template."
     )
 
 

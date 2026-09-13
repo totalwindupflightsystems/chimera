@@ -38,11 +38,9 @@ Open http://localhost:8765/web/ for the web UI with live DAG visualization.
 **Python:**
 ```bash
 # If chimera.yaml is missing, create it before calling load_config():
-chimera config init        # pip/pipx installs — template ships inside the wheel
-# Repo checkouts can instead copy the checked-in template:
-# cp chimera.yaml.example chimera.yaml
-# Missing template? Reinstall to restore it:
-# error: chimera.yaml.example not found — reinstall chimera-deliberation to restore the template.
+chimera config init        # finds the template: local copy, wheel copy, or repo checkout
+# Missing template? Copy chimera.yaml.example from a repo checkout or reinstall:
+# error: chimera.yaml.example not found — copy the template from a chimera-v2 repo checkout (chimera.yaml.example at the repo root) or reinstall chimera-deliberation to restore the packaged template.
 ```
 `load_config()` finds the config in this order: explicit `path` argument, then the `CHIMERA_CONFIG` env var, then a walk-up from the current directory.
 
