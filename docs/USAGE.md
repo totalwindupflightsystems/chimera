@@ -24,6 +24,10 @@ chimera --stage-models '{"worker_1":"zai-coding-plan/glm-5.2","aggregator":"deep
 # Print the full deliberation trace
 chimera --verbose run "..."
 
+# Machine-readable output (flags go BEFORE the subcommand)
+chimera --quiet run "..."            # stdout = the raw answer + one newline
+chimera --json run "..."             # stdout = one JSON object (answer + trace)
+
 # List available models
 chimera models
 
@@ -36,6 +40,63 @@ chimera serve --port 8080
 # With custom config path
 chimera --config /path/to/chimera.yaml run "..."
 ```
+
+### Quiet and JSON output
+
+`--quiet` and `--json` are mutually exclusive group flags, so they are
+written before the subcommand. Both work with the implicit-prompt form
+(`chimera "..."`, same as `chimera run "..."`):
+
+```bash
+# stdout is EXACTLY the answer plus one trailing newline — no panel, no
+# ANSI, no trace, no warning text. Everything diagnostic goes to stderr.
+chimera --quiet "Summarize this changelog"
+chimera --quiet run "Summarize this changelog"
+
+# Capture it
+ANSWER=$(chimera --quiet "Name one HTTP status code for 'not found'")
+
+# stdout is EXACTLY one JSON object: {"answer": ..., "trace": {...}}
+chimera --json "Compare React and Vue" > out.json
+jq -r .answer out.json
+jq .trace.total_tokens out.json
+
+# Explicit run form is identical
+chimera --json run "Compare React and Vue"
+```
+
+The `trace` value is the complete trace serialization
+(`DeliberationTrace.model_dump(mode="json")`) — every field the REST API
+returns, including `dispatch`, `stages`, `worker_failures`, `dispatch_note`,
+token and cost totals. Unicode is preserved (`ensure_ascii=False`), so
+`café` is written as `café`, never `caf\u00e9`.
+
+Streams and exit codes:
+
+| Situation | stdout | stderr | exit |
+|---|---|---|---|
+| `--quiet`, healthy run | the answer + `\n` | logs only | 0 |
+| `--quiet`, dropped worker or degraded dispatch | the answer + `\n` | `warning: ...` lines | 0 |
+| `--json`, healthy run | one JSON object + `\n` | logs only | 0 |
+| `--json`, dropped worker or degraded dispatch | one JSON object + `\n` | `warning: ...` lines | 0 |
+| `--quiet --json` together | (empty) | `Error: --quiet and --json are mutually exclusive` | 2 |
+| missing `chimera.yaml` | `error: ...` one-liner | logs only | 2 |
+
+Notes:
+
+- Operational truth is never hidden: the dropped-worker and
+  dispatch-degradation/repair warnings that human mode prints beside the
+  panel are written to **stderr** in the machine modes (the JSON's
+  `trace.worker_failures` / `trace.dispatch_note` carry the same facts
+  machine-readably).
+- `--verbose` is ignored under `--quiet` / `--json` — the trace is already in
+  the JSON, and `--quiet` stays a single line.
+- The flags govern DELIBERATION output (the `run` path). `chimera models` and
+  `chimera formations` keep their human tables unchanged — for a
+  machine-readable catalog use the REST API (`GET /v1/models`,
+  `GET /v1/formations`) or the MCP tools.
+- Default (no flag) and `--verbose` human output are unchanged: boxed answer
+  panel on stdout, warnings beside it, optional trace table.
 
 ## REST API
 

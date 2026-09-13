@@ -29,9 +29,63 @@ cp chimera.yaml.example chimera.yaml
 # Run
 chimera "What is the capital of France?"      # CLI deliberation
 chimera run "Compare React and Vue"           # explicit `run` subcommand (same as above)
+chimera --quiet "Compare React and Vue"       # stdout = the raw answer only
+chimera --json "Compare React and Vue"        # stdout = one JSON object (answer + trace)
 chimera serve                                 # REST API + web UI (see Server & MCP)
 chimera-mcp                                   # MCP tools for agents
 ```
+
+### Machine-readable output
+
+`--quiet` and `--json` are mutually exclusive group flags — place them
+BEFORE the subcommand. Both work for the implicit-prompt form and the
+explicit `run` form, and in both modes stdout carries exactly ONE payload
+(diagnostics and logs stay on stderr):
+
+```bash
+chimera --quiet "Summarize this changelog"        # stdout: the answer + "\n"
+chimera --quiet run "Summarize this changelog"    # same, explicit run form
+ANSWER=$(chimera --quiet "Name one HTTP status code for 'not found'")
+
+chimera --json "Compare React and Vue" | jq .answer
+chimera --json run "Compare React and Vue" | jq '.trace.total_tokens'
+```
+
+`--json` writes one object per invocation (span fields abridged here for
+readability — the real trace is the complete `DeliberationTrace` dump):
+
+```json
+{
+  "answer": "merged output from multiple models",
+  "trace": {
+    "request_id": "a71b3f2c...",
+    "formation": "auto",
+    "source": "auto",
+    "dispatch": {"stage_id": "dispatch", "kind": "dispatch", "model": "deepseek/deepseek-v4-flash", "latency_ms": 1234},
+    "stages": [{"stage_id": "worker_1", "kind": "worker", "model": "anthropic/claude-sonnet-4", "tokens_input": 300, "tokens_output": 1200}],
+    "aggregator": {"stage_id": "aggregator", "kind": "aggregator", "model": "deepseek/deepseek-v4-flash"},
+    "answer_stage_id": "aggregator",
+    "total_tokens": 12345,
+    "total_cost": 0.012,
+    "total_duration_ms": 15234,
+    "worker_failures": [],
+    "dispatch_note": null
+  }
+}
+```
+
+The `trace` value is the COMPLETE trace serialization (`model_dump(mode="json")`)
+— the same object the REST API returns. Unicode answers are preserved
+(`ensure_ascii=False`), so `café` stays `café`.
+
+Operational warnings are never suppressed: dropped-worker and
+dispatch-degradation/repair warnings (which the human mode prints next to the
+panel) move to **stderr** under `--quiet` / `--json`, so
+`chimera --json "..." > out.json` cannot be corrupted. Combining both flags is
+a usage error (exit code 2); `--verbose` is ignored in the machine modes.
+The flags cover deliberation output — `chimera models` / `chimera formations`
+tables are unchanged (use `GET /v1/models` / `GET /v1/formations` for a
+machine-readable catalog).
 
 Open http://localhost:8765/web/ for the web UI with live DAG visualization.
 
@@ -252,7 +306,7 @@ The dispatcher writes custom prompts for each stage but uses YOUR structure exac
 | **REST API** | `POST /v1/deliberate` | Full control (DAG, overrides, trace) |
 | **REST API** | `GET /v1/models` | Model catalog with weights |
 | **REST API** | `GET /v1/formations` | Available formation presets |
-| **CLI** | `chimera run` | Command-line usage |
+| **CLI** | `chimera run` | Command-line usage (add `--quiet` / `--json` for machine-readable output) |
 | **MCP** | `chimera_deliberate` | Hermes / AI agent integration |
 
 ## Response Trace

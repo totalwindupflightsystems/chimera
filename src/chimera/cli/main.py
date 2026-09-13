@@ -7,8 +7,19 @@ Usage::
     chimera formations                # list formations
     chimera models                    # list models with weights
     chimera --verbose "prompt"        # print the full trace
+    chimera --quiet "prompt"          # stdout = the raw answer only
+    chimera --json "prompt"           # stdout = one JSON object (answer + trace)
+    chimera --quiet run "prompt"      # same modes, explicit run subcommand
+    chimera --json run "prompt"
     chimera serve                     # run the REST API
     chimera mcp                       # run the MCP server (stdio)
+
+DF-CHIMERA-0906-5 (machine-readable output): ``--quiet`` and ``--json`` are
+mutually exclusive group flags placed BEFORE the subcommand (click's group
+convention). In both modes stdout carries exactly ONE machine-readable
+payload — the raw answer (plus one newline) or one JSON object — while every
+diagnostic (dropped-worker and dispatch-degradation warnings, structlog
+lines) goes to stderr, so ``chimera --json "..." > out.json`` is safe.
 """
 
 from __future__ import annotations
@@ -34,6 +45,59 @@ from chimera.observability import configure_logging
 # model names never get truncated. Interactive use auto-detects the terminal.
 console = Console(width=None if sys.stdout.isatty() else 200)
 
+#: Diagnostics console for the machine-readable modes (DF-CHIMERA-0906-5).
+#: ``--quiet`` / ``--json`` promise that stdout holds ONLY the payload, so
+#: dropped-worker / dispatch-degradation warnings are rendered here instead —
+#: never suppressed, just moved off stdout. ``stderr=True`` is resolved lazily
+#: by rich, so redirected/captured streams are respected.
+err_console = Console(stderr=True, width=None if sys.stderr.isatty() else 200)
+
+
+class MutuallyExclusiveOption(click.Option):
+    """A flag that refuses to coexist with sibling flags (usage error, exit 2).
+
+    Click has no native mutual-exclusion support (DF-CHIMERA-0906-5). Without
+    this, ``--quiet --json`` would silently honour one branch and a script
+    asking for JSON would receive Rich text on stdout. Raising ``UsageError``
+    while parsing keeps it a conventional click usage error: exit code 2, the
+    message on stderr, and no deliberation started.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.mutually_exclusive: frozenset[str] = frozenset(
+            kwargs.pop("mutually_exclusive", ())
+        )
+        super().__init__(*args, **kwargs)
+
+    def _display_name(self, ctx: click.Context, param_name: str) -> str:
+        """The long spelling the user typed (``--json``, not ``--json_output``)."""
+        if param_name == self.name:
+            opts = self.opts
+        else:
+            sibling = next(
+                (p for p in ctx.command.params if p.name == param_name), None
+            )
+            opts = getattr(sibling, "opts", ()) or ()
+        longs = [opt for opt in opts if opt.startswith("--")]
+        if longs:
+            return min(longs, key=len)
+        return "--" + param_name.replace("_", "-")
+
+    def handle_parse_result(
+        self, ctx: click.Context, opts: dict[str, Any], args: list[str]
+    ) -> tuple[Any, list[str]]:
+        if opts.get(self.name):
+            clashes = sorted(name for name in self.mutually_exclusive if opts.get(name))
+            if clashes:
+                names = [self._display_name(ctx, self.name)] + [
+                    self._display_name(ctx, name) for name in clashes
+                ]
+                raise click.UsageError(
+                    f"{' and '.join(names)} are mutually exclusive — "
+                    f"pick one output mode."
+                )
+        return super().handle_parse_result(ctx, opts, args)
+
 
 class ChimeraGroup(click.Group):
     """A group that treats an unknown first token as a deliberation prompt.
@@ -53,6 +117,21 @@ class ChimeraGroup(click.Group):
 @click.group(cls=ChimeraGroup, invoke_without_command=True)
 @click.option("-f", "--formation", default="auto", help="Formation preset name.")
 @click.option("-v", "--verbose", is_flag=True, help="Print the full trace.")
+@click.option(
+    "--quiet",
+    is_flag=True,
+    cls=MutuallyExclusiveOption,
+    mutually_exclusive={"json_output"},
+    help="Print only the raw answer to stdout (warnings go to stderr).",
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    cls=MutuallyExclusiveOption,
+    mutually_exclusive={"quiet"},
+    help="Print one JSON object (answer + full trace) to stdout.",
+)
 @click.option("-c", "--config", "config_path", default=None, help="Path to chimera.yaml.")
 @click.option(
     "--allow-custom-dag",
@@ -76,6 +155,8 @@ def main(
     ctx: click.Context,
     formation: str,
     verbose: bool,
+    quiet: bool,
+    json_output: bool,
     config_path: str | None,
     allow_custom_dag: bool,
     dag_json: str | None,
@@ -85,6 +166,12 @@ def main(
     ctx.obj = {
         "formation": formation,
         "verbose": verbose,
+        # DF-CHIMERA-0906-5 output modes. Group-level flags (placed before the
+        # subcommand, per click's group convention) so both the implicit-prompt
+        # form ``chimera --json "..."`` and the explicit form
+        # ``chimera --json run "..."`` resolve the same way.
+        "quiet": quiet,
+        "json_output": json_output,
         "config_path": config_path,
         "allow_custom_dag": allow_custom_dag,
         "dag": _parse_json_opt(dag_json, "dag"),
@@ -149,14 +236,18 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
     if not prompt:
         click.echo(ctx.get_help())
         return
+    opts = ctx.obj or {}
+    quiet = bool(opts.get("quiet"))
+    json_mode = bool(opts.get("json_output"))
+    machine_mode = quiet or json_mode
     config = _load_cfg(ctx)
     engine = Engine(config, LiteLLMGateway(config))
     # Only forward the new kwargs when they are actually set, so the default
     # call shape stays ``deliberate(prompt, formation)`` (backward compatible).
     extra_kwargs: dict[str, Any] = {}
-    stage_models = ctx.obj.get("stage_models")
-    dag = ctx.obj.get("dag")
-    allow_custom_dag = ctx.obj.get("allow_custom_dag", False)
+    stage_models = opts.get("stage_models")
+    dag = opts.get("dag")
+    allow_custom_dag = opts.get("allow_custom_dag", False)
     if stage_models:
         from chimera.config import DeliberationOverrides
 
@@ -166,24 +257,54 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
         extra_kwargs["allow_custom_dag"] = allow_custom_dag
     try:
         result = asyncio.run(
-            engine.deliberate(prompt, ctx.obj["formation"], **extra_kwargs)
+            engine.deliberate(prompt, opts["formation"], **extra_kwargs)
         )
     except ValueError as exc:
         console.print(f"[red]error:[/red] {exc}")
         sys.exit(2)
-    _print_worker_failures(result)
-    _print_dispatch_degradation(result)
-    console.print(Panel(result.answer, title="Chimera", border_style="cyan"))
-    if ctx.obj.get("verbose"):
-        _print_trace(result.trace)
+    # Operational truth is never suppressed (DF-CHIMERA-0906-5): in human mode
+    # the dropped-worker / degraded-dispatch warnings stay on stdout beside the
+    # panel, but in --quiet/--json they move to stderr so stdout carries ONLY
+    # the machine-readable payload.
+    warn_console = err_console if machine_mode else console
+    _print_worker_failures(result, warn_console)
+    _print_dispatch_degradation(result, warn_console)
+
+    if json_mode:
+        _print_json(result)
+    elif quiet:
+        # Exactly the raw answer + one newline: no panel, no border, no ANSI,
+        # no trace — ``chimera --quiet "..." | pbcopy`` gets the answer only.
+        click.echo(result.answer)
+    else:
+        console.print(Panel(result.answer, title="Chimera", border_style="cyan"))
+        if opts.get("verbose"):
+            _print_trace(result.trace)
 
 
-def _print_worker_failures(result: Any) -> None:
+def _print_json(result: Any) -> None:
+    """Write one JSON object (``answer`` + the COMPLETE trace) to stdout.
+
+    ``ensure_ascii=False`` keeps non-ASCII answers intact (``café`` stays
+    ``café``, not ``caf\\u00e9``); click appends exactly one newline, so stdout
+    is a single parseable JSON document. ``model_dump(mode="json")`` is the
+    full trace serialization — every field the API/web UI sees, not a subset.
+    """
+    payload = {
+        "answer": result.answer,
+        "trace": result.trace.model_dump(mode="json"),
+    }
+    click.echo(json.dumps(payload, ensure_ascii=False))
+
+
+def _print_worker_failures(result: Any, out: Console = console) -> None:
     """Warn (always, not just --verbose) when worker stages were dropped.
 
     A degraded worker still lets the deliberation produce an answer, but the
     user must know the panel is partial — otherwise a guardrail/404 failure
     is silent outside the structlog stream.
+
+    ``out`` is the stderr console in --quiet/--json mode (DF-CHIMERA-0906-5).
     """
     failures = getattr(getattr(result, "trace", None), "worker_failures", None) or []
     for failure in failures:
@@ -192,24 +313,26 @@ def _print_worker_failures(result: Any) -> None:
         error = str(getattr(failure, "error", "") or "unknown error")
         if len(error) > 200:
             error = error[:197] + "..."
-        console.print(
+        out.print(
             f"[yellow]warning:[/yellow] worker '{stage_id}' ({model}) "
             f"failed: {error}"
         )
 
 
-def _print_dispatch_degradation(result: Any) -> None:
+def _print_dispatch_degradation(result: Any, out: Console = console) -> None:
     """Warn (always, not just --verbose) when the dispatch degraded.
 
     Two degradation classes surface here:
 
-    * ``trace.source == \"fallback\"`` — the dispatcher plan was discarded
+    * ``trace.source == "fallback"`` — the dispatcher plan was discarded
       and the deliberation collapsed to a generic single-worker formation.
       The answer may look fine; this is the ONLY signal (CH-GAP-044).
-    * a repair note (``dispatch_note`` containing \"repaired\"/\"injected\") —
+    * a repair note (``dispatch_note`` containing "repaired"/"injected") —
       the dispatcher's DAG was structurally repaired (e.g. an aggregator
       stage referenced by edges but missing from stages was injected), so
       the design survived but the user should know it was patched.
+
+    ``out`` is the stderr console in --quiet/--json mode (DF-CHIMERA-0906-5).
     """
     trace = getattr(result, "trace", None)
     if trace is None:
@@ -218,13 +341,13 @@ def _print_dispatch_degradation(result: Any) -> None:
     note = getattr(trace, "dispatch_note", None)
     if source == "fallback":
         reason = note or "unknown reason"
-        console.print(
+        out.print(
             f"[yellow]warning:[/yellow] dispatch degraded — source=fallback "
             f"({reason}); the deliberation collapsed to a generic "
             f"single-worker formation"
         )
     elif note and ("repaired" in note or "injected" in note):
-        console.print(f"[yellow]warning:[/yellow] dispatch repaired: {note}")
+        out.print(f"[yellow]warning:[/yellow] dispatch repaired: {note}")
 
 
 def _print_trace(trace: Any) -> None:
