@@ -588,3 +588,16 @@ tasks:
   status: complete
   created_at: '2026-09-13T10:42:09.621388+00:00'
   completed_at: '2026-09-13T10:51:51.927565+00:00'
+- id: QA-CHIMERA-001
+  title: Make the documented dev install sufficient for test collection
+  criteria:
+  - A clean Python 3.11 environment installed with pip install -e .[dev] can import
+    fastapi and uvicorn and collect tests/test_engine_coverage.py without an import
+    error
+  - The dev dependency contract has an automated regression test so future packaging
+    edits cannot drop dependencies required by the test suite
+  - uv.lock remains synchronized with pyproject.toml
+  - The full repository test suite and Ruff pass
+  status: complete
+  created_at: '2026-09-13T17:13:15.631422+00:00'
+  completed_at: '2026-09-13T17:18:52.527957+00:00'
