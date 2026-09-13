@@ -502,7 +502,7 @@ class TestBlockedModelExclusion:
         from chimera.blocked_models import ModelBlockRegistry, set_shared_registry
 
         self._original = blocked_models.shared_registry
-        set_shared_registry(ModelBlockRegistry())
+        set_shared_registry(ModelBlockRegistry(state_path=None))
         self._registry = blocked_models.shared_registry
 
     def teardown_method(self) -> None:

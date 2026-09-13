@@ -203,6 +203,18 @@ enabled catalog — the pre-restriction behavior.
   `allowed_models`, `worker_model`, `stage_models`, `dispatcher_model`, and
   `aggregator_model` behave exactly as documented and can force any catalog
   model, credentialed or not.
+
+**Guardrail-blocked model registry.** When a worker call fails with a
+guardrail/privacy/endpoint-availability error
+(`No endpoints available matching your guardrail restrictions…`), the model
+is recorded in a blocked-model registry and excluded from the auto
+dispatcher catalog and the category selector. Blocks are **long-lived (7
+days)** and **persisted to `~/.chimera/blocked-models.json`**, so a fresh
+process never re-picks a known guardrail-blocked model and the block is not
+silently re-admitted after a short cooldown. Only guardrail-class failures
+are recorded — timeouts, 5xx, and auth errors never block a model. Expired
+entries are pruned automatically; to clear a block manually, delete the
+state file (or remove the entry from it).
 - `defaults.dispatcher` / `defaults.default_worker` /
   `defaults.default_aggregator` are operator choices and are not filtered
   (a failed aggregator stage still retries with `default_aggregator`).

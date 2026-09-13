@@ -1305,7 +1305,7 @@ async def test_guardrail_failure_records_model_block(config) -> None:  # type: i
     from chimera.blocked_models import ModelBlockRegistry, set_shared_registry
 
     original = blocked_models.shared_registry
-    set_shared_registry(ModelBlockRegistry())
+    set_shared_registry(ModelBlockRegistry(state_path=None))
     try:
         failing_model = "openrouter/google/gemini-2.5-flash"
 
@@ -1331,13 +1331,46 @@ async def test_guardrail_failure_records_model_block(config) -> None:  # type: i
 
 
 @pytest.mark.asyncio
+async def test_guardrail_failure_persists_block_to_disk(config, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """DF-CHIMERA-V2-1: the engine's record_failure lands on disk, so a
+    fresh process (new registry, same path) still blocks the model."""
+    from chimera import blocked_models
+    from chimera.blocked_models import ModelBlockRegistry, set_shared_registry
+
+    original = blocked_models.shared_registry
+    state_path = tmp_path / "blocked.json"
+    set_shared_registry(ModelBlockRegistry(state_path=state_path))
+    try:
+        failing_model = "openrouter/google/gemini-2.5-flash"
+
+        class GuardrailGateway(FakeGateway):
+            async def complete(self, model, messages, response_format=None, **kw):
+                if response_format is not None:
+                    return resp(dispatch_json(), model, 10, 10)
+                if "Upstream outputs" in json.dumps(messages):
+                    return resp("AGGREGATOR ANSWER", model, 10, 10)
+                if model == failing_model:
+                    raise GatewayError("guardrail restrictions and data policy")
+                return resp(f"worker output {model}", model, 10, 10)
+
+        result = await Engine(config, GuardrailGateway()).deliberate("task", "auto")
+        assert result.trace.worker_failures
+        assert state_path.exists()
+        # Simulated restart: new registry instance over the same state file.
+        reloaded = ModelBlockRegistry(state_path=state_path)
+        assert reloaded.is_blocked(failing_model)
+    finally:
+        set_shared_registry(original)
+
+
+@pytest.mark.asyncio
 async def test_transient_failure_does_not_block_model(config) -> None:  # type: ignore[no-untyped-def]
     """C3(c): non-guardrail failures degrade the stage but do NOT block."""
     from chimera import blocked_models
     from chimera.blocked_models import ModelBlockRegistry, set_shared_registry
 
     original = blocked_models.shared_registry
-    set_shared_registry(ModelBlockRegistry())
+    set_shared_registry(ModelBlockRegistry(state_path=None))
     try:
         failing_model = "openrouter/google/gemini-2.5-flash"
 

@@ -1059,7 +1059,7 @@ def test_dispatcher_catalog_excludes_blocked_model(config) -> None:  # type: ign
     from chimera.blocked_models import ModelBlockRegistry, set_shared_registry
 
     original = blocked_models.shared_registry
-    set_shared_registry(ModelBlockRegistry())
+    set_shared_registry(ModelBlockRegistry(state_path=None))
     try:
         blocked_models.shared_registry.record_failure(
             "openrouter/qwen/qwen3-coder",
@@ -1082,7 +1082,7 @@ def test_dispatcher_catalog_unblocked_after_cooldown(config) -> None:  # type: i
     clock_now = [1000.0]
     original = blocked_models.shared_registry
     set_shared_registry(
-        ModelBlockRegistry(cooldown_s=0.5, clock=lambda: clock_now[0])
+        ModelBlockRegistry(cooldown_s=0.5, clock=lambda: clock_now[0], state_path=None)
     )
     try:
         blocked_models.shared_registry.record_failure(
