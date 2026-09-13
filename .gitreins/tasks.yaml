@@ -570,3 +570,21 @@ tasks:
   status: complete
   created_at: '2026-09-13T00:16:09.406141+00:00'
   completed_at: '2026-09-13T00:26:55.287359+00:00'
+- id: DF-CHIMERA-V2-1
+  title: auto formation routes workers to guardrail-blocked models on first runs
+  criteria:
+  - Guardrail-blocked models are excluded from auto-formation selection on a FRESH
+    process start (registry state survives restart via persistence or equivalent pre-seed
+    mechanism)
+  - "A model blocked by a guardrail-class failure stays blocked across a simulated\
+    \ restart (new registry instance, same state location) \u2014 no 300s-only self-heal\
+    \ that re-admits it"
+  - Non-guardrail failures (timeouts, 5xx) are still never recorded as blocks; expired-entry
+    pruning still works
+  - Selector and dispatcher catalog both exclude persisted-blocked models without
+    burning a provider call
+  - 'New tests are offline (no network) and the full suite passes: .venv/bin/python
+    -m pytest -x --tb=short -q'
+  status: complete
+  created_at: '2026-09-13T10:42:09.621388+00:00'
+  completed_at: '2026-09-13T10:51:51.927565+00:00'
