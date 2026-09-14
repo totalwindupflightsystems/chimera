@@ -632,3 +632,20 @@ tasks:
   status: complete
   created_at: '2026-09-14T05:48:44.798418+00:00'
   completed_at: '2026-09-14T05:54:58.474351+00:00'
+- id: DF-CHIMERA-0911-3
+  title: Explain OpenAI model formation semantics
+  criteria:
+  - A catalog model ID passed as the top-level model still returns HTTP 404 with OpenAI-style
+    code model_not_found, and the message explicitly says model selects a formation
+    and names worker_model, stage_models, and allowed_models as the supported specific-model
+    controls.
+  - A completely unknown top-level model value retains the same HTTP 404 OpenAI-style
+    error shape and actionable guidance; valid formation requests remain unaffected.
+  - docs/OPENAI_API.md distinguishes the top-level formation-selector 404 from 400
+    validation of unknown override model names and shows how OpenAI SDK callers force
+    a model through extra_body.
+  - Focused API regression tests, Ruff, and the full pytest suite pass with no unrelated
+    behavior or dependency changes.
+  status: complete
+  created_at: '2026-09-14T12:21:07.132033+00:00'
+  completed_at: '2026-09-14T12:27:15.837116+00:00'
