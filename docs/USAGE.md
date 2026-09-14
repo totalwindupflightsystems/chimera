@@ -34,6 +34,9 @@ chimera models
 # List formation presets
 chimera formations
 
+# Print the package version
+chimera --version
+
 # Start API server
 chimera serve --port 8080
 
@@ -250,6 +253,34 @@ deep-research:
 ```
 
 ## Observability
+
+### Health Endpoints
+
+`GET /v1/health` reports `healthy` when every configured provider's live probe
+succeeded, and `degraded` when **at least one provider probe failed** (missing
+credentials, auth error, API error, probe timeout, or an internal error in the
+check). It always answers HTTP 200 — read the `status` field, not the HTTP
+code — and `details.providers` carries per-provider `healthy` / `error` /
+`model_tested`. `GET /v1/health/ready` reuses the same probe and returns 503
+when no provider is reachable. The probe is a real (tiny) completion per
+provider (`max_tokens=1`), so polling costs a small number of tokens and is
+bounded by `server.health_timeout_s` (default 10 s).
+
+### Live Smoke Test
+
+Health endpoints do not prove a deliberation works. After a deploy (or whenever
+the deployment is suspect):
+
+```bash
+python scripts/smoke_live.py --base-url http://localhost:8765
+python scripts/smoke_live.py --base-url http://myhost:8765 --formation auto
+CHIMERA_API_KEY=... python scripts/smoke_live.py --base-url http://myhost:8765
+```
+
+The flag is `--base-url` (there is no `--port`); `CHIMERA_BASE_URL` sets the
+default. It verifies liveness + the running commit, probes `/v1/health`, then
+POSTs a real `/v1/deliberate` and prints the merged answer. Exit 0 = answer
+received, 1 = failure (auth/formation/busy/provider hints), 2 = usage error.
 
 ### Debug Logs
 

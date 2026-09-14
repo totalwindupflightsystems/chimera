@@ -11,6 +11,7 @@ Usage::
     chimera --json "prompt"           # stdout = one JSON object (answer + trace)
     chimera --quiet run "prompt"      # same modes, explicit run subcommand
     chimera --json run "prompt"
+    chimera --version                 # print the package version and exit
     chimera serve                     # run the REST API
     chimera mcp                       # run the MCP server (stdio)
 
@@ -36,6 +37,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from chimera import __version__
 from chimera.config import ChimeraConfig, FormationPreset, Observability, load_config
 from chimera.engine import Engine
 from chimera.gateway import LiteLLMGateway
@@ -115,6 +117,7 @@ class ChimeraGroup(click.Group):
 
 
 @click.group(cls=ChimeraGroup, invoke_without_command=True)
+@click.version_option(version=__version__, message="chimera %(version)s")
 @click.option("-f", "--formation", default="auto", help="Formation preset name.")
 @click.option("-v", "--verbose", is_flag=True, help="Print the full trace.")
 @click.option(

@@ -706,3 +706,21 @@ def test_cli_config_init_force_overwrites(tmp_path, monkeypatch) -> None:  # typ
     result = runner.invoke(main, ["config", "init", "--force"])
     assert result.exit_code == 0, result.output
     assert (tmp_path / "chimera.yaml").read_text() == "defaults: {}\n"
+
+
+# ---------------------------------------------------------------------------
+# DF-CHIMERA-V2-4: group-level --version
+# ---------------------------------------------------------------------------
+
+def test_cli_version_flag() -> None:
+    """``chimera --version`` prints the package version and exits 0.
+
+    A group flag (like ``--quiet`` / ``--json``), so it is accepted before any
+    subcommand and needs no config file.
+    """
+    from chimera import __version__
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["--version"])
+    assert result.exit_code == 0, result.output
+    assert __version__ in result.output
