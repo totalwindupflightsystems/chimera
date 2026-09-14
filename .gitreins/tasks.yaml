@@ -619,3 +619,16 @@ tasks:
   status: complete
   created_at: '2026-09-13T23:30:52.504007+00:00'
   completed_at: '2026-09-13T23:38:21.904891+00:00'
+- id: DF-CHIMERA-V2-4
+  title: 'Docs gaps: env substitution, smoke_live flags, MCP tool names, degraded
+    health, --version'
+  criteria:
+  - README documents ${VAR} env-substitution and .env auto-load behavior
+  - README/scripts documentation covers smoke_live.py usage with its real flags (--base-url)
+  - README MCP row lists all tools from tools/list (chimera_deliberate, chimera_formations,
+    chimera_models)
+  - README or docs explain /v1/health degraded semantics
+  - chimera --version prints the version successfully
+  status: complete
+  created_at: '2026-09-14T05:48:44.798418+00:00'
+  completed_at: '2026-09-14T05:54:58.474351+00:00'
