@@ -419,6 +419,145 @@ def test_chat_completions_custom_without_dag_returns_404(config) -> None:  # typ
     assert r.json()["error"]["code"] == "model_not_found"
 
 
+# --------------------------------------------------------------------------- #
+# DF-CHIMERA-0911-3: `model` selects a FORMATION — the 404 must be actionable
+# --------------------------------------------------------------------------- #
+#
+# Regression: a valid GET /v1/models key (e.g. "deepseek/deepseek-v4-flash")
+# sent as the top-level `model` returned 404 model_not_found whose message
+# named only formations/'custom' — it never said `model` is a formation
+# selector, and never named the override fields that DO force a specific
+# catalog model. An OpenAI-SDK caller had no in-band path from the error to
+# the fix.
+
+#: Override fields the 404 must name as the supported specific-model controls.
+_MODEL_404_OVERRIDE_FIELDS = ("worker_model", "stage_models", "allowed_models")
+
+
+def _assert_actionable_model_404(response, model_value: str) -> dict:  # type: ignore[no-untyped-def]
+    """Assert the full formation-selector 404 contract + actionable guidance."""
+    assert response.status_code == 404
+    data = response.json()
+    err = data["error"]
+    assert err["code"] == "model_not_found"
+    assert err["param"] == "model"
+    assert err["type"] == "invalid_request_error"
+    assert "choices" not in data  # never a 200 with a substituted model
+    message = err["message"]
+    assert f"`{model_value}`" in message
+    assert "FORMATION" in message  # says what `model` actually selects
+    for field in _MODEL_404_OVERRIDE_FIELDS:
+        assert f"`{field}`" in message, message
+    assert "extra_body" in message  # how OpenAI SDK callers pass the overrides
+    assert "OPENAI_API.md" in message  # pointer to the documented contract
+    return data
+
+
+def test_chat_completions_catalog_model_id_returns_actionable_404(config) -> None:  # type: ignore[no-untyped-def]
+    """A GET /v1/models key is NOT a valid top-level `model` (DF-CHIMERA-0911-3).
+
+    The premise is asserted against the same client: the value IS a catalog
+    entry, so the 404 (not a 200) is the real contract, and the message must
+    hand the caller the override fields that force that model.
+    """
+    client, gateway = _client_with_gateway(config, _standard_responder)
+    model_id = "deepseek/deepseek-v4-flash"
+    assert model_id in client.get("/v1/models").json()  # premise: a catalog key
+
+    r = client.post(
+        "/v1/chat/completions",
+        json={"model": model_id, "messages": [{"role": "user", "content": "hi"}]},
+    )
+    _assert_actionable_model_404(r, model_id)
+    assert gateway.calls == []  # rejected before any engine work / billing
+
+
+def test_chat_completions_unknown_formation_returns_actionable_404(config) -> None:  # type: ignore[no-untyped-def]
+    """A completely unknown `model` keeps the same shape AND the same guidance."""
+    client, gateway = _client_with_gateway(config, _standard_responder)
+    common = {"messages": [{"role": "user", "content": "hi"}]}
+
+    catalog_id = "deepseek/deepseek-v4-flash"
+    catalog_case = client.post("/v1/chat/completions", json={"model": catalog_id, **common})
+    unknown = "bogus/nonexistent-model-xyz"
+    unknown_case = client.post("/v1/chat/completions", json={"model": unknown, **common})
+
+    _assert_actionable_model_404(unknown_case, unknown)
+    unknown_data = unknown_case.json()
+    catalog_data = _assert_actionable_model_404(catalog_case, catalog_id)
+    # One message template for both cases — only the quoted model name differs.
+    assert unknown_data["error"]["message"].replace(unknown, "MODEL") == (
+        catalog_data["error"]["message"].replace(catalog_id, "MODEL")
+    )
+    assert gateway.calls == []
+
+
+@pytest.mark.parametrize("formation", ["auto", "simple", "debate", "audit", "speed"])
+def test_chat_completions_valid_formations_unaffected(config, formation) -> None:  # type: ignore[no-untyped-def]
+    """Every configured formation still deliberates normally (no 404 regression)."""
+    client, gateway = _client_with_gateway(config, _standard_responder)
+    r = client.post(
+        "/v1/chat/completions",
+        json={"model": formation, "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["choices"][0]["message"]["content"] == "FINAL ANSWER"
+    assert gateway.calls
+
+
+@pytest.mark.parametrize(
+    ("override_payload", "field"),  # type: ignore[no-untyped-def]
+    [
+        ({"worker_model": "bogus/nonexistent-model-xyz"}, "worker_model"),
+        ({"aggregator_model": "bogus/nonexistent-model-xyz"}, "aggregator_model"),
+        ({"stage_models": {"worker_1": "bogus/nonexistent-model-xyz"}}, "stage_models"),
+    ],
+)
+def test_chat_completions_unknown_override_model_returns_400(  # type: ignore[no-untyped-def]
+    config, override_payload, field,
+) -> None:
+    """Unknown model INSIDE an override field is a 400 — a different contract.
+
+    Pins the split the docs now state: the top-level `model` is a formation
+    selector (404 model_not_found, OpenAI-style body), while override model
+    names are catalog-validated by the engine → HTTP 400 with FastAPI's
+    ``detail`` body (never the OpenAI-style ``error`` object).
+    """
+    client = _client(config)
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "hi"}],
+            **override_payload,
+        },
+    )
+    assert r.status_code == 400, r.text
+    body = r.json()
+    assert "error" not in body, body
+    assert field in body["detail"], body
+    assert "unknown model" in body["detail"], body
+
+
+def test_chat_completions_unknown_stage_id_warns_but_succeeds(config) -> None:  # type: ignore[no-untyped-def]
+    """An unknown stage_models STAGE id is non-fatal (documented warn) — 200.
+
+    Distinguishes the two halves of `stage_models` for docs accuracy: unknown
+    stage id → warn + normal deliberation; unknown model name → 400.
+    """
+    client = _client(config)
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stage_models": {"no_such_stage": "deepseek/deepseek-chat"},
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["choices"][0]["message"]["content"] == "FINAL ANSWER"
+
+
 def test_chat_completions_stream_true_returns_400(config) -> None:  # type: ignore[no-untyped-def]
     """OpenAI-compat contract: stream:true is a hard 400 (CH-GAP-030).
 

@@ -537,15 +537,33 @@ def _register_routes(app: FastAPI) -> None:
             if formation not in cfg.formations and formation != "auto" and not (
                 formation == "custom" and body.dag is not None
             ):
+                # DF-CHIMERA-0911-3: `model` is a FORMATION selector (OpenAI
+                # drop-in compatibility), NOT a catalog model ID — a key from
+                # GET /v1/models sent as `model` lands here. Keep the 404
+                # model_not_found contract (CH-GAP-027) but make it
+                # actionable: name the override fields that DO select a
+                # specific catalog model. Those fields are read straight off
+                # the request body, so an OpenAI SDK caller reaches them via
+                # `extra_body` — say so instead of leaving the caller to guess.
                 return JSONResponse(
                     status_code=404,
                     content={
                         "error": {
                             "message": (
                                 f"The model `{formation}` does not exist. "
-                                "Valid values: 'auto', a formation preset "
-                                "(GET /v1/formations), or 'custom' with a DAG "
-                                "via POST /v1/chat/completions."
+                                "`model` selects a FORMATION (a deliberation "
+                                "preset), not a catalog model ID — use GET "
+                                "/v1/formations for the valid names, or GET "
+                                "/v1/models for the catalog. Valid values: "
+                                "'auto', a formation preset, or 'custom' with "
+                                "a DAG via allow_custom_dag. To force a "
+                                "specific catalog model, send model='auto' "
+                                "with one of the Chimera override fields: "
+                                "`worker_model` (every worker), "
+                                "`stage_models` (per stage), or "
+                                "`allowed_models` (restrict the pool) — "
+                                "OpenAI SDK callers pass these through "
+                                "extra_body. See docs/OPENAI_API.md."
                             ),
                             "type": "invalid_request_error",
                             "param": "model",
