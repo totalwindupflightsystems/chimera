@@ -34,6 +34,7 @@ chimera --json "Compare React and Vue"        # stdout = one JSON object (answer
 chimera --version                             # print the package version
 chimera serve                                 # REST API + web UI (see Server & MCP)
 chimera-mcp                                   # MCP tools for agents
+python -m chimera --version                   # fallback when the `chimera` script is not on PATH (fresh clone, non-activated venv, bare wheel)
 ```
 
 ### Machine-readable output

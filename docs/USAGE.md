@@ -101,6 +101,23 @@ Notes:
 - Default (no flag) and `--verbose` human output are unchanged: boxed answer
   panel on stdout, warnings beside it, optional trace table.
 
+### Module entry point (`python -m chimera`)
+
+The package also exposes the same CLI as a module, so it stays reachable when
+the `chimera` console script is **not** on `PATH` — a fresh clone, a venv that
+has not been activated, or a bare wheel installed without scripts:
+
+```bash
+python -m chimera --version                 # same as `chimera --version`
+python -m chimera run "Explain the CAP theorem"
+python -m chimera --json run "..."          # flags and subcommands are identical
+```
+
+`python -m chimera` runs the same entry point as the console script
+(`chimera.cli.main:main`), so every subcommand, flag, exit code and stream
+guarantee documented above applies unchanged. Reach for it whenever
+`command -v chimera` prints nothing.
+
 ## REST API
 
 ```mermaid
