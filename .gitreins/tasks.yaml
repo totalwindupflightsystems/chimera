@@ -659,3 +659,26 @@ tasks:
   status: complete
   created_at: '2026-09-15T01:27:17.872155+00:00'
   completed_at: '2026-09-15T02:03:19.020074+00:00'
+- id: QA-CHIMERA-V2-12
+  title: 'Fix fresh-system wrapper: chimney venv-agnostic resolution'
+  criteria:
+  - bin/chimera-mcp-hermes works when repo-local .venv is absent (falls back to installed
+    chimera-mcp on PATH)
+  - tests/test_mcp_stdio_purity.py passes at HEAD after change (all 3 spawn styles)
+  - full pytest -q stays green at HEAD
+  status: complete
+  created_at: '2026-09-15T10:16:21.304162+00:00'
+  completed_at: '2026-09-15T10:28:27.522023+00:00'
+- id: DOC-1
+  title: Document the python -m chimera module entry point in README and USAGE
+  criteria:
+  - README.md mentions the python -m chimera module entry point in its quickstart
+    or CLI section
+  - docs/USAGE.md mentions python -m chimera as the fallback when console scripts
+    are not on PATH
+  - python -m chimera --version prints the package version and exits 0
+  - a regression test asserts both README.md and docs/USAGE.md document the python
+    -m chimera entry point
+  status: complete
+  created_at: '2026-09-15T22:48:01.330717+00:00'
+  completed_at: '2026-09-15T22:53:21.343938+00:00'
