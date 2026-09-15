@@ -53,11 +53,18 @@ Those counts match the native suite:
 
 ## Notes
 
-- Jobs that need repository secrets (`integration`, which reads
-  `secrets.DEEPSEEK_API_KEY`) or a tag ref (`publish`, `release-verify`) cannot
-  be fully exercised locally; act only gets whatever secrets you hand it via
-  `--secret` / `.secrets`. `lint`, `test` and `packaging-smoke` are the jobs to
-  use as the local gate.
+- Jobs that need repository secrets or a tag ref cannot be fully exercised
+  locally — act only gets the secrets you hand it via `--secret` / `.secrets`:
+  - `integration` runs `pytest tests/integration/ --run-integration`, which is a
+    **live** suite gated on `secrets.DEEPSEEK_API_KEY`. Without that secret the
+    tests fail (they do not skip), so a bare `act -q` ends non-zero on the
+    `integration` job alone. That is a missing-secret artifact, not a workflow
+    defect — do not "fix" it by skipping the job.
+  - `publish` and `release-verify` are tag-ref gated (`refs/tags/v*`) and are
+    skipped for a branch push.
+  - `lint`, `test` and `packaging-smoke` are the jobs to use as the local gate;
+    `act -j lint`, `act -j test --matrix python-version:3.11` and
+    `act -j packaging-smoke` all exit 0 at HEAD.
 - `--container-architecture linux/amd64` is pinned as well, so runs are
   identical on arm64 hosts (where CI images would otherwise resolve to an
   architecture GitHub's runners never use).
