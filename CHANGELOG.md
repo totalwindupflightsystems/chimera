@@ -2,6 +2,16 @@
 
 All notable changes to Chimera will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **`bin/chimera-mcp-hermes` is now venv-agnostic** (QA-CHIMERA-V2-12): the
+  wrapper execs the repo-local `.venv/bin/chimera-mcp` only when its
+  interpreter is live, falls back to a `chimera-mcp` found on `PATH` when the
+  repo venv is missing or dead (fresh install), and exits 1 naming both
+  attempted paths when neither exists.
+
 ## [0.2.5] — 2026-09-11
 
 ### Fixed
