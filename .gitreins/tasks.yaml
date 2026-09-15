@@ -649,3 +649,13 @@ tasks:
   status: complete
   created_at: '2026-09-14T12:21:07.132033+00:00'
   completed_at: '2026-09-14T12:27:15.837116+00:00'
+- id: QA-CHIMERA-V2-7
+  title: '[P1] CI battery fails in act and native execution'
+  criteria:
+  - act lint job 'Create venv and install ruff' passes (rc=0)
+  - act test job 'Run unit tests' passes (rc=0)
+  - Native .venv/bin/python -m pytest tests/ unit run green including test_mcp_stdio_purity
+  - ruff check . clean on the repo venv
+  status: complete
+  created_at: '2026-09-15T01:27:17.872155+00:00'
+  completed_at: '2026-09-15T02:03:19.020074+00:00'
