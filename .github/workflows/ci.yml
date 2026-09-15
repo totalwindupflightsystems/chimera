@@ -23,7 +23,10 @@ jobs:
       - name: Create venv and install ruff
         run: |
           python -m venv .venv
-          .venv/bin/pip install ruff>=0.6.0
+          # Quote the specifier: unquoted, the shell parses `ruff>=0.6.0` as
+          # `ruff` plus a `>` redirect into a file literally named `=0.6.0`, so
+          # the version floor never reaches pip and a stray artifact is written.
+          .venv/bin/pip install 'ruff>=0.6.0'
 
       - name: Run ruff
         run: .venv/bin/ruff check .

@@ -1,0 +1,29 @@
+# act (local CI runner) configuration — repo-root `.actrc`.
+#
+# act reads this file automatically from the working directory, and its flags
+# apply BEFORE CLI-provided flags, so a plain `act -q --pull` (what the QA
+# battery / scripts/act-ci.sh run) gets these settings without any wrapper.
+#
+# WHY THIS FILE EXISTS
+# act's default runner image is `node:22-bookworm` (Debian). Every job in this
+# workflow starts with `actions/setup-python@v5`, and that action only publishes
+# toolcache builds for Ubuntu, so on Debian the first step dies with:
+#
+#   The version '3.11' with architecture 'x64' was not found for this operating
+#   system. ... https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json
+#
+# ...and every job fails before its own first `run:` block — a runner-image gap,
+# not a workflow defect. Pinning a runner image whose base OS matches GitHub's
+# `ubuntu-latest` (Ubuntu 24.04) makes local act runs reproduce hosted CI rather
+# than the runner image's own gaps.
+#
+# The tag is pinned (`act-24.04`, not the rolling `act-latest`) so repeated local
+# runs and QA cells are reproducible.
+#
+# Verified: `act -j lint` and `act -j test --matrix python-version:3.11` both
+# exit 0 at HEAD with this file in place (856 passed, 1 skipped).
+-P ubuntu-latest=catthehacker/ubuntu:act-24.04
+# Keep the container platform explicit so runs are identical on arm64 hosts
+# (where the CI images would otherwise resolve to an architecture GitHub's
+# runners never use).
+--container-architecture linux/amd64
