@@ -51,7 +51,7 @@ chimera-mcp stdout pollution as P0. This run's new ground:
 
 SKIPPED for the 7th consecutive run — but with a NEW, more diagnostic
 failure signature: `bunker list` (bunkerd :19090) succeeds, while
-`bunker spawn` dies one hop deeper (`dial tcp 100.69.3.13:10001: i/o
+`bunker spawn` dies one hop deeper (`dial tcp bunker-las-03:10001: i/o
 timeout`) and ssh :22 times out during banner exchange. Both agent-transport
 paths down while the bunkerd API is up → firewall/ACL regression on the
 host, not bunkerd health. Filed as DF-CHIMERA-0911-4. Local fresh-venv

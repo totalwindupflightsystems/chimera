@@ -401,8 +401,8 @@ legible (DF-CHIMERA-V2-2 fix), `chimera run` stdout = answer box only,
 `port range allocation: pool exhausted` at spawn. This run got further:
 `bunker list --server bunker-las-03` succeeds (bunkerd :19090 reachable,
 CLI 0.1.3/4af949d), then `bunker spawn` fails one hop deeper —
-`deadline_exceeded: Post http://100.69.3.13:10001/bunker.v1.Bunkerd/SpawnAgent:
-dial tcp 100.69.3.13:10001: i/o timeout` — while ssh :22 times out during
+`deadline_exceeded: Post http://bunker-las-03:10001/bunker.v1.Bunkerd/SpawnAgent:
+dial tcp bunker-las-03:10001: i/o timeout` — while ssh :22 times out during
 banner exchange (ICMP fine). Two agent transports down + bunkerd API up =
 firewall/ACL regression on the host, not bunkerd health. Filed
 DF-CHIMERA-0911-4 (supersedes the port-pool framing in DF-CHIMERA-0906-6).
