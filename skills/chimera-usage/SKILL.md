@@ -4,8 +4,10 @@ description: >-
   How to actually USE the Chimera multi-model deliberation gateway (CLI, MCP,
   REST). Entry points, working recipes, common failure modes and their fixes.
   Load this before running any deliberation. Written from the 2026-08-03
-  dogfood run — everything here was executed for real.
-version: 1.0.0
+  dogfood run — everything here was executed for real. v1.1.0 adds the
+  2026-09-16 run-9 lessons: OpenAI SDK compatibility limits, the MCP
+  keep-stdin-open harness rule, fresh-clone config gotcha, bunker install.
+version: 1.1.0
 category: software-development
 ---
 
@@ -328,3 +330,30 @@ healthy; repo HEAD 3b6ae77). The entry-point verdict table as of this run:
   for a 2-worker auto/simple formation; $0.016 total_tokens ≈ 26.8k).
 - `bin/chimera-mcp-hermes` wrapper (repo-root-resolving, explicit config)
   is the durable way to wire agents to the repo venv MCP server.
+
+### Run-9 lessons (2026-09-16, field-tested on the PUBLISHED wheel + fresh clone)
+
+27. **Use the official OpenAI SDK, not curl, when testing "OpenAI-compatible"
+    claims.** `client.models.list()` FAILS against :8765 — GET /v1/models
+    returns a bare {model_id: {...}} map, not {"object":"list","data":[...]}
+    (TypeError: NoneType has no len). chat.completions itself works through
+    the SDK (model="simple" → "Paris" in 27s). Until DF-CHIMERA-0916B-2
+    lands, skip models.list() and use httpx/GET for the catalog.
+28. **MCP probes MUST keep stdin open until the response lands.** A
+    printf-pipe closes stdin after the request; the server hits EOF and
+    exits BEFORE a long deliberation responds, so naive probes report a
+    truncated session (looks like a broken server — it isn't). Driver
+    pattern: Popen + background feed thread + readline loop until the
+    request id answers; see docs/dogfood/2026-09-16-runB-integration.md.
+29. **Fresh git clone ships the live chimera.yaml** — `chimera config init`
+    refuses ("already exists. Use --force"). On a repo clone just use the
+    shipped config (keys are ${VAR} refs); `config init` is for pip/wheel
+    installs only. Rename tracked → gitignored is pending (DF-CHIMERA-0916B-4).
+30. **Publish-vs-HEAD gap is a LIVE class again**: `chimera --version`
+    documented in README works at HEAD (d6f144c) but not on the 0.2.5 wheel
+    (shipped 09-12, flag added 09-14). Before trusting any README quickstart
+    line against a release, check the flag exists in the PUBLISHED version.
+31. **Fresh-box install is PROVEN (run 9)**: clone → venv → `pip install -e
+    ".[full]"` = 68s, shipped config + one env var → real answer in 11s on
+    a bare Debian box (las-bunker-03, agent destroyed after). The 7-run
+    bunker SKIPPED streak was infra, not the project.
