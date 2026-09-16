@@ -69,6 +69,10 @@ def _findings() -> list[str]:
             for match in _PRIVATE_RE.finditer(line):
                 if match.group(0) in _ALLOWED:
                     continue
+                # CIDR notation ("100.64.0.0/10") documents a range, not a host —
+                # describing the policy must not itself trip the policy.
+                if line[match.end():match.end() + 1] == "/":
+                    continue
                 findings.append(f"{rel}:{lineno}: private address {match.group(0)!r}")
             for match in _TAILNET_DNS_RE.finditer(line):
                 findings.append(f"{rel}:{lineno}: tailnet hostname {match.group(0)!r}")
