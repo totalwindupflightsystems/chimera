@@ -188,6 +188,9 @@ Detailed guides live in `docs/`:
 | [docs/EDGE_CASES.md](docs/EDGE_CASES.md) | Edge cases and behavior notes |
 | [docs/FAILURE_RESILIENCE.md](docs/FAILURE_RESILIENCE.md) | Failure handling and resilience design |
 | [docs/RESILIENCE.md](docs/RESILIENCE.md) | Resilience guarantees and degradation semantics |
+| [docs/LOCAL_CI.md](docs/LOCAL_CI.md) | Run the CI suite locally with `act` (ruff + tests, same workflow as CI) |
+
+*Full docs index, including historical artifacts and dogfood logs: [docs/README.md](docs/README.md).*
 
 ## Architecture
 

@@ -9,5 +9,28 @@
 - [EDGE_CASES.md](EDGE_CASES.md) — critical edge cases and handling
 - [RESILIENCE.md](RESILIENCE.md) — retries, backpressure, format negotiation
 - [FAILURE_RESILIENCE.md](FAILURE_RESILIENCE.md) — partial failures, token limits, budget exhaustion
+- [LOCAL_CI.md](LOCAL_CI.md) — reproduce the hosted CI workflow locally with `act` (runner image pin, per-job commands)
+- [model-catalog.yaml](model-catalog.yaml) — generated model catalog: category weights + cost tiers
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — dev setup, tests, PR process
 - [CHANGELOG.md](../CHANGELOG.md) — release history
+
+## Historical / archived
+
+Early, dated artifacts kept for history. They are **not** current documentation
+— the README and the guides above are authoritative.
+
+- [PRD.html](PRD.html) — early, dated product-requirements draft (HTML), kept for history
+- [Chimera-PRD.html](Chimera-PRD.html) — early, dated product-requirements draft (HTML), kept for history
+- [audit-2026-08.md](audit-2026-08.md) — 2026-08 eleven-point audit snapshot, historical
+
+## Dogfood run logs
+
+Historical run logs: each file is a dated snapshot of one real-use dogfood run
+against the live deployment, **not** a description of current behavior.
+
+- [dogfood/2026-08-03-integration.md](dogfood/2026-08-03-integration.md) — run 1 integration report (2026-08-03)
+- [dogfood/2026-08-13-integration.md](dogfood/2026-08-13-integration.md) — run 2 integration report (2026-08-13)
+- [dogfood/2026-08-23-integration.md](dogfood/2026-08-23-integration.md) — run 3 integration report (2026-08-23)
+- [dogfood/2026-09-04-runB-integration.md](dogfood/2026-09-04-runB-integration.md) — run 6, release-lag + deploy-parity focus (2026-09-04)
+- [dogfood/2026-09-11-integration.md](dogfood/2026-09-11-integration.md) — run 7 integration report (2026-09-11)
+- [dogfood/diagnostics.md](dogfood/diagnostics.md) — build/diagnostic trail behind the 2026-08-03 run
