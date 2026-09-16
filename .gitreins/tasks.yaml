@@ -694,3 +694,35 @@ tasks:
   status: complete
   created_at: '2026-09-16T05:23:11.777194+00:00'
   completed_at: '2026-09-16T05:29:16.287047+00:00'
+- id: int-ci-005-private-host-scrub
+  title: Scrub private/tailnet host IPs from published content and guard against recurrence
+    (INT-CI-005)
+  criteria:
+  - No private-range or tailnet IP address appears in any git-tracked file at HEAD
+  - A regression test exists that fails when such an address is introduced into tracked
+    content
+  - Full test suite passes with the new guard test included
+  status: complete
+  created_at: '2026-09-16T05:44:37.685482+00:00'
+  completed_at: '2026-09-16T05:48:46.971155+00:00'
+- id: df-chimera-v2-6
+  title: Block models whose provider key fails auth + actionable remedy (DF-CHIMERA-V2-6)
+  criteria:
+  - 'A credential/auth-class upstream failure (litellm.AuthenticationError, HTTP 401,
+    Missing credentials, User not found) is blockable: ModelBlockRegistry.record_failure
+    returns True for it while timeout/429/500 strings still return False'
+  - The persisted blocked-models state records a credential reason plus a non-reversible
+    credential fingerprint and never the raw key value
+  - After a run whose worker died on a bad provider key the failed model is present
+    in the persisted state and a subsequent run does not assign that model to a worker
+    stage
+  - When the provider's resolved key changes the credential block no longer applies
+    and the model becomes selectable again
+  - A run with a present-but-invalid key prints an actionable warning naming the provider
+    and the env var to fix plus the remedy, and still delivers the answer with exit
+    code 0
+  - 'No regressions: full pytest suite has no new failures, ruff is clean, guardrail-class
+    blocking still blocks'
+  status: complete
+  created_at: '2026-09-16T21:25:03.570579+00:00'
+  completed_at: '2026-09-16T21:37:42.967302+00:00'
