@@ -25,7 +25,12 @@ import structlog
 from pydantic import BaseModel, Field
 
 from chimera import blocked_models
-from chimera.config import ChimeraConfig, FormationPreset, credentialed_enabled_models
+from chimera.config import (
+    ChimeraConfig,
+    FormationPreset,
+    credentialed_enabled_models,
+    model_credential_fingerprint,
+)
 from chimera.gateway import Gateway, GatewayError, GatewayResponse
 
 log = structlog.get_logger("chimera.dispatcher")
@@ -358,6 +363,26 @@ def _validate_dag(dag: FormationDAG, config: ChimeraConfig) -> None:
 # --------------------------------------------------------------------------- #
 
 
+def blocked_catalog_models(config: ChimeraConfig) -> set[str]:
+    """Model names that must be hidden from the dispatcher catalog.
+
+    Every model in the shared registry is re-checked against the credential
+    currently resolved for its provider: a credential-class block recorded
+    against a *different* key is stale (the operator replaced it), and
+    :meth:`ModelBlockRegistry.is_blocked` clears it as a side effect.  Guardrail
+    blocks carry no fingerprint, so their behavior is unchanged
+    (DF-CHIMERA-V2-6).
+    """
+    registry = blocked_models.shared_registry
+    return {
+        model
+        for model in registry.blocked()
+        if registry.is_blocked(
+            model, credential_fingerprint=model_credential_fingerprint(config, model)
+        )
+    }
+
+
 def build_dispatcher_prompt(
     user_prompt: str,
     config: ChimeraConfig,
@@ -365,7 +390,7 @@ def build_dispatcher_prompt(
     fixed_dag: FormationDAG | None = None,
 ) -> list[dict[str, str]]:
     """Build the message list for the dispatcher model call."""
-    blocked = blocked_models.shared_registry.blocked()
+    blocked = blocked_catalog_models(config)
     if blocked:
         log.info("dispatcher_catalog_excludes_blocked", models=sorted(blocked))
     exclude = set(blocked)

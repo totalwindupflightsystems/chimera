@@ -24,6 +24,8 @@ from chimera.config import (
     ChimeraConfig,
     DeliberationOverrides,
     credentialed_enabled_models,
+    model_credential_fingerprint,
+    provider_credential_resolved,
 )
 from chimera.dispatcher import (
     Dispatcher,
@@ -290,6 +292,127 @@ def _apply_credentialed_worker_models(
                 wp.model = fallback
 
 
+def _credential_block_active(
+    registry: blocked_models.ModelBlockRegistry,
+    config: ChimeraConfig,
+    model: str,
+) -> bool:
+    """True when *model* is credential-blocked against the CURRENT key.
+
+    Positive evidence is required on purpose: the block must be
+    credential-class, carry a stored fingerprint, and that fingerprint must
+    still match the credential the config resolves today.  A stale block (the
+    key was replaced) is not "active" — ``is_blocked`` clears it — and a
+    credential block recorded with no fingerprint at all (legacy state file)
+    is left alone rather than silently rewriting a configured model
+    (DF-CHIMERA-V2-6).
+    """
+    if registry.block_reason(model) != blocked_models.REASON_CREDENTIAL:
+        return False
+    stored = registry.credential_fingerprint(model)
+    if stored is None:
+        return False
+    return stored == model_credential_fingerprint(config, model)
+
+
+def _is_usable_worker_model(
+    registry: blocked_models.ModelBlockRegistry,
+    config: ChimeraConfig,
+    model: str,
+) -> bool:
+    """A model that may replace a credential-blocked worker stage."""
+    entry = config.models.get(model)
+    if entry is None or not entry.enabled:
+        return False
+    if not provider_credential_resolved(config, entry.provider):
+        return False
+    return not _credential_block_active(registry, config, model)
+
+
+def _unblocked_worker_fallback(
+    registry: blocked_models.ModelBlockRegistry, config: ChimeraConfig
+) -> str | None:
+    """Best replacement model for a worker whose provider key failed auth.
+
+    Preference order: the configured default worker, the configured default
+    aggregator (which just answered successfully in the run that recorded the
+    block), then the first credentialed, enabled, unblocked catalog model.
+    ``None`` when nothing qualifies — the caller then leaves the stage alone
+    and warns instead of guessing.
+    """
+    for candidate in (config.defaults.default_worker, config.defaults.default_aggregator):
+        if _is_usable_worker_model(registry, config, candidate):
+            return candidate
+    for name in config.enabled_models:
+        if _is_usable_worker_model(registry, config, name):
+            return name
+    return None
+
+
+def _apply_unblocked_worker_models(
+    dispatch: DispatchResult,
+    config: ChimeraConfig,
+) -> None:
+    """Replace worker-stage models whose provider credential failed auth.
+
+    The model block registry (DF-CHIMERA-V2-1) keeps a model that failed a
+    guardrail/privacy rejection out of the dispatcher's *catalog* — which only
+    helps formations the dispatcher designs (``auto``).  A named preset or an
+    explicit ``stage_models`` override names its model directly, so a
+    present-but-invalid provider key used to be re-tried on every run for the
+    whole block window: every worker call 401s, the run still exits 0, and the
+    answer silently degrades to a single model (DF-CHIMERA-V2-6).
+
+    Runs LAST (after ``stage_models`` / ``allowed_models``), so a credential
+    block is the one thing that outranks an explicit model choice: the choice
+    cannot be honored — the key is known-bad — and burning the call would only
+    produce another degraded stage.  It applies only when the block is
+    credential-class AND the stored fingerprint still matches the resolved key,
+    so replacing the key restores the configured model on the very next run.
+    Non-worker stages are untouched (the engine already retries a failed
+    aggregator with ``defaults.default_aggregator``).
+    """
+    registry = blocked_models.shared_registry
+    blocked_stages = [
+        stage
+        for stage in dispatch.formation.stages
+        if stage.kind == "worker"
+        and _credential_block_active(registry, config, stage.model)
+    ]
+    if not blocked_stages:
+        return
+    fallback = _unblocked_worker_fallback(registry, config)
+    if fallback is None:
+        log.warning(
+            "engine_blocked_worker_no_fallback",
+            models=sorted({s.model for s in blocked_stages}),
+            msg=(
+                "worker models are blocked by a rejected provider credential "
+                "and no credentialed, unblocked replacement model is "
+                "available; every worker call will fail with an auth error "
+                "until a valid provider key is set."
+            ),
+        )
+        return
+    for stage in blocked_stages:
+        if stage.model == fallback:
+            continue
+        log.warning(
+            "engine_blocked_worker_remap",
+            stage=stage.id,
+            original=stage.model,
+            remapped=fallback,
+            msg=(
+                "worker model blocked: its provider credential was rejected "
+                "(auth/401). Set a valid key to restore it."
+            ),
+        )
+        stage.model = fallback
+        wp = dispatch.worker_prompt_for(stage.id)
+        if wp is not None:
+            wp.model = fallback
+
+
 def _apply_global_model_overrides(
     dispatch: DispatchResult,
     overrides: DeliberationOverrides | None,
@@ -520,6 +643,13 @@ class Engine:
                 outcome.result, overrides.wait_messages, overrides.trigger,
             )
 
+        # DF-CHIMERA-V2-6: a model whose provider credential was rejected
+        # (present-but-invalid key → 401) is durably blocked, so it must not
+        # reach a worker stage again — not even when a preset or an explicit
+        # stage_models override names it. Runs last so the block outranks the
+        # explicit choice; self-clears when the key is replaced.
+        _apply_unblocked_worker_models(outcome.result, self.config)
+
         log.info(
             "engine_dispatched",
             source=outcome.result.source,
@@ -549,7 +679,7 @@ class Engine:
         answer = self._strip_final_answer_fences(answer)
         answer = self._maybe_unwrap_envelope(answer)
         answer_stage = stage_results.get(answer_stage_id)
-        worker_failures = self._collect_worker_failures(stage_results)
+        worker_failures = self._collect_worker_failures(stage_results, self.config)
         trace = self._assemble_trace(
             request_id=request_id,
             formation=formation,
@@ -1290,14 +1420,20 @@ class Engine:
     @staticmethod
     def _collect_worker_failures(
         stage_results: dict[str, StageResult],
+        config: ChimeraConfig | None = None,
     ) -> list[WorkerFailure]:
         """Build the dropped-worker list from degraded stage results.
 
         Every degraded stage carries its upstream error in
         ``response.metadata["error"]`` (stamped by :meth:`_degraded_stage`).
-        Guardrail-class errors are also recorded in the shared block
-        registry so the dispatcher stops selecting that model for the
-        cooldown window.
+        Guardrail-class and credential-class errors are also recorded in the
+        shared block registry so the dispatcher stops selecting that model for
+        the cooldown window.
+
+        ``config`` is optional so callers that predate DF-CHIMERA-V2-6 keep
+        working; without it a credential-class failure is still recorded, just
+        without the fingerprint that lets the block self-clear when the key is
+        replaced.
         """
         failures: list[WorkerFailure] = []
         for stage_id, result in stage_results.items():
@@ -1307,7 +1443,15 @@ class Engine:
             failures.append(
                 WorkerFailure(stage_id=stage_id, model=result.model, error=error)
             )
-            blocked_models.shared_registry.record_failure(result.model, error)
+            blocked_models.shared_registry.record_failure(
+                result.model,
+                error,
+                credential_fingerprint=(
+                    model_credential_fingerprint(config, result.model)
+                    if config is not None
+                    else None
+                ),
+            )
         return failures
 
 

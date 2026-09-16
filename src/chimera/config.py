@@ -6,6 +6,7 @@ as ``${VAR}`` in the YAML are substituted from ``os.environ`` at load time.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -362,6 +363,80 @@ class ChimeraConfig(BaseModel):
 # Credential-derived model usability (DF-CHIMERA-0906-3)
 # --------------------------------------------------------------------------- #
 
+def _resolved_credential(
+    config: ChimeraConfig, provider_name: str
+) -> str | None:
+    """The credential string the gateway would use for *provider_name*.
+
+    Mirrors the resolution order documented on
+    :func:`provider_credential_resolved` (config shortcut → provider entry →
+    F8 Anthropic→OpenRouter fallback) and returns ``None`` when nothing
+    resolves.  Never logged, never persisted — the value is only ever turned
+    into a fingerprint by :func:`provider_credential_fingerprint`.
+    """
+    key = config.api_keys.get(provider_name)
+    if key:
+        return key
+    provider = config.providers.get(provider_name)
+    if provider is not None and provider.api_key:
+        return provider.api_key
+    if provider_name == "anthropic":
+        # F8: the gateway routes Anthropic models via OpenRouter when no
+        # Anthropic key is configured but an OpenRouter key exists.
+        or_key = config.api_keys.get("openrouter")
+        if or_key:
+            return or_key
+        or_provider = config.providers.get("openrouter")
+        if or_provider is not None and or_provider.api_key:
+            return or_provider.api_key
+    return None
+
+
+#: Length of the truncated sha256 hex digest used as a credential
+#: fingerprint.  16 hex chars (64 bits) is far more than enough to detect a
+#: rotated key while keeping the persisted state file small.
+_FINGERPRINT_LEN = 16
+
+
+def credential_fingerprint(secret: str | None) -> str | None:
+    """A non-reversible digest of *secret* (``None`` in → ``None`` out).
+
+    Used to detect "the operator replaced the key" without ever storing,
+    logging or comparing the credential itself: the digest is truncated
+    sha256 hex and cannot be reversed into the key.
+    """
+    if not secret:
+        return None
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:_FINGERPRINT_LEN]
+
+
+def provider_credential_fingerprint(
+    config: ChimeraConfig, provider_name: str
+) -> str | None:
+    """Non-reversible fingerprint of *provider_name*'s resolved credential.
+
+    Same resolution order as :func:`provider_credential_resolved`; returns
+    ``None`` when no credential resolves.  Recorded alongside a
+    credential-class model block so the block self-clears once the provider's
+    key changes (DF-CHIMERA-V2-6).
+    """
+    return credential_fingerprint(_resolved_credential(config, provider_name))
+
+
+def model_credential_fingerprint(
+    config: ChimeraConfig, model_name: str
+) -> str | None:
+    """Fingerprint of the credential behind *model_name*'s provider.
+
+    ``None`` when the model is not in the catalog (so no provider can be
+    resolved) or the provider has no resolved credential.
+    """
+    entry = config.models.get(model_name)
+    if entry is None or not entry.provider:
+        return None
+    return provider_credential_fingerprint(config, entry.provider)
+
+
 def provider_credential_resolved(config: ChimeraConfig, provider_name: str) -> bool:
     """True when the config can resolve an API key for *provider_name*.
 
@@ -382,21 +457,12 @@ def provider_credential_resolved(config: ChimeraConfig, provider_name: str) -> b
     loaded config object.  The REST health surface
     (``api.server._provider_has_credentials``) layers those env probes on
     top of this helper for connectivity reporting.
+
+    Presence is all this answers — a *present but invalid* key resolves here
+    and is caught on first use by the credential-class model block
+    (DF-CHIMERA-V2-6).
     """
-    if config.api_keys.get(provider_name):
-        return True
-    provider = config.providers.get(provider_name)
-    if provider is not None and provider.api_key:
-        return True
-    if provider_name == "anthropic":
-        # F8: the gateway routes Anthropic models via OpenRouter when no
-        # Anthropic key is configured but an OpenRouter key exists.
-        if config.api_keys.get("openrouter"):
-            return True
-        or_provider = config.providers.get("openrouter")
-        if or_provider is not None and or_provider.api_key:
-            return True
-    return False
+    return _resolved_credential(config, provider_name) is not None
 
 
 def credentialed_enabled_models(config: ChimeraConfig) -> dict[str, ModelEntry]:
@@ -699,9 +765,12 @@ __all__ = [
     "SelectorConfig",
     "ServerConfig",
     "DEFAULT_COST_RATES",
+    "credential_fingerprint",
     "credentialed_enabled_models",
     "find_config_path",
     "find_example_config_path",
     "load_config",
+    "model_credential_fingerprint",
+    "provider_credential_fingerprint",
     "provider_credential_resolved",
 ]

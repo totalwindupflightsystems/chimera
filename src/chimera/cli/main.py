@@ -37,7 +37,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from chimera import __version__
+from chimera import __version__, blocked_models
 from chimera.config import ChimeraConfig, FormationPreset, Observability, load_config
 from chimera.engine import Engine
 from chimera.gateway import LiteLLMGateway
@@ -270,7 +270,7 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
     # panel, but in --quiet/--json they move to stderr so stdout carries ONLY
     # the machine-readable payload.
     warn_console = err_console if machine_mode else console
-    _print_worker_failures(result, warn_console)
+    _print_worker_failures(result, warn_console, config)
     _print_dispatch_degradation(result, warn_console)
 
     if json_mode:
@@ -300,12 +300,50 @@ def _print_json(result: Any) -> None:
     click.echo(json.dumps(payload, ensure_ascii=False))
 
 
-def _print_worker_failures(result: Any, out: Console = console) -> None:
+def _provider_for_model(model: str, config: ChimeraConfig | None) -> str | None:
+    """The provider that serves *model* (catalog entry first, name prefix after)."""
+    if config is not None:
+        entry = config.models.get(model)
+        if entry is not None and entry.provider:
+            return entry.provider
+    if "/" in model:
+        prefix = model.split("/", 1)[0]
+        if prefix:
+            return prefix
+    return None
+
+
+def _provider_api_key_env(provider: str, config: ChimeraConfig | None) -> str:
+    """The env var that must hold *provider*'s key.
+
+    Prefers the provider's configured ``api_key_env``; falls back to the
+    ``<PROVIDER>_API_KEY`` convention LiteLLM itself reads (the same names
+    ``config._apply_env_overrides`` mirrors into ``api_keys``).
+    """
+    if config is not None:
+        entry = config.providers.get(provider)
+        if entry is not None and entry.api_key_env:
+            return entry.api_key_env
+    return f"{provider.upper().replace('-', '_')}_API_KEY"
+
+
+def _print_worker_failures(
+    result: Any,
+    out: Console = console,
+    config: ChimeraConfig | None = None,
+) -> None:
     """Warn (always, not just --verbose) when worker stages were dropped.
 
     A degraded worker still lets the deliberation produce an answer, but the
     user must know the panel is partial — otherwise a guardrail/404 failure
     is silent outside the structlog stream.
+
+    A **credential-class** failure (present-but-invalid provider key → 401)
+    gets an actionable warning on top of the raw error: the provider, the env
+    var to fix, the remedy, and the fact that the model is now excluded from
+    selection. The raw CLI text used to name neither the env var nor a fix,
+    so the only visible symptom was a panel that quietly shrank to one model
+    (DF-CHIMERA-V2-6).
 
     ``out`` is the stderr console in --quiet/--json mode (DF-CHIMERA-0906-5).
     """
@@ -320,6 +358,31 @@ def _print_worker_failures(result: Any, out: Console = console) -> None:
             f"[yellow]warning:[/yellow] worker '{stage_id}' ({model}) "
             f"failed: {error}"
         )
+        if not blocked_models.is_credential_error(error):
+            continue
+        provider = _provider_for_model(model, config)
+        if provider is None:
+            out.print(
+                "  [yellow]credential failure:[/yellow] the provider rejected "
+                "the API key for this model."
+            )
+        else:
+            env_var = _provider_api_key_env(provider, config)
+            out.print(
+                f"  [yellow]credential failure:[/yellow] provider "
+                f"'{provider}' rejected the API key for {model}."
+            )
+            out.print(
+                f"  fix: set a valid {env_var} (or unset the stale one) and "
+                f"re-run — the model is excluded from selection until the key "
+                f"changes or the block cooldown expires "
+                f"(~/.chimera/blocked-models.json)."
+            )
+            out.print(
+                "  escape hatch: auto_formation.restrict_to_credentialed_"
+                "providers: false keeps the full catalog; provider calls "
+                "still fail until the key is valid."
+            )
 
 
 def _print_dispatch_degradation(result: Any, out: Console = console) -> None:
@@ -469,6 +532,30 @@ def models(ctx: click.Context) -> None:
     for name, entry in config.models.items():
         table.add_row(name, entry.provider, entry.cost_tier)
     console.print(table)
+
+    # DF-CHIMERA-V2-6: make the durable exclusions visible. A model whose
+    # provider key failed auth (or hit a provider guardrail) is excluded from
+    # selection for the block cooldown; without this line the only trace was
+    # ~/.chimera/blocked-models.json. Rendered as plain lines (not a table) so
+    # an 80-column terminal can never truncate a model name into "…".
+    blocked = sorted(blocked_models.shared_registry.blocked())
+    if blocked:
+        console.print(
+            "[bold]Blocked models[/bold] (excluded from selection; "
+            "state file: ~/.chimera/blocked-models.json)"
+        )
+        for name in blocked:
+            reason = blocked_models.shared_registry.block_reason(name) or "guardrail"
+            provider = _provider_for_model(name, config)
+            if reason == "credential" and provider is not None:
+                remedy = (
+                    f"provider key rejected — set a valid "
+                    f"{_provider_api_key_env(provider, config)}; the block "
+                    f"self-clears when the key changes"
+                )
+            else:
+                remedy = "provider guardrail/policy rejection — no local fix"
+            console.print(f"  - {name} ({reason}) {remedy}")
 
     detail = Table(title="Category weights (model · category)")
     detail.add_column("model · category", no_wrap=False)
