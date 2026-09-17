@@ -1343,6 +1343,25 @@ models:
     cost_tier: premium
     provider: openrouter
     enabled: true
+  hermes/glm-5.3-flash:
+    # The local Hermes gateway (providers.hermes below) — one OpenAI-compatible
+    # endpoint in front of every model Hermes itself carries.  It injects its
+    # own large system prompt (~41k tokens) into every request, so treat the
+    # effective context budget as the model's window MINUS ~41k: a 200k-token
+    # model has roughly 159k tokens left for the deliberation prompt.
+    categories:
+      technology_code/code_generation/python: 82
+      technology_code/code_generation/shell: 78
+      technology_code/testing_debugging/error_analysis: 74
+      technology_code/data_science/analysis: 78
+      complex_reasoning_agency/self_correction/debugging: 72
+      general_knowledge/reasoning/explanation: 80
+      general_knowledge/fact_retrieval/definitions: 78
+      language_translation/summarization/abstractive: 76
+      creative_conversational/ux_writing/interface_copy: 66
+    cost_tier: budget
+    provider: hermes
+    enabled: true
 providers:
   deepseek:
     base_url: https://api.deepseek.com/v1
@@ -1354,6 +1373,13 @@ providers:
     base_url: https://api.anthropic.com/v1
   google:
     base_url: https://generativelanguage.googleapis.com/v1beta
+  # Local Hermes gateway (OpenAI-compatible).  No LiteLLM-native prefix covers
+  # it, so the configured base_url is what routes the call: the catalog id
+  # "hermes/<model>" is sent upstream as the BARE model name (<model>), and the
+  # key comes from API_SERVER_KEY in ~/.hermes/.env — never inline it here.
+  hermes:
+    base_url: http://127.0.0.1:8642/v1
+    api_key_env: API_SERVER_KEY
 server:
   host: 0.0.0.0
   port: 8765

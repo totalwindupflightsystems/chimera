@@ -191,7 +191,11 @@ error prose is provider-blind (a DeepSeek call is served through the OpenAI
 SDK and mentions `OPENAI_API_KEY`), so Chimera puts its accurate remedy in
 front of it on every surface: CLI, REST body, MCP tool result, trace and logs.
 Keyless loopback providers (`lmstudio`, `ollama`) keep their raw error text —
-Chimera never names a key variable for an endpoint that needs none.
+Chimera never names a key variable for an endpoint that needs none. A custom
+`base_url` provider follows the same rule: a failure from the Hermes gateway
+names `API_SERVER_KEY`, because that is what `providers.hermes.api_key_env`
+declares — not `OPENAI_API_KEY`, even though the call itself is served over
+the OpenAI SDK.
 
 See [docs/CONFIG.md](docs/CONFIG.md#first-run-remedies) for the full chain.
 
@@ -473,3 +477,36 @@ Chimera uses LiteLLM under the hood. Supported providers:
 | **MoonshotAI** | — | ✅ | Kimi K2.7 Code, K2.6 |
 | **MiniMax** | — | ✅ | M3 |
 | **Meta** | — | ✅ | Llama 4 Maverick |
+| **Hermes gateway** | ✅ (local) | — | any model the running Hermes serves, addressed as `hermes/<model>` |
+
+### Custom OpenAI-compatible endpoints
+
+Any provider Chimera does not route natively is called through its own
+`base_url`, over the OpenAI-compatible SDK, using the provider's resolved key.
+The catalog prefix is stripped before the request goes out, so
+`hermes/glm-5.3-flash` reaches the endpoint as the bare `glm-5.3-flash` —
+the same convention the `zai` provider uses.
+
+That is how the local **Hermes gateway** (`:8642`, OpenAI-compatible) plugs in
+as a first-class provider:
+
+```yaml
+providers:
+  hermes:
+    base_url: http://127.0.0.1:8642/v1
+    api_key_env: API_SERVER_KEY   # the var name in ~/.hermes/.env — never inline the key
+
+models:
+  hermes/glm-5.3-flash:
+    provider: hermes
+    cost_tier: budget
+```
+
+Two things to plan for: the gateway adds its own large system prompt to every
+request (~41k tokens of input), so the effective context budget is the model's
+window minus that; and `/v1/health` probes providers with a real completion
+under `server.health_timeout_s` (default `10.0`s), so raise that bound if your
+gateway is slower than that on a 1-token call. See
+[docs/CONFIG.md](docs/CONFIG.md#custom-openai-compatible-endpoints) for the
+full contract.
+

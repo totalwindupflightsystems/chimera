@@ -117,6 +117,13 @@ Notes:
   a local llama.cpp/vLLM server — keeps the raw upstream error text, because
   no env var can be named for it honestly. Give it an `api_key_env` if your
   local server really does require a token.
+- **A custom `base_url` provider names its own variable.** The remedy follows
+  `providers.<name>.api_key_env`, so a failure from the Hermes gateway reads
+  `set API_SERVER_KEY` — not LiteLLM's `OPENAI_API_KEY` prose, even though the
+  call is served through the OpenAI SDK. Note that a keyless custom provider
+  cannot be called at all: LiteLLM's OpenAI path requires a key value, so pair
+  a custom `base_url` with an `api_key_env` (see
+  [Custom OpenAI-compatible endpoints](#custom-openai-compatible-endpoints)).
 - A *present but invalid* key blocks the model for the block cooldown
   (`~/.chimera/blocked-models.json`, 7 days by default); the CLI prints the
   same variable in its `credential failure` hint, and `chimera models` lists
@@ -328,10 +335,13 @@ providers:
     base_url: https://openrouter.ai/api/v1
   zai:
     base_url: https://api.z.ai/api/coding/paas/v4
+  hermes:
+    base_url: http://127.0.0.1:8642/v1
+    api_key_env: API_SERVER_KEY
 ```
 
 The `base_url` is used by LiteLLM to route calls. Provider IDs (`deepseek`,
-`openrouter`, `zai`) map to the `provider` field in model entries.
+`openrouter`, `zai`, `hermes`) map to the `provider` field in model entries.
 
 Two optional credential fields per provider:
 
@@ -344,6 +354,51 @@ A provider with a **loopback** `base_url` and neither field set is treated as
 keyless (a local `lmstudio`/`ollama`/llama.cpp/vLLM endpoint): credential
 errors from it keep their raw upstream text instead of naming an env var that
 does not exist, and no key is required for it to run.
+
+### Custom OpenAI-compatible endpoints
+
+`deepseek`, `openrouter`, `zai`, `anthropic`, `google` and `openai` have
+native routing built into the gateway. Any **other** provider is routed by its
+own `base_url`: the call goes to that URL through the OpenAI-compatible SDK,
+authenticated with the provider's resolved key (see `api_key_env` above), and
+the **model id sent upstream is the bare name** — the part after the last `/`
+of the catalog id, exactly as the `zai` provider works. A catalog entry
+`hermes/glm-5.3-flash` therefore reaches `http://127.0.0.1:8642/v1` as
+`glm-5.3-flash`.
+
+That is what makes a local, non-LiteLLM-prefixed service usable as a
+first-class provider. The shipped example config wires the **Hermes gateway**
+(OpenAI-compatible on `:8642`) that way:
+
+```yaml
+models:
+  hermes/glm-5.3-flash:
+    provider: hermes
+    cost_tier: budget
+    categories:
+      general_knowledge/reasoning/explanation: 80
+
+providers:
+  hermes:
+    base_url: http://127.0.0.1:8642/v1
+    api_key_env: API_SERVER_KEY
+```
+
+Notes for this shape of provider:
+
+- **The key still has to resolve to a value.** LiteLLM's OpenAI-SDK path
+  refuses to call without one (`Missing credentials`), even against loopback,
+  so give the provider an `api_key_env` — `API_SERVER_KEY` lives in
+  `~/.hermes/.env` and is read through the usual resolution chain (process env
+  → repo `.env` → `~/.hermes/.env`).
+- **The gateway injects its own system prompt** — a ~41k-token prompt is added
+  to every request, billed as input tokens. Treat the effective budget as the
+  model's context window minus that: a 200k-token model has roughly 159k
+  tokens left for the deliberation prompt and worker outputs.
+- **`/v1/health` runs a real completion** against a model of every configured
+  provider, bounded by `server.health_timeout_s` (default `10.0` s). A gateway
+  that takes longer than that to answer a 1-token probe is reported
+  `degraded`; keep `health_timeout_s` above the gateway's own latency.
 
 ---
 

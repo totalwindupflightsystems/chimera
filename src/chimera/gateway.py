@@ -212,6 +212,7 @@ def negotiate_response_format(
 def resolve_litellm_model(
     model_name: str, entry: ModelEntry, api_key: str | None = None,
     fallback_provider: str | None = None,
+    base_url: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Map a Chimera model to a LiteLLM model string + extra kwargs.
 
@@ -220,10 +221,19 @@ def resolve_litellm_model(
     * ``zai`` provider → OpenAI-compatible call against the ZAI base URL.
     * ``openrouter`` provider → ensure the ``openrouter/`` prefix.
     * ``anthropic`` / ``deepseek`` → use the native LiteLLM provider prefix.
+    * Any *other* provider with a configured ``base_url`` → a generic
+      OpenAI-compatible call against that URL with the bare model id.  This
+      covers endpoints LiteLLM has no native prefix for — the local Hermes
+      gateway (``hermes``), a vLLM/llama.cpp server, an internal proxy.
+      Without it such a provider silently falls through to LiteLLM's own
+      default host for that model name (INT-PROV-HERMES-001).
     * When ``api_key`` is supplied, it is passed as ``api_key`` so LiteLLM
       authenticates — otherwise it falls back to env vars.
     * ``fallback_provider``: when set, overrides entry.provider for
       routing resolution (used for Anthropic→OpenRouter fallback).
+    * ``base_url``: the serving provider's configured
+      ``providers.<name>.base_url``.  Read only by the generic branch above;
+      every natively handled provider keeps its own hardcoded routing.
     """
     kwargs: dict[str, Any] = {}
     if api_key:
@@ -278,6 +288,18 @@ def resolve_litellm_model(
         if model_name.startswith("openai/"):
             return model_name, kwargs
         return f"openai/{model_name}", kwargs
+
+    if base_url:
+        # Generic OpenAI-compatible endpoint (INT-PROV-HERMES-001).  The
+        # provider is one LiteLLM has no native prefix for, so the configured
+        # ``base_url`` has to be passed explicitly or the call lands on
+        # LiteLLM's default host for this model name.  Mirrors the zai branch:
+        # the catalog id is stripped to the bare model name the endpoint
+        # expects and ``custom_llm_provider`` is pinned to openai.
+        api_model = model_name.rsplit("/", 1)[-1]
+        kwargs["api_base"] = base_url
+        kwargs["custom_llm_provider"] = "openai"
+        return f"openai/{api_model}", kwargs
 
     return model_name, kwargs
 
@@ -445,8 +467,18 @@ class LiteLLMGateway:
                     to_provider="openrouter",
                 )
 
+        # ``api_keys`` only carries the shortcut-provider keys
+        # (``_apply_env_overrides``).  A provider configured through
+        # ``providers.<name>.api_key_env`` / ``api_key`` resolves at load time
+        # onto the provider entry instead, so consult it as the fallback —
+        # that is what lets a generic ``base_url`` provider authenticate.
+        provider_cfg = self.config.providers.get(effective_provider)
+        if api_key is None and provider_cfg is not None:
+            api_key = provider_cfg.api_key
+
         lm_model, extra = resolve_litellm_model(
             model, entry, api_key=api_key, fallback_provider=effective_provider,
+            base_url=provider_cfg.base_url if provider_cfg is not None else None,
         )
 
         # F6: Provider-aware format negotiation
