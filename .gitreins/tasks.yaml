@@ -795,3 +795,17 @@ tasks:
   status: complete
   created_at: '2026-09-17T12:24:41.755555+00:00'
   completed_at: '2026-09-17T12:33:56.044303+00:00'
+- id: df-chimera-0917-3
+  title: Cut release 0.2.6 so the published wheel carries chimera --version
+  criteria:
+  - pyproject.toml declares version 0.2.6 and src/chimera/__init__.py _FALLBACK_VERSION
+    is 0.2.6 with no drift between them
+  - CHANGELOG.md contains a 0.2.6 section dated 2026-09-17 listing the notable changes
+    since 0.2.5
+  - The full pytest suite passes with zero failures at the release commit
+  - PyPI reports chimera-deliberation 0.2.6 as the current version
+  - A fresh venv installing chimera-deliberation[full]==0.2.6 from PyPI passes scripts/quickstart_battery.py
+    --expected-version 0.2.6 with exit 0 (all four README quickstart checks)
+  status: complete
+  created_at: '2026-09-17T12:51:38.063057+00:00'
+  completed_at: '2026-09-17T13:08:44.467568+00:00'
