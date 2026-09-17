@@ -54,6 +54,27 @@ jobs:
       - name: Run unit tests
         run: .venv/bin/python -m pytest tests/ --ignore=tests/integration --ignore=tests/compat -q
 
+      - name: README quickstart CLI surface on the editable tree — --version / -m --version / --help / config init (DF-CHIMERA-0917-4 gate)
+        run: |
+          # Same battery the release-verify gate runs against the PUBLISHED
+          # wheel, but pointed at THIS checkout's editable install: the
+          # release-verify step is tag-gated, so between release cuts a tree
+          # whose CLI drifts from its own README (a documented flag renamed or
+          # removed, a broken console script, `config init` regressing) stayed
+          # invisible until a tag was cut — the window in which a release
+          # shipped with the console script rejecting `--version` (exit 2)
+          # while every earlier gate in this job stayed green.
+          # Every check is local (click argv parsing plus a file copy) and runs
+          # in its own fresh empty temp cwd, so this step is keyless and
+          # network-free.
+          #
+          # The expected version is derived from pyproject.toml AT THIS COMMIT
+          # — never hardcoded, never read back from the artifact under test
+          # (that would compare the artifact against itself).
+          VERSION=$(.venv/bin/python -c "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          echo "expected version from pyproject.toml: ${VERSION}"
+          .venv/bin/python scripts/quickstart_battery.py --venv .venv --expected-version "${VERSION}"
+
   integration:
     needs: test
     runs-on: ubuntu-latest

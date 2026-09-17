@@ -42,6 +42,7 @@ import re
 import shlex
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
@@ -53,6 +54,18 @@ WORKFLOW_PATH = REPO / ".github" / "workflows" / "ci.yml"
 PROBE_PATH = REPO / "scripts" / "probe_mcp_stdio.py"
 VERSION_SCRIPT_PATH = REPO / "scripts" / "release_expected_version.py"
 QUICKSTART_PATH = REPO / "scripts" / "quickstart_battery.py"
+
+
+def _load_workflow(path: Path = WORKFLOW_PATH) -> dict:
+    """Parse a workflow file (by default the real ci.yml) as a mapping.
+
+    ``path`` is a parameter so the mutation tests can assert against a mutated
+    COPY without ever editing the tracked workflow.
+    """
+    with path.open(encoding="utf-8") as fh:
+        doc = yaml.safe_load(fh)
+    assert isinstance(doc, dict), f"{path} must parse as a mapping"
+    return doc
 
 
 def _load_module(name: str, path: Path) -> ModuleType:
@@ -72,10 +85,7 @@ quickstart = _load_module("quickstart_battery", QUICKSTART_PATH)
 
 @pytest.fixture(scope="module")
 def workflow() -> dict:
-    with WORKFLOW_PATH.open(encoding="utf-8") as fh:
-        doc = yaml.safe_load(fh)
-    assert isinstance(doc, dict), "ci.yml must parse as a mapping"
-    return doc
+    return _load_workflow()
 
 
 @pytest.fixture(scope="module")
@@ -568,3 +578,260 @@ def test_battery_version_token_match_is_boundary_anchored() -> None:
     assert not quickstart.version_token_present("chimera 0.2.50\n", "0.2.5")
     assert not quickstart.version_token_present("chimera 0.2.5rc1\n", "0.2.5")
     assert not quickstart.version_token_present("chimera 10.2.5\n", "0.2.5")
+
+
+# --- README quickstart CLI surface on ordinary pushes (DF-CHIMERA-0917-4) ----- #
+#
+# scripts/quickstart_battery.py originally ran in exactly ONE place: the
+# release-verify job, which is gated `if: github.event_name == 'push' &&
+# startsWith(github.ref, 'refs/tags/v')`. Between release cuts nothing asserted the
+# CLI surface the README's Quickstart block documents, so a tree whose CLI had
+# drifted from its own README (a documented flag renamed or removed, a broken
+# console script, `config init` regressing) stayed invisible until a tag was cut —
+# recurrence #4 of the repo-HEAD-vs-published-artifact class. These tests pin the
+# battery into the `test` job (which runs for push AND pull_request on every
+# supported version) with the expected version derived from pyproject.toml at that
+# commit: never hardcoded, never read back from the artifact under test.
+
+#: The push-lane invocation, pinned exactly: the repo's own .venv interpreter, the
+#: editable-install venv, and the in-step derived version (``${VERSION}``).
+PUSH_BATTERY_COMMAND = [
+    ".venv/bin/python",
+    "scripts/quickstart_battery.py",
+    "--venv",
+    ".venv",
+    "--expected-version",
+    "${VERSION}",
+]
+
+
+def _quickstart_battery_steps(job: dict) -> list[dict]:
+    """The job's steps that invoke the README quickstart battery."""
+    return [step for step in job["steps"] if "quickstart_battery.py" in step.get("run", "")]
+
+
+def _assert_test_job_runs_quickstart_battery(job: dict) -> dict:
+    """Assert the `test`-job battery contract, and return the step it pinned.
+
+    The whole contract lives in this one helper so the mutation tests below judge
+    a mutated COPY by exactly the assertions the real workflow passes.
+    """
+    assert "refs/tags" not in (job.get("if") or ""), (
+        "the `test` job must keep running on ordinary pushes/pull_requests — "
+        "a tag gate would put the battery back behind release cuts"
+    )
+    battery_steps = _quickstart_battery_steps(job)
+    assert len(battery_steps) == 1, (
+        f"the `test` job must declare exactly one quickstart-battery step, found {len(battery_steps)}"
+    )
+    step = battery_steps[0]
+    run = step["run"]
+
+    invocations = [line.strip() for line in run.splitlines() if "quickstart_battery.py" in line]
+    assert len(invocations) == 1, f"expected exactly one battery invocation, got {invocations}"
+    command = shlex.split(invocations[0])
+    assert command == PUSH_BATTERY_COMMAND, (
+        "the push-lane battery must run on the editable .venv with the pyproject-derived "
+        f"version, got {command}"
+    )
+
+    derivations = [line.strip() for line in run.splitlines() if line.strip().startswith("VERSION=$(")]
+    assert len(derivations) == 1, (
+        f"the expected version must come from exactly one VERSION=$(...) derivation, got {derivations}"
+    )
+    derivation = derivations[0]
+    assert "tomllib.loads(" in derivation and "pyproject.toml" in derivation, (
+        "the expected version must be derived from pyproject.toml with a stdlib-only one-liner "
+        f"(tomllib ships with Python 3.11+, so every matrix version can run it), got {derivation!r}"
+    )
+    assert re.search(r"\[['\"]project['\"]\]\[['\"]version['\"]\]", derivation), (
+        f"the derivation must read [project].version, got {derivation!r}"
+    )
+    assert "import chimera" not in run and "chimera.__version__" not in run, (
+        "the expected version must never be read back from the artifact under test — "
+        "that would compare the artifact against itself"
+    )
+
+    declared = release_version.pyproject_version(REPO / "pyproject.toml")
+    assert declared not in run, (
+        f"the step hardcodes this repo's version ({declared}); derive it from pyproject.toml "
+        "instead, or the check silently follows the artifact instead of the source"
+    )
+    literals = re.findall(r"\d+\.\d+\.\d+", run)
+    assert not literals, f"no literal version string may appear in the step, found {literals}"
+
+    assert not re.search(r"(?<![/\w.-])python\b", run), (
+        "the step must invoke the repo's own .venv interpreter; a bare `python` is a different "
+        "install than the .venv the battery asserts against"
+    )
+    assert "secrets." not in yaml.safe_dump(step), f"the battery is keyless, got {step}"
+    assert not step.get("env"), f"the battery is keyless, got env={step.get('env')}"
+
+    steps = job["steps"]
+    battery_index = steps.index(step)
+    install_index = next(
+        i for i, s in enumerate(steps) if '.venv/bin/pip install -e ".[full]"' in s.get("run", "")
+    )
+    assert install_index < battery_index, (
+        f"the battery needs the editable install ({install_index}) to precede it ({battery_index})"
+    )
+    unit_test_index = next(i for i, s in enumerate(steps) if "-m pytest tests/" in s.get("run", ""))
+    assert unit_test_index < battery_index, (
+        f"the battery step belongs after the unit tests ({unit_test_index}), got {battery_index}"
+    )
+    return step
+
+
+def test_test_job_runs_the_readme_quickstart_battery(workflow: dict) -> None:
+    """The `test` job asserts the CLI surface the README documents."""
+    step = _assert_test_job_runs_quickstart_battery(workflow["jobs"]["test"])
+    assert "DF-CHIMERA-0917-4" in step["name"]
+
+
+def test_push_battery_step_is_distinguishable_from_the_release_one(workflow: dict) -> None:
+    """A human reading CI output can tell which artifact each battery judged."""
+    push_step = _quickstart_battery_steps(workflow["jobs"]["test"])[0]
+    release_step = _quickstart_battery_steps(workflow["jobs"]["release-verify"])[0]
+    assert push_step["name"] != release_step["name"]
+    assert "editable" in push_step["name"].lower(), push_step["name"]
+    assert "/tmp/release-venv" not in push_step["run"]
+    assert "/tmp/release-venv" in release_step["run"]
+
+
+def test_both_battery_lanes_survive(workflow: dict) -> None:
+    """The push lane is ADDITIVE: the tag-gated release gate must stay intact."""
+    assert len(_quickstart_battery_steps(workflow["jobs"]["test"])) == 1
+    assert len(_quickstart_battery_steps(workflow["jobs"]["release-verify"])) == 1
+
+
+def test_quickstart_battery_job_runs_on_push_and_pull_request(workflow: dict) -> None:
+    """`test` — the job that now carries the battery — is not tag-gated."""
+    triggers = workflow.get("on", workflow.get(True))
+    assert isinstance(triggers, dict), f"unexpected triggers shape: {triggers!r}"
+    assert "push" in triggers and "pull_request" in triggers, sorted(triggers)
+    assert "if" not in workflow["jobs"]["test"], "the `test` job must have no job-level gate"
+
+
+def test_push_battery_step_is_keyless_and_network_free(workflow: dict) -> None:
+    """Every battery check is local (click argv parsing plus a file copy)."""
+    step = _quickstart_battery_steps(workflow["jobs"]["test"])[0]
+    assert not step.get("env"), f"no env may be set, got {step.get('env')}"
+    assert "secrets." not in yaml.safe_dump(step)
+    run = step["run"]
+    assert "curl" not in run and "pip install" not in run, run
+
+
+def _mutate_test_job_battery_step(doc: dict, mutate: Callable[[dict], None]) -> None:
+    """Mutate the (single) quickstart-battery step of the `test` job in place."""
+    steps = _quickstart_battery_steps(doc["jobs"]["test"])
+    assert len(steps) == 1, f"premise broken: expected one battery step, found {len(steps)}"
+    mutate(steps[0])
+
+
+def _write_workflow_copy(tmp_path: Path, doc: dict) -> Path:
+    """Serialize a mutated workflow to tmp_path — the real ci.yml is never edited."""
+    out = tmp_path / "ci-mutated.yml"
+    out.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+    return out
+
+
+def _assert_mutated_copy_fails(
+    tmp_path: Path, mutate: Callable[[dict], None], match: str
+) -> None:
+    """A mutated COPY of ci.yml must FAIL the contract (the real file is untouched)."""
+    doc = _load_workflow()
+    _mutate_test_job_battery_step(doc, mutate)
+    mutated = _load_workflow(_write_workflow_copy(tmp_path, doc))
+    with pytest.raises(AssertionError, match=re.escape(match)):
+        _assert_test_job_runs_quickstart_battery(mutated["jobs"]["test"])
+
+
+def test_step_removed_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: drop the step from the `test` job -> the assertions must FAIL."""
+    doc = _load_workflow()
+    job = doc["jobs"]["test"]
+    before = len(_quickstart_battery_steps(job))
+    job["steps"] = [s for s in job["steps"] if "quickstart_battery.py" not in s.get("run", "")]
+    after = len(_quickstart_battery_steps(job))
+    assert (before, after) == (1, 0), f"premise broken: battery steps {before} -> {after}"
+    mutated = _load_workflow(_write_workflow_copy(tmp_path, doc))
+    with pytest.raises(AssertionError, match="exactly one quickstart-battery step"):
+        _assert_test_job_runs_quickstart_battery(mutated["jobs"]["test"])
+
+
+def test_expected_version_removed_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: drop ``--expected-version`` -> the battery would only compare
+    the artifact against itself, so the pin must FAIL."""
+
+    def strip_expected_version(step: dict) -> None:
+        assert '--expected-version "${VERSION}"' in step["run"], (
+            "premise broken: the invocation changed shape"
+        )
+        step["run"] = step["run"].replace('--expected-version "${VERSION}"', "")
+        assert "--expected-version" not in step["run"]
+
+    _assert_mutated_copy_fails(
+        tmp_path, strip_expected_version, "the push-lane battery must run on the editable"
+    )
+
+
+def test_hardcoded_version_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: a pinned literal instead of the derivation must FAIL."""
+    declared = release_version.pyproject_version(REPO / "pyproject.toml")
+
+    def hardcode(step: dict) -> None:
+        assert '--expected-version "${VERSION}"' in step["run"], (
+            "premise broken: the invocation changed shape"
+        )
+        step["run"] = step["run"].replace(
+            '--expected-version "${VERSION}"', f'--expected-version "{declared}"'
+        )
+        assert declared in step["run"]
+
+    _assert_mutated_copy_fails(tmp_path, hardcode, "must run on the editable")
+
+
+def test_literal_version_alongside_the_derivation_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: deriving the version AND pinning a literal is still a hardcode.
+
+    This mutation leaves every other assertion satisfied (same command, same
+    tomllib derivation) and plants a STALE literal — the shape a copy-paste from
+    a previous release leaves behind — so it isolates the no-literal-version
+    check from the "this repo's version" one.
+    """
+    stale_literal = "0.2.5"
+
+    def add_literal(step: dict) -> None:
+        assert 'echo "expected version from pyproject.toml: ${VERSION}"' in step["run"], (
+            "premise broken: the echo line changed shape"
+        )
+        step["run"] = step["run"].replace(
+            'echo "expected version from pyproject.toml: ${VERSION}"',
+            f'echo "expected version from pyproject.toml: ${{VERSION}} (pinned {stale_literal})"',
+        )
+        assert stale_literal in step["run"]
+
+    _assert_mutated_copy_fails(tmp_path, add_literal, "no literal version string")
+
+
+def test_bare_python_interpreter_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: the matrix `python` is not the .venv the battery asserts against."""
+
+    def use_bare_python(step: dict) -> None:
+        assert "VERSION=$(.venv/bin/python -c " in step["run"], (
+            "premise broken: the derivation changed shape"
+        )
+        step["run"] = step["run"].replace("VERSION=$(.venv/bin/python -c ", "VERSION=$(python -c ")
+        assert "VERSION=$(python -c " in step["run"]
+
+    _assert_mutated_copy_fails(tmp_path, use_bare_python, "invoke the repo's own .venv interpreter")
+
+
+def test_secret_reference_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: the battery needs no keys, so a secrets.* env must FAIL the pin."""
+
+    def add_secret(step: dict) -> None:
+        step["env"] = {"DEEPSEEK_API_KEY": "${{ secrets.DEEPSEEK_API_KEY }}"}
+        assert step["env"]
+
+    _assert_mutated_copy_fails(tmp_path, add_secret, "the battery is keyless")
