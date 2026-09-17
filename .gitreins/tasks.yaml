@@ -928,3 +928,21 @@ tasks:
   status: complete
   created_at: '2026-09-17T17:20:44.114581+00:00'
   completed_at: '2026-09-17T17:47:58.363137+00:00'
+- id: int-ci-007
+  title: 'Integration leg: make tests/integration/conftest.py self-provision a config
+    from the tracked chimera.yaml.example so the leg runs on a fresh checkout (no
+    chimera.yaml)'
+  criteria:
+  - From a fresh checkout with no chimera.yaml (git worktree at the fix commit), pytest
+    tests/integration/ --run-integration -k error_paths sets fixtures up with no FileNotFoundError
+    and the error-path tests pass
+  - The resolver honors CHIMERA_CONFIG when set, prefers the repo chimera.yaml when
+    present, else materializes the tracked chimera.yaml.example into a temp dir OUTSIDE
+    the repo, else fails with a clear remedy naming chimera config init
+  - Hermetic unit tests for all four resolver arms live in the DEFAULT suite (green
+    without --run-integration)
+  - Full pytest suite + ruff green; the diff touches tests/ only (no .github/workflows,
+    no production code)
+  status: complete
+  created_at: '2026-09-17T18:34:24.894816+00:00'
+  completed_at: '2026-09-17T18:43:39.747452+00:00'
