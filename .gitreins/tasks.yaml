@@ -946,3 +946,18 @@ tasks:
   status: complete
   created_at: '2026-09-17T18:34:24.894816+00:00'
   completed_at: '2026-09-17T18:43:39.747452+00:00'
+- id: df-chimera-v2-12
+  title: 'model_sync_cron auto-score: resolve DEEPSEEK_API_KEY like load_config (process
+    env > repo .env > ~/.hermes/.env)'
+  criteria:
+  - With the variable absent from the process env but present in ~/.hermes/.env, a
+    wrapper run with >=1 new candidate executes the scoring step (--score argv forwarded
+    to the child with the key in its env) and prints no skipping auto-score line,
+    reporting which source supplied the key; process env still wins; a key present
+    nowhere still skips (exit 0) with the same message; a new pytest file proves all
+    three offline with a temp dotenv and no developer-machine dependence; tests/test_model_sync_recency.py
+    and the new test pass; no absolute /home/kara path is hardcoded and the wrapper
+    still imports no chimera module at top level.
+  status: complete
+  created_at: '2026-09-17T19:18:47.685820+00:00'
+  completed_at: '2026-09-17T19:24:03.991933+00:00'
