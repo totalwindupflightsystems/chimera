@@ -1039,3 +1039,34 @@ tasks:
   status: complete
   created_at: '2026-09-17T22:35:40.261244+00:00'
   completed_at: '2026-09-17T22:44:05.543010+00:00'
+- id: INT-PROV-CLIPROXY-001
+  title: 'CLI-proxy support: integrate a local CLI proxy (claude-code-router) as a
+    chimera provider'
+  criteria:
+  - chimera.yaml.example carries a cliproxy provider entry (loopback base_url, keyless
+    local) and at least one model whose provider is cliproxy
+  - docs recipe for the proxy class exists (base_url, key env, model-id mapping, one-api/new-api
+    alternates) and is linked from docs/README.md so tests/test_docs_index.py stays
+    green
+  - a real chimera run through the running local proxy returns a merged answer whose
+    trace shows provider=cliproxy, with raw curl + response evidence recorded
+  - full test suite green (no new failures vs baseline) and ruff clean; no API key,
+    no node_modules and no untracked artifact committed
+  status: complete
+  created_at: '2026-09-17T22:59:29.985223+00:00'
+  completed_at: '2026-09-17T23:16:52.916073+00:00'
+- id: INT-CI-009
+  title: Audit-stage final-answer schema must survive a comma-joined string sources
+    value (INT-CI-009)
+  criteria:
+  - 'An audit-stage answer carrying sources as the delimited string ''worker_1, worker_2''
+    no longer produces the {"passed": false} validation-failure object against the
+    dispatcher-shaped output_schema, pinned by a hermetic regression test'
+  - 'The output_schema is not loosened: a genuinely invalid value (sources as a number,
+    or a non-array after normalization) still yields the validation-failure object,
+    pinned by a negative-control test'
+  - Full test suite green with no new failures vs the recorded pre-change baseline
+    and ruff check clean
+  status: complete
+  created_at: '2026-09-17T23:29:57.949723+00:00'
+  completed_at: '2026-09-17T23:49:53.229127+00:00'
