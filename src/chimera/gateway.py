@@ -222,11 +222,16 @@ def resolve_litellm_model(
     * ``openrouter`` provider → ensure the ``openrouter/`` prefix.
     * ``anthropic`` / ``deepseek`` → use the native LiteLLM provider prefix.
     * Any *other* provider with a configured ``base_url`` → a generic
-      OpenAI-compatible call against that URL with the bare model id.  This
-      covers endpoints LiteLLM has no native prefix for — the local Hermes
-      gateway (``hermes``), a vLLM/llama.cpp server, an internal proxy.
-      Without it such a provider silently falls through to LiteLLM's own
-      default host for that model name (INT-PROV-HERMES-001).
+      OpenAI-compatible call against that URL with the model id the endpoint
+      expects.  This covers endpoints LiteLLM has no native prefix for — the
+      local Hermes gateway (``hermes``), a vLLM/llama.cpp server, an internal
+      proxy, the 9router fleet gateway (``router9``).  Without it such a
+      provider silently falls through to LiteLLM's own default host for that
+      model name (INT-PROV-HERMES-001).  The id sent upstream is the catalog
+      id with ONE leading ``<provider>/`` stripped when it carries it
+      (namespaced upstream ids — ``router9/ds/deepseek-v4-flash`` →
+      ``ds/deepseek-v4-flash`` — keep their inner slashes); otherwise it is
+      the last ``/``-segment (INT-PROV-ROUTER9-001).
     * When ``api_key`` is supplied, it is passed as ``api_key`` so LiteLLM
       authenticates — otherwise it falls back to env vars.
     * ``fallback_provider``: when set, overrides entry.provider for
@@ -294,9 +299,21 @@ def resolve_litellm_model(
         # provider is one LiteLLM has no native prefix for, so the configured
         # ``base_url`` has to be passed explicitly or the call lands on
         # LiteLLM's default host for this model name.  Mirrors the zai branch:
-        # the catalog id is stripped to the bare model name the endpoint
-        # expects and ``custom_llm_provider`` is pinned to openai.
-        api_model = model_name.rsplit("/", 1)[-1]
+        # the catalog id is stripped to the model name the endpoint expects
+        # and ``custom_llm_provider`` is pinned to openai.
+        #
+        # Some gateways in front of many upstreams serve their own NAMESPACED
+        # model ids, so the part after the catalog prefix is itself
+        # slash-separated: 9router answers to ``ds/deepseek-v4-flash`` and
+        # ``openrouter/x-ai/grok-4.6``, not to their last segment.  Strip
+        # exactly ONE leading ``<provider>/`` when the catalog id carries it
+        # (case-insensitively); every other id keeps the old innermost-segment
+        # behavior (INT-PROV-ROUTER9-001).
+        prefix = f"{provider}/"
+        if model_name.lower().startswith(prefix):
+            api_model = model_name[len(prefix):]
+        else:
+            api_model = model_name.rsplit("/", 1)[-1]
         kwargs["api_base"] = base_url
         kwargs["custom_llm_provider"] = "openai"
         return f"openai/{api_model}", kwargs

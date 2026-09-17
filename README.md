@@ -478,14 +478,20 @@ Chimera uses LiteLLM under the hood. Supported providers:
 | **MiniMax** | — | ✅ | M3 |
 | **Meta** | — | ✅ | Llama 4 Maverick |
 | **Hermes gateway** | ✅ (local) | — | any model the running Hermes serves, addressed as `hermes/<model>` |
+| **9router fleet gateway** | ✅ (tailnet) | — | ~269 models across 15 upstream prefixes, addressed as `router9/<upstream id>` |
 
 ### Custom OpenAI-compatible endpoints
 
 Any provider Chimera does not route natively is called through its own
 `base_url`, over the OpenAI-compatible SDK, using the provider's resolved key.
-The catalog prefix is stripped before the request goes out, so
-`hermes/glm-5.3-flash` reaches the endpoint as the bare `glm-5.3-flash` —
-the same convention the `zai` provider uses.
+Exactly one leading `<provider>/` segment is stripped before the request goes
+out, so `hermes/glm-5.3-flash` reaches the endpoint as the bare
+`glm-5.3-flash` — the same convention the `zai` provider uses.
+
+Endpoints that serve **namespaced** model ids of their own keep the inner
+slashes: the catalog id `router9/ds/deepseek-v4-flash` reaches 9router as
+`ds/deepseek-v4-flash` (not `deepseek-v4-flash`), and
+`router9/openrouter/x-ai/grok-4.6` as `openrouter/x-ai/grok-4.6`.
 
 That is how the local **Hermes gateway** (`:8642`, OpenAI-compatible) plugs in
 as a first-class provider:
@@ -502,11 +508,36 @@ models:
     cost_tier: budget
 ```
 
-Two things to plan for: the gateway adds its own large system prompt to every
-request (~41k tokens of input), so the effective context budget is the model's
-window minus that; and `/v1/health` probes providers with a real completion
-under `server.health_timeout_s` (default `10.0`s), so raise that bound if your
-gateway is slower than that on a 1-token call. See
-[docs/CONFIG.md](docs/CONFIG.md#custom-openai-compatible-endpoints) for the
+Two things to plan for with the Hermes gateway: it adds its own large system
+prompt to every request (~41k tokens of input), so the effective context budget
+is the model's window minus that; and `/v1/health` probes providers with a real
+completion under `server.health_timeout_s` (default `10.0`s), so raise that
+bound if your gateway is slower than that on a 1-token call. (The 9router
+gateway adds no prompt of its own — its lanes are the upstream providers'
+own endpoints.)
+
+…and the same seam carries the **9router fleet gateway** — one
+OpenAI-compatible endpoint (`http://master001:20128/v1`, reachable on the
+tailnet as `master001`) in front of ~269 models across 15 upstream prefixes
+(`ds/`, `mmx/`, `minimax/`, `kimi/`, `openrouter/`, `xai/`, `ollama/`, …):
+
+```yaml
+providers:
+  router9:
+    base_url: http://master001:20128/v1
+    api_key_env: ROUTER9_API_KEY   # the var name in ~/.hermes/.env — never inline the key
+
+models:
+  router9/ds/deepseek-v4-flash:
+    provider: router9
+    cost_tier: budget
+```
+
+Each upstream lane is an account of its own, so an exhausted lane answers
+`429`/`403` for every model behind it while the gateway itself is healthy —
+a provider-side quota condition, not a Chimera defect. Point a formation at
+another prefix's model rather than re-dispatching at the same one.
+
+See [docs/CONFIG.md](docs/CONFIG.md#custom-openai-compatible-endpoints) for the
 full contract.
 

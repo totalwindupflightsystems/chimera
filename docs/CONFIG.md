@@ -338,10 +338,14 @@ providers:
   hermes:
     base_url: http://127.0.0.1:8642/v1
     api_key_env: API_SERVER_KEY
+  router9:
+    base_url: http://master001:20128/v1
+    api_key_env: ROUTER9_API_KEY
 ```
 
 The `base_url` is used by LiteLLM to route calls. Provider IDs (`deepseek`,
-`openrouter`, `zai`, `hermes`) map to the `provider` field in model entries.
+`openrouter`, `zai`, `hermes`, `router9`) map to the `provider` field in model
+entries.
 
 Two optional credential fields per provider:
 
@@ -361,10 +365,16 @@ does not exist, and no key is required for it to run.
 native routing built into the gateway. Any **other** provider is routed by its
 own `base_url`: the call goes to that URL through the OpenAI-compatible SDK,
 authenticated with the provider's resolved key (see `api_key_env` above), and
-the **model id sent upstream is the bare name** — the part after the last `/`
-of the catalog id, exactly as the `zai` provider works. A catalog entry
-`hermes/glm-5.3-flash` therefore reaches `http://127.0.0.1:8642/v1` as
-`glm-5.3-flash`.
+the **model id sent upstream is the catalog id with exactly ONE leading
+`<provider>/` segment stripped** — or the part after the last `/` when the
+catalog id does not carry the provider prefix, exactly as the `zai` provider
+works. A catalog entry `hermes/glm-5.3-flash` therefore reaches
+`http://127.0.0.1:8642/v1` as `glm-5.3-flash`.
+
+Endpoints that serve **namespaced** model ids of their own keep their inner
+slashes — only the one catalog prefix goes:
+`router9/ds/deepseek-v4-flash` reaches 9router as `ds/deepseek-v4-flash`, and
+`router9/openrouter/x-ai/grok-4.6` as `openrouter/x-ai/grok-4.6`.
 
 That is what makes a local, non-LiteLLM-prefixed service usable as a
 first-class provider. The shipped example config wires the **Hermes gateway**
@@ -384,6 +394,26 @@ providers:
     api_key_env: API_SERVER_KEY
 ```
 
+The same seam carries the **9router fleet gateway**: one OpenAI-compatible
+endpoint in front of a large multi-prefix catalog (~269 models across 15
+upstream prefixes — `ds/`, `mmx/`, `minimax/`, `kimi/`, `openrouter/`, `xai/`,
+`ollama/`, …). It answers on `http://master001:20128/v1` (the host is
+`master001` on the tailnet, and the same name resolves from the LAN hosts):
+
+```yaml
+models:
+  router9/ds/deepseek-v4-flash:
+    provider: router9
+    cost_tier: budget
+    categories:
+      technology_code/code_generation/python: 88
+
+providers:
+  router9:
+    base_url: http://master001:20128/v1
+    api_key_env: ROUTER9_API_KEY   # var name in ~/.hermes/.env — never inline the key
+```
+
 Notes for this shape of provider:
 
 - **The key still has to resolve to a value.** LiteLLM's OpenAI-SDK path
@@ -399,6 +429,12 @@ Notes for this shape of provider:
   provider, bounded by `server.health_timeout_s` (default `10.0` s). A gateway
   that takes longer than that to answer a 1-token probe is reported
   `degraded`; keep `health_timeout_s` above the gateway's own latency.
+- **A lane behind a routing gateway can be out of quota.** 9router serves each
+  upstream prefix from its own account, so one exhausted lane answers
+  `429`/`403` for every model behind it while the gateway itself is healthy and
+  other prefixes keep working. That is a provider-side condition, not a Chimera
+  defect: point the formation at another prefix's model instead of
+  re-dispatching at the same one.
 
 ---
 

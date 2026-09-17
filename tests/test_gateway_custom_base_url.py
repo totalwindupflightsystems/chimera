@@ -54,6 +54,13 @@ GATEWAY_BASE_URL = "http://127.0.0.1:8642/v1"
 #: Obviously-fake credential — never a real key material.
 FAKE_KEY = "fake-hermes-gateway-key-for-tests"
 
+#: The 9router fleet gateway: one OpenAI-compatible endpoint in front of a
+#: multi-prefix model catalog, whose own upstream ids are namespaced.
+ROUTER9_PROVIDER = "router9"
+ROUTER9_MODEL_ID = "router9/ds/deepseek-v4-flash"
+ROUTER9_BASE_URL = "http://master001:20128/v1"
+FAKE_ROUTER9_KEY = "fake-router9-gateway-key-for-tests"
+
 
 def _entry(provider: str, litellm_model: str | None = None) -> ModelEntry:
     return ModelEntry(
@@ -68,6 +75,7 @@ def _config_dict(
     api_key: str | None = FAKE_KEY,
     api_key_env: str | None = None,
     provider: str = PROVIDER,
+    model_id: str = MODEL_ID,
 ) -> dict[str, Any]:
     """A valid config with one custom (non-native) provider."""
     provider_cfg: dict[str, Any] = {}
@@ -80,16 +88,16 @@ def _config_dict(
     return {
         "providers": {provider: provider_cfg},
         "models": {
-            MODEL_ID: {
+            model_id: {
                 "categories": {"code": 0.8},
                 "cost_tier": "budget",
                 "provider": provider,
             },
         },
         "defaults": {
-            "dispatcher": MODEL_ID,
-            "default_worker": MODEL_ID,
-            "default_aggregator": MODEL_ID,
+            "dispatcher": model_id,
+            "default_worker": model_id,
+            "default_aggregator": model_id,
         },
         "retry": {"max_attempts": 1, "base_delay_ms": 1, "max_delay_ms": 5},
         "observability": {"log_level": "warning", "trace_enabled": False},
@@ -166,22 +174,30 @@ def test_custom_base_url_routes_through_the_openai_compatible_provider() -> None
 
 
 @pytest.mark.parametrize(
-    ("catalog_id", "expected_bare"),
+    ("catalog_id", "provider", "expected_upstream"),
     [
-        ("hermes/glm-5.3-flash", "glm-5.3-flash"),
-        ("hermes/deepseek/v4-flash", "v4-flash"),
-        ("local-serving/llama-3.1-8b", "llama-3.1-8b"),
+        # A single-slash catalog id carrying its provider prefix: exactly one
+        # prefix goes, as it always did.
+        ("hermes/glm-5.3-flash", "hermes", "glm-5.3-flash"),
+        ("local-serving/llama-3.1-8b", "local-serving", "llama-3.1-8b"),
+        # A NAMESPACED upstream id: the endpoint's own model id is itself
+        # slash-separated, so only the one leading catalog prefix is stripped
+        # and the inner slashes survive (INT-PROV-ROUTER9-001).
+        ("hermes/deepseek/v4-flash", "hermes", "deepseek/v4-flash"),
+        # A catalog id that does NOT carry its provider prefix keeps the
+        # innermost-segment behavior — the fallback for every other shape.
+        ("vendor/some/model", "hermes", "model"),
     ],
 )
-def test_catalog_prefix_is_stripped_to_the_bare_model_id(
-    catalog_id: str, expected_bare: str,
+def test_catalog_prefix_is_stripped_to_the_upstream_model_id(
+    catalog_id: str, provider: str, expected_upstream: str,
 ) -> None:
-    """The gateway (and every OpenAI-compatible endpoint) wants the bare name."""
+    """The gateway (and every OpenAI-compatible endpoint) wants its own id."""
     model, extra = resolve_litellm_model(
-        catalog_id, _entry(catalog_id.split("/", 1)[0]),
+        catalog_id, _entry(provider),
         api_key=FAKE_KEY, base_url=GATEWAY_BASE_URL,
     )
-    assert model == f"openai/{expected_bare}"
+    assert model == f"openai/{expected_upstream}"
     assert extra["api_base"] == GATEWAY_BASE_URL
 
 
@@ -239,6 +255,85 @@ def test_native_providers_ignore_a_configured_base_url(
         name, _entry(provider), base_url="http://127.0.0.1:9999/v1",
     )
     assert with_base_url == without
+
+
+# --------------------------------------------------------------------------- #
+# router9 — the 9router fleet gateway (namespaced upstream model ids)
+# --------------------------------------------------------------------------- #
+
+
+def test_router9_namespaced_id_keeps_its_inner_slash() -> None:
+    """INT-PROV-ROUTER9-001: the one leading catalog prefix goes, no more.
+
+    ``router9/ds/deepseek-v4-flash`` must reach 9router as
+    ``ds/deepseek-v4-flash`` — ``deepseek-v4-flash`` (the innermost segment)
+    is not a model that gateway knows.
+    """
+    model, extra = resolve_litellm_model(
+        ROUTER9_MODEL_ID, _entry(ROUTER9_PROVIDER),
+        api_key=FAKE_ROUTER9_KEY, base_url=ROUTER9_BASE_URL,
+    )
+    assert model == "openai/ds/deepseek-v4-flash"
+    assert extra == {
+        "api_key": FAKE_ROUTER9_KEY,
+        "api_base": ROUTER9_BASE_URL,
+        "custom_llm_provider": "openai",
+    }
+
+
+@pytest.mark.parametrize(
+    ("catalog_id", "expected_upstream"),
+    [
+        ("router9/ds/deepseek-v4-flash", "ds/deepseek-v4-flash"),
+        ("router9/ds/deepseek-v4-pro", "ds/deepseek-v4-pro"),
+        ("router9/mmx/MiniMax-M3", "mmx/MiniMax-M3"),
+        ("router9/openrouter/x-ai/grok-4.6", "openrouter/x-ai/grok-4.6"),
+        ("router9/xai/grok-4", "xai/grok-4"),
+    ],
+)
+def test_router9_catalog_ids_keep_every_namespace_segment(
+    catalog_id: str, expected_upstream: str,
+) -> None:
+    """Every segment after the one catalog prefix survives unchanged."""
+    model, extra = resolve_litellm_model(
+        catalog_id, _entry(ROUTER9_PROVIDER),
+        api_key=FAKE_ROUTER9_KEY, base_url=ROUTER9_BASE_URL,
+    )
+    assert model == f"openai/{expected_upstream}"
+    assert extra["api_base"] == ROUTER9_BASE_URL
+    assert extra["custom_llm_provider"] == "openai"
+
+
+def test_router9_provider_prefix_match_is_case_insensitive() -> None:
+    """A mixed-case catalog provider segment still matches its provider name."""
+    model, extra = resolve_litellm_model(
+        "Router9/ds/deepseek-v4-flash", _entry(ROUTER9_PROVIDER),
+        api_key=FAKE_ROUTER9_KEY, base_url=ROUTER9_BASE_URL,
+    )
+    assert model == "openai/ds/deepseek-v4-flash"
+    assert extra["api_base"] == ROUTER9_BASE_URL
+
+
+def test_hermes_provider_id_is_unchanged_by_the_namespaced_rule() -> None:
+    """Regression guard: the hermes catalog id resolves byte-identically."""
+    model, extra = resolve_litellm_model(
+        MODEL_ID, _entry(PROVIDER), api_key=FAKE_KEY, base_url=GATEWAY_BASE_URL,
+    )
+    assert model == f"openai/{BARE_MODEL}"
+    assert extra == {
+        "api_key": FAKE_KEY,
+        "api_base": GATEWAY_BASE_URL,
+        "custom_llm_provider": "openai",
+    }
+
+
+def test_other_provider_name_does_not_eat_a_vendor_prefix() -> None:
+    """Only the SERVING provider's own name is stripped, never a vendor one."""
+    model, _ = resolve_litellm_model(
+        "openrouter/x-ai/grok-4.6", _entry(ROUTER9_PROVIDER),
+        api_key=FAKE_ROUTER9_KEY, base_url=ROUTER9_BASE_URL,
+    )
+    assert model == "openai/grok-4.6"
 
 
 # --------------------------------------------------------------------------- #
@@ -331,6 +426,30 @@ async def test_gateway_completion_reaches_the_configured_base_url_endpoint() -> 
         assert request["authorization"] == f"Bearer {FAKE_KEY}"
 
 
+async def test_gateway_completion_sends_the_namespaced_upstream_id() -> None:
+    """Real socket: 9router receives ``ds/deepseek-v4-flash``, not the tail."""
+    with _compat_stub() as (base_url, seen):
+        config = ChimeraConfig.model_validate(
+            _config_dict(
+                base_url=base_url, api_key=FAKE_ROUTER9_KEY,
+                provider=ROUTER9_PROVIDER, model_id=ROUTER9_MODEL_ID,
+            )
+        )
+        gateway = LiteLLMGateway(config)
+        resp = await gateway.complete(
+            ROUTER9_MODEL_ID, [{"role": "user", "content": "ping"}],
+            temperature=0, max_tokens=4,
+        )
+
+        assert resp.text == "STUB-OK"
+        assert len(seen) == 1, f"expected exactly one request, saw {len(seen)}"
+        request = seen[0]
+        assert request["path"] == "/v1/chat/completions"
+        # The namespaced id survives all the way to the wire.
+        assert request["body"]["model"] == "ds/deepseek-v4-flash"
+        assert request["authorization"] == f"Bearer {FAKE_ROUTER9_KEY}"
+
+
 # --------------------------------------------------------------------------- #
 # The shipped example config + docs (C3) and the credential seam
 # --------------------------------------------------------------------------- #
@@ -407,6 +526,50 @@ def test_example_config_declares_the_hermes_gateway_provider() -> None:
     assert entry["cost_tier"] in {"budget", "standard", "premium"}
 
 
+def test_example_config_declares_the_router9_gateway_provider() -> None:
+    """C3: the shipped example wires the 9router fleet gateway as a provider."""
+    raw = _example_config()
+    provider = raw["providers"][ROUTER9_PROVIDER]
+    assert provider["base_url"] == ROUTER9_BASE_URL
+    assert provider["api_key_env"] == "ROUTER9_API_KEY"
+    # Never a literal key: the env var NAME is the only credential reference.
+    assert "api_key" not in provider
+
+    router9_models = {
+        model_id: entry
+        for model_id, entry in raw["models"].items()
+        if entry.get("provider") == ROUTER9_PROVIDER
+    }
+    assert len(router9_models) >= 3, "the example needs >= 3 router9 catalog models"
+    for model_id, entry in router9_models.items():
+        assert model_id.startswith(f"{ROUTER9_PROVIDER}/"), model_id
+        assert entry["enabled"] is True
+        assert entry["categories"], f"{model_id} needs category scores"
+        assert entry["cost_tier"] in {"budget", "standard", "premium"}
+
+
+def test_every_example_router9_model_resolves_to_its_upstream_id() -> None:
+    """The example's own catalog ids route to 9router's namespaced ids."""
+    raw = _example_config()
+    base_url = raw["providers"][ROUTER9_PROVIDER]["base_url"]
+    namespaced = [
+        model_id
+        for model_id, entry in raw["models"].items()
+        if entry.get("provider") == ROUTER9_PROVIDER
+        and model_id.count("/") >= 2  # "<provider>/<namespace>/<model>"
+    ]
+    assert namespaced, "at least one example model must use a namespaced upstream id"
+
+    for model_id in namespaced:
+        model, extra = resolve_litellm_model(
+            model_id, _entry(ROUTER9_PROVIDER), base_url=base_url,
+        )
+        expected = model_id[len(ROUTER9_PROVIDER) + 1:]
+        assert model == f"openai/{expected}"
+        assert extra["api_base"] == base_url
+        assert extra["custom_llm_provider"] == "openai"
+
+
 def test_example_config_holds_no_literal_credentials() -> None:
     """Every tracked credential reference is a ``${VAR}`` placeholder."""
     raw = _example_config()
@@ -416,6 +579,9 @@ def test_example_config_holds_no_literal_credentials() -> None:
         )
     for name, provider in raw["providers"].items():
         assert "api_key" not in provider, f"providers.{name} inlines a key"
+    # The two custom OpenAI-compatible endpoints name their env var, nothing else.
+    for name, env_var in ((PROVIDER, "API_SERVER_KEY"), (ROUTER9_PROVIDER, "ROUTER9_API_KEY")):
+        assert raw["providers"][name].get("api_key_env") == env_var
 
 
 def test_docs_document_the_api_key_env_seam(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -423,6 +589,18 @@ def test_docs_document_the_api_key_env_seam(monkeypatch: pytest.MonkeyPatch) -> 
     for doc in (REPO_ROOT / "docs" / "CONFIG.md", REPO_ROOT / "README.md"):
         text = doc.read_text(encoding="utf-8")
         assert "API_SERVER_KEY" in text, f"{doc.name} does not name API_SERVER_KEY"
+
+
+def test_docs_document_the_router9_provider() -> None:
+    """C3: both docs describe the 9router gateway, its id map and its key seam."""
+    for doc in (REPO_ROOT / "docs" / "CONFIG.md", REPO_ROOT / "README.md"):
+        text = doc.read_text(encoding="utf-8")
+        assert ROUTER9_PROVIDER in text, f"{doc.name} does not name the provider"
+        assert "ROUTER9_API_KEY" in text, f"{doc.name} does not name ROUTER9_API_KEY"
+        assert ROUTER9_BASE_URL in text, f"{doc.name} does not show the endpoint"
+        assert "router9/ds/deepseek-v4-flash" in text, (
+            f"{doc.name} does not show the catalog → upstream id mapping"
+        )
 
 
 @pytest.fixture

@@ -1362,6 +1362,167 @@ models:
     cost_tier: budget
     provider: hermes
     enabled: true
+  # 9router fleet gateway (providers.router9 below) — one OpenAI-compatible
+  # endpoint in front of ~269 models across 15 upstream prefixes (``ds/``,
+  # ``mmx/``, ``openrouter/``, ``xai/``, ...).  Unlike the Hermes gateway, the
+  # ids 9router serves are THEMSELVES namespaced, so the catalog id here is
+  # ``router9/<upstream id>``: ``router9/ds/deepseek-v4-flash`` reaches the
+  # endpoint as ``ds/deepseek-v4-flash`` (only the one ``router9/`` segment is
+  # stripped — the inner slash is part of the model name).
+  router9/ds/deepseek-v4-flash:
+    categories:
+      technology_code/code_generation/python: 88
+      technology_code/code_generation/javascript: 85
+      technology_code/code_generation/sql: 80
+      technology_code/code_generation/shell: 80
+      technology_code/testing_debugging/unit_tests: 75
+      technology_code/testing_debugging/error_analysis: 70
+      technology_code/data_science/analysis: 80
+      technology_code/data_science/modeling: 72
+      technology_code/data_interaction/database/sql: 80
+      technology_code/data_interaction/file_based/json: 82
+      complex_reasoning_agency/tool_use/code_execution: 78
+      complex_reasoning_agency/self_correction/debugging: 72
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 68
+      general_knowledge/reasoning/explanation: 75
+      general_knowledge/reasoning/logic_puzzle: 68
+      general_knowledge/fact_retrieval/definitions: 72
+      language_translation/summarization/abstractive: 70
+      language_translation/translation/language_to_language: 65
+      language_translation/linguistic_analysis/sentiment: 65
+      creative_conversational/ux_writing/interface_copy: 60
+      creative_conversational/creative_writing/storytelling: 60
+    cost_tier: budget
+    provider: router9
+    enabled: true
+  router9/ds/deepseek-v4-pro:
+    categories:
+      technology_code/code_generation/python: 92
+      technology_code/code_generation/javascript: 90
+      technology_code/code_generation/sql: 87
+      technology_code/code_generation/shell: 85
+      technology_code/system_design/architecture: 60
+      technology_code/system_design/devops: 65
+      technology_code/testing_debugging/unit_tests: 80
+      technology_code/testing_debugging/error_analysis: 78
+      technology_code/data_science/analysis: 85
+      technology_code/data_science/modeling: 80
+      technology_code/data_interaction/database/sql: 85
+      technology_code/data_interaction/file_based/json: 85
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 75
+      complex_reasoning_agency/tool_use/code_execution: 82
+      complex_reasoning_agency/self_correction/debugging: 80
+      academic_scientific/formal_writing/research_paper: 65
+      academic_scientific/mathematics/statistics: 78
+      academic_scientific/mathematics/algebra: 72
+      academic_scientific/mathematics/calculus: 70
+      general_knowledge/reasoning/explanation: 80
+      general_knowledge/reasoning/logic_puzzle: 72
+      general_knowledge/fact_retrieval/definitions: 75
+      general_knowledge/fact_retrieval/historical_events: 70
+      language_translation/summarization/abstractive: 72
+      language_translation/translation/language_to_language: 68
+      language_translation/linguistic_analysis/sentiment: 65
+      business_finance/marketing/copywriting: 60
+      business_finance/legal_document/analysis: 62
+      creative_conversational/creative_writing/storytelling: 60
+      creative_conversational/ux_writing/interface_copy: 60
+    cost_tier: budget
+    provider: router9
+    enabled: true
+  router9/mmx/MiniMax-M3:
+    categories:
+      technology_code/code_generation/python: 88
+      technology_code/code_generation/javascript: 87
+      technology_code/code_generation/sql: 86
+      technology_code/code_generation/shell: 85
+      technology_code/system_design/architecture: 83
+      technology_code/system_design/devops: 81
+      technology_code/testing_debugging/unit_tests: 82
+      technology_code/testing_debugging/error_analysis: 78
+      technology_code/data_science/analysis: 80
+      technology_code/data_science/modeling: 76
+      technology_code/data_interaction/database/sql: 86
+      technology_code/data_interaction/file_based/json: 87
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 78
+      complex_reasoning_agency/tool_use/code_execution: 82
+      complex_reasoning_agency/self_correction/debugging: 73
+      academic_scientific/formal_writing/research_paper: 74
+      academic_scientific/mathematics/statistics: 76
+      academic_scientific/mathematics/algebra: 72
+      academic_scientific/mathematics/calculus: 68
+      general_knowledge/reasoning/explanation: 80
+      general_knowledge/reasoning/logic_puzzle: 74
+      general_knowledge/fact_retrieval/definitions: 78
+      general_knowledge/fact_retrieval/historical_events: 74
+      language_translation/summarization/abstractive: 78
+      language_translation/translation/language_to_language: 74
+      language_translation/linguistic_analysis/sentiment: 72
+      business_finance/marketing/copywriting: 80
+      business_finance/legal_document/analysis: 70
+      creative_conversational/creative_writing/storytelling: 80
+      creative_conversational/ux_writing/interface_copy: 82
+      multimedia_processing/image/analysis: 72
+      multimedia_processing/image/generation: 68
+    cost_tier: budget
+    provider: router9
+    enabled: true
+  router9/openrouter/x-ai/grok-4.6:
+    categories:
+      technology_code/code_generation/python: 91
+      technology_code/code_generation/javascript: 89
+      technology_code/code_generation/sql: 88
+      technology_code/code_generation/shell: 86
+      technology_code/system_design/architecture: 78
+      technology_code/system_design/devops: 76
+      technology_code/testing_debugging/unit_tests: 83
+      technology_code/testing_debugging/error_analysis: 81
+      technology_code/data_science/analysis: 89
+      technology_code/data_science/modeling: 87
+      technology_code/data_interaction/database/sql: 87
+      technology_code/data_interaction/file_based/json: 88
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 91
+      complex_reasoning_agency/tool_use/code_execution: 87
+      complex_reasoning_agency/self_correction/debugging: 82
+      academic_scientific/formal_writing/research_paper: 78
+      academic_scientific/mathematics/statistics: 90
+      academic_scientific/mathematics/algebra: 87
+      academic_scientific/mathematics/calculus: 85
+      general_knowledge/reasoning/explanation: 91
+      general_knowledge/reasoning/logic_puzzle: 89
+      general_knowledge/fact_retrieval/definitions: 88
+      general_knowledge/fact_retrieval/historical_events: 84
+      language_translation/summarization/abstractive: 82
+      language_translation/translation/language_to_language: 76
+      language_translation/linguistic_analysis/sentiment: 78
+      business_finance/marketing/copywriting: 74
+      business_finance/legal_document/analysis: 72
+      creative_conversational/creative_writing/storytelling: 70
+      creative_conversational/ux_writing/interface_copy: 76
+    cost_tier: premium
+    provider: router9
+    enabled: true
+  router9/xai/grok-4:
+    # Same family scores as the catalog's grok-4.x entries — this lane serves
+    # the previous generation of the same upstream family, one tier down.
+    categories:
+      technology_code/code_generation/python: 88
+      technology_code/code_generation/javascript: 86
+      technology_code/code_generation/sql: 84
+      technology_code/system_design/architecture: 74
+      technology_code/testing_debugging/error_analysis: 78
+      technology_code/data_science/analysis: 86
+      technology_code/data_interaction/file_based/json: 85
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 88
+      complex_reasoning_agency/tool_use/code_execution: 84
+      general_knowledge/reasoning/explanation: 88
+      general_knowledge/reasoning/logic_puzzle: 86
+      general_knowledge/fact_retrieval/definitions: 85
+      language_translation/summarization/abstractive: 78
+      creative_conversational/ux_writing/interface_copy: 72
+    cost_tier: standard
+    provider: router9
+    enabled: true
 providers:
   deepseek:
     base_url: https://api.deepseek.com/v1
@@ -1380,6 +1541,22 @@ providers:
   hermes:
     base_url: http://127.0.0.1:8642/v1
     api_key_env: API_SERVER_KEY
+  # 9router fleet gateway (OpenAI-compatible).  One endpoint in front of a
+  # large multi-prefix model catalog (~269 models across 15 upstream
+  # prefixes), so no LiteLLM-native prefix covers it and the configured
+  # base_url is what routes the call.  The catalog id is
+  # "router9/<upstream id>" and reaches the endpoint as the BARE upstream id:
+  # "router9/ds/deepseek-v4-flash" → "ds/deepseek-v4-flash".  The upstream ids
+  # are THEMSELVES namespaced, which is why the gateway strips only the one
+  # leading "router9/" segment and keeps every inner slash.
+  # The key comes from ROUTER9_API_KEY in ~/.hermes/.env — never inline it
+  # here.  The host answers to "master001" on the tailnet and to its LAN
+  # address from the Vegas hosts (addresses stay out of tracked files).
+  # An exhausted upstream LANE answers 429/403 while the gateway itself is
+  # healthy — that is a provider-side quota condition, not a chimera defect.
+  router9:
+    base_url: http://master001:20128/v1
+    api_key_env: ROUTER9_API_KEY
 server:
   host: 0.0.0.0
   port: 8765
