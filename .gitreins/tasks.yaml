@@ -880,3 +880,20 @@ tasks:
   status: complete
   created_at: '2026-09-17T15:49:02.753358+00:00'
   completed_at: '2026-09-17T16:02:33.970278+00:00'
+- id: int-prov-router9-001
+  title: Add router9 (9router fleet gateway) as a first-class OpenAI-compatible provider
+  criteria:
+  - chimera.yaml.example declares providers.router9 with base_url http://master001:20128/v1
+    and api_key_env ROUTER9_API_KEY (env var NAME only, no key material in any tracked
+    file)
+  - 'chimera.yaml.example carries at least three catalog models with provider: router9'
+  - resolve_litellm_model maps a router9 catalog id to the upstream model id with
+    its inner slash preserved (openai/ds/deepseek-v4-flash) plus api_base http://master001:20128/v1
+    and custom_llm_provider=openai
+  - the generic base_url branch still maps hermes/glm-5.3-flash to openai/glm-5.3-flash
+    (no regression)
+  - docs/CONFIG.md and README.md document the router9 provider, the bare-id mapping
+    and the ROUTER9_API_KEY seam
+  status: complete
+  created_at: '2026-09-17T16:20:41.717668+00:00'
+  completed_at: '2026-09-17T16:30:25.743304+00:00'
