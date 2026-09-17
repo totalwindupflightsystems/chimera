@@ -239,6 +239,36 @@ def _family_recency_score(model_id: str) -> float:
     return RECENCY_DEFAULT  # default
 
 
+def _model_recency_timestamp(provider_data: dict[str, Any], model_id: str) -> float | None:
+    """Resolve the UTC timestamp a model's recency score is derived from.
+
+    This is the single source of truth behind both the score and the
+    ``recency_ts`` carried on each candidate dict: the numeric unix ``created``
+    timestamp first (the OpenAI-style API shape), then the ISO-8601
+    ``release_date`` / ``last_updated`` strings the live models.dev cache
+    actually carries.
+
+    Returns ``None`` when the row has no usable date at all — i.e. when the
+    score comes from the family heuristic table or the ``RECENCY_DEFAULT`` of
+    40.0. A malformed date never raises (this runs inside the model-sync cron).
+    """
+    model_info = provider_data.get("models", {}).get(model_id, {})
+    if not isinstance(model_info, dict):
+        model_info = {}
+
+    created = model_info.get("created")
+    if isinstance(created, (int, float)) and not isinstance(created, bool) and created > 0:
+        return float(created)
+
+    # No numeric timestamp — the live cache carries ISO-8601 date strings.
+    for field in RECENCY_DATE_FIELDS:
+        created_ts = _parse_iso_timestamp(model_info.get(field))
+        if created_ts is not None:
+            return created_ts
+
+    return None
+
+
 def _model_recency_score(provider_data: dict[str, Any], model_id: str) -> float:
     """Score a model by recency — higher is newer.
 
@@ -248,24 +278,43 @@ def _model_recency_score(provider_data: dict[str, Any], model_id: str) -> float:
     strings the cache actually carries. Models with no usable date at all fall
     back to family heuristics, then the ``RECENCY_DEFAULT`` of 40.0.
     Returns 0-100 where 100 = newest.
+
+    The date itself is resolved by ``_model_recency_timestamp()`` (the same
+    helper ``scan_models_dev()`` uses to populate ``recency_ts``).
     """
-    model_info = provider_data.get("models", {}).get(model_id, {})
-    if not isinstance(model_info, dict):
-        model_info = {}
-
-    created = model_info.get("created")
-    if isinstance(created, (int, float)) and not isinstance(created, bool) and created > 0:
-        # Convert Unix timestamp to days ago, then score
-        return _score_days_ago((time.time() - created) / 86400)
-
-    # No numeric timestamp — the live cache carries ISO-8601 date strings.
-    for field in RECENCY_DATE_FIELDS:
-        created_ts = _parse_iso_timestamp(model_info.get(field))
-        if created_ts is not None:
-            return _score_days_ago((time.time() - created_ts) / 86400)
+    recency_ts = _model_recency_timestamp(provider_data, model_id)
+    if recency_ts is not None:
+        return _score_days_ago((time.time() - recency_ts) / 86400)
 
     # No usable date — score by family-based heuristics
     return _family_recency_score(model_id)
+
+
+def _recency_sort_key(candidate: dict[str, Any]) -> tuple[float, int, float, str]:
+    """Deterministic newest-first ordering key for candidate dicts.
+
+    ``(recency_score DESC, dated-before-undated, recency_ts DESC, model_id ASC)``.
+
+    The bucket score is coarse (7/30/90/180 days), so every candidate inside one
+    bucket scores identically; the resolved date is what orders those ties by
+    real newness instead of by model id or input order. Candidates with no
+    usable date at all (family heuristics / ``RECENCY_DEFAULT``) sort last
+    within their score group, deterministically by ``model_id`` ascending.
+    """
+    score = candidate.get("recency_score")
+    score = (
+        float(score)
+        if isinstance(score, (int, float)) and not isinstance(score, bool)
+        else 0.0
+    )
+    recency_ts = candidate.get("recency_ts")
+    dated = isinstance(recency_ts, (int, float)) and not isinstance(recency_ts, bool)
+    return (
+        -score,
+        0 if dated else 1,
+        -float(recency_ts) if dated else 0.0,
+        str(candidate.get("model_id", "")),
+    )
 
 
 def select_top_candidates(
@@ -275,13 +324,17 @@ def select_top_candidates(
     """Flatten provider candidates, sort newest-first, and take the top ``limit``.
 
     Pure selection used by ``--score`` (top 5) and ``--limit`` (top N): ordering
-    is by ``recency_score`` descending (Python's stable sort keeps the input
-    order for equal scores). ``limit <= 0`` returns every candidate.
+    is by ``recency_score`` descending, and equal-score buckets are broken by the
+    resolved ``recency_ts`` descending — so ties inside one bucket are ordered by
+    real newness, not alphabetically by model id or by input/provider order.
+    Candidates carrying no usable date (family heuristics / ``RECENCY_DEFAULT``)
+    sort last within their score group, deterministically by ``model_id``
+    ascending. ``limit <= 0`` returns every candidate.
     """
     flat: list[dict[str, Any]] = []
     for models in candidates.values():
         flat.extend(models)
-    flat.sort(key=lambda x: x["recency_score"], reverse=True)
+    flat.sort(key=_recency_sort_key)
     if limit > 0:
         flat = flat[:limit]
     return flat
@@ -353,6 +406,10 @@ def scan_models_dev() -> dict[str, list[dict[str, Any]]]:
             output_cost = cost.get("output") if isinstance(cost, dict) else None
 
             recency = _model_recency_score(provider_data, model_id)
+            # Additive: the resolved date behind `recency` (same helper/source),
+            # so selection can break equal-score ties by real newness. None when
+            # the score came from the family heuristics / RECENCY_DEFAULT.
+            recency_ts = _model_recency_timestamp(provider_data, model_id)
 
             provider_candidates.append({
                 "model_id": model_id,
@@ -364,12 +421,13 @@ def scan_models_dev() -> dict[str, list[dict[str, Any]]]:
                 "input_per_1k": _mtok_to_per_1k(input_cost) if input_cost else None,
                 "output_per_1k": _mtok_to_per_1k(output_cost) if output_cost else None,
                 "recency_score": recency,
+                "recency_ts": recency_ts,
                 "provider": provider_id,
             })
 
         if provider_candidates:
-            # Sort by recency (newest first)
-            provider_candidates.sort(key=lambda x: x["recency_score"], reverse=True)
+            # Sort by recency (newest first, date tie-break inside a bucket)
+            provider_candidates.sort(key=_recency_sort_key)
             candidates[provider_id] = provider_candidates
 
     return candidates

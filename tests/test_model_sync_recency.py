@@ -19,7 +19,11 @@ no live cache):
   rows with no usable date at all;
 * ``select_top_candidates()`` — the pure flatten + sort + top-N helper shared
   by ``--score`` (top 5) and ``--limit`` — orders candidates newest-release-
-  date-first rather than by model id.
+  date-first rather than by model id. The bucket score is coarse (7/30/90/180
+  days), so candidates inside one bucket score identically; equal-score buckets
+  are broken by the resolved ``release_date``/``last_updated`` date descending
+  (carried additively as ``recency_ts``), and date-less candidates sort last
+  within their score group, deterministically by ``model_id`` ascending.
 """
 
 from __future__ import annotations
@@ -64,7 +68,13 @@ def _score(model_id: str, **model_row: Any) -> float:
 
 
 def _candidate(model_id: str, provider: str = "openai", **model_row: Any) -> dict[str, Any]:
-    """A candidate dict in the exact shape scan_models_dev() produces."""
+    """A candidate dict in the exact shape scan_models_dev() produces.
+
+    ``recency_ts`` mirrors the additive key the scan loop carries: the resolved
+    date behind ``recency_score`` from the same source (``None`` when the score
+    came from the family heuristics / ``RECENCY_DEFAULT``).
+    """
+    provider_data = {"models": {model_id: dict(model_row)}}
     return {
         "model_id": model_id,
         "chimera_id": f"test/{model_id}",
@@ -74,7 +84,8 @@ def _candidate(model_id: str, provider: str = "openai", **model_row: Any) -> dic
         "output_cost_mtok": None,
         "input_per_1k": None,
         "output_per_1k": None,
-        "recency_score": _score(model_id, **model_row),
+        "recency_score": model_sync._model_recency_score(provider_data, model_id),
+        "recency_ts": model_sync._model_recency_timestamp(provider_data, model_id),
         "provider": provider,
     }
 
@@ -244,6 +255,100 @@ def test_recency_select_top_candidates_limit_truncates_the_newest() -> None:
     assert model_sync.select_top_candidates({}, limit=5) == []
 
 
+def test_recency_same_bucket_ties_are_broken_by_date_not_model_id() -> None:
+    """Equal-score candidates are ordered by release date, newest first.
+
+    The judge finding's exact case: five date-only candidates that all land in
+    the SAME 7-day bucket (score 100.0 each), with model ids deliberately
+    REVERSE-alphabetical to their dates (zzz newest .. vvv oldest). The board
+    row's PASS criterion is that top-5 selection orders strictly by release date
+    (newest first) rather than by model id; pre-fix this returned the input
+    order, so a scan that appends alphabetically satisfied it only by accident.
+    """
+    spec = [("zzz", 1), ("yyy", 2), ("xxx", 3), ("www", 4), ("vvv", 5)]
+    candidates = {
+        "openai": [_candidate(mid, release_date=_date(days)) for mid, days in spec],
+    }
+
+    top = model_sync.select_top_candidates(candidates, limit=5)
+
+    assert [c["model_id"] for c in top] == ["zzz", "yyy", "xxx", "www", "vvv"]
+    assert [c["recency_score"] for c in top] == [100.0] * 5
+    # Reverse-alphabetical ids: an id-based tie-break inverts this list.
+    assert [c["model_id"] for c in top] != sorted(c["model_id"] for c in top)
+    # And the dates really are strictly descending, 1d -> 5d ago.
+    stamps = [c["recency_ts"] for c in top]
+    assert all(s is not None for s in stamps)
+    assert stamps == sorted(stamps, reverse=True)
+    assert len(set(stamps)) == 5
+
+
+def test_recency_same_bucket_tie_break_ignores_input_order() -> None:
+    """The tie-break is the date, never the input/insertion order.
+
+    Input order is scrambled so it matches neither the date order nor the
+    alphabetical one — the pre-fix stable sort reproduced it verbatim.
+    """
+    spec = [("zzz", 1), ("yyy", 2), ("xxx", 3), ("www", 4), ("vvv", 5)]
+    for order in ([3, 4, 0, 2, 1], [4, 0, 3, 1, 2], [2, 1, 0, 4, 3]):
+        candidates = {
+            "openai": [_candidate(spec[k][0], release_date=_date(spec[k][1])) for k in order],
+        }
+        got = [c["model_id"] for c in model_sync.select_top_candidates(candidates, limit=5)]
+        assert got == ["zzz", "yyy", "xxx", "www", "vvv"], f"input order {order} leaked: {got}"
+
+
+def test_recency_same_bucket_tie_break_is_provider_agnostic() -> None:
+    """Ties are broken by date across providers too, not by provider order."""
+    candidates = {
+        # vvv/yyy live under the provider visited FIRST, zzz/xxx under the
+        # second — the pre-fix stable sort kept this dict order.
+        "openai": [
+            _candidate("vvv", provider="openai", release_date=_date(5)),
+            _candidate("yyy", provider="openai", release_date=_date(2)),
+        ],
+        "anthropic": [
+            _candidate("zzz", provider="anthropic", release_date=_date(1)),
+            _candidate("xxx", provider="anthropic", release_date=_date(3)),
+        ],
+    }
+    assert [c["model_id"] for c in model_sync.select_top_candidates(candidates, limit=4)] == [
+        "zzz", "yyy", "xxx", "vvv",
+    ]
+
+
+def test_recency_date_less_candidates_tie_break_by_model_id_ascending() -> None:
+    """Same score, no usable date -> deterministic model_id ascending."""
+    ids = ["unknown-e", "unknown-a", "unknown-d", "unknown-b", "unknown-c"]
+    candidates = {"openai": [_candidate(mid) for mid in ids]}
+    top = model_sync.select_top_candidates(candidates, limit=5)
+
+    assert [c["recency_score"] for c in top] == [model_sync.RECENCY_DEFAULT] * 5
+    assert [c["recency_ts"] for c in top] == [None] * 5
+    assert [c["model_id"] for c in top] == [
+        "unknown-a", "unknown-b", "unknown-c", "unknown-d", "unknown-e",
+    ]
+
+
+def test_recency_dated_candidate_sorts_before_date_less_in_same_score_group() -> None:
+    """Within one score group a dated row outranks a date-less heuristic row."""
+    assert _score("gpt-5.5") == 90.0  # date-less -> family heuristic
+    assert _score("dated-20d", release_date=_date(20)) == 90.0  # dated -> bucket
+
+    candidates = {
+        "openai": [
+            _candidate("gpt-5.5"),
+            _candidate("dated-20d", release_date=_date(20)),
+        ],
+    }
+    top = model_sync.select_top_candidates(candidates, limit=2)
+
+    assert [c["recency_score"] for c in top] == [90.0, 90.0]
+    assert [c["recency_ts"] for c in top][0] is not None
+    assert [c["recency_ts"] for c in top][1] is None
+    assert [c["model_id"] for c in top] == ["dated-20d", "gpt-5.5"]
+
+
 def test_recency_scan_models_dev_scores_candidates_from_release_date() -> None:
     """Wiring: the scan loop feeds release_date rows through the date path."""
     cache = {
@@ -277,6 +382,79 @@ def test_recency_scan_models_dev_scores_candidates_from_release_date() -> None:
     assert scored["gpt-3-legacy"] == 30.0
     # The provider list is still sorted newest-first after the change.
     assert [m["model_id"] for m in candidates["openai"]] == ["gpt-9-preview", "gpt-3-legacy"]
+
+
+def test_recency_scan_models_dev_carries_recency_ts_and_orders_by_date() -> None:
+    """Wiring: the scan loop carries the additive ``recency_ts`` key.
+
+    Also pins the scan's OWN per-provider ordering inside a bucket:
+    ``sorted(models.items())`` feeds the loop alphabetically, so pre-fix the
+    same-bucket pair came out id-ascending (yyy before zzz) even though zzz
+    released a day later.
+    """
+    cache = {
+        "openai": {
+            "models": {
+                "zzz-fresh": {
+                    "family": "gpt",
+                    "release_date": _date(1),
+                    "last_updated": _date(1),
+                    "cost": {"input": 1.0, "output": 2.0},
+                },
+                "yyy-fresh": {
+                    "family": "gpt",
+                    "release_date": _date(2),
+                    "last_updated": _date(2),
+                },
+                "gpt-3-legacy": {
+                    "family": "gpt",
+                    "release_date": _date(400),
+                    "last_updated": _date(400),
+                },
+                "undated-model": {"family": "totally-unknown"},
+            },
+        },
+    }
+    original_cache, original_catalog = model_sync._load_cache, model_sync._load_chimera_models
+    model_sync._load_cache = lambda *a, **k: cache  # type: ignore[assignment]
+    model_sync._load_chimera_models = lambda: set()  # type: ignore[assignment]
+    try:
+        candidates = model_sync.scan_models_dev()
+    finally:
+        model_sync._load_cache = original_cache  # type: ignore[assignment]
+        model_sync._load_chimera_models = original_catalog  # type: ignore[assignment]
+
+    rows = candidates["openai"]
+    assert [m["model_id"] for m in rows] == [
+        "zzz-fresh", "yyy-fresh", "undated-model", "gpt-3-legacy",
+    ]
+    assert [m["recency_score"] for m in rows] == [100.0, 100.0, 40.0, 30.0]
+
+    by_id = {m["model_id"]: m for m in rows}
+    # The timestamp is resolved through the same parser the scorer uses.
+    assert by_id["zzz-fresh"]["recency_ts"] == model_sync._parse_iso_timestamp(_date(1))
+    assert by_id["yyy-fresh"]["recency_ts"] == model_sync._parse_iso_timestamp(_date(2))
+    assert by_id["zzz-fresh"]["recency_ts"] > by_id["yyy-fresh"]["recency_ts"]
+    # Heuristic-scored rows have no date to carry.
+    assert by_id["undated-model"]["recency_ts"] is None
+    assert by_id["undated-model"]["recency_score"] == model_sync.RECENCY_DEFAULT
+
+    # Additive key: every pre-existing key keeps its name and type, and the raw
+    # cache row is never emitted.
+    for m in rows:
+        assert set(m) == {
+            "model_id", "chimera_id", "family", "description",
+            "input_cost_mtok", "output_cost_mtok", "input_per_1k",
+            "output_per_1k", "recency_score", "recency_ts", "provider",
+        }
+        assert m["recency_ts"] is None or isinstance(m["recency_ts"], float)
+        assert isinstance(m["recency_score"], float)
+        assert isinstance(m["provider"], str)
+
+    # Selection over the scan's own output keeps the date order.
+    assert [
+        m["model_id"] for m in model_sync.select_top_candidates(candidates, limit=2)
+    ] == ["zzz-fresh", "yyy-fresh"]
 
 
 def test_recency_llm_score_skip_path_without_api_key(
