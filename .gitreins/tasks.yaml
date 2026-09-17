@@ -809,3 +809,22 @@ tasks:
   status: complete
   created_at: '2026-09-17T12:51:38.063057+00:00'
   completed_at: '2026-09-17T13:08:44.467568+00:00'
+- id: df-chimera-0917-5
+  title: release-verify MCP stdio purity gate must run against a config it provides
+    (fresh checkout has no chimera.yaml)
+  criteria:
+  - The MCP stdio purity gate runs against a config the step itself provides (generated
+    in the probe's own cwd, or CHIMERA_CONFIG pointing at a generated config) instead
+    of relying on the untracked repo-root chimera.yaml
+  - Both gate formations (simple and speed) return a non-empty merged answer with
+    zero non-JSON-RPC stdout lines when the probe runs from a cwd with no chimera.yaml
+    and only DEEPSEEK_API_KEY set
+  - The release-verify MCP step references no repo secret that does not exist (repo
+    secrets are DEEPSEEK_API_KEY and PYPI_TOKEN only) and an offline test pins the
+    secrets allowlist in .github/workflows/ci.yml
+  - 'The config-less chimera_deliberate MCP path returns an actionable remedy naming
+    chimera config init / CHIMERA_CONFIG instead of available: []'
+  - 'Offline suite green: .venv/bin/python -m pytest tests/ -q'
+  status: complete
+  created_at: '2026-09-17T13:40:10.558887+00:00'
+  completed_at: '2026-09-17T13:58:30.902724+00:00'
