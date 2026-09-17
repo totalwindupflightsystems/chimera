@@ -25,6 +25,12 @@ no provider keys:
   published artifact (scripts/quickstart_battery.py) and the 0.2.5 shape —
   a wheel whose CLI rejects ``--version`` — is replayed against it (the
   battery must exit 1 and name the failing check);
+* every ``secrets.*`` reference in the workflow is inside a documented
+  allowlist (DF-CHIMERA-0917-5): the 0.2.6 MCP gate exported
+  ``secrets.OPENROUTER_API_KEY``, which does not exist in the repository, so
+  GitHub substituted it with an empty string and the step ran
+  half-configured — silently, until the probe failed on an unsatisfiable
+  formation;
 * scripts/release_expected_version.py derives/validates the version offline.
 """
 
@@ -159,6 +165,72 @@ def test_mcp_gate_carries_provider_keys(release_verify_steps: list[dict]) -> Non
     assert probe_steps, "no probe step found"
     env = probe_steps[0].get("env", {})
     assert "DEEPSEEK_API_KEY" in env
+
+
+# --- secret allowlist (DF-CHIMERA-0917-5) ------------------------------------ #
+#
+# CI run 35224141038 (tag v0.2.6): the release-verify MCP gate exported
+# ``OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}`` — a secret that does
+# NOT exist in this repository (``gh secret list`` returns exactly
+# DEEPSEEK_API_KEY and PYPI_TOKEN). GitHub substitutes a missing secret as an
+# EMPTY string with no warning, so the step looked configured while the probe
+# drove a formation whose OpenRouter worker could never be satisfied. Two guards
+# here: the allowlist pins what the workflow may reference, and the probe step
+# must exercise the probe's own config provisioning (no --config/--cwd), which
+# is what makes the gate independent of the untracked repo-root chimera.yaml.
+
+#: Secrets that exist on the repo. ADDING A REFERENCE REQUIRES CREATING THE
+#: SECRET IN THE REPOSITORY FIRST (Settings → Secrets → Actions), then extending
+#: this set deliberately — a typo'd/dangling ``secrets.X`` is silently empty.
+ALLOWED_SECRETS = {"DEEPSEEK_API_KEY", "PYPI_TOKEN"}
+
+
+def test_every_secret_reference_is_in_the_documented_allowlist() -> None:
+    """No ``secrets.*`` reference outside the allowlist (recurrence guard)."""
+    text = WORKFLOW_PATH.read_text(encoding="utf-8")
+    used = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", text))
+    assert used, "no secrets.* reference found — the workflow changed shape"
+    unknown = used - ALLOWED_SECRETS
+    assert not unknown, (
+        f"ci.yml references secret(s) that do not exist in the repository: {sorted(unknown)}. "
+        f"GitHub substitutes a missing secret as an empty string, so the step would run "
+        f"half-configured; create the secret first, then add it to ALLOWED_SECRETS."
+    )
+
+
+def test_mcp_probe_step_does_not_depend_on_a_nonexistent_secret() -> None:
+    """The exact defect: the probe step must not export OPENROUTER_API_KEY."""
+    step = next(
+        s for s in _release_verify_job_steps() if "probe_mcp_stdio" in s.get("run", "")
+    )
+    env = step.get("env") or {}
+    assert "OPENROUTER_API_KEY" not in env, (
+        "the repo has no OPENROUTER_API_KEY secret; the probe remaps uncredentialed "
+        "models onto DEEPSEEK_API_KEY instead (printing each substitution)"
+    )
+    assert set(env) <= ALLOWED_SECRETS, f"unexpected probe-step env: {sorted(env)}"
+
+
+def test_mcp_probe_step_exercises_the_self_provisioning_default() -> None:
+    """No --config/--cwd in the gate: the provisioned-config path is what CI runs.
+
+    Passing a path would test the operator path instead of the default one that
+    a fresh checkout (no untracked chimera.yaml) actually takes.
+    """
+    step = next(
+        s for s in _release_verify_job_steps() if "probe_mcp_stdio" in s.get("run", "")
+    )
+    run = step["run"]
+    assert "--config=" not in run and "--cwd=" not in run
+    assert "provisions its OWN config" in run, (
+        "the step must document that it no longer depends on the repo-root chimera.yaml"
+    )
+
+
+def _release_verify_job_steps() -> list[dict]:
+    with WORKFLOW_PATH.open(encoding="utf-8") as fh:
+        doc = yaml.safe_load(fh)
+    return doc["jobs"]["release-verify"]["steps"]
 
 
 # --- fresh-user journey ------------------------------------------------------- #

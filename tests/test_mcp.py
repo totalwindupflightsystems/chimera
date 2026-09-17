@@ -299,3 +299,91 @@ def test_build_server_forces_stderr_ignoring_config_use_stdout(
     assert server is not None
     # build_server(config=...) must have forced stderr despite use_stdout=True.
     assert obs_mod._CONFIGURED_STREAM is sys.stderr
+
+
+# ---------------------------------------------------------------------------
+# DF-CHIMERA-0917-5 — the config-less MCP surface
+# ---------------------------------------------------------------------------
+#
+# A fresh checkout has no chimera.yaml (untracked by design) and ``run()``
+# falls back to ``ChimeraConfig(defaults=Defaults.empty())`` so the initialize
+# handshake still answers (CH-GAP-041). That config has NO formations, and the
+# tool used to answer ``unknown_formation`` + ``available: []`` — which told an
+# operator nothing about the real problem or its remedy (the 0.2.6 release gate
+# failed on exactly that payload). It must now carry the actionable remedy,
+# while the genuine unknown-formation case (formations DO exist) is unchanged.
+
+
+def _formations_less_server():  # type: ignore[no-untyped-def]
+    """A server whose config has no formations at all, with a spy engine."""
+    from chimera.config import ChimeraConfig, Defaults
+
+    calls: list[tuple] = []
+
+    class SpyEngine:
+        async def deliberate(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            calls.append((args, kwargs))
+            raise AssertionError("a config-less server must not run a deliberation")
+
+    cfg = ChimeraConfig(defaults=Defaults.empty())
+    assert cfg.formations == {}
+    return build_server(config=cfg, engine=SpyEngine()), calls
+
+
+@pytest.mark.asyncio
+async def test_mcp_config_less_deliberate_returns_actionable_remedy() -> None:
+    """No formations → ``config_missing`` naming ``chimera config init``."""
+    server, calls = _formations_less_server()
+    data = await _call(server, "chimera_deliberate", prompt="hello", formation="simple")
+    assert data["error"] == "config_missing"
+    assert data["formation"] == "simple"
+    assert "chimera config init" in data["hint"]
+    assert "CHIMERA_CONFIG" in data["hint"]
+    assert "answer" not in data
+    assert calls == [], "the engine must not run for a config-less server"
+
+
+@pytest.mark.asyncio
+async def test_mcp_config_less_deliberate_default_formation_also_hints() -> None:
+    """The tool's own default formation ('auto') gets the same remedy."""
+    server, _ = _formations_less_server()
+    data = await _call(server, "chimera_deliberate", prompt="hello")
+    assert data["error"] == "config_missing"
+    assert data["formation"] == "auto"
+
+
+@pytest.mark.asyncio
+async def test_mcp_unknown_formation_still_reported_when_formations_exist(config) -> None:  # type: ignore[no-untyped-def]
+    """Parity: an unknown name with formations present keeps the old payload.
+
+    The ``config_missing`` branch must not swallow the DF-CHIMERA-V2-7 contract
+    (``unknown_formation`` + the available names).
+    """
+    assert config.formations, "premise: the fixture config defines formations"
+    server = _make_server(config)
+    data = await _call(server, "chimera_deliberate", prompt="hello", formation="nope")
+    assert data["error"] == "unknown_formation"
+    assert data["available"] == ["audit", "auto", "debate", "simple", "speed"]
+    assert "hint" not in data or "chimera config init" not in data["hint"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_config_less_deliberate_still_accepts_an_explicit_dag() -> None:
+    """An explicit DAG replaces formation selection — the remedy must not fire."""
+    from chimera.config import ChimeraConfig, Defaults
+
+    class DagEngine:
+        async def deliberate(self, prompt, formation, **kwargs):  # noqa: ANN003
+            return SimpleNamespace(
+                answer="dag answer",
+                trace=SimpleNamespace(model_dump=lambda mode: {"formation": formation}),
+            )
+
+    cfg = ChimeraConfig(defaults=Defaults.empty())
+    server = build_server(config=cfg, engine=DagEngine())
+    dag = {"stages": [{"id": "s1", "kind": "worker", "model": "m", "depends_on": []}], "edges": []}
+    data = await _call(
+        server, "chimera_deliberate", prompt="hello", formation="nope",
+        dag=dag, allow_custom_dag=True,
+    )
+    assert data["answer"] == "dag answer"

@@ -72,11 +72,33 @@ def build_server(
         the CLI (exit 2) and ``POST /v1/deliberate`` (HTTP 422) enforce. An
         explicit ``dag`` replaces formation selection and is exempt. The
         success payload shape is unchanged.
+
+        DF-CHIMERA-0917-5: when the server holds NO formations at all (no
+        config was found / the config defines no presets — e.g. a fresh
+        checkout where ``chimera.yaml`` is untracked, or a bare pip install),
+        the payload is ``config_missing`` with the actionable remedy
+        (``chimera config init`` / ``CHIMERA_CONFIG``) instead of
+        ``unknown_formation`` + ``available: []``, which told an operator
+        nothing about how to fix it. The ``unknown_formation`` + ``available``
+        payload is unchanged for the case where formations DO exist.
         """
         from chimera.config import DeliberationOverrides
 
         cfg: ChimeraConfig = state["config"]
         if dag is None and formation not in cfg.formations:
+            if not cfg.formations:
+                return json.dumps(
+                    {
+                        "error": "config_missing",
+                        "formation": formation,
+                        "hint": (
+                            "No formations are configured. Run `chimera config init` "
+                            "in the working directory (or set CHIMERA_CONFIG) and "
+                            "restart the MCP server."
+                        ),
+                    },
+                    indent=2,
+                )
             return json.dumps(
                 {
                     "error": "unknown_formation",

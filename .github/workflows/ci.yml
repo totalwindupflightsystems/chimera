@@ -225,8 +225,19 @@ jobs:
           # OpenRouter leg printed LiteLLM's banner to stdout while 'simple'
           # stayed clean), and the old initialize-only handshake grep passed
           # 0.2.3 — so both formations are probed at full depth.
+          #
+          # DF-CHIMERA-0917-5: the probe provisions its OWN config. The repo-root
+          # chimera.yaml is untracked by design, so a fresh checkout has none and
+          # the probe used to drive an empty config (every call answered
+          # unknown_formation in ~1s with zero provider calls). It now generates
+          # a config in a temp dir with the release venv's own `chimera config
+          # init` and points the child at it via CHIMERA_CONFIG. It also remaps
+          # models whose provider has no credential here (the 'speed' formation's
+          # OpenRouter worker) onto DEEPSEEK_API_KEY, printing each substitution
+          # as FORMATION_MODEL_REMAP=... — so OPENROUTER_API_KEY is NOT required
+          # by this step (the repo has no such secret; only DEEPSEEK_API_KEY and
+          # PYPI_TOKEN exist, and tests/test_release_workflow.py pins that).
           python scripts/probe_mcp_stdio.py --formation=simple /tmp/release-venv/bin/chimera-mcp
           python scripts/probe_mcp_stdio.py --formation=speed /tmp/release-venv/bin/chimera-mcp
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

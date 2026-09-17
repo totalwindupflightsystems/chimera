@@ -19,9 +19,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
+
+import pytest
 
 REPO = Path(__file__).resolve().parent.parent
 PROBE_PATH = REPO / "scripts" / "probe_mcp_stdio.py"
@@ -554,3 +557,566 @@ def test_locked_litellm_honours_the_pin() -> None:
         f"uv.lock pins litellm=={locked}, outside {_litellm_specifier()!r}"
     )
     assert locked not in LITELLM_STDOUT_ROUTING_RELEASES
+
+
+# --- probe-owned config provisioning (DF-CHIMERA-0917-5) ----------------------
+#
+# CI run 35224141038 (tag v0.2.6): the release-verify MCP gate failed with
+# ``PROBE FAIL: chimera_deliberate returned an empty answer`` +
+# ``{"error": "unknown_formation", "formation": "simple", "available": []}``.
+# Root cause: the probe spawned the child with the REPO ROOT as cwd and leaned
+# on the repo-root ``chimera.yaml`` — which is untracked by design
+# (DF-CHIMERA-0916B-4). A fresh CI checkout therefore had NO config, the child
+# loaded empty defaults (``formations == {}``) and answered in ~1s with zero
+# provider calls: the gate looked like it ran while testing nothing.
+#
+# The probe now provisions its own config (generated in a temp dir via the
+# child's own sibling CLI), and remaps models whose provider has no resolved
+# credential so a single-key environment (DEEPSEEK_API_KEY only) can still drive
+# the formation for real. Every remap is printed — never silent.
+
+CONFIG_OPTION = "--config="
+CWD_OPTION = "--cwd="
+
+
+def test_default_plan_generates_a_config_in_a_temp_dir(tmp_path: Path) -> None:
+    """Neither --config nor --cwd: the probe owns the config it drives."""
+    options, cmd = probe.parse_owned_options(["/fake/venv/bin/chimera-mcp"], env={})
+    plan = probe.plan_config_provision(options, temp_dir=str(tmp_path))
+    assert plan.source == "generated"
+    assert plan.generate is True
+    assert plan.cwd == str(tmp_path)
+    assert plan.config_path == str(tmp_path / "chimera.yaml")
+    assert cmd == ["/fake/venv/bin/chimera-mcp"]
+
+
+def test_default_plan_never_falls_back_to_the_repo_root() -> None:
+    """With no temp_dir the plan still provisions elsewhere — never REPO.
+
+    A repo-root cwd is exactly the shape that failed in CI: the live config is
+    untracked, so a checkout has none.
+    """
+    plan = probe.plan_config_provision(probe.ProbeOptions(formation="simple"))
+    assert plan.source == "generated" and plan.generate is True
+    assert plan.cwd != str(REPO)
+    assert os.path.isdir(plan.cwd)
+    assert os.path.basename(plan.cwd).startswith("chimera-probe-cfg-")
+    assert plan.config_path == os.path.join(plan.cwd, "chimera.yaml")
+
+
+def test_config_option_is_explicit_and_derives_cwd_from_the_file(tmp_path: Path) -> None:
+    config = tmp_path / "site" / "chimera.yaml"
+    config.parent.mkdir()
+    config.write_text("formations: {}\n", encoding="utf-8")
+    options, cmd = probe.parse_owned_options(
+        [f"{CONFIG_OPTION}{config}", "/fake/venv/bin/chimera-mcp"], env={}
+    )
+    assert options.config == str(config)
+    assert cmd == ["/fake/venv/bin/chimera-mcp"]  # probe-owned token stripped
+    plan = probe.plan_config_provision(options)
+    assert plan.source == "explicit"
+    assert plan.generate is False
+    assert plan.config_path == str(config)
+    assert plan.cwd == str(config.parent)
+
+
+def test_config_option_with_cwd_option_uses_that_cwd(tmp_path: Path) -> None:
+    config = tmp_path / "cfg.yaml"
+    config.write_text("formations: {}\n", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    options, _ = probe.parse_owned_options(
+        [f"{CONFIG_OPTION}{config}", f"{CWD_OPTION}{elsewhere}"], env={}
+    )
+    plan = probe.plan_config_provision(options)
+    assert plan.config_path == str(config)
+    assert plan.cwd == str(elsewhere)
+
+
+def test_cwd_option_means_the_directory_discovers_its_own_config(tmp_path: Path) -> None:
+    """--cwd without --config: no provisioning, the child walks up from there."""
+    options, cmd = probe.parse_owned_options(
+        [f"{CWD_OPTION}{tmp_path}", "/fake/venv/bin/chimera-mcp"], env={}
+    )
+    plan = probe.plan_config_provision(options)
+    assert plan.source == "cwd"
+    assert plan.generate is False
+    assert plan.config_path is None
+    assert plan.cwd == str(tmp_path)
+    assert cmd == ["/fake/venv/bin/chimera-mcp"]
+
+
+def test_child_command_is_unchanged_by_the_new_owned_options() -> None:
+    """--config/--cwd are probe-owned: they never reach the child argv."""
+    argv = ["--config=/a.yaml", "--cwd=/b", "--formation=debate", "chimera", "mcp"]
+    options, cmd = probe.parse_owned_options(argv, env={})
+    assert cmd == ["chimera", "mcp"]
+    assert (options.config, options.cwd, options.formation) == ("/a.yaml", "/b", "debate")
+
+
+@pytest.mark.parametrize("option", ["--formation", "--config", "--cwd"])
+def test_bare_probe_options_are_usage_errors(capsys, monkeypatch, option: str) -> None:  # type: ignore[no-untyped-def]
+    """A space-separated ``--opt VALUE`` stays ambiguous — exit 2, spawn nothing."""
+
+    def explode(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("no provisioning/driving on a usage error")
+
+    monkeypatch.setattr(probe, "provision_config", explode)
+    monkeypatch.setattr(probe, "drive_stdio", explode)
+    rc = probe.main([option, "/tmp", "/fake/venv/bin/chimera-mcp"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert f"{option}=" in err
+    assert "usage error" in err
+
+
+@pytest.mark.parametrize("option", [CONFIG_OPTION, CWD_OPTION])
+def test_empty_probe_option_values_are_usage_errors(capsys, monkeypatch, option: str) -> None:  # type: ignore[no-untyped-def]
+    """An empty path is unusable — the probe must not silently provision one."""
+
+    def explode(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("no provisioning/driving on a usage error")
+
+    monkeypatch.setattr(probe, "provision_config", explode)
+    monkeypatch.setattr(probe, "drive_stdio", explode)
+    rc = probe.main([option, "/fake/venv/bin/chimera-mcp"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "needs a path" in err
+
+
+def test_config_init_command_prefers_the_childs_sibling_cli(tmp_path: Path) -> None:
+    """The generator is the child's own CLI — never a hand-written YAML template."""
+    for name in ("chimera-mcp", "chimera"):
+        entry = tmp_path / name
+        entry.write_text("#!/bin/sh\n", encoding="utf-8")
+        entry.chmod(0o755)
+    assert probe.config_init_command([str(tmp_path / "chimera-mcp")]) == [
+        str(tmp_path / "chimera"),
+        "config",
+        "init",
+    ]
+
+
+def test_config_init_command_falls_back_to_the_child_python(tmp_path: Path) -> None:
+    (tmp_path / "chimera-mcp").write_text("#!/bin/sh\n", encoding="utf-8")
+    command = probe.config_init_command(
+        [str(tmp_path / "chimera-mcp")], child_python="/tmp/release-venv/bin/python"
+    )
+    assert command == ["/tmp/release-venv/bin/python", "-m", "chimera", "config", "init"]
+
+
+def test_resolve_child_python_prefers_the_bin_sibling(tmp_path: Path) -> None:
+    (tmp_path / "chimera-mcp").write_text("", encoding="utf-8")
+    (tmp_path / "python").write_text("", encoding="utf-8")
+    assert probe.resolve_child_python([str(tmp_path / "chimera-mcp")]) == str(tmp_path / "python")
+
+
+def test_resolve_child_python_falls_back_to_this_interpreter(tmp_path: Path) -> None:
+    (tmp_path / "chimera-mcp").write_text("", encoding="utf-8")
+    assert probe.resolve_child_python([str(tmp_path / "chimera-mcp")]) == sys.executable
+
+
+# --- provision_config: real generation through the child's CLI --------------- #
+
+_FAKE_CLI = """#!{python}
+import shutil, sys
+from pathlib import Path
+
+if sys.argv[1:3] == ["config", "init"]:
+    shutil.copyfile({template!r}, Path.cwd() / "chimera.yaml")
+    print("Created chimera.yaml")
+    raise SystemExit(0)
+print("unexpected args: %r" % (sys.argv[1:],), file=sys.stderr)
+raise SystemExit(9)
+"""
+
+
+def _fake_child_bin(tmp_path: Path) -> Path:
+    """A bin dir holding a stub ``chimera`` that copies the SHIPPED template.
+
+    Using the repo's real ``chimera.yaml.example`` keeps the fixture honest:
+    the remap contract is verified against the template that actually ships.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    cli = bin_dir / "chimera"
+    cli.write_text(
+        _FAKE_CLI.format(python=sys.executable, template=str(REPO / "chimera.yaml.example")),
+        encoding="utf-8",
+    )
+    cli.chmod(0o755)
+    (bin_dir / "chimera-mcp").write_text("#!/bin/sh\n", encoding="utf-8")
+    return bin_dir
+
+
+def test_provision_config_generates_remaps_and_writes_the_config(tmp_path: Path) -> None:
+    """End-to-end offline: generate → remap → write, with the evidence returned."""
+    bin_dir = _fake_child_bin(tmp_path)
+    child_cmd = [str(bin_dir / "chimera-mcp")]
+    plan = probe.plan_config_provision(
+        probe.ProbeOptions(formation="speed"), temp_dir=str(tmp_path / "cfg")
+    )
+    result = probe.provision_config(
+        plan,
+        child_cmd=child_cmd,
+        formation="speed",
+        env={"PATH": os.environ.get("PATH", "")},
+        credential_env={"DEEPSEEK_API_KEY": "test-deepseek"},
+    )
+    assert result.source == "generated"
+    assert result.config_path == plan.config_path
+    assert os.path.isfile(result.config_path)
+    assert os.path.isdir(plan.cwd), "the config dir is kept while the child may still run"
+    assert [r.model for r in result.remaps] == ["openrouter/qwen/qwen3-coder"]
+    remap = result.remaps[0]
+    assert remap.replacement == "deepseek/deepseek-v4-flash"
+    assert remap.env_var == "OPENROUTER_API_KEY"
+    assert remap.role == "speed.worker_models[1]"
+    # The written config really carries the substitution...
+    written = probe.load_config_document(result.config_path)
+    assert written["formations"]["speed"]["worker_models"] == [
+        "deepseek/deepseek-v4-flash",
+        "deepseek/deepseek-v4-flash",
+    ]
+    # ...and only the reference moved: the catalog entry itself is untouched.
+    assert written["models"]["openrouter/qwen/qwen3-coder"]["provider"] == "openrouter"
+
+
+def test_provision_config_leaves_a_credentialed_formation_untouched(tmp_path: Path) -> None:
+    """With the key present nothing is substituted — the leak leg stays exercised."""
+    bin_dir = _fake_child_bin(tmp_path)
+    plan = probe.plan_config_provision(
+        probe.ProbeOptions(formation="speed"), temp_dir=str(tmp_path / "cfg")
+    )
+    result = probe.provision_config(
+        plan,
+        child_cmd=[str(bin_dir / "chimera-mcp")],
+        formation="speed",
+        env={},
+        credential_env={
+            "DEEPSEEK_API_KEY": "test-deepseek",
+            "OPENROUTER_API_KEY": "test-openrouter",
+        },
+    )
+    assert result.remaps == ()
+    written = probe.load_config_document(result.config_path)
+    assert written["formations"]["speed"]["worker_models"] == [
+        "deepseek/deepseek-v4-flash",
+        "openrouter/qwen/qwen3-coder",
+    ]
+
+
+def test_provision_config_fails_loudly_when_generation_fails(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    cli = bin_dir / "chimera"
+    cli.write_text("#!/bin/sh\necho 'boom' >&2\nexit 3\n", encoding="utf-8")
+    cli.chmod(0o755)
+    plan = probe.plan_config_provision(
+        probe.ProbeOptions(formation="simple"), temp_dir=str(tmp_path / "cfg")
+    )
+    with pytest.raises(probe.ProbeSetupError, match="failed"):
+        probe.provision_config(
+            plan, child_cmd=[str(bin_dir / "chimera-mcp")], formation="simple", env={}
+        )
+
+
+def test_provision_config_rejects_a_missing_explicit_config(tmp_path: Path) -> None:
+    plan = probe.plan_config_provision(
+        probe.ProbeOptions(formation="simple", config=str(tmp_path / "nope.yaml"))
+    )
+    with pytest.raises(probe.ProbeSetupError, match="does not exist"):
+        probe.provision_config(plan, child_cmd=["/fake/bin/chimera-mcp"], formation="simple", env={})
+
+
+def test_provision_config_rejects_a_missing_cwd(tmp_path: Path) -> None:
+    plan = probe.plan_config_provision(
+        probe.ProbeOptions(formation="simple", cwd=str(tmp_path / "nope"))
+    )
+    with pytest.raises(probe.ProbeSetupError, match="not a directory"):
+        probe.provision_config(plan, child_cmd=["/fake/bin/chimera-mcp"], formation="simple", env={})
+
+
+def test_yaml_bridge_used_when_this_interpreter_has_no_pyyaml(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The CI runner's python may have no PyYAML — the child's interpreter has it.
+
+    A hand-rolled subset parser is not an option (it silently truncates a
+    document on syntax it does not know), so the parse/serialise fall back to
+    ``python_exe``. Verified for real against the shipped template.
+    """
+    monkeypatch.setattr(probe, "_yaml_available", lambda: False)
+    source = REPO / "chimera.yaml.example"
+    document = probe.load_config_document(str(source), python_exe=sys.executable)
+    assert "speed" in document["formations"]
+    assert document["formations"]["speed"]["worker_models"][1] == "openrouter/qwen/qwen3-coder"
+
+    target = tmp_path / "round-trip.yaml"
+    probe.write_config_document(str(target), document, python_exe=sys.executable)
+    reloaded = probe.load_config_document(str(target), python_exe=sys.executable)
+    assert reloaded == document
+
+
+def test_yaml_load_without_pyyaml_or_interpreter_fails_loudly(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(probe, "_yaml_available", lambda: False)
+    config = tmp_path / "chimera.yaml"
+    config.write_text("formations: {}\n", encoding="utf-8")
+    with pytest.raises(probe.ProbeSetupError, match="PyYAML is not importable"):
+        probe.load_config_document(str(config))
+
+
+# --- formation credential remap (DF-CHIMERA-0917-5) --------------------------- #
+#
+# The generated 'speed' formation uses openrouter/qwen/qwen3-coder, which needs
+# OPENROUTER_API_KEY — a repo secret that does not exist. The gate must not
+# depend on it: uncredentialed models are remapped onto a credentialed deepseek
+# model and every substitution is PRINTED (a silent substitution would weaken
+# the gate's own coverage claim). When the key IS set, nothing is remapped, so
+# the 0.2.3 OpenRouter stdout-leak leg stays exercised.
+
+_QWEN = "openrouter/qwen/qwen3-coder"
+_FLASH = "deepseek/deepseek-v4-flash"
+
+_REMAP_DOC: dict = {
+    "api_keys": {"deepseek": "${DEEPSEEK_API_KEY}", "openrouter": "${OPENROUTER_API_KEY}"},
+    "defaults": {"default_worker": _QWEN, "default_aggregator": _FLASH},
+    "providers": {
+        "deepseek": {"base_url": "https://api.deepseek.com/v1"},
+        "openrouter": {"base_url": "https://openrouter.ai/api/v1"},
+    },
+    "models": {
+        _FLASH: {"provider": "deepseek"},
+        _QWEN: {"provider": "openrouter"},
+    },
+    "formations": {
+        "speed": {
+            "workers": 2,
+            "worker_models": [_FLASH, _QWEN],
+            "aggregator": _FLASH,
+        },
+        "audit": {"workers": 2, "aggregator": "default", "audit": _QWEN},
+        "auto": {"mode": "auto"},
+        "defaults-only": {"workers": 2, "aggregator": _FLASH},
+    },
+}
+
+
+def test_remap_substitutes_an_uncredentialed_model_and_reports_it() -> None:
+    remapped, remaps = probe.remap_uncredentialed_models(
+        _REMAP_DOC, {"DEEPSEEK_API_KEY": "d"}, formation="speed"
+    )
+    assert len(remaps) == 1
+    remap = remaps[0]
+    assert remap.model == _QWEN
+    assert remap.replacement == _FLASH
+    assert remap.env_var == "OPENROUTER_API_KEY"
+    assert remap.role == "speed.worker_models[1]"
+    assert remapped["formations"]["speed"]["worker_models"] == [_FLASH, _FLASH]
+
+
+def test_remap_is_never_silent_evidence_line_shape() -> None:
+    _, remaps = probe.remap_uncredentialed_models(
+        _REMAP_DOC, {"DEEPSEEK_API_KEY": "d"}, formation="speed"
+    )
+    assert remaps[0].evidence_line() == (
+        "FORMATION_MODEL_REMAP=openrouter/qwen/qwen3-coder -> deepseek/deepseek-v4-flash "
+        "(OPENROUTER_API_KEY unset; speed.worker_models[1])"
+    )
+
+
+def test_remap_leaves_credentialed_models_untouched() -> None:
+    remapped, remaps = probe.remap_uncredentialed_models(
+        _REMAP_DOC,
+        {"DEEPSEEK_API_KEY": "d", "OPENROUTER_API_KEY": "o"},
+        formation="speed",
+    )
+    assert remaps == []
+    assert remapped == _REMAP_DOC
+    assert remapped["formations"]["speed"]["worker_models"][1] == _QWEN
+
+
+def test_remap_does_not_mutate_the_input_document() -> None:
+    before = json.dumps(_REMAP_DOC, sort_keys=True)
+    probe.remap_uncredentialed_models(_REMAP_DOC, {"DEEPSEEK_API_KEY": "d"}, formation="speed")
+    assert json.dumps(_REMAP_DOC, sort_keys=True) == before
+
+
+def test_remap_is_scoped_to_the_driven_formation() -> None:
+    """Driving another formation must not rewrite an unrelated preset's models."""
+    remapped, remaps = probe.remap_uncredentialed_models(
+        _REMAP_DOC, {"DEEPSEEK_API_KEY": "d"}, formation="auto"
+    )
+    assert remaps == []  # auto has no explicit models: the dispatcher picks
+    assert remapped["formations"]["audit"]["audit"] == _QWEN
+    assert remapped["formations"]["speed"]["worker_models"] == [_FLASH, _QWEN]
+
+
+def test_remap_handles_the_audit_preset_alias_and_explicit_model() -> None:
+    remapped, remaps = probe.remap_uncredentialed_models(
+        _REMAP_DOC, {"DEEPSEEK_API_KEY": "d"}, formation="audit"
+    )
+    # The explicit audit model AND the preset's implicit worker slots (which
+    # resolve to an uncredentialed defaults.default_worker) are both handled.
+    assert {r.role for r in remaps} == {"audit.audit", "audit.workers(2)"}
+    assert remapped["formations"]["audit"]["audit"] == _FLASH
+    assert remapped["formations"]["audit"]["worker_models"] == [_FLASH, _FLASH]
+    # 'aggregator: default' resolves to a credentialed default — untouched.
+    assert remapped["formations"]["audit"]["aggregator"] == "default"
+
+
+def test_remap_covers_implicit_default_workers() -> None:
+    """A preset with only ``workers: N`` uses defaults.default_worker."""
+    remapped, remaps = probe.remap_uncredentialed_models(
+        _REMAP_DOC, {"DEEPSEEK_API_KEY": "d"}, formation="defaults-only"
+    )
+    assert [r.model for r in remaps] == [_QWEN]
+    assert remaps[0].role == "defaults-only.workers(2)"
+    assert remapped["formations"]["defaults-only"]["worker_models"] == [_FLASH, _FLASH]
+
+
+def test_remap_is_skipped_when_the_fallback_is_also_uncredentialed() -> None:
+    """No credential at all: substitute nothing rather than steer at another dead end."""
+    remapped, remaps = probe.remap_uncredentialed_models(_REMAP_DOC, {}, formation="speed")
+    assert remaps == []
+    assert remapped["formations"]["speed"]["worker_models"] == [_FLASH, _QWEN]
+
+
+def test_remap_unknown_formation_is_a_no_op() -> None:
+    remapped, remaps = probe.remap_uncredentialed_models(
+        _REMAP_DOC, {"DEEPSEEK_API_KEY": "d"}, formation="nope"
+    )
+    assert remaps == [] and remapped == _REMAP_DOC
+
+
+def test_credential_resolution_matches_the_config_loader_rules() -> None:
+    """Mirror of chimera.config.provider_credential_resolved over the document."""
+    doc = {
+        "api_keys": {"deepseek": "${DEEPSEEK_API_KEY}"},
+        "providers": {
+            "openrouter": {"base_url": "x", "api_key_env": "OR_ALT_KEY"},
+            "zai": {"base_url": "x", "api_key": "${ZAI_API_KEY}"},
+            "google": {"base_url": "x", "api_key": "literal-key"},
+        },
+        "models": {_FLASH: {"provider": "deepseek"}, "m": {"provider": "nope"}},
+    }
+    assert probe.provider_credential_resolved(doc, "deepseek", {"DEEPSEEK_API_KEY": "d"}) is True
+    assert probe.provider_credential_resolved(doc, "deepseek", {"DEEPSEEK_API_KEY": "  "}) is False
+    assert probe.provider_credential_resolved(doc, "openrouter", {"OR_ALT_KEY": "k"}) is True
+    assert probe.provider_credential_resolved(doc, "openrouter", {}) is False
+    assert probe.provider_credential_resolved(doc, "zai", {"ZAI_API_KEY": "z"}) is True
+    assert probe.provider_credential_resolved(doc, "google", {}) is True  # literal key
+    assert probe.provider_credential_resolved(doc, "unknown", {"X": "1"}) is False
+    assert probe.provider_credential_resolved(doc, None, {}) is False
+
+
+def test_provider_credential_env_var_names_the_missing_key() -> None:
+    doc = _REMAP_DOC | {"providers": {"openrouter": {"base_url": "x", "api_key_env": "OR_ALT"}}}
+    assert probe.provider_credential_env_var(doc, "openrouter") == "OR_ALT"
+    assert probe.provider_credential_env_var(_REMAP_DOC, "openrouter") == "OPENROUTER_API_KEY"
+    assert probe.provider_credential_env_var(_REMAP_DOC, "deepseek") == "DEEPSEEK_API_KEY"
+    assert probe.provider_credential_env_var(_REMAP_DOC, "missing") is None
+
+
+def test_effective_credential_env_falls_back_to_the_hermes_dotenv(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """A box whose keys live only in ~/.hermes/.env is not read as uncredentialed."""
+    home = tmp_path / "home"
+    (home / ".hermes").mkdir(parents=True)
+    (home / ".hermes" / ".env").write_text("OPENROUTER_API_KEY=or-key\n# c\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    env = probe.effective_credential_env({"DEEPSEEK_API_KEY": "d"})
+    assert env["OPENROUTER_API_KEY"] == "or-key"
+    assert env["DEEPSEEK_API_KEY"] == "d"
+
+
+# --- driver evidence contract for provisioning -------------------------------- #
+
+
+def test_main_provisions_its_own_config_and_reports_it(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict = {}
+
+    def fake_provision(plan, *, child_cmd, formation, env, credential_env=None):  # noqa: ANN001
+        captured["plan"] = plan
+        captured["formation"] = formation
+        captured["init_env"] = env
+        return probe.ProvisionResult(
+            config_path="/tmp/gen/chimera.yaml",
+            cwd="/tmp/gen",
+            source="generated",
+            remaps=(
+                probe.Remap(
+                    model=_QWEN,
+                    replacement=_FLASH,
+                    env_var="OPENROUTER_API_KEY",
+                    role="speed.worker_models[1]",
+                ),
+            ),
+        )
+
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
+        captured["env"] = env
+        captured["cwd"] = cwd
+        lines, order, responses = _handshake_lines()
+        return lines, order, responses, ""
+
+    monkeypatch.setattr(probe, "provision_config", fake_provision)
+    monkeypatch.setattr(probe, "drive_stdio", fake_drive)
+    # The live repo config must NOT leak into the child: CHIMERA_CONFIG is
+    # pinned to the provisioned file.
+    monkeypatch.setenv("CHIMERA_CONFIG", "/home/kara/chimera-v2/chimera.yaml")
+    rc = probe.main(["--formation=speed", "/fake/venv/bin/chimera-mcp"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert captured["plan"].source == "generated"
+    assert "CHIMERA_CONFIG" not in captured["init_env"]
+    assert captured["env"]["CHIMERA_CONFIG"] == "/tmp/gen/chimera.yaml"
+    assert captured["cwd"] == "/tmp/gen"
+    assert "CONFIG_SOURCE=generated" in out
+    assert "CONFIG_PATH=/tmp/gen/chimera.yaml" in out
+    assert "PROBE_CWD=/tmp/gen" in out
+    assert "MODEL_REMAPS_TOTAL=1" in out
+    assert (
+        "FORMATION_MODEL_REMAP=openrouter/qwen/qwen3-coder -> deepseek/deepseek-v4-flash "
+        "(OPENROUTER_API_KEY unset; speed.worker_models[1])" in out
+    )
+    assert "PROBE OK" in out
+
+
+def test_main_cwd_mode_clears_chimera_config_for_the_child(capsys, monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """--cwd must let the child discover ITS directory's config, not the parent's."""
+
+    def fake_provision(plan, *, child_cmd, formation, env, credential_env=None):  # noqa: ANN001
+        return probe.ProvisionResult(None, str(tmp_path), "cwd", ())
+
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
+        fake_drive.env = env  # type: ignore[attr-defined]
+        lines, order, responses = _handshake_lines()
+        return lines, order, responses, ""
+
+    monkeypatch.setattr(probe, "provision_config", fake_provision)
+    monkeypatch.setattr(probe, "drive_stdio", fake_drive)
+    monkeypatch.setenv("CHIMERA_CONFIG", "/home/kara/chimera-v2/chimera.yaml")
+    rc = probe.main([f"{CWD_OPTION}{tmp_path}", "/fake/venv/bin/chimera-mcp"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "CHIMERA_CONFIG" not in fake_drive.env  # type: ignore[attr-defined]
+    assert "CONFIG_SOURCE=cwd" in out
+    assert "CONFIG_PATH=(unset: child discovers its own config from cwd)" in out
+    assert "MODEL_REMAPS_TOTAL=0" in out
+
+
+def test_main_setup_failure_exits_2_without_driving(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """An unprovisionable config is a setup error (exit 2), not a purity failure."""
+
+    def boom(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise probe.ProbeSetupError("`chimera config init` failed (rc=1): nope")
+
+    def explode(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("the child must not be spawned when setup failed")
+
+    monkeypatch.setattr(probe, "provision_config", boom)
+    monkeypatch.setattr(probe, "drive_stdio", explode)
+    rc = probe.main(["/fake/venv/bin/chimera-mcp"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "PROBE SETUP FAIL" in err
+    assert "chimera config init" in err

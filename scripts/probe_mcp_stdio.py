@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Raw stdio MCP stdout-purity probe / gate (DF-CHIMERA-0906-2, DF-CHIMERA-0911-1).
+"""Raw stdio MCP stdout-purity probe / gate (DF-CHIMERA-0906-2, DF-CHIMERA-0911-1,
+DF-CHIMERA-0917-5).
 
 Spawns the real chimera MCP entry point over stdio and drives
 initialize -> notifications/initialized -> tools/list -> tools/call
@@ -23,34 +24,83 @@ drive a non-default formation without editing the script:
     python3 scripts/probe_mcp_stdio.py --formation=speed .venv/bin/chimera-mcp
     CHIMERA_PROBE_FORMATION=speed python3 scripts/probe_mcp_stdio.py .venv/bin/chimera-mcp
 
-``--formation`` is a single probe-owned token (``--formation=NAME``) and is
-stripped from the child command, so it can never be confused with the server
-argv; the env var is invisible to the child command by construction.
+The probe PROVISIONS ITS OWN CONFIG by default (DF-CHIMERA-0917-5). The live
+repo-root ``chimera.yaml`` is untracked by design (DF-CHIMERA-0916B-4), so a
+fresh CI checkout has NO config: ``load_config()`` falls back to empty
+defaults, ``formations == {}`` and every ``chimera_deliberate`` call answers
+``unknown_formation`` in ~1s with zero provider calls — a gate that *looks*
+like it ran while testing nothing. So, with neither ``--config`` nor ``--cwd``,
+the probe creates a temp dir, generates a config there with the child's own
+sibling CLI (``<bin-dir>/chimera config init``, which resolves the shipped
+template via ``chimera.config.find_example_config_path()`` — never a
+hand-written YAML template that would duplicate the config schema), spawns the
+child with that dir as cwd and ``CHIMERA_CONFIG`` pointed at the generated file,
+and prints ``CONFIG_SOURCE=generated`` / ``CONFIG_PATH=<path>``.
 
-The request/validation contract lives in importable pure functions
-(``build_messages``, ``parse_formation``, ``is_jsonrpc_line``,
-``collect_responses``, ``extract_tool_text``, ``check_depth_result``,
-``check_handshake``) so the offline regression suite can verify it without
-spawning chimera or touching the network; only ``main``/``drive_stdio`` do
-subprocess I/O.
+Options owned by the probe (each a SINGLE ``--opt=VALUE`` token, stripped from
+the child command exactly like ``--formation``; a bare ``--opt VALUE`` pair is
+a usage error, exit 2, because the next token could equally be the child's own
+argv):
+
+    --formation=NAME   formation to drive (env: CHIMERA_PROBE_FORMATION)
+    --config=PATH      use this config file (exported to the child as
+                       CHIMERA_CONFIG); cwd defaults to the file's directory
+    --cwd=PATH         run the child in this directory and let it discover the
+                       directory's own chimera.yaml (CHIMERA_CONFIG is cleared
+                       for the child so the walk-up is honest)
+
+Formation satisfiability (DF-CHIMERA-0917-5): the generated ``speed`` formation
+uses ``openrouter/qwen/qwen3-coder``, which needs ``OPENROUTER_API_KEY``. The
+release gate must not depend on repo secrets that may not exist, so before
+driving a formation the probe inspects every model the formation references
+(workers, aggregator, audit, DAG stage models) and remaps any whose provider
+credential does not resolve to a credentialed model (default
+``deepseek/deepseek-v4-flash``), PRINTING each substitution:
+
+    FORMATION_MODEL_REMAP=openrouter/qwen/qwen3-coder -> deepseek/deepseek-v4-flash (OPENROUTER_API_KEY unset)
+
+The remap is applied ONLY to a config the probe generated itself — an
+operator-supplied ``--config``/``--cwd`` config is used exactly as given (the
+probe never rewrites a file it did not create) — and it is never silent: the
+substitutions are reported on stdout and counted in ``MODEL_REMAPS_TOTAL``.
+When the key IS set no remap happens, so the OpenRouter leg (the 0.2.3
+stdout-leak leg) keeps being exercised and the gate's coverage is not weakened.
+
+The request/validation/provisioning contract lives in importable pure functions
+(``build_messages``, ``parse_owned_options``, ``usage_error``,
+``plan_config_provision``, ``formation_model_references``,
+``remap_uncredentialed_models``, ``provider_credential_resolved``,
+``is_jsonrpc_line``, ``collect_responses``, ``extract_tool_text``,
+``check_depth_result``, ``check_handshake``) so the offline regression suite can
+verify it without spawning chimera or touching the network; only
+``provision_config`` and ``main``/``drive_stdio`` do subprocess I/O.
 
 Usage:
     python3 scripts/probe_mcp_stdio.py .venv/bin/chimera-mcp
-    python3 scripts/probe_mcp_stdio.py .venv/bin/chimera mcp
+    python3 scripts/probe_mcp_stdio.py chimera mcp
+    python3 scripts/probe_mcp_stdio.py --config=/srv/chimera.yaml .venv/bin/chimera-mcp
+    python3 scripts/probe_mcp_stdio.py --cwd=/tmp/site-cfg .venv/bin/chimera-mcp
 
 Exit codes: 0 = stdout pure (all JSON-RPC, responses 1/2/3 in order, 3
 tools, chimera_deliberate returns JSON with a non-empty answer);
-1 = pollution or malformed response; 2 = usage error (bad formation option).
+1 = pollution or malformed response; 2 = usage/setup error (bad probe option,
+unreadable --config, unprovisionable config).
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import os
+import re
 import select
 import subprocess
 import sys
+import tempfile
 import time
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, NamedTuple
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -65,6 +115,28 @@ DEPTH_MARKER_NOTE = "17 * 23 = 391"
 #: token; both the option and its value are removed from the child command.
 PROBE_FORMATION_ENV = "CHIMERA_PROBE_FORMATION"
 PROBE_FORMATION_OPTION = "--formation="
+#: Probe-owned config/cwd selectors (DF-CHIMERA-0917-5), same single-token rule.
+PROBE_CONFIG_OPTION = "--config="
+PROBE_CWD_OPTION = "--cwd="
+#: Every option the probe owns; the bare ``--opt VALUE`` spelling of any of
+#: these is a usage error (the value could equally be the child's argv).
+OWNED_BARE_OPTIONS = ("--formation", "--config", "--cwd")
+#: How each owned option must be spelled, for the usage message.
+VALUE_OPTION_LABELS = {
+    "--formation": "--formation=NAME",
+    "--config": "--config=PATH",
+    "--cwd": "--cwd=PATH",
+}
+
+#: Name of the config the probe generates in its own temp directory.
+GENERATED_CONFIG_NAME = "chimera.yaml"
+PROBE_CONFIG_DIR_PREFIX = "chimera-probe-cfg-"
+
+#: Remap target for models whose provider has no resolved credential — the same
+#: model the shipped template already uses as its default worker/aggregator, so
+#: a single-provider (DEEPSEEK_API_KEY only) environment can still drive the
+#: formation for real.
+DEFAULT_REMAP_MODEL = "deepseek/deepseek-v4-flash"
 
 TOOL_INVENTORY = {"chimera_deliberate", "chimera_formations", "chimera_models"}
 EXPECTED_ORDER = [1, 2, 3]
@@ -75,26 +147,601 @@ READ_DEADLINE_S = 300
 DRAIN_DEADLINE_S = 30
 
 
-def parse_formation(argv: list[str], env: dict[str, str] | None = None) -> tuple[str, list[str]]:
-    """Split the probe's own ``--formation=NAME`` option out of ``argv``.
+class ProbeSetupError(RuntimeError):
+    """The probe could not prepare what it needs before spawning the child."""
 
-    Returns ``(formation, child_cmd)``: the formation to drive and the child
-    command with every probe-owned token removed. The env var
-    ``CHIMERA_PROBE_FORMATION`` is honored when no option is given. The
-    option must be the ``--formation=NAME`` form — a bare ``--formation NAME``
-    pair is rejected by :func:`main` (exit 2) rather than guessed at, because
-    the following token could equally be the child's config path.
+
+# --------------------------------------------------------------------------- #
+# Probe-owned options (single-token, stripped from the child command)
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class ProbeOptions:
+    """Parsed probe-owned options (never part of the child command)."""
+
+    formation: str
+    config: str | None = None
+    cwd: str | None = None
+
+
+def usage_error(argv: Sequence[str]) -> str | None:
+    """The usage error for misuse of a probe-owned option, or ``None``.
+
+    Only the single-token spelling is accepted: ``--opt VALUE`` leaves the
+    value ambiguous (it could be the child server's own argv), so it is a
+    usage error rather than a guess.  An empty value (``--config=``) is
+    equally unusable — the probe owns the config it needs.
     """
-    environ = os.environ if env is None else env
+    for arg in argv:
+        for opt in OWNED_BARE_OPTIONS:
+            if arg == opt:
+                return (
+                    "usage error: pass each probe option as a single token "
+                    f"({', '.join(VALUE_OPTION_LABELS[o] for o in OWNED_BARE_OPTIONS)}); "
+                    f"a bare '{opt} VALUE' pair is ambiguous with the child command "
+                    f"(the next token could be the server's own argv). "
+                    f"Alternatively set {PROBE_FORMATION_ENV}."
+                )
+    for arg in argv:
+        if arg in (PROBE_CONFIG_OPTION, PROBE_CWD_OPTION):
+            return f"usage error: {arg.rstrip('=')} needs a path (empty value given)."
+    return None
+
+
+def parse_owned_options(
+    argv: Sequence[str], env: Mapping[str, str] | None = None
+) -> tuple[ProbeOptions, list[str]]:
+    """Split every probe-owned option out of ``argv``.
+
+    Returns ``(options, child_cmd)``: the parsed options and the child command
+    with every probe-owned token removed. The env var
+    ``CHIMERA_PROBE_FORMATION`` is honored when no ``--formation`` option is
+    given; ``--formation=`` with an empty value keeps the env/default formation
+    (backward compatible).
+    """
+    environ: Mapping[str, str] = os.environ if env is None else env
     formation = (environ.get(PROBE_FORMATION_ENV) or "").strip() or DEPTH_FORMATION
+    config: str | None = None
+    cwd: str | None = None
     cmd: list[str] = []
     for arg in argv:
         if arg.startswith(PROBE_FORMATION_OPTION):
             value = arg[len(PROBE_FORMATION_OPTION) :].strip()
             formation = value or formation
             continue
+        if arg.startswith(PROBE_CONFIG_OPTION):
+            value = arg[len(PROBE_CONFIG_OPTION) :].strip()
+            config = value or config
+            continue
+        if arg.startswith(PROBE_CWD_OPTION):
+            value = arg[len(PROBE_CWD_OPTION) :].strip()
+            cwd = value or cwd
+            continue
         cmd.append(arg)
-    return formation, cmd
+    return ProbeOptions(formation=formation, config=config, cwd=cwd), cmd
+
+
+def parse_formation(
+    argv: list[str], env: dict[str, str] | None = None
+) -> tuple[str, list[str]]:
+    """Backward-compatible single-option view of :func:`parse_owned_options`."""
+    options, cmd = parse_owned_options(argv, env)
+    return options.formation, cmd
+
+
+# --------------------------------------------------------------------------- #
+# Config provisioning (DF-CHIMERA-0917-5)
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class ProvisionPlan:
+    """Where the child's config comes from, decided without touching the disk."""
+
+    source: str  # "generated" | "explicit" | "cwd"
+    cwd: str
+    config_path: str | None  # None → the child discovers its own config (cwd mode)
+    generate: bool
+
+
+class ProvisionResult(NamedTuple):
+    """The config actually handed to the child, plus the remaps applied."""
+
+    config_path: str | None
+    cwd: str
+    source: str
+    remaps: tuple[Remap, ...]
+
+
+def plan_config_provision(
+    options: ProbeOptions, *, temp_dir: str | None = None
+) -> ProvisionPlan:
+    """Decide where the child's config/cwd come from (pure).
+
+    * ``--config=PATH`` → that file, ``CHIMERA_CONFIG=PATH``, cwd = ``--cwd``
+      or the file's directory.
+    * ``--cwd=PATH`` (no ``--config``) → run in ``PATH`` and let the child walk
+      up to the directory's own ``chimera.yaml`` (``CHIMERA_CONFIG`` cleared).
+    * neither → the probe GENERATES a config in ``temp_dir`` (a fresh
+      ``tempfile.mkdtemp`` when ``temp_dir`` is None) and points the child at
+      it. This is the deterministic default: a fresh checkout with no
+      untracked ``chimera.yaml`` is enough.
+    """
+    if options.config:
+        path = os.path.abspath(os.path.expanduser(options.config))
+        cwd = (
+            os.path.abspath(os.path.expanduser(options.cwd))
+            if options.cwd
+            else os.path.dirname(path)
+        )
+        return ProvisionPlan(source="explicit", cwd=cwd, config_path=path, generate=False)
+    if options.cwd:
+        cwd = os.path.abspath(os.path.expanduser(options.cwd))
+        return ProvisionPlan(source="cwd", cwd=cwd, config_path=None, generate=False)
+    directory = (
+        os.path.abspath(temp_dir)
+        if temp_dir
+        else tempfile.mkdtemp(prefix=PROBE_CONFIG_DIR_PREFIX)
+    )
+    return ProvisionPlan(
+        source="generated",
+        cwd=directory,
+        config_path=os.path.join(directory, GENERATED_CONFIG_NAME),
+        generate=True,
+    )
+
+
+def _child_bin_dir(child_cmd: Sequence[str]) -> str:
+    """The bin directory that owns the child entry point ('' when argv-less)."""
+    if not child_cmd:
+        return ""
+    return os.path.dirname(os.path.abspath(child_cmd[0]))
+
+
+def resolve_child_python(
+    child_cmd: Sequence[str], *, fallback: str | None = None
+) -> str:
+    """The interpreter that owns the child entry point.
+
+    ``<bin-dir>/python`` next to ``chimera-mcp`` is the interpreter the child
+    itself runs under — the one guaranteed to have chimera's dependencies
+    (notably PyYAML, which the probe's own interpreter may lack in CI).
+    """
+    bin_dir = _child_bin_dir(child_cmd)
+    for name in ("python", "python3"):
+        candidate = os.path.join(bin_dir, name) if bin_dir else ""
+        if candidate and os.path.isfile(candidate):
+            return candidate
+    return fallback or sys.executable
+
+
+def config_init_command(
+    child_cmd: Sequence[str], *, child_python: str | None = None
+) -> list[str]:
+    """The command that generates a config: the child's sibling CLI.
+
+    ``<bin-dir>/chimera config init`` next to ``chimera-mcp`` when it exists
+    (the venv case, including the release gate's ``/tmp/release-venv``), else
+    ``<child-python> -m chimera config init``. Both resolve the shipped
+    template through ``chimera.config.find_example_config_path()`` — the probe
+    never hand-writes a YAML template that would duplicate the config schema.
+    """
+    sibling = os.path.join(_child_bin_dir(child_cmd), "chimera")
+    if os.path.isfile(sibling):
+        return [sibling, "config", "init"]
+    exe = child_python or resolve_child_python(child_cmd)
+    return [exe, "-m", "chimera", "config", "init"]
+
+
+#: Bridge programs: parse/serialise the YAML document with the CHILD's
+#: interpreter when the probe's own interpreter has no PyYAML. A hand-rolled
+#: subset parser is never used — it silently truncates documents on syntax it
+#: does not know (e.g. ``>-`` chomping), which would corrupt the config we are
+#: about to hand to the server.
+_YAML_TO_JSON_PROGRAM = (
+    "import json,sys,yaml;"
+    "sys.stdout.write(json.dumps(yaml.safe_load(open(sys.argv[1], encoding='utf-8'))))"
+)
+_JSON_TO_YAML_PROGRAM = (
+    "import json,sys,yaml;"
+    "yaml.safe_dump(json.load(sys.stdin), open(sys.argv[1], 'w', encoding='utf-8'),"
+    "sort_keys=False, default_flow_style=False)"
+)
+
+
+def _yaml_available() -> bool:
+    """True when this interpreter can import PyYAML."""
+    try:
+        import yaml  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def load_config_document(path: str, *, python_exe: str | None = None) -> dict:
+    """Parse a config YAML document into a plain dict.
+
+    Prefers this interpreter's PyYAML; otherwise delegates to *python_exe*
+    (the child's sibling interpreter). Raises :class:`ProbeSetupError` when
+    neither can parse it, rather than guessing at the document.
+    """
+    try:
+        if _yaml_available():
+            import yaml
+
+            with open(path, encoding="utf-8") as fh:
+                data = yaml.safe_load(fh)
+        elif python_exe:
+            proc = subprocess.run(
+                [python_exe, "-c", _YAML_TO_JSON_PROGRAM, str(path)],
+                capture_output=True,
+                text=True,
+            )
+            if proc.returncode != 0:
+                raise ProbeSetupError(
+                    f"failed to parse {path} with {python_exe}: "
+                    f"{proc.stderr.strip()[:400]}"
+                )
+            data = json.loads(proc.stdout)
+        else:
+            raise ProbeSetupError(
+                f"PyYAML is not importable by {sys.executable} and no child "
+                f"interpreter is known — cannot read {path}"
+            )
+    except OSError as exc:
+        raise ProbeSetupError(f"cannot read config {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ProbeSetupError(f"config {path} did not parse to a mapping")
+    return data
+
+
+def write_config_document(
+    path: str, document: Mapping[str, Any], *, python_exe: str | None = None
+) -> None:
+    """Serialise *document* back to *path* (same interpreter policy as load)."""
+    if _yaml_available():
+        import yaml
+
+        with open(path, "w", encoding="utf-8") as fh:
+            yaml.safe_dump(dict(document), fh, sort_keys=False, default_flow_style=False)
+        return
+    if not python_exe:
+        raise ProbeSetupError(
+            f"PyYAML is not importable by {sys.executable} and no child "
+            f"interpreter is known — cannot write {path}"
+        )
+    payload = json.dumps(document)
+    proc = subprocess.run(
+        [python_exe, "-c", _JSON_TO_YAML_PROGRAM, str(path)],
+        input=payload,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise ProbeSetupError(
+            f"failed to write {path} with {python_exe}: {proc.stderr.strip()[:400]}"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Credential view + formation model remap (DF-CHIMERA-0917-5)
+# --------------------------------------------------------------------------- #
+
+_ENV_PLACEHOLDER = re.compile(r"^\$\{([A-Z0-9_]+)\}$")
+
+
+class Remap(NamedTuple):
+    """One uncredentialed model substituted for a credentialed one."""
+
+    model: str
+    replacement: str
+    env_var: str
+    role: str
+
+    def evidence_line(self) -> str:
+        """The exact stdout evidence line for this substitution."""
+        return (
+            f"FORMATION_MODEL_REMAP={self.model} -> {self.replacement} "
+            f"({self.env_var} unset; {self.role})"
+        )
+
+
+def _placeholder_env_var(value: Any) -> str | None:
+    """The env var name inside a ``${VAR}`` config value, or ``None``."""
+    if not isinstance(value, str):
+        return None
+    match = _ENV_PLACEHOLDER.match(value.strip())
+    return match.group(1) if match else None
+
+
+def _env_value(env: Mapping[str, str], name: str | None) -> str:
+    if not name:
+        return ""
+    return (env.get(name) or "").strip()
+
+
+def _credential_from_value(value: Any, env: Mapping[str, str]) -> str | None:
+    """Resolve a config credential value (literal or ``${VAR}``) against *env*."""
+    if not isinstance(value, str):
+        return None
+    var = _placeholder_env_var(value)
+    if var is not None:
+        return _env_value(env, var) or None
+    return value.strip() or None
+
+
+def effective_credential_env(env: Mapping[str, str]) -> dict[str, str]:
+    """*env* plus the ``~/.hermes/.env`` fallback the config loader uses.
+
+    ``chimera.config`` resolves provider keys from the process environment and,
+    failing that, from ``~/.hermes/.env``; the probe mirrors that so a box whose
+    keys live only in the Hermes dotenv file is not mis-read as uncredentialed.
+    """
+    merged = dict(_hermes_dotenv_values())
+    merged.update({k: v for k, v in env.items() if isinstance(v, str)})
+    return merged
+
+
+def _hermes_dotenv_values() -> dict[str, str]:
+    """Best-effort parse of ``~/.hermes/.env`` (stdlib only)."""
+    values: dict[str, str] = {}
+    try:
+        with open(os.path.expanduser("~/.hermes/.env"), encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return values
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key, val = key.strip(), val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in ("'", '"'):
+            val = val[1:-1]
+        values[key] = val
+    return values
+
+
+def provider_credential_env_var(
+    config: Mapping[str, Any], provider: str | None
+) -> str | None:
+    """The env var name that must be set for *provider*, if the config names one."""
+    if not provider:
+        return None
+    entry = (config.get("providers") or {}).get(provider)
+    if isinstance(entry, Mapping):
+        if entry.get("api_key_env"):
+            return str(entry["api_key_env"])
+        var = _placeholder_env_var(entry.get("api_key"))
+        if var:
+            return var
+    return _placeholder_env_var((config.get("api_keys") or {}).get(provider))
+
+
+def provider_credential_resolved(
+    config: Mapping[str, Any], provider: str | None, env: Mapping[str, str]
+) -> bool:
+    """Mirror of ``chimera.config.provider_credential_resolved`` over the document.
+
+    Resolution order: ``api_keys[provider]`` (literal or ``${VAR}``) →
+    ``providers[provider].api_key`` → ``providers[provider].api_key_env``.
+    """
+    if not provider:
+        return False
+    if _credential_from_value((config.get("api_keys") or {}).get(provider), env):
+        return True
+    entry = (config.get("providers") or {}).get(provider)
+    if isinstance(entry, Mapping):
+        if _credential_from_value(entry.get("api_key"), env):
+            return True
+        if _env_value(env, entry.get("api_key_env") if entry.get("api_key_env") else None):
+            return True
+    return False
+
+
+def model_provider(config: Mapping[str, Any], model: str) -> str | None:
+    """The provider named by *model*'s catalog entry, or ``None``."""
+    entry = (config.get("models") or {}).get(model)
+    if isinstance(entry, Mapping) and entry.get("provider"):
+        return str(entry["provider"])
+    return None
+
+
+def resolve_alias(config: Mapping[str, Any], name: str) -> str:
+    """Resolve the ``default`` / ``default_worker`` formation aliases."""
+    defaults = config.get("defaults") or {}
+    if name == "default":
+        return str(defaults.get("default_aggregator") or name)
+    if name == "default_worker":
+        return str(defaults.get("default_worker") or name)
+    return name
+
+
+def formation_model_references(preset: Any) -> list[tuple[tuple, str]]:
+    """``(path, model-name)`` for every model a formation preset references.
+
+    Covers the named-preset reference sites: ``aggregator``/``audit`` scalars,
+    ``aggregators``/``worker_models`` lists and ``dag.stages[*].model``. The
+    implicit worker slots of a preset that only sets ``workers: N`` are handled
+    separately by :func:`_implicit_worker_slots` (they use
+    ``defaults.default_worker``).
+    """
+    refs: list[tuple[tuple, str]] = []
+    if not isinstance(preset, Mapping):
+        return refs
+    for key in ("aggregator", "audit"):
+        value = preset.get(key)
+        if isinstance(value, str) and value.strip():
+            refs.append(((key,), value.strip()))
+    for key in ("aggregators", "worker_models"):
+        value = preset.get(key)
+        if isinstance(value, list):
+            for index, item in enumerate(value):
+                if isinstance(item, str) and item.strip():
+                    refs.append(((key, index), item.strip()))
+    dag = preset.get("dag")
+    if isinstance(dag, Mapping):
+        for index, stage in enumerate(dag.get("stages") or []):
+            model = stage.get("model") if isinstance(stage, Mapping) else None
+            if isinstance(model, str) and model.strip():
+                refs.append((("dag", "stages", index, "model"), model.strip()))
+    return refs
+
+
+def _implicit_worker_slots(preset: Any) -> int:
+    """Worker slots that fall back to ``defaults.default_worker`` (0 when none)."""
+    if not isinstance(preset, Mapping) or preset.get("mode") == "auto":
+        return 0
+    if preset.get("worker_models") or preset.get("dag"):
+        return 0
+    workers = preset.get("workers")
+    if isinstance(workers, int) and workers > 0:
+        return workers
+    return 0
+
+
+def _role(formation: str, path: tuple) -> str:
+    """Human-readable reference site, e.g. ``speed.worker_models[1]``."""
+    trail = ""
+    for key in path:
+        trail += f"[{key}]" if isinstance(key, int) else (f".{key}" if trail else str(key))
+    return f"{formation}.{trail}"
+
+
+def remap_uncredentialed_models(
+    config: Mapping[str, Any],
+    env: Mapping[str, str],
+    *,
+    formation: str,
+    fallback: str = DEFAULT_REMAP_MODEL,
+) -> tuple[dict, list[Remap]]:
+    """Substitute models the *formation* references that have no credential.
+
+    Pure: takes the parsed config document plus an environment mapping and
+    returns ``(new_config, remaps)`` — the document is deep-copied, never
+    mutated in place. Every substitution is returned as a :class:`Remap` so the
+    caller can PRINT it; a remap is never silent, because a gate that quietly
+    substitutes a different model weakens its own coverage claim.
+
+    The remap happens only when the fallback model itself has a resolved
+    credential — otherwise nothing is substituted (and the caller reports the
+    formation as unsatisfiable) rather than steering the child at another model
+    that cannot run either.
+    """
+    document = copy.deepcopy(dict(config))
+    preset = (document.get("formations") or {}).get(formation)
+    if not isinstance(preset, dict):
+        return document, []
+
+    fallback_provider = model_provider(document, fallback)
+    fallback_usable = provider_credential_resolved(document, fallback_provider, env)
+    remaps: list[Remap] = []
+
+    def _substitute(path: tuple, name: str, resolved: str) -> None:
+        # Reference paths are preset-relative (they name keys inside the
+        # formation preset, e.g. ``worker_models[1]`` / ``dag.stages[0].model``).
+        target: Any = preset
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = fallback
+        env_var = (
+            provider_credential_env_var(document, model_provider(document, resolved))
+            or "provider credentials"
+        )
+        remaps.append(
+            Remap(
+                model=resolved,
+                replacement=fallback,
+                env_var=env_var,
+                role=_role(formation, path),
+            )
+        )
+
+    for path, name in formation_model_references(preset):
+        resolved = resolve_alias(document, name)
+        if provider_credential_resolved(document, model_provider(document, resolved), env):
+            continue  # credentialed — untouched, the leak leg stays exercised
+        if fallback_usable:
+            _substitute(path, name, resolved)
+
+    slots = _implicit_worker_slots(preset)
+    if slots:
+        default_worker = resolve_alias(document, "default_worker")
+        credentialed = provider_credential_resolved(
+            document, model_provider(document, default_worker), env
+        )
+        if not credentialed and fallback_usable:
+            preset["worker_models"] = [fallback] * slots
+            env_var = (
+                provider_credential_env_var(
+                    document, model_provider(document, default_worker)
+                )
+                or "provider credentials"
+            )
+            remaps.append(
+                Remap(
+                    model=default_worker,
+                    replacement=fallback,
+                    env_var=env_var,
+                    role=f"{formation}.workers({slots})",
+                )
+            )
+    return document, remaps
+
+
+def provision_config(
+    plan: ProvisionPlan,
+    *,
+    child_cmd: Sequence[str],
+    formation: str,
+    env: Mapping[str, str],
+    credential_env: Mapping[str, str] | None = None,
+) -> ProvisionResult:
+    """Make the config the child will use ready on disk (subprocess I/O).
+
+    ``env`` is the base environment the child runs under (``CHIMERA_CONFIG``
+    must not be in it — the caller pins it afterwards). For a generated config
+    this runs the child's sibling CLI, then applies — and reports — the
+    formation's credential remaps. The generated directory is deliberately left
+    on disk: the caller prints its path as evidence and the child may still be
+    running when the probe returns.
+    """
+    if plan.source == "generated":
+        os.makedirs(plan.cwd, exist_ok=True)
+        command = config_init_command(child_cmd)
+        proc = subprocess.run(
+            command, cwd=plan.cwd, env=dict(env), capture_output=True, text=True
+        )
+        assert plan.config_path is not None
+        if proc.returncode != 0 or not os.path.isfile(plan.config_path):
+            raise ProbeSetupError(
+                f"`{' '.join(command)}` failed in {plan.cwd} "
+                f"(rc={proc.returncode}): {(proc.stderr or proc.stdout).strip()[:600]}"
+            )
+        child_python = resolve_child_python(child_cmd)
+        document = load_config_document(plan.config_path, python_exe=child_python)
+        remapped, remaps = remap_uncredentialed_models(
+            document, credential_env if credential_env is not None else env, formation=formation
+        )
+        if remaps:
+            write_config_document(plan.config_path, remapped, python_exe=child_python)
+        return ProvisionResult(plan.config_path, plan.cwd, plan.source, tuple(remaps))
+
+    if plan.source == "explicit":
+        assert plan.config_path is not None
+        if not os.path.isfile(plan.config_path):
+            raise ProbeSetupError(f"--config={plan.config_path} does not exist")
+        return ProvisionResult(plan.config_path, plan.cwd, plan.source, ())
+
+    if not os.path.isdir(plan.cwd):
+        raise ProbeSetupError(f"--cwd={plan.cwd} is not a directory")
+    return ProvisionResult(None, plan.cwd, plan.source, ())
+
+
+# --------------------------------------------------------------------------- #
+# JSON-RPC request / response contract
+# --------------------------------------------------------------------------- #
 
 
 def depth_arguments(formation: str = DEPTH_FORMATION) -> dict:
@@ -288,20 +935,44 @@ def drive_stdio(
 
 def main(argv: list[str] | None = None) -> int:
     raw = list(argv) if argv is not None else sys.argv[1:]
-    if any(a == PROBE_FORMATION_OPTION.rstrip("=") for a in raw):
-        print(
-            f"usage error: pass the formation as {PROBE_FORMATION_OPTION}NAME "
-            f"(a single token) or set {PROBE_FORMATION_ENV}",
-            file=sys.stderr,
-        )
+    problem = usage_error(raw)
+    if problem:
+        print(problem, file=sys.stderr)
         return 2
-    formation, cmd = parse_formation(raw)
+    options, cmd = parse_owned_options(raw)
     if not cmd:
         cmd = [os.path.join(REPO, ".venv", "bin", "chimera-mcp")]
 
     env = dict(os.environ)
     env["PYTHONUNBUFFERED"] = "1"
-    stdout_lines, order, responses, err = drive_stdio(cmd, env, _repo_cwd(), formation)
+    # The credential view mirrors the config loader (process env, then the
+    # Hermes dotenv fallback) so a box whose keys live only in ~/.hermes/.env is
+    # not mis-read as uncredentialed.
+    credential_env = effective_credential_env(env)
+    init_env = {k: v for k, v in env.items() if k != "CHIMERA_CONFIG"}
+
+    plan = plan_config_provision(options)
+    try:
+        provisioned = provision_config(
+            plan,
+            child_cmd=cmd,
+            formation=options.formation,
+            env=init_env,
+            credential_env=credential_env,
+        )
+    except ProbeSetupError as exc:
+        print(f"PROBE SETUP FAIL: {exc}", file=sys.stderr)
+        return 2
+
+    if provisioned.config_path:
+        env["CHIMERA_CONFIG"] = provisioned.config_path
+    else:
+        # cwd mode: let the child discover the directory's own chimera.yaml.
+        env.pop("CHIMERA_CONFIG", None)
+
+    stdout_lines, order, responses, err = drive_stdio(
+        cmd, env, provisioned.cwd, options.formation
+    )
 
     problems = check_handshake(stdout_lines, order, responses)
     depth_problems, depth_info = check_depth_result(responses.get(3, {}).get("result", {}))
@@ -309,7 +980,16 @@ def main(argv: list[str] | None = None) -> int:
 
     tool_names = {t.get("name") for t in responses.get(2, {}).get("result", {}).get("tools", [])}
     print(f"CHILD_CMD={' '.join(cmd)}")
-    print(f"FORMATION={formation}")
+    print(f"FORMATION={options.formation}")
+    print(f"CONFIG_SOURCE={provisioned.source}")
+    print(
+        "CONFIG_PATH="
+        + (provisioned.config_path or "(unset: child discovers its own config from cwd)")
+    )
+    print(f"PROBE_CWD={provisioned.cwd}")
+    print(f"MODEL_REMAPS_TOTAL={len(provisioned.remaps)}")
+    for remap in provisioned.remaps:
+        print(remap.evidence_line())
     print(f"NON_JSON_RPC_STDOUT_LINES={sum(1 for ln in stdout_lines if not is_jsonrpc_line(ln))}")
     print(f"RESPONSE_IDS={order}")
     print(f"TOOL_NAMES={sorted(tool_names)}")
@@ -335,11 +1015,6 @@ def main(argv: list[str] | None = None) -> int:
         f"3 tools; {DEPTH_TOOL} returned a non-empty merged answer"
     )
     return 0
-
-
-def _repo_cwd() -> str:
-    """cwd for the spawned server: the repo root (finds its chimera.yaml)."""
-    return REPO
 
 
 if __name__ == "__main__":
