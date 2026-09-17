@@ -102,7 +102,7 @@ Notes:
 - Default (no flag) and `--verbose` human output are unchanged: boxed answer
   panel on stdout, warnings beside it, optional trace table.
 
-### Unknown formations (all three surfaces)
+### Unknown formations (all four surfaces)
 
 An unknown `--formation` name is rejected, never silently swapped for `auto`:
 
@@ -111,6 +111,7 @@ An unknown `--formation` name is rejected, never silently swapped for `auto`:
 | CLI | `error: Unknown formation: <value>. Available formations: ...` on **stderr**, exit **2**, no provider call and no billing |
 | REST | `POST /v1/deliberate` → HTTP **422** `{"detail": "Unknown formation: <value>"}` |
 | MCP | `chimera_deliberate` → `{"error": "unknown_formation", "formation": ..., "available": [...]}` |
+| WEB | `POST /web/sessions/{id}/chat` → HTTP **422** `{"detail": "Unknown formation: <value>. Available formations: ..."}` |
 
 Run `chimera formations` (or `GET /v1/formations` / the `chimera_formations`
 MCP tool) to discover the valid names. An explicit `--dag` payload replaces

@@ -81,6 +81,27 @@ async def session_chat(session_id: str, body: ChatRequest, request: Request) -> 
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id!r} not found")
 
+    # DF-CHIMERA-0917-2: reject an unknown formation at the HTTP edge, like the
+    # REST surface (422) and the CLI (exit 2) already do.  Without this check
+    # the name travelled straight into ``engine.deliberate``, where the
+    # dispatcher logs a structlog ``unknown_formation`` warning and silently
+    # falls back to ``auto`` — a typo therefore bought a full deliberation on
+    # the WRONG formation, billed the providers, and this surface answered 200.
+    # The check runs before the SSE readiness/broadcast block and before any
+    # turn is recorded, so a rejected request costs zero provider calls.  The
+    # dispatcher's internal fallback itself is intentional for programmatic
+    # callers and stays untouched.
+    cfg = request.app.state.config
+    if body.formation not in cfg.formations:
+        available = ", ".join(sorted(cfg.formations))
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Unknown formation: {body.formation}. "
+                f"Available formations: {available}."
+            ),
+        )
+
     engine = request.app.state.engine
 
     # Build context-augmented prompt
