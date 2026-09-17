@@ -65,9 +65,27 @@ def build_server(
         ``progressive`` / ``wait_messages`` / ``trigger`` enable progressive
         prompting — wait_messages are sent sequentially to each worker before
         the real prompt, improving context absorption for large inputs.
+
+        DF-CHIMERA-V2-7: an unknown ``formation`` returns an error payload
+        (``unknown_formation`` + the available names) instead of silently
+        deliberating with the dispatcher's ``auto`` fallback — the same rule
+        the CLI (exit 2) and ``POST /v1/deliberate`` (HTTP 422) enforce. An
+        explicit ``dag`` replaces formation selection and is exempt. The
+        success payload shape is unchanged.
         """
         from chimera.config import DeliberationOverrides
 
+        cfg: ChimeraConfig = state["config"]
+        if dag is None and formation not in cfg.formations:
+            return json.dumps(
+                {
+                    "error": "unknown_formation",
+                    "formation": formation,
+                    "available": sorted(cfg.formations),
+                    "hint": "Call chimera_formations to list available formations.",
+                },
+                indent=2,
+            )
         overrides = DeliberationOverrides(
             stage_models=stage_models,
             progressive=progressive,

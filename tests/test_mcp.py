@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -90,6 +91,69 @@ async def test_mcp_deliberate_progressive(config) -> None:  # type: ignore[no-un
     )
     assert data["answer"] == "FINAL MCP ANSWER"
     assert data["trace"]["formation"] == "simple"
+
+
+# ---------------------------------------------------------------------------
+# DF-CHIMERA-V2-7 — unknown formation on the MCP surface
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_mcp_deliberate_unknown_formation_returns_error(config) -> None:  # type: ignore[no-untyped-def]
+    """C3: an unknown formation is an error payload, not a silent ``auto`` run.
+
+    The tool used to pass the name straight to the engine, which logged
+    ``unknown_formation`` and deliberated anyway — the mirror of the CLI's
+    silent fallback (the CLI now exits 2, REST answers 422).
+    """
+    server = _make_server(config)
+    data = await _call(server, "chimera_deliberate", prompt="hello", formation="nope")
+    assert data["error"] == "unknown_formation"
+    assert data["formation"] == "nope"
+    assert data["available"] == ["audit", "auto", "debate", "simple", "speed"]
+    assert "answer" not in data  # no deliberation result smuggled in
+
+
+@pytest.mark.asyncio
+async def test_mcp_unknown_formation_never_calls_the_engine(config) -> None:  # type: ignore[no-untyped-def]
+    """The rejection happens before the engine — zero provider calls, no billing."""
+    calls: list[tuple] = []
+
+    class SpyEngine:
+        async def deliberate(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            calls.append((args, kwargs))
+            raise AssertionError("engine must not run for an unknown formation")
+
+    server = build_server(config=config, engine=SpyEngine())
+    data = await _call(server, "chimera_deliberate", prompt="hello", formation="nope")
+    assert data["error"] == "unknown_formation"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_mcp_explicit_dag_bypasses_formation_validation(config) -> None:  # type: ignore[no-untyped-def]
+    """An explicit DAG replaces formation selection, so ``formation`` is exempt."""
+    calls: list[tuple] = []
+
+    class DagEngine:
+        async def deliberate(self, prompt, formation, **kwargs):  # noqa: ANN003
+            calls.append((prompt, formation, kwargs))
+            return SimpleNamespace(
+                answer="dag answer",
+                trace=SimpleNamespace(
+                    model_dump=lambda mode: {"formation": formation}
+                ),
+            )
+
+    server = build_server(config=config, engine=DagEngine())
+    dag = {"stages": [{"id": "s1", "kind": "worker", "model": "m",
+                       "depends_on": []}], "edges": []}
+    data = await _call(
+        server, "chimera_deliberate", prompt="hello", formation="nope",
+        dag=dag, allow_custom_dag=True,
+    )
+    assert data["answer"] == "dag answer"
+    assert len(calls) == 1
+    assert calls[0][2]["dag"] == dag
 
 
 def test_mcp_run_with_explicit_config_path(tmp_path) -> None:

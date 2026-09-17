@@ -234,6 +234,44 @@ def _load_cfg(ctx: click.Context) -> ChimeraConfig:
     return cfg
 
 
+def _validate_formation(cfg: ChimeraConfig, formation: str, dag: Any) -> None:
+    """Reject an unknown formation before any provider call (DF-CHIMERA-V2-7).
+
+    The three user-facing surfaces must agree on an unknown formation name.
+    REST already answers 422 ``Unknown formation: <name>``; the CLI used to
+    hand the name straight to the dispatcher, which logs a structlog
+    ``unknown_formation`` warning and silently falls back to ``auto`` — the
+    process printed an answer and exited 0, so a typo (``-f dabate``) bought a
+    full deliberation on the wrong formation and billed the providers.
+
+    The dispatcher fallback itself is INTENTIONAL and stays (it is the engine's
+    internal safety net for programmatic callers, covered by
+    ``tests/test_dispatcher.py::test_dispatcher_unknown_formation_uses_auto``);
+    this guard belongs at the user-facing edge, mirroring the API handler's
+    check in ``src/chimera/api/server.py``.
+
+    ``dag`` exempts validation entirely: an explicit client DAG replaces
+    formation selection, so ``--dag`` / ``--allow-custom-dag`` behave exactly
+    as before.
+
+    The error goes to ``err_console`` (stderr) with the house ``error:``
+    prefix so CLI stdout purity holds (DF-CHIMERA-V2-3), and the process exits
+    2 — the same code the other usage errors use. Zero provider calls, zero
+    billing.
+    """
+    if dag is not None:
+        return
+    if formation in cfg.formations:
+        return
+    available = ", ".join(sorted(cfg.formations))
+    err_console.print(
+        f"[red]error:[/red] Unknown formation: {formation}. "
+        f"Available formations: {available}. "
+        f"Run `chimera formations` to list them."
+    )
+    sys.exit(2)
+
+
 def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
     prompt = " ".join(prompt_parts).strip()
     if not prompt:
@@ -244,6 +282,10 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
     json_mode = bool(opts.get("json_output"))
     machine_mode = quiet or json_mode
     config = _load_cfg(ctx)
+    # DF-CHIMERA-V2-7: fail fast on an unknown formation — BEFORE the engine
+    # (and therefore the gateway) is constructed, so a typo costs zero
+    # provider calls and zero billing. An explicit --dag is exempt.
+    _validate_formation(config, opts["formation"], opts.get("dag"))
     engine = Engine(config, LiteLLMGateway(config))
     # Only forward the new kwargs when they are actually set, so the default
     # call shape stays ``deliberate(prompt, formation)`` (backward compatible).

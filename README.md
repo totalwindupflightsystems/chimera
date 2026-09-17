@@ -33,6 +33,7 @@ chimera "What is the capital of France?"      # CLI deliberation
 chimera run "Compare React and Vue"           # explicit `run` subcommand (same as above)
 chimera --quiet "Compare React and Vue"       # stdout = the raw answer only
 chimera --json "Compare React and Vue"        # stdout = one JSON object (answer + trace)
+chimera --formation simple "Compare …"        # pick a formation (an unknown name exits 2)
 chimera --version                             # print the package version
 chimera serve                                 # REST API + web UI (see Server & MCP)
 chimera-mcp                                   # MCP tools for agents

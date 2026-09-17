@@ -83,6 +83,7 @@ Streams and exit codes:
 | `--json`, healthy run | one JSON object + `\n` | logs only | 0 |
 | `--json`, dropped worker or degraded dispatch | one JSON object + `\n` | `warning: ...` lines | 0 |
 | `--quiet --json` together | (empty) | `Error: --quiet and --json are mutually exclusive` | 2 |
+| unknown `--formation` value | (empty) | `error: Unknown formation: <value>` + the available names | 2 |
 | missing `chimera.yaml` | `error: ...` one-liner | logs only | 2 |
 
 Notes:
@@ -100,6 +101,20 @@ Notes:
   `GET /v1/formations`) or the MCP tools.
 - Default (no flag) and `--verbose` human output are unchanged: boxed answer
   panel on stdout, warnings beside it, optional trace table.
+
+### Unknown formations (all three surfaces)
+
+An unknown `--formation` name is rejected, never silently swapped for `auto`:
+
+| Surface | Behavior on an unknown formation |
+|---|---|
+| CLI | `error: Unknown formation: <value>. Available formations: ...` on **stderr**, exit **2**, no provider call and no billing |
+| REST | `POST /v1/deliberate` → HTTP **422** `{"detail": "Unknown formation: <value>"}` |
+| MCP | `chimera_deliberate` → `{"error": "unknown_formation", "formation": ..., "available": [...]}` |
+
+Run `chimera formations` (or `GET /v1/formations` / the `chimera_formations`
+MCP tool) to discover the valid names. An explicit `--dag` payload replaces
+formation selection, so `--dag` invocations are exempt from this check.
 
 ### Module entry point (`python -m chimera`)
 
