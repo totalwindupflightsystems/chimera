@@ -9,8 +9,8 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
-from chimera.api.server import create_app  # noqa: E402
-from chimera.engine import Engine  # noqa: E402
+from chimera.api.server import aggregate_usage, create_app  # noqa: E402
+from chimera.engine import DeliberationTrace, Engine, StageSpan  # noqa: E402
 from tests.conftest import FakeGateway, dispatch_json  # noqa: E402
 
 
@@ -97,6 +97,98 @@ def test_chat_completions_openai_shape(config) -> None:  # type: ignore[no-untyp
     assert data["choices"][0]["finish_reason"] == "stop"
     assert data["usage"]["total_tokens"] > 0
     assert data["model"] == "auto"
+
+
+def test_aggregate_usage_sums_dispatch_and_every_stage() -> None:
+    """``aggregate_usage`` totals the dispatch span plus every stage span.
+
+    DF-CHIMERA-V2-10: the OpenAI-compatible ``usage`` block is the
+    deliberation-wide aggregate, so the dispatch span and each worker /
+    aggregator span each contribute their own inputs and outputs.
+    """
+    trace = DeliberationTrace(
+        request_id="req-usage",
+        formation="simple",
+        source="preset",
+        dispatch=StageSpan(
+            stage_id="dispatch",
+            kind="dispatch",
+            model="zai-coding-plan/glm-5.2",
+            prompt="design the deliberation",
+            response="{}",
+            tokens_input=100,
+            tokens_output=10,
+        ),
+        stages=[
+            StageSpan(
+                stage_id="worker_1",
+                kind="worker",
+                model="deepseek/deepseek-chat",
+                prompt="worker one",
+                response="a",
+                tokens_input=7,
+                tokens_output=3,
+            ),
+            StageSpan(
+                stage_id="aggregator",
+                kind="aggregator",
+                model="zai-coding-plan/glm-5.2",
+                prompt="merge",
+                response="b",
+                tokens_input=5,
+                tokens_output=2,
+            ),
+        ],
+        total_tokens=127,
+    )
+
+    prompt_tokens, completion_tokens, total_tokens = aggregate_usage(trace)
+
+    assert (prompt_tokens, completion_tokens, total_tokens) == (112, 15, 127)
+    assert prompt_tokens + completion_tokens == total_tokens
+    # The engine computes total_tokens over the identical span set.
+    assert total_tokens == trace.total_tokens
+
+
+def test_chat_completions_usage_is_deliberation_wide(config) -> None:  # type: ignore[no-untyped-def]
+    """Regression: ``usage`` aggregates every span, not one stage (DF-CHIMERA-V2-10).
+
+    Pre-fix the route reported ``prompt_tokens`` = the DISPATCHER stage's input
+    alone and buried every other stage's INPUT tokens inside
+    ``completion_tokens`` (``total_tokens - dispatch input``), so a client doing
+    usage accounting got a wrong input/output split.
+    """
+    worker_calls = {"n": 0}
+
+    def responder(model, messages, response_format=None, **kw):  # type: ignore[no-untyped-def]
+        if response_format is not None:
+            # Dispatcher design call — the large catalog-carrying input.
+            return _resp(dispatch_json(), model, 100, 10)
+        joined = json.dumps(messages)
+        if "Upstream outputs" in joined:
+            # Aggregator merges the worker outputs.
+            return _resp("FINAL ANSWER", model, 50, 80)
+        worker_calls["n"] += 1
+        if worker_calls["n"] == 1:
+            return _resp("worker one", model, 7, 3)
+        return _resp("worker two", model, 5, 2)
+
+    client, _gateway = _client_with_gateway(config, responder)
+    r = client.post(
+        "/v1/chat/completions",
+        json={"model": "simple", "messages": [{"role": "user", "content": "hello"}]},
+    )
+    assert r.status_code == 200
+    usage = r.json()["usage"]
+
+    # dispatch 100/10 + worker_1 7/3 + worker_2 5/2 + aggregator 50/80
+    assert usage["prompt_tokens"] == 162
+    assert usage["completion_tokens"] == 95
+    assert usage["total_tokens"] == 257
+    assert usage["prompt_tokens"] + usage["completion_tokens"] == usage["total_tokens"]
+    # The pre-fix split (dispatch input only, everything else folded into
+    # completion) must not come back.
+    assert (usage["prompt_tokens"], usage["completion_tokens"]) != (100, 257 - 100)
 
 
 def test_chat_completions_strips_system_messages(config) -> None:  # type: ignore[no-untyped-def]

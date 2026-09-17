@@ -107,6 +107,16 @@ Available endpoints once running:
 | `GET` | `/docs` | OpenAPI/Swagger UI |
 | `GET` | `/openapi.json` | Machine-readable OpenAPI spec |
 | `GET` | `/web/` | Web UI with live DAG visualization |
+| `POST` | `/web/sessions` | Create a session (multi-turn, session-scoped deliberation) |
+| `GET` | `/web/sessions/{id}` | Session history: `turn_count` + per-turn prompt, answer, models, tokens, cost |
+| `POST` | `/web/sessions/{id}/chat` | Run a deliberation inside the session; past turns are injected as history |
+| `GET` | `/web/sse/{id}` | Session event stream (Server-Sent Events, `text/event-stream`) |
+
+`/web/sessions` is **POST-only** — a `GET /web/sessions` listing does not
+exist and returns **405** (`GET /web/sessions/{id}` is the per-session read,
+404 on an unknown id). The `/web` surface is served only when the `web` extra
+is installed (`pip install chimera-deliberation[web]`); open the UI at
+`/web/` and let it create the session and subscribe to `/web/sse/{id}`.
 
 ## 3. Authentication (CHIMERA_API_KEY)
 

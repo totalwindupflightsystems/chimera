@@ -33,7 +33,7 @@ from chimera import __version__
 from chimera.api.dependencies import require_api_key
 from chimera.api.rate_limit import RateLimiter
 from chimera.config import ChimeraConfig, load_config, provider_credential_resolved
-from chimera.engine import Engine
+from chimera.engine import DeliberationTrace, Engine
 from chimera.gateway import LiteLLMGateway
 from chimera.observability import configure_logging
 
@@ -286,6 +286,34 @@ class ChatCompletionResponse(BaseModel):
     model: str
     choices: list[ChatChoice]
     usage: ChatUsage
+
+
+def aggregate_usage(trace: DeliberationTrace) -> tuple[int, int, int]:
+    """Token usage of a WHOLE deliberation, as ``(prompt, completion, total)``.
+
+    One chimera request is many upstream model calls (the dispatcher, then
+    every worker/judge, then the aggregator), so the OpenAI-compatible
+    ``usage`` block reports the deliberation-wide aggregate instead of any
+    single stage's numbers:
+
+    * ``prompt_tokens``     — summed ``tokens_input`` of the dispatch span plus
+      every stage span;
+    * ``completion_tokens`` — summed ``tokens_output`` of those same spans;
+    * ``total_tokens``      — ``prompt_tokens + completion_tokens``.
+
+    The dispatcher's design call carries the whole model catalog, so its input
+    dominates ``prompt_tokens`` for a short user prompt — that is the honest
+    aggregate, not a bug.
+
+    ``trace.stages`` never contains the dispatch span (the engine keeps
+    ``dispatch`` and ``stages`` disjoint), so each span is counted exactly once
+    and the total matches ``trace.total_tokens``, which the engine computes
+    over the identical span set.
+    """
+    spans = [trace.dispatch, *trace.stages]
+    prompt_tokens = sum(span.tokens_input for span in spans)
+    completion_tokens = sum(span.tokens_output for span in spans)
+    return prompt_tokens, completion_tokens, prompt_tokens + completion_tokens
 
 
 # --------------------------------------------------------------------------- #
@@ -623,16 +651,18 @@ def _register_routes(app: FastAPI) -> None:
                     request_id=result.trace.request_id,
                 )
             trace = result.trace
-            completion_tokens = trace.total_tokens - trace.dispatch.tokens_input
+            # Deliberation-wide aggregate (dispatch + every stage), not the
+            # dispatcher stage's numbers alone — see aggregate_usage().
+            usage_prompt, usage_completion, usage_total = aggregate_usage(trace)
             return ChatCompletionResponse(
                 id=f"chatcmpl-{trace.request_id}",
                 created=int(time.time()),
                 model=formation,
                 choices=[ChatChoice(message=ChatChoiceMessage(content=result.answer))],
                 usage=ChatUsage(
-                    prompt_tokens=trace.dispatch.tokens_input,
-                    completion_tokens=max(completion_tokens, 0),
-                    total_tokens=trace.total_tokens,
+                    prompt_tokens=usage_prompt,
+                    completion_tokens=usage_completion,
+                    total_tokens=usage_total,
                 ),
             )
         finally:

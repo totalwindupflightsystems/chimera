@@ -98,6 +98,30 @@ but are **documented no-ops** (never errors, never silently misapplied):
 | `n` | Accepted; `n > 1` is unsupported — the response always contains a single `chat.completion` choice |
 | `top_p` | Accepted; ignored — sampling temperature is fixed per stage |
 
+## Usage Reporting
+
+The `usage` block describes the **entire deliberation**, not one provider's
+call. A single `/v1/chat/completions` request fans out to the dispatcher plus
+every worker, judge, and aggregator stage — each an independent upstream
+model call — and the block is the aggregate over all of them:
+
+| Field | Meaning |
+|---|---|
+| `prompt_tokens` | Sum of the **input** tokens of the dispatch stage plus every stage span (workers, judges, the aggregator) |
+| `completion_tokens` | Sum of the **output** tokens of those same spans |
+| `total_tokens` | `prompt_tokens + completion_tokens` |
+
+So a six-word user prompt can report thousands of `prompt_tokens`: the
+dispatcher's design call carries the whole model catalog (that is what makes
+per-stage subtask prompting work), and it is counted like every other call.
+Costing a request from `usage` therefore prices every upstream call the
+deliberation made. It is **not** a single model's usage and is not comparable
+field-for-field with a plain OpenAI response, where `prompt_tokens` is just
+your prompt plus context.
+
+Per-stage numbers — model, input/output tokens, latency, cost, and the full
+prompt/response of each span — are on `POST /v1/deliberate`'s `trace`.
+
 ## Chimera-Specific Fields
 
 These extend the OpenAI spec. They are **optional** — omit them and Chimera
