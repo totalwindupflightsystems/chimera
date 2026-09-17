@@ -304,3 +304,42 @@ class TestGatewayCredentialMessages:
         message = str(excinfo.value)
         assert message == f"lmstudio/llama-3-local call failed after 2 attempts: {exc}"
         assert "LMSTUDIO_API_KEY" not in message
+
+    @pytest.mark.asyncio
+    async def test_anthropic_fallback_names_the_provider_that_served(self) -> None:
+        """F8 fallback: the key that failed is OpenRouter's, so name OpenRouter.
+
+        With no Anthropic key configured the gateway routes the Anthropic model
+        through OpenRouter, so the failing credential is OpenRouter's — naming
+        ANTHROPIC_API_KEY (the model's catalog provider) would be the same
+        class of lie as naming OPENAI_API_KEY for DeepSeek.
+        """
+        cfg_dict: dict[str, Any] = {
+            **CONFIG_DICT,
+            "retry": _FAST_RETRY,
+            "api_keys": {"openrouter": "or-fake-credential-for-tests"},
+            "models": {
+                **CONFIG_DICT["models"],
+                "anthropic/claude-sonnet-4": {
+                    "categories": {"analysis": 0.9},
+                    "cost_tier": "premium",
+                    "provider": "anthropic",
+                },
+            },
+        }
+        gateway = LiteLLMGateway(ChimeraConfig.model_validate(cfg_dict))
+        exc = _internal_server_error(UPSTREAM_MISSING_CREDENTIALS)
+
+        with (
+            patch("litellm.acompletion", side_effect=exc),
+            pytest.raises(GatewayError) as excinfo,
+        ):
+            await gateway.complete(
+                "anthropic/claude-sonnet-4",
+                [{"role": "user", "content": "hi"}],
+            )
+
+        message = str(excinfo.value)
+        assert "provider 'openrouter'" in message
+        assert "OPENROUTER_API_KEY" in message
+        assert "ANTHROPIC_API_KEY" not in message
