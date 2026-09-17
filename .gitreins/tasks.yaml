@@ -776,3 +776,22 @@ tasks:
   status: complete
   created_at: '2026-09-17T11:54:53.375135+00:00'
   completed_at: '2026-09-17T12:02:49.805368+00:00'
+- id: df-chimera-0916b-3
+  title: Add the README quickstart CLI-surface battery to the published-artifact release
+    gate (DF-CHIMERA-0916B-3)
+  criteria:
+  - scripts/quickstart_battery.py exists, is stdlib-only, asserts chimera --version,
+    python -m chimera --version, chimera --help and chimera config init against a
+    target venv, and exits 0 pass / 1 check failure / 2 usage
+  - The release-verify job in .github/workflows/ci.yml invokes scripts/quickstart_battery.py
+    against the pinned published release venv with the tag-derived version
+  - tests/test_release_workflow.py contains a hermetic offline test proving the battery
+    REJECTS a CLI that rejects --version (the published 0.2.5 shape), and one proving
+    it accepts a conforming CLI
+  - Running the battery against the published 0.2.5 venv exits 1 naming the --version
+    check; against a HEAD install it exits 0
+  - python -m pytest tests/ -q is fully green (0 failed) and ruff check . reports
+    no issues; no existing gate step removed or weakened
+  status: complete
+  created_at: '2026-09-17T12:24:41.755555+00:00'
+  completed_at: '2026-09-17T12:33:56.044303+00:00'
