@@ -726,3 +726,22 @@ tasks:
   status: complete
   created_at: '2026-09-16T21:25:03.570579+00:00'
   completed_at: '2026-09-16T21:37:42.967302+00:00'
+- id: df-chimera-0916b-4
+  title: Untrack the live chimera.yaml so fresh clones can run chimera config init
+    and internal ops config stops publishing to the public mirror
+  criteria:
+  - 'chimera.yaml is untracked: git ls-files --error-unmatch chimera.yaml exits non-zero
+    and git ls-tree HEAD -- chimera.yaml prints nothing, while the working-tree file
+    still exists on disk'
+  - 'chimera.yaml stays ignored: git check-ignore -v chimera.yaml matches, so a locally
+    present live config is never re-added'
+  - 'chimera config init succeeds on a tree containing only the shipped template (fresh
+    clone): exit 0, writes chimera.yaml, load_config parses it, no ''already exists''
+    dead-end'
+  - A guard test under tests/ enforces the untracked+ignored invariants and the config-init-on-fresh-tree
+    behaviour, and fails if chimera.yaml is re-tracked
+  - README.md and AGENTS.md document that the live config is local-only and gitignored
+    and that a fresh clone runs chimera config init
+  status: complete
+  created_at: '2026-09-17T10:07:35.555934+00:00'
+  completed_at: '2026-09-17T10:36:16.947961+00:00'
