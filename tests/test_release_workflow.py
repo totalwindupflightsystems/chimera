@@ -21,6 +21,10 @@ no provider keys:
   GATE-OK merged-answer assertion) is intact;
 * the 0.2.3 lazy-pollution shape is replayed through the probe's real
   validators: the OLD shallow gate accepts it, the NEW gate rejects it;
+* the README-documented quickstart CLI SURFACE is asserted against the
+  published artifact (scripts/quickstart_battery.py) and the 0.2.5 shape —
+  a wheel whose CLI rejects ``--version`` — is replayed against it (the
+  battery must exit 1 and name the failing check);
 * scripts/release_expected_version.py derives/validates the version offline.
 """
 
@@ -29,6 +33,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import shlex
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -40,6 +46,7 @@ REPO = Path(__file__).resolve().parent.parent
 WORKFLOW_PATH = REPO / ".github" / "workflows" / "ci.yml"
 PROBE_PATH = REPO / "scripts" / "probe_mcp_stdio.py"
 VERSION_SCRIPT_PATH = REPO / "scripts" / "release_expected_version.py"
+QUICKSTART_PATH = REPO / "scripts" / "quickstart_battery.py"
 
 
 def _load_module(name: str, path: Path) -> ModuleType:
@@ -54,6 +61,7 @@ def _load_module(name: str, path: Path) -> ModuleType:
 
 probe = _load_module("probe_mcp_stdio", PROBE_PATH)
 release_version = _load_module("release_expected_version", VERSION_SCRIPT_PATH)
+quickstart = _load_module("quickstart_battery", QUICKSTART_PATH)
 
 
 @pytest.fixture(scope="module")
@@ -281,3 +289,210 @@ def test_expected_version_rejects_tag_pyproject_mismatch(tmp_path: Path) -> None
     declared = release_version.pyproject_version(REPO / "pyproject.toml")
     with pytest.raises(ValueError, match="does not match|declares"):
         release_version.expected_version(f"v{declared}", fake)
+
+
+# --- README quickstart CLI surface vs the published artifact (DF-CHIMERA-0916B-3) -- #
+
+#: Offline stand-in for an installed ``chimera`` console script. Both
+#: ``bin/chimera`` and ``bin/python`` get this body, because the battery drives
+#: the console script directly AND the interpreter as ``python -m chimera``.
+_FAKE_CLI_TEMPLATE = '''#!/usr/bin/env python3
+"""Offline stand-in for the installed chimera console script (test fixture)."""
+import sys
+
+VERSION = __VERSION__
+ACCEPTS_VERSION = __ACCEPTS_VERSION__
+ARGS = sys.argv[1:]
+
+if "--version" in ARGS:
+    if not ACCEPTS_VERSION:
+        print("Usage: chimera [OPTIONS] [COMMAND] [ARGS]...", file=sys.stderr)
+        print(
+            "Error: No such option '--version'. (Did you mean one of: "
+            "'--formation', '--verbose'?)",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    print("chimera " + VERSION)
+    raise SystemExit(0)
+if "--help" in ARGS:
+    print("Usage: chimera [OPTIONS] [COMMAND] [ARGS]...")
+    raise SystemExit(0)
+if ARGS[:2] == ["config", "init"]:
+    with open("chimera.yaml", "w", encoding="utf-8") as fh:
+        fh.write("server: {}\\n")
+    print("Created chimera.yaml")
+    raise SystemExit(0)
+print("unexpected args: %r" % (ARGS,), file=sys.stderr)
+raise SystemExit(9)
+'''
+
+
+def _make_fake_venv(
+    tmp_path: Path, *, accepts_version: bool = True, version: str = "0.2.5"
+) -> Path:
+    """A venv-shaped directory whose CLI entry points are the offline stand-in."""
+    venv = tmp_path / "fake-venv"
+    (venv / "bin").mkdir(parents=True, exist_ok=True)
+    body = _FAKE_CLI_TEMPLATE.replace("__VERSION__", repr(version)).replace(
+        "__ACCEPTS_VERSION__", repr(accepts_version)
+    )
+    for name in ("chimera", "python"):
+        entry = venv / "bin" / name
+        entry.write_text(body, encoding="utf-8")
+        entry.chmod(0o755)
+    return venv
+
+
+def _run_battery(*args: str) -> subprocess.CompletedProcess:
+    """Run the battery as a real process — its exit codes ARE the contract."""
+    return subprocess.run(
+        [sys.executable, str(QUICKSTART_PATH), *args],
+        capture_output=True,
+        text=True,
+        cwd=REPO,
+        timeout=120,
+    )
+
+
+def test_battery_wired_into_release_verify_after_the_pinned_install(
+    release_verify_steps: list[dict],
+) -> None:
+    """The battery runs against the pinned published venv with the tag version."""
+    indices = [
+        i for i, step in enumerate(release_verify_steps) if "quickstart_battery.py" in step.get("run", "")
+    ]
+    assert len(indices) == 1, f"expected exactly one quickstart-battery step, found {indices}"
+    step_index = indices[0]
+    command_line = next(
+        line.strip()
+        for line in release_verify_steps[step_index]["run"].splitlines()
+        if "quickstart_battery.py" in line
+    )
+    assert shlex.split(command_line) == [
+        "python",
+        "scripts/quickstart_battery.py",
+        "--venv",
+        "/tmp/release-venv",
+        "--expected-version",
+        "${VERSION}",
+    ], f"battery must target the pinned release venv + tag-derived version, got {command_line!r}"
+
+    install_index = next(
+        i
+        for i, step in enumerate(release_verify_steps)
+        if "chimera-deliberation[full]==${VERSION}" in step.get("run", "")
+    )
+    e2e_index = next(
+        i for i, step in enumerate(release_verify_steps) if "GATE-OK" in step.get("run", "")
+    )
+    assert install_index < step_index < e2e_index, (
+        "the surface battery must run AFTER the pinned install and BEFORE the "
+        f"E2E run (install={install_index}, battery={step_index}, e2e={e2e_index})"
+    )
+
+
+def test_battery_step_needs_no_provider_keys(release_verify_steps: list[dict]) -> None:
+    """Every battery check is local, so its step must not carry secrets/keys."""
+    step = next(s for s in release_verify_steps if "quickstart_battery.py" in s.get("run", ""))
+    assert not step.get("env"), f"quickstart battery must be keyless, got env={step.get('env')}"
+
+
+def test_battery_rejects_the_shipped_0_2_5_cli_surface(tmp_path: Path) -> None:
+    """RED shape of the 0.2.5 wheel: the CLI rejects ``--version``.
+
+    The published 0.2.5 wheel exits 2 with "Error: No such option '--version'."
+    for BOTH documented forms while ``--help`` and ``config init`` still work —
+    the battery must therefore fail, exit 1, and NAME the failing checks.
+    """
+    venv = _make_fake_venv(tmp_path, accepts_version=False)
+    proc = _run_battery("--venv", str(venv), "--expected-version", "0.2.5")
+    assert proc.returncode == 1, (
+        f"a CLI without --version must fail the battery, got {proc.returncode}\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    assert "[FAIL] cli-version" in proc.stdout, proc.stdout
+    assert "[FAIL] module-version" in proc.stdout, proc.stdout
+    assert "No such option" in proc.stdout, proc.stdout
+    assert "QUICKSTART BATTERY FAIL" in proc.stdout
+    # The two checks the shipped 0.2.5 wheel DID pass stay reported as passing.
+    assert "[PASS] cli-help" in proc.stdout
+    assert "[PASS] config-init" in proc.stdout
+
+
+def test_battery_passes_on_a_conforming_cli(tmp_path: Path) -> None:
+    """GREEN control: the documented surface works -> exit 0, 4/4 checks."""
+    venv = _make_fake_venv(tmp_path)
+    proc = _run_battery("--venv", str(venv), "--expected-version", "0.2.5")
+    assert proc.returncode == 0, f"conforming CLI must pass\n{proc.stdout}\n{proc.stderr}"
+    assert "CHECKS_PASSED=4 CHECKS_FAILED=0" in proc.stdout
+    assert "QUICKSTART BATTERY OK" in proc.stdout
+    assert "created chimera.yaml" in proc.stdout
+
+
+def test_battery_rejects_a_cli_reporting_another_version(tmp_path: Path) -> None:
+    """Accepting ``--version`` is not enough: the version must BE the expected one."""
+    venv = _make_fake_venv(tmp_path, version="0.2.4")
+    proc = _run_battery("--venv", str(venv), "--expected-version", "0.2.5")
+    assert proc.returncode == 1, f"wrong version must fail the battery\n{proc.stdout}"
+    assert "[FAIL] cli-version" in proc.stdout
+    assert "output lacks version '0.2.5'" in proc.stdout
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        (),  # --expected-version is required
+        ("--venv", "/tmp"),  # venv given, version missing
+        ("--expected-version", ""),  # blank value
+        ("--expected-version", "0.2.5", "--bogus"),  # unknown option
+        ("--expected-version", "0.2.5", "--venv"),  # missing option value
+        ("--expected-version", "0.2.5", "--venv", "/nonexistent-venv-0916b3"),  # not a dir
+        ("--expected-version", "0.2.5", "positional"),  # unexpected positional
+    ],
+)
+def test_battery_usage_errors_exit_2(args: tuple[str, ...]) -> None:
+    """Documented exit contract: bad input is 2 — never 1 and never a traceback."""
+    proc = _run_battery(*args)
+    assert proc.returncode == 2, (
+        f"expected usage exit 2 for {args}, got {proc.returncode}\n{proc.stdout}\n{proc.stderr}"
+    )
+    assert "usage error" in proc.stderr, proc.stderr
+    assert "Traceback" not in proc.stderr, proc.stderr
+
+
+def test_battery_check_inventory_follows_the_readme(tmp_path: Path) -> None:
+    """The four README quickstart assertions, in documented order."""
+    checks = quickstart.build_checks(tmp_path)
+    assert [c.name for c in checks] == ["cli-version", "module-version", "cli-help", "config-init"]
+    assert checks[0].version_expected and checks[1].version_expected
+    assert not checks[2].version_expected
+    assert checks[3].expect_file == "chimera.yaml"
+
+
+def test_battery_runs_every_check_in_a_fresh_temp_cwd(tmp_path: Path) -> None:
+    """No quickstart command may run in the caller's cwd (never the repo root)."""
+    probe = tmp_path / "print_cwd.py"
+    probe.write_text(
+        "import os, sys\nwith open(sys.argv[1], 'w', encoding='utf-8') as fh:\n    fh.write(os.getcwd())\n",
+        encoding="utf-8",
+    )
+    recorded_path = tmp_path / "cwd.txt"
+    check = quickstart.Check(
+        "cwd-probe", [sys.executable, str(probe), str(recorded_path)], "records the child cwd"
+    )
+    result = quickstart.run_check(check, "0.2.5")
+    assert result.ok, result.detail
+    recorded = recorded_path.read_text(encoding="utf-8")
+    assert recorded != str(REPO), "the battery ran a check in the repo root"
+    assert Path(recorded).name.startswith("chimera-quickstart-"), recorded
+    assert not Path(recorded).exists(), "the temp cwd must be cleaned up"
+
+
+def test_battery_version_token_match_is_boundary_anchored() -> None:
+    """``0.2.5`` must not be satisfied by 0.2.50 / 0.2.5rc1 / 10.2.5."""
+    assert quickstart.version_token_present("chimera 0.2.5\n", "0.2.5")
+    assert quickstart.version_token_present("chimera 0.2.5 (python 3.11)", "0.2.5")
+    assert not quickstart.version_token_present("chimera 0.2.50\n", "0.2.5")
+    assert not quickstart.version_token_present("chimera 0.2.5rc1\n", "0.2.5")
+    assert not quickstart.version_token_present("chimera 10.2.5\n", "0.2.5")

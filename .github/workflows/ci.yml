@@ -195,6 +195,18 @@ jobs:
           # Belt-and-braces: the imported package must BE the tag version.
           /tmp/release-venv/bin/python -c "import chimera, sys; v = chimera.__version__; print('installed', v); sys.exit(0 if v == '${VERSION}' else 'installed %r != tag version ${VERSION}' % v)"
 
+      - name: README quickstart CLI surface on the PUBLISHED wheel — --version / -m --version / --help / config init (DF-CHIMERA-0916B-3 gate)
+        run: |
+          # Asserts the CLI surface README's Quickstart block documents against
+          # the PUBLISHED, pinned wheel — not against the repo tree. 0.2.5
+          # shipped with `chimera --version` exiting 2 ("Error: No such option
+          # '--version'.") because the tag was cut two days behind the --version
+          # commit (d6f144c): repo HEAD had the flag, the artifact users
+          # installed did not, and every earlier gate in this job stayed green.
+          # Each check runs in its own empty temp cwd (never the repo root) and
+          # exits 1 naming the failing check.
+          python scripts/quickstart_battery.py --venv /tmp/release-venv --expected-version "${VERSION}"
+
       - name: Quickstart E2E — config init + bare run at the exact tag version (DF-CHIMERA-0906-1 gate)
         run: |
           cd /tmp
