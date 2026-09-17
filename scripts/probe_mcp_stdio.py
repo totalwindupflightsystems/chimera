@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Raw stdio MCP stdout-purity probe / gate (DF-CHIMERA-0906-2, DF-CHIMERA-0911-1,
-DF-CHIMERA-0917-5).
+DF-CHIMERA-0917-5, DF-CHIMERA-V2-9).
 
 Spawns the real chimera MCP entry point over stdio and drives
 initialize -> notifications/initialized -> tools/list -> tools/call
@@ -23,6 +23,13 @@ drive a non-default formation without editing the script:
     python3 scripts/probe_mcp_stdio.py .venv/bin/chimera-mcp
     python3 scripts/probe_mcp_stdio.py --formation=speed .venv/bin/chimera-mcp
     CHIMERA_PROBE_FORMATION=speed python3 scripts/probe_mcp_stdio.py .venv/bin/chimera-mcp
+
+Version reporting (DF-CHIMERA-V2-9): the probe always prints the initialize
+handshake's ``SERVER_VERSION=<serverInfo.version>``, and ``--expected-version=X``
+turns that into a gate — a build whose handshake advertises anything else (the
+pre-0.2.6 bug advertised the mcp SDK's own version, 1.28.1, because ``FastMCP``
+takes no version kwarg) prints ``SERVER_VERSION_MISMATCH=expected:X actual:Y``
+and exits 1.
 
 The probe PROVISIONS ITS OWN CONFIG by default (DF-CHIMERA-0917-5). The live
 repo-root ``chimera.yaml`` is untracked by design (DF-CHIMERA-0916B-4), so a
@@ -48,6 +55,11 @@ argv):
     --cwd=PATH         run the child in this directory and let it discover the
                        directory's own chimera.yaml (CHIMERA_CONFIG is cleared
                        for the child so the walk-up is honest)
+    --expected-version=VER
+                       compare the handshake's serverInfo.version with VER; on
+                       a mismatch print
+                       SERVER_VERSION_MISMATCH=expected:VER actual:<actual> and
+                       exit 1 (SERVER_VERSION= is always printed)
 
 Formation satisfiability (DF-CHIMERA-0917-5): the generated ``speed`` formation
 uses ``openrouter/qwen/qwen3-coder``, which needs ``OPENROUTER_API_KEY``. The
@@ -71,7 +83,8 @@ The request/validation/provisioning contract lives in importable pure functions
 ``plan_config_provision``, ``formation_model_references``,
 ``remap_uncredentialed_models``, ``provider_credential_resolved``,
 ``is_jsonrpc_line``, ``collect_responses``, ``extract_tool_text``,
-``check_depth_result``, ``check_handshake``) so the offline regression suite can
+``check_depth_result``, ``check_handshake``, ``server_info_version``,
+``server_version_mismatch``) so the offline regression suite can
 verify it without spawning chimera or touching the network; only
 ``provision_config`` and ``main``/``drive_stdio`` do subprocess I/O.
 
@@ -80,11 +93,13 @@ Usage:
     python3 scripts/probe_mcp_stdio.py chimera mcp
     python3 scripts/probe_mcp_stdio.py --config=/srv/chimera.yaml .venv/bin/chimera-mcp
     python3 scripts/probe_mcp_stdio.py --cwd=/tmp/site-cfg .venv/bin/chimera-mcp
+    python3 scripts/probe_mcp_stdio.py --expected-version=0.2.6 .venv/bin/chimera-mcp
 
 Exit codes: 0 = stdout pure (all JSON-RPC, responses 1/2/3 in order, 3
 tools, chimera_deliberate returns JSON with a non-empty answer);
-1 = pollution or malformed response; 2 = usage/setup error (bad probe option,
-unreadable --config, unprovisionable config).
+1 = pollution or malformed response, or a handshake version that differs from
+--expected-version; 2 = usage/setup error (bad probe option, unreadable
+--config, unprovisionable config).
 """
 
 from __future__ import annotations
@@ -118,15 +133,22 @@ PROBE_FORMATION_OPTION = "--formation="
 #: Probe-owned config/cwd selectors (DF-CHIMERA-0917-5), same single-token rule.
 PROBE_CONFIG_OPTION = "--config="
 PROBE_CWD_OPTION = "--cwd="
+#: Probe-owned expected-version selector (DF-CHIMERA-V2-9): the initialize
+#: handshake must advertise the PACKAGE version, so the release gate can pin it.
+PROBE_EXPECTED_VERSION_OPTION = "--expected-version="
 #: Every option the probe owns; the bare ``--opt VALUE`` spelling of any of
 #: these is a usage error (the value could equally be the child's argv).
-OWNED_BARE_OPTIONS = ("--formation", "--config", "--cwd")
+OWNED_BARE_OPTIONS = ("--formation", "--config", "--cwd", "--expected-version")
 #: How each owned option must be spelled, for the usage message.
 VALUE_OPTION_LABELS = {
     "--formation": "--formation=NAME",
     "--config": "--config=PATH",
     "--cwd": "--cwd=PATH",
+    "--expected-version": "--expected-version=VER",
 }
+#: Evidence marker for a handshake that carries no ``serverInfo.version``.
+MISSING_VERSION = "(missing)"
+
 
 #: Name of the config the probe generates in its own temp directory.
 GENERATED_CONFIG_NAME = "chimera.yaml"
@@ -163,6 +185,7 @@ class ProbeOptions:
     formation: str
     config: str | None = None
     cwd: str | None = None
+    expected_version: str | None = None
 
 
 def usage_error(argv: Sequence[str]) -> str | None:
@@ -186,6 +209,11 @@ def usage_error(argv: Sequence[str]) -> str | None:
     for arg in argv:
         if arg in (PROBE_CONFIG_OPTION, PROBE_CWD_OPTION):
             return f"usage error: {arg.rstrip('=')} needs a path (empty value given)."
+        if arg == PROBE_EXPECTED_VERSION_OPTION:
+            return (
+                "usage error: --expected-version needs a version "
+                "(empty value given), e.g. --expected-version=0.2.6."
+            )
     return None
 
 
@@ -198,12 +226,14 @@ def parse_owned_options(
     with every probe-owned token removed. The env var
     ``CHIMERA_PROBE_FORMATION`` is honored when no ``--formation`` option is
     given; ``--formation=`` with an empty value keeps the env/default formation
-    (backward compatible).
+    (backward compatible). ``--expected-version=`` is optional — without it the
+    probe only PRINTS the handshake version and compares nothing.
     """
     environ: Mapping[str, str] = os.environ if env is None else env
     formation = (environ.get(PROBE_FORMATION_ENV) or "").strip() or DEPTH_FORMATION
     config: str | None = None
     cwd: str | None = None
+    expected_version: str | None = None
     cmd: list[str] = []
     for arg in argv:
         if arg.startswith(PROBE_FORMATION_OPTION):
@@ -218,8 +248,20 @@ def parse_owned_options(
             value = arg[len(PROBE_CWD_OPTION) :].strip()
             cwd = value or cwd
             continue
+        if arg.startswith(PROBE_EXPECTED_VERSION_OPTION):
+            value = arg[len(PROBE_EXPECTED_VERSION_OPTION) :].strip()
+            expected_version = value or expected_version
+            continue
         cmd.append(arg)
-    return ProbeOptions(formation=formation, config=config, cwd=cwd), cmd
+    return (
+        ProbeOptions(
+            formation=formation,
+            config=config,
+            cwd=cwd,
+            expected_version=expected_version,
+        ),
+        cmd,
+    )
 
 
 def parse_formation(
@@ -866,6 +908,44 @@ def check_handshake(stdout_lines: list[str], order: list[int], responses: dict[i
     return problems
 
 
+# --------------------------------------------------------------------------- #
+# Version reporting (DF-CHIMERA-V2-9)
+# --------------------------------------------------------------------------- #
+#
+# The handshake's ``serverInfo.version`` is part of the contract a real MCP
+# client uses to tell one build from another. The pre-0.2.6 server advertised
+# the mcp SDK's own version (1.28.1) for a 0.2.6 chimera, because the SDK's
+# ``FastMCP`` takes no version kwarg and the low-level server falls back to
+# ``pkg_version("mcp")``. The probe always reports what the handshake said and
+# can gate on it with ``--expected-version``.
+
+
+def server_info_version(result: Mapping[str, Any] | None) -> str | None:
+    """The ``serverInfo.version`` an initialize result reports, or ``None``.
+
+    ``None`` covers both "no initialize response at all" and "the response
+    carried no version" — the probe prints it as ``(missing)`` instead of
+    inventing a value (which is what hid this defect: a wrong version looked
+    like a real one).
+    """
+    if not isinstance(result, Mapping):
+        return None
+    info = result.get("serverInfo")
+    if not isinstance(info, Mapping):
+        return None
+    version = info.get("version")
+    if isinstance(version, str) and version.strip():
+        return version.strip()
+    return None
+
+
+def server_version_mismatch(expected: str | None, actual: str | None) -> str | None:
+    """The named mismatch evidence line, or ``None`` when nothing is compared."""
+    if not expected or actual == expected:
+        return None
+    return f"SERVER_VERSION_MISMATCH=expected:{expected} actual:{actual or MISSING_VERSION}"
+
+
 def drive_stdio(
     cmd: list[str], env: dict[str, str], cwd: str, formation: str = DEPTH_FORMATION
 ) -> tuple[list[str], list[int], dict[int, dict], str]:
@@ -974,9 +1054,18 @@ def main(argv: list[str] | None = None) -> int:
         cmd, env, provisioned.cwd, options.formation
     )
 
+    # The handshake version (DF-CHIMERA-V2-9): always reported, optionally gated.
+    handshake_version = server_info_version(responses.get(1, {}).get("result", {}))
+    version_mismatch = server_version_mismatch(options.expected_version, handshake_version)
+
     problems = check_handshake(stdout_lines, order, responses)
     depth_problems, depth_info = check_depth_result(responses.get(3, {}).get("result", {}))
     problems.extend(depth_problems)
+    if version_mismatch:
+        problems.append(
+            f"version mismatch: expected {options.expected_version}, "
+            f"got {handshake_version or MISSING_VERSION}"
+        )
 
     tool_names = {t.get("name") for t in responses.get(2, {}).get("result", {}).get("tools", [])}
     print(f"CHILD_CMD={' '.join(cmd)}")
@@ -987,6 +1076,9 @@ def main(argv: list[str] | None = None) -> int:
         + (provisioned.config_path or "(unset: child discovers its own config from cwd)")
     )
     print(f"PROBE_CWD={provisioned.cwd}")
+    print(f"SERVER_VERSION={handshake_version or MISSING_VERSION}")
+    if version_mismatch:
+        print(version_mismatch)
     print(f"MODEL_REMAPS_TOTAL={len(provisioned.remaps)}")
     for remap in provisioned.remaps:
         print(remap.evidence_line())

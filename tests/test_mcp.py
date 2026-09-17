@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import select
+import subprocess
 import sys
+import time
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -387,3 +393,125 @@ async def test_mcp_config_less_deliberate_still_accepts_an_explicit_dag() -> Non
         dag=dag, allow_custom_dag=True,
     )
     assert data["answer"] == "dag answer"
+
+
+# ---------------------------------------------------------------------------
+# DF-CHIMERA-V2-9 — the initialize handshake must report the PACKAGE version
+# ---------------------------------------------------------------------------
+#
+# The MCP server advertised the mcp SDK's own version: ``FastMCP("chimera")``
+# takes no ``version`` kwarg (nor does its Settings model), so the low-level
+# server it builds keeps ``version = None`` and
+# ``create_initialization_options()`` falls back to ``pkg_version("mcp")``. A
+# real client therefore read
+# ``serverInfo: {"name": "chimera", "version": "1.28.1"}`` for a 0.2.6 build,
+# while ``chimera --version`` printed 0.2.6 — a surface-parity defect of the
+# same class as DF-CHIMERA-V2-7 (REST already reports ``chimera.__version__``;
+# see tests/test_version.py). The unit tests pin the wiring, the subprocess
+# test pins the wire.
+
+MCP_INITIALIZE_REQUEST = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {},
+        "clientInfo": {"name": "df-chimera-v2-9", "version": "0.0.1"},
+    },
+}
+
+
+def _mcp_console_script() -> Path:
+    """The REAL ``chimera-mcp`` console script of the running interpreter's venv."""
+    return Path(sys.executable).parent / "chimera-mcp"
+
+
+def _read_initialize_line(cmd, cwd, env, timeout_s: float = 15.0) -> str:
+    """Spawn *cmd*, send one initialize request, return its first stdout line.
+
+    Paced like a real client: stdin stays open while the response is read, then
+    the child is killed — the handshake answer is the whole contract here, and
+    being killed after it is tolerated (no orderly SDK shutdown is needed).
+    """
+    proc = subprocess.Popen(
+        [str(part) for part in cmd],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        cwd=str(cwd),
+        env=env,
+    )
+    try:
+        assert proc.stdin is not None and proc.stdout is not None
+        proc.stdin.write((json.dumps(MCP_INITIALIZE_REQUEST) + "\n").encode())
+        proc.stdin.flush()
+        deadline = time.monotonic() + timeout_s
+        buf = b""
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([proc.stdout], [], [], 0.5)
+            if not ready:
+                continue
+            chunk = os.read(proc.stdout.fileno(), 65536)
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                text = line.decode(errors="replace").strip()
+                if text:
+                    return text
+        raise AssertionError(f"{cmd} produced no stdout line within {timeout_s}s")
+    finally:
+        with contextlib.suppress(OSError):
+            proc.stdin.close()
+        proc.kill()
+        proc.wait()
+
+
+def test_build_server_reports_the_package_version(config) -> None:  # type: ignore[no-untyped-def]
+    """The built server carries chimera's version, not the SDK's (unit seam)."""
+    import chimera
+
+    server = _make_server(config)
+    assert server._mcp_server.version == chimera.__version__
+    options = server._mcp_server.create_initialization_options()
+    assert options.server_name == "chimera"
+    assert options.server_version == chimera.__version__
+
+
+def test_build_server_reports_the_package_version_without_a_config() -> None:
+    """A config-less server (bare install / fresh checkout) reports it too."""
+    import chimera
+    from chimera.config import ChimeraConfig, Defaults
+
+    server = build_server(config=ChimeraConfig(defaults=Defaults.empty()), engine=object())
+    options = server._mcp_server.create_initialization_options()
+    assert options.server_version == chimera.__version__
+
+
+def test_real_mcp_entry_point_reports_the_package_version(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """E2E: the REAL ``chimera-mcp`` handshake advertises the package version.
+
+    Hermetic: the child runs in an empty temp cwd with ``CHIMERA_CONFIG``
+    removed, so it loads the config-less fallback and touches no live config or
+    provider. A config-less server must still handshake — that is the intended
+    behaviour (CH-GAP-041).
+    """
+    from importlib.metadata import version as dist_version
+
+    import chimera
+
+    entry = _mcp_console_script()
+    assert entry.is_file(), f"{entry} does not exist — cannot drive the real entry point"
+    env = {k: v for k, v in os.environ.items() if k != "CHIMERA_CONFIG"}
+    env["PYTHONUNBUFFERED"] = "1"
+
+    line = _read_initialize_line([entry], tmp_path, env)
+    payload = json.loads(line)
+    assert payload["jsonrpc"] == "2.0"
+    assert payload["id"] == 1
+    info = payload["result"]["serverInfo"]
+    assert info["name"] == "chimera"
+    assert info["version"] == chimera.__version__
+    assert info["version"] != dist_version("mcp"), "the mcp SDK version leaked into the handshake"

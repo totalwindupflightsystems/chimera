@@ -45,6 +45,17 @@ def build_server(
     # Re-pin with the real config (honors log_level/langfuse) — still stderr.
     configure_logging(cfg.observability, force_stderr=True)
     server = FastMCP("chimera")
+    # DF-CHIMERA-V2-9: the initialize handshake must report CHIMERA's version,
+    # not the mcp SDK's. mcp 1.28.1's ``FastMCP`` accepts no ``version`` kwarg
+    # (its Settings model has no version field either), so the low-level server
+    # it builds keeps ``version = None`` and ``create_initialization_options()``
+    # falls back to ``pkg_version("mcp")`` — advertising 1.28.1 for a 0.2.6
+    # build. The low-level server is the single object every transport reads
+    # (stdio, sse, streamable-http), so setting it here covers the
+    # ``chimera-mcp`` entry point and the ``chimera mcp`` click path alike.
+    # Re-check this seam when the mcp pin is bumped: a future SDK that exposes
+    # the kwarg should be used instead of this private assignment.
+    server._mcp_server.version = __version__
     state = {"engine": engine or Engine(cfg, LiteLLMGateway(cfg)), "config": cfg}
 
     @server.tool()

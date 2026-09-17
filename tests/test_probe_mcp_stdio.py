@@ -1120,3 +1120,191 @@ def test_main_setup_failure_exits_2_without_driving(capsys, monkeypatch) -> None
     assert rc == 2
     assert "PROBE SETUP FAIL" in err
     assert "chimera config init" in err
+
+
+# --- expected-version gate (DF-CHIMERA-V2-9) --------------------------------- #
+#
+# The initialize handshake must report the PACKAGE version. Pre-0.2.6 the MCP
+# server advertised the mcp SDK's own version (1.28.1) for a 0.2.6 chimera, so
+# a client could not tell which build it had reached. The probe always prints
+# SERVER_VERSION=<serverInfo.version> and, with --expected-version=X, exits 1
+# naming the mismatch. The option follows the same single-token rule as
+# --formation/--config/--cwd (a bare '--expected-version X' pair is ambiguous
+# with the child's argv: exit 2) and is stripped from the child command.
+
+EXPECTED_VERSION_OPTION = "--expected-version="
+
+
+def _server_info(version: str | None) -> dict:
+    """A serverInfo block, with or without the version field."""
+    info: dict = {"name": "chimera"}
+    if version is not None:
+        info["version"] = version
+    return info
+
+
+def _handshake_lines_with_version(
+    version: str | None,
+) -> tuple[list[str], list[int], dict[int, dict]]:
+    """``_handshake_lines()`` with an explicit (or absent) handshake version."""
+    lines = [
+        json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"serverInfo": _server_info(version)}}),
+        json.dumps({"jsonrpc": "2.0", "id": 2, "result": _TOOLS_LIST_RESULT}),
+        json.dumps({"jsonrpc": "2.0", "id": 3, "result": _OK_RESULT}),
+    ]
+    order, responses = probe.collect_responses(lines)
+    return lines, order, responses
+
+
+def test_server_info_version_reads_the_handshake_version() -> None:
+    assert probe.server_info_version({"serverInfo": {"name": "chimera", "version": "0.2.6"}}) == "0.2.6"
+    assert probe.server_info_version({"serverInfo": {"version": " 0.2.6 "}}) == "0.2.6"
+
+
+def test_server_info_version_is_none_when_absent() -> None:
+    """No response / no version field / blank version: unknown, not a guess."""
+    assert probe.server_info_version(None) is None
+    assert probe.server_info_version({}) is None
+    assert probe.server_info_version({"serverInfo": {"name": "chimera"}}) is None
+    assert probe.server_info_version({"serverInfo": {"version": "  "}}) is None
+    assert probe.server_info_version({"serverInfo": "chimera"}) is None
+    assert probe.server_info_version({"serverInfo": {"version": 3}}) is None
+
+
+def test_server_version_mismatch_line_shape() -> None:
+    assert probe.server_version_mismatch("0.2.6", "0.2.6") is None
+    assert probe.server_version_mismatch(None, "0.2.6") is None  # nothing to compare
+    assert probe.server_version_mismatch("0.2.6", None) == (
+        "SERVER_VERSION_MISMATCH=expected:0.2.6 actual:(missing)"
+    )
+    assert probe.server_version_mismatch("9.9.9", "1.28.1") == (
+        "SERVER_VERSION_MISMATCH=expected:9.9.9 actual:1.28.1"
+    )
+
+
+def test_expected_version_option_is_parsed_and_stripped_from_the_child_cmd() -> None:
+    options, cmd = probe.parse_owned_options(
+        [f"{EXPECTED_VERSION_OPTION}0.2.6", "/fake/venv/bin/chimera-mcp"], env={}
+    )
+    assert options.expected_version == "0.2.6"
+    assert cmd == ["/fake/venv/bin/chimera-mcp"]
+
+
+def test_expected_version_defaults_to_none() -> None:
+    """Without the option the probe compares nothing — it only reports."""
+    options, cmd = probe.parse_owned_options(["/fake/venv/bin/chimera-mcp"], env={})
+    assert options.expected_version is None
+    assert cmd == ["/fake/venv/bin/chimera-mcp"]
+
+
+def test_expected_version_option_works_alongside_the_other_owned_options() -> None:
+    argv = [
+        "--formation=debate",
+        f"{EXPECTED_VERSION_OPTION}0.2.6",
+        "--cwd=/tmp/site-cfg",
+        "chimera",
+        "mcp",
+    ]
+    options, cmd = probe.parse_owned_options(argv, env={})
+    assert cmd == ["chimera", "mcp"]
+    assert (options.formation, options.expected_version, options.cwd) == (
+        "debate",
+        "0.2.6",
+        "/tmp/site-cfg",
+    )
+
+
+def test_bare_expected_version_flag_is_a_usage_error(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """``--expected-version 0.2.6`` is ambiguous — exit 2, spawn nothing."""
+
+    def explode(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("no provisioning/driving on a usage error")
+
+    monkeypatch.setattr(probe, "provision_config", explode)
+    monkeypatch.setattr(probe, "drive_stdio", explode)
+    rc = probe.main(["--expected-version", "0.2.6", "/fake/venv/bin/chimera-mcp"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "--expected-version=VER" in err
+
+
+def test_empty_expected_version_value_is_a_usage_error(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """An empty version cannot be compared — refuse it rather than skip the gate."""
+
+    def explode(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("no provisioning/driving on a usage error")
+
+    monkeypatch.setattr(probe, "provision_config", explode)
+    monkeypatch.setattr(probe, "drive_stdio", explode)
+    rc = probe.main([EXPECTED_VERSION_OPTION, "/fake/venv/bin/chimera-mcp"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "needs a version" in err
+
+
+def test_main_always_prints_the_handshake_version(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """SERVER_VERSION=<actual> is unconditional evidence, not gated on the flag."""
+
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
+        lines, order, responses = _handshake_lines_with_version("0.2.6")
+        return lines, order, responses, ""
+
+    monkeypatch.setattr(probe, "drive_stdio", fake_drive)
+    rc = probe.main(["/fake/venv/bin/chimera-mcp"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "SERVER_VERSION=0.2.6" in out
+    assert "SERVER_VERSION_MISMATCH" not in out
+
+
+def test_main_reports_a_missing_version_as_missing(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A handshake with no version field is reported as (missing), never as OK."""
+
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
+        lines, order, responses = _handshake_lines_with_version(None)
+        return lines, order, responses, ""
+
+    monkeypatch.setattr(probe, "drive_stdio", fake_drive)
+    rc = probe.main([EXPECTED_VERSION_OPTION + "0.2.6", "/fake/venv/bin/chimera-mcp"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "SERVER_VERSION=(missing)" in out
+    assert "SERVER_VERSION_MISMATCH=expected:0.2.6 actual:(missing)" in out
+
+
+def test_main_expected_version_match_is_green(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A matching version keeps the run green and prints no mismatch line."""
+
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
+        lines, order, responses = _handshake_lines_with_version("0.2.6")
+        return lines, order, responses, ""
+
+    monkeypatch.setattr(probe, "drive_stdio", fake_drive)
+    rc = probe.main([EXPECTED_VERSION_OPTION + "0.2.6", "/fake/venv/bin/chimera-mcp"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "SERVER_VERSION=0.2.6" in out
+    assert "SERVER_VERSION_MISMATCH" not in out
+    assert "PROBE OK" in out
+
+
+def test_main_expected_version_mismatch_exits_1_and_names_it(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The release gate: a build advertising another version fails the probe.
+
+    This is the exact pre-0.2.6 shape — a 0.2.6 build whose handshake said
+    ``1.28.1`` (the mcp SDK's version).
+    """
+
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
+        lines, order, responses = _handshake_lines_with_version("1.28.1")
+        return lines, order, responses, ""
+
+    monkeypatch.setattr(probe, "drive_stdio", fake_drive)
+    rc = probe.main([EXPECTED_VERSION_OPTION + "0.2.6", "/fake/venv/bin/chimera-mcp"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "SERVER_VERSION=1.28.1" in out
+    assert "SERVER_VERSION_MISMATCH=expected:0.2.6 actual:1.28.1" in out
+    assert "PROBE FAIL" in out
+    assert "version mismatch" in out
+
