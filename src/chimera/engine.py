@@ -60,6 +60,19 @@ class StageSpan(BaseModel):
     stage_id: str
     kind: str
     model: str
+    provider: str = ""
+    """The provider that actually SERVED this stage's call — the gateway's
+    resolved ``effective_provider`` after credential fallbacks — or ``""``
+    when no provider route was resolved at all (the internal dispatch span, a
+    degraded stage, a gateway stub that carries no attribution).  Never
+    derived from ``model``: a catalog id's prefix can name a provider other
+    than the one that served the call (QA-CHIMERA-V2-16)."""
+    wire_model: str = ""
+    """The model id actually sent to that provider (the gateway's wire model
+    string), or ``""`` when nothing was sent."""
+    api_base: str = ""
+    """The base URL the call was sent to, or ``""`` for routes that use the
+    provider's own default endpoint."""
     prompt: str
     response: str
     tokens_input: int = 0
@@ -73,6 +86,29 @@ class StageSpan(BaseModel):
     """``time.monotonic()`` when the stage began (for wave overlap checks)."""
     ended_at: float = 0.0
     """``time.monotonic()`` when the stage finished."""
+
+
+def _route_attribution(response: GatewayResponse) -> tuple[str, str, str]:
+    """Read the gateway's resolved-route attribution off *response*.
+
+    ``LiteLLMGateway.complete`` stamps the route it actually resolved onto the
+    response's ``metadata`` side-band (``provider`` / ``wire_model`` /
+    ``api_base``) — the only place that knows which provider serves a call,
+    since a credential fallback (F8 anthropic→openrouter) or a generic
+    ``base_url`` provider can serve a catalog id whose prefix names a
+    different provider.
+
+    This reads that channel and nothing else: a response that never went
+    through a resolved route — an engine-fabricated degraded placeholder, a
+    test double — simply has no such keys, so the attribution is empty.  It is
+    never guessed from ``response.model`` (QA-CHIMERA-V2-16).
+    """
+    metadata = response.metadata or {}
+    return (
+        str(metadata.get("provider") or ""),
+        str(metadata.get("wire_model") or ""),
+        str(metadata.get("api_base") or ""),
+    )
 
 
 class WorkerFailure(BaseModel):
@@ -998,10 +1034,17 @@ class Engine:
             stage, dispatch, dep_results
         )
         ended = time.monotonic()
+        # QA-CHIMERA-V2-16: the route the gateway resolved for this call, read
+        # off the response's metadata side-band (empty for a gateway that
+        # carries none, e.g. a test double).
+        provider, wire_model, api_base = _route_attribution(response)
         span = StageSpan(
             stage_id=stage.id,
             kind=stage.kind,
             model=response.model,
+            provider=provider,
+            wire_model=wire_model,
+            api_base=api_base,
             prompt=prompt_text,
             response=response.text,
             tokens_input=response.tokens_input,
@@ -1108,10 +1151,18 @@ class Engine:
         )
         ended = time.monotonic()
         start_ts = started_at if started_at is not None else ended - (latency_ms / 1000.0)
+        # QA-CHIMERA-V2-16: no provider route ran for a degraded stage, so the
+        # placeholder response's metadata carries no attribution and these stay
+        # empty — read from the same metadata channel, never guessed from
+        # ``stage.model`` (its prefix can name a provider that never served).
+        provider, wire_model, api_base = _route_attribution(degraded_response)
         span = StageSpan(
             stage_id=stage.id,
             kind=stage.kind,
             model=stage.model,
+            provider=provider,
+            wire_model=wire_model,
+            api_base=api_base,
             prompt=prompt_text,
             response=degraded_response.text,
             tokens_input=0,
@@ -1318,6 +1369,10 @@ class Engine:
         # request-level dispatcher_model override); fall back to the config
         # default when the response doesn't identify one.
         dispatch_model = resp.model or self.config.defaults.dispatcher
+        # QA-CHIMERA-V2-16: the dispatch span is an INTERNAL pipeline stage, not
+        # a provider route of its own, so it deliberately carries no route
+        # attribution (provider/wire_model/api_base keep their empty defaults).
+        # Attribution is never fabricated here.
         return StageSpan(
             stage_id="dispatch",
             kind="dispatch",

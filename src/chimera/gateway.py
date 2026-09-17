@@ -322,6 +322,51 @@ def resolve_litellm_model(
 
 
 # --------------------------------------------------------------------------- #
+# Resolved-route attribution (QA-CHIMERA-V2-16)
+# --------------------------------------------------------------------------- #
+
+#: Metadata keys carrying the route a completion was actually served by.
+#: Deliberately distinct from the engine's degraded-marker keys
+#: (``degraded`` / ``error`` / ``stage_id``) that ``GatewayResponse.metadata``
+#: already uses.
+ROUTE_PROVIDER_KEY = "provider"
+ROUTE_WIRE_MODEL_KEY = "wire_model"
+ROUTE_API_BASE_KEY = "api_base"
+
+
+def stamp_route_attribution(
+    response: GatewayResponse,
+    *,
+    provider: str | None,
+    wire_model: str | None = None,
+    api_base: str | None = None,
+) -> GatewayResponse:
+    """Record the resolved route on *response* and return it unchanged.
+
+    ``provider`` is the provider that the routing decision selected — the
+    *effective* provider after credential fallbacks (F8 anthropic→openrouter),
+    never the catalog id's prefix.  ``wire_model`` is the model string handed
+    to LiteLLM and ``api_base`` the endpoint it will be sent to (empty for
+    routes that use the provider's own default host).
+
+    Empty/None values are omitted, so a native route simply has no ``api_base``
+    key.  Nothing is stamped when the caller passes no provider.
+
+    ``GatewayResponse`` is a mutable dataclass, which is what lets the single
+    point that knows the route (``LiteLLMGateway.complete``) hand the
+    attribution forward on the response itself — the engine reads it back off
+    ``metadata`` and puts it on the trace span.
+    """
+    if provider:
+        response.metadata[ROUTE_PROVIDER_KEY] = provider
+    if wire_model:
+        response.metadata[ROUTE_WIRE_MODEL_KEY] = wire_model
+    if api_base:
+        response.metadata[ROUTE_API_BASE_KEY] = api_base
+    return response
+
+
+# --------------------------------------------------------------------------- #
 # F7: Retry with exponential backoff
 # --------------------------------------------------------------------------- #
 
@@ -513,6 +558,12 @@ class LiteLLMGateway:
         if negotiated_format is not None:
             call_kwargs["response_format"] = negotiated_format
 
+        # QA-CHIMERA-V2-16: the resolved route for THIS call.  Read back from
+        # the final call kwargs so a caller-supplied ``api_base`` is reflected;
+        # ``extra`` (the resolver's own routing kwargs) is what lands there for
+        # the zai / deepseek / generic-base_url branches.
+        route_api_base = call_kwargs.get("api_base")
+
         log.debug(
             "gateway_call",
             model=model,
@@ -526,7 +577,16 @@ class LiteLLMGateway:
         breaker = self._get_circuit_breaker(effective_provider)
         if breaker is not None and not breaker.before_call():
             log.warning("circuit_breaker_open", provider=effective_provider, model=model)
-            return fast_fail_response(effective_provider)
+            # The route was resolved (provider / wire model / api_base are all
+            # known) even though the breaker refused the CALL; the attribution
+            # names the route this stage resolved to, so the trace still shows
+            # which provider was skipped instead of an unattributable stage.
+            return stamp_route_attribution(
+                fast_fail_response(effective_provider),
+                provider=effective_provider,
+                wire_model=lm_model,
+                api_base=route_api_base,
+            )
 
         try:
             response = await self._complete_with_retry(
@@ -534,7 +594,16 @@ class LiteLLMGateway:
             )
             if breaker is not None:
                 breaker.on_success()
-            return response
+            # Stamp the route that actually served the call onto the response's
+            # metadata side-band; the engine copies it onto the trace span
+            # (``model`` alone cannot attribute a call — its catalog prefix can
+            # name a provider other than the one that served it).
+            return stamp_route_attribution(
+                response,
+                provider=effective_provider,
+                wire_model=lm_model,
+                api_base=route_api_base,
+            )
         except (GatewayError, BudgetExhaustedError):
             if breaker is not None:
                 breaker.on_failure()
@@ -837,4 +906,5 @@ __all__ = [
     "ensure_litellm_quiet",
     "negotiate_response_format",
     "resolve_litellm_model",
+    "stamp_route_attribution",
 ]

@@ -2,7 +2,9 @@
 
 The web UI uses Mermaid to render the dispatcher-designed DAG in real time.
 Each stage becomes a node; edges show data flow.  Completed stages show
-their model, token count, and latency inline.
+their model, the provider that actually served the call (when the trace
+carries the resolved-route attribution, QA-CHIMERA-V2-16), token count, and
+latency inline.
 
 The ``trace_to_mermaid`` function accepts the full trace dict (as returned
 by the REST API) and produces a Mermaid flowchart string ready for rendering.
@@ -45,8 +47,13 @@ def trace_to_mermaid(trace: dict[str, Any]) -> str:
         tokens = s.get("tokens_input", 0) + s.get("tokens_output", 0)
         latency = s.get("latency_ms", 0)
         colour = _KIND_COLOURS.get(kind, _FALLBACK_COLOUR)
+        # QA-CHIMERA-V2-16: the resolved serving provider, when the trace
+        # carries one (absent on internal/degraded spans and older traces).
+        provider = s.get("provider", "")
 
         label = f"{kind}\\n{model_short}"
+        if provider:
+            label += f"\\nvia {provider}"
         if tokens:
             label += f"\\n{tokens} tok"
         if latency:
