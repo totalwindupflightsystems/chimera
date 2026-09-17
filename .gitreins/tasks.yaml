@@ -914,3 +914,17 @@ tasks:
   status: complete
   created_at: '2026-09-17T16:51:35.908627+00:00'
   completed_at: '2026-09-17T16:59:50.301354+00:00'
+- id: DF-CHIMERA-V2-11
+  title: 'scripts/model_sync.py recency score is dead code: fall back to release_date/last_updated'
+  criteria:
+  - grep -rn recency tests/ is non-empty and .venv/bin/python -m pytest tests/ -k
+    recency -q passes
+  - a synthetic cache entry carrying only release_date (no created) scores above the
+    40.0 default, and the --score top-5 selection helper orders such entries strictly
+    newest-first by release date rather than by model id
+  - a numeric created unix timestamp keeps the existing day-bucket behaviour (<=7d
+    100.0, <=30d 90.0, <=90d 70.0, <=180d 50.0, else 30.0) and a date-less entry still
+    falls back to the family heuristics or the 40.0 default
+  status: complete
+  created_at: '2026-09-17T17:20:44.114581+00:00'
+  completed_at: '2026-09-17T17:47:58.363137+00:00'
