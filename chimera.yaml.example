@@ -1523,6 +1523,48 @@ models:
     cost_tier: standard
     provider: router9
     enabled: true
+  # Local CLI proxy (``providers.cliproxy`` below) — claude-code-router,
+  # one-api, new-api and friends: a localhost process that fronts one or more
+  # upstream providers behind a single OpenAI-compatible endpoint.  Full class
+  # recipe: docs/CLI_PROXY.md.
+  #
+  # The catalog id carries the id the PROXY answers to after the one
+  # ``cliproxy/`` segment, and that remainder is what reaches the endpoint
+  # verbatim (see ``resolve_litellm_model``), so it must be an id the proxy
+  # actually resolves.  claude-code-router serves its router target in
+  # ``provider,model`` form — a bare upstream id answers
+  # *"Provider 'deepseek-v4-flash' not found"* — and it implements no
+  # ``GET /v1/models`` at all, so take the ids from the proxy's own config/UI
+  # instead of assuming a model-list endpoint exists.
+  #
+  # The scores below describe the UPSTREAM model the proxy fronts, not the
+  # proxy itself: point ``cliproxy`` at a different upstream and this entry
+  # (id + scores) should move with it.
+  cliproxy/deepseek,deepseek-v4-flash:
+    categories:
+      technology_code/code_generation/python: 84
+      technology_code/code_generation/javascript: 82
+      technology_code/code_generation/sql: 78
+      technology_code/code_generation/shell: 78
+      technology_code/testing_debugging/unit_tests: 72
+      technology_code/testing_debugging/error_analysis: 70
+      technology_code/data_science/analysis: 76
+      technology_code/data_interaction/database/sql: 78
+      technology_code/data_interaction/file_based/json: 80
+      complex_reasoning_agency/tool_use/code_execution: 72
+      complex_reasoning_agency/self_correction/debugging: 70
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 66
+      general_knowledge/reasoning/explanation: 76
+      general_knowledge/reasoning/logic_puzzle: 66
+      general_knowledge/fact_retrieval/definitions: 72
+      language_translation/summarization/abstractive: 70
+      language_translation/translation/language_to_language: 64
+      language_translation/linguistic_analysis/sentiment: 64
+      creative_conversational/ux_writing/interface_copy: 62
+      creative_conversational/creative_writing/storytelling: 60
+    cost_tier: budget
+    provider: cliproxy
+    enabled: true
 providers:
   deepseek:
     base_url: https://api.deepseek.com/v1
@@ -1557,6 +1599,28 @@ providers:
   router9:
     base_url: http://master001:20128/v1
     api_key_env: ROUTER9_API_KEY
+  # Local CLI proxy on loopback — claude-code-router (1.0.73 measured),
+  # one-api / new-api, or any process that serves OpenAI-compatible
+  # ``/v1/chat/completions`` on its own port.  No LiteLLM-native prefix covers
+  # it, so the configured base_url is what routes the call and the catalog id's
+  # leading ``cliproxy/`` is stripped before the request goes out
+  # (``resolve_litellm_model``).  Loopback + no key is the keyless local shape
+  # chimera already recognises (``_is_local_base_url`` / ``provider_api_key_env``
+  # report "no env var to name"), so none is declared here.
+  #
+  # One measured caveat: the generic branch pins
+  # ``custom_llm_provider="openai"``, and LiteLLM's OpenAI SDK path refuses to
+  # start a call with no credential at all, so even a keyless proxy needs a
+  # placeholder in the environment for the run —
+  # ``OPENAI_API_KEY=local chimera ...`` (the proxy ignores it).
+  # A proxy that DOES enforce a token — claude-code-router >= 3 hardcodes
+  # gateway auth and answers ``Missing auth token header: authorization`` —
+  # names the variable that holds that token instead: uncomment
+  # ``api_key_env`` below and export the token there.  Full recipe + measured
+  # probe output: docs/CLI_PROXY.md.
+  cliproxy:
+    base_url: http://127.0.0.1:3456/v1
+    # api_key_env: CLIPROXY_API_KEY
 server:
   host: 0.0.0.0
   port: 8765
