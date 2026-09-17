@@ -2,15 +2,52 @@
 
 All notable changes to Chimera will be documented in this file.
 
-## [Unreleased]
+## [0.2.6] — 2026-09-17
+
+### Added
+
+- **`chimera --version`** (and `python -m chimera --version`) now report the
+  installed version, which the README quickstart documents (DF-CHIMERA-V2-4).
 
 ### Fixed
 
-- **`bin/chimera-mcp-hermes` is now venv-agnostic** (QA-CHIMERA-V2-12): the
-  wrapper execs the repo-local `.venv/bin/chimera-mcp` only when its
-  interpreter is live, falls back to a `chimera-mcp` found on `PATH` when the
-  repo venv is missing or dead (fresh install), and exits 1 naming both
-  attempted paths when neither exists.
+- **An unknown formation is rejected at the user-facing edge** instead of
+  silently falling back to `auto`: the CLI and MCP surfaces exit 2 / return an
+  error before any provider call (DF-CHIMERA-V2-7), and the `/web` session chat
+  surface returns HTTP 422 (DF-CHIMERA-0917-2), matching the REST
+  `/v1/deliberate` behaviour (422).
+- **Models whose provider credential fails auth are blocked from selection**
+  with an actionable remedy instead of surfacing as an opaque provider error
+  (DF-CHIMERA-V2-6).
+- **`bin/chimera-mcp-hermes` is venv-agnostic** (QA-CHIMERA-V2-12): the wrapper
+  execs the repo-local `.venv/bin/chimera-mcp` only when that interpreter is
+  live, falls back to a `chimera-mcp` found on `PATH` when the repo venv is
+  missing or dead (fresh install), and exits 1 naming both attempted paths when
+  neither exists.
+- **The drop-in `/v1/chat/completions` 404 explains that the `model` field
+  selects a FORMATION**, not a catalog model id (DF-CHIMERA-0911-3).
+- **The dogfood run log for 2026-09-16 is indexed**, restoring the docs index
+  test at HEAD (DF-CHIMERA-0917-1).
+
+### Changed
+
+- **The live `chimera.yaml` is no longer tracked in the public repo** (the repo
+  ships `chimera.yaml.example` only), so fresh clones can run
+  `chimera config init` (DF-CHIMERA-0916B-4).
+- **Local CI (`act`) pins the runner image and the ruff version** so local runs
+  reproduce hosted CI, and the docs state the local-vs-hosted job boundary
+  (QA-CHIMERA-V2-7).
+- **Every `docs/` file is indexed from the README/docs index**, and that index
+  is enforced by a test (CH-GAP-052); the `python -m chimera` module entry point
+  is documented (DOC-1).
+- **The release gate asserts the README quickstart CLI surface against the
+  PUBLISHED pinned wheel** in `release-verify`, so a wheel that cannot run a
+  documented command fails CI (DF-CHIMERA-0916B-3).
+
+### Security
+
+- **Private host addresses were scrubbed from published content** and a leak
+  guard (with an explicit CIDR allowance) now blocks recurrence (INT-CI-005).
 
 ## [0.2.5] — 2026-09-11
 
