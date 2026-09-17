@@ -1308,3 +1308,211 @@ def test_main_expected_version_mismatch_exits_1_and_names_it(capsys, monkeypatch
     assert "PROBE FAIL" in out
     assert "version mismatch" in out
 
+
+# --- child-command resolution (QA-CHIMERA-V2-17) ------------------------------ #
+#
+# The module's own usage examples spell the child token RELATIVELY
+# (``.venv/bin/chimera-mcp``). With neither --config nor --cwd the probe
+# generates a config in a temp dir and spawns the child with THAT dir as cwd, so
+# a relative token was resolved against the temp dir and died as a raw
+# ``FileNotFoundError`` traceback inside ``subprocess.Popen`` — the same
+# unresolvable bin dir also broke the provisioning step, which runs the child's
+# sibling CLI there. The token is now resolved against the INVOKING cwd once, in
+# main(), BEFORE provisioning and before the spawn; a relative path that is not
+# there is a named usage error (exit 2), and a bare command name is still looked
+# up on PATH.
+
+RELATIVE_CHILD = "venv/bin/chimera-mcp"
+
+
+def _fake_child(tmp_path: Path, relative: str = RELATIVE_CHILD) -> Path:
+    """Create a fake child entry point at *relative* under ``tmp_path``."""
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("#!/bin/sh\n", encoding="utf-8")
+    return target
+
+
+def test_resolve_child_command_leaves_the_empty_command_alone() -> None:
+    """No token at all: main supplies its own default; resolution says nothing."""
+    assert probe.resolve_child_command([], base_dir="/tmp") == ([], None)
+
+
+def test_resolve_child_command_keeps_an_absolute_token_verbatim() -> None:
+    """The release gate's absolute form is byte-for-byte what the operator passed."""
+    absolute = "/tmp/release-venv/bin/chimera-mcp"
+    resolved, problem = probe.resolve_child_command(
+        [absolute, "--flag", "value"], base_dir="/somewhere/else"
+    )
+    assert problem is None
+    assert resolved == [absolute, "--flag", "value"]
+
+
+def test_resolve_child_command_absolutizes_an_existing_relative_path(tmp_path: Path) -> None:
+    """The usage-example form resolves against the invoking cwd."""
+    target = _fake_child(tmp_path)
+    resolved, problem = probe.resolve_child_command([RELATIVE_CHILD], base_dir=str(tmp_path))
+    assert problem is None
+    assert resolved == [str(target)]
+    assert os.path.isabs(resolved[0])
+
+
+def test_resolve_child_command_absolutizes_a_dotted_relative_path(tmp_path: Path) -> None:
+    """``./venv/bin/chimera-mcp`` is the same path, spelled with a leading ``./``."""
+    target = _fake_child(tmp_path)
+    resolved, problem = probe.resolve_child_command(
+        [f"./{RELATIVE_CHILD}"], base_dir=str(tmp_path)
+    )
+    assert problem is None
+    assert resolved == [os.path.normpath(str(target))]
+
+
+def test_resolve_child_command_never_rewrites_the_rest_of_the_argv(tmp_path: Path) -> None:
+    """Only the executable token is resolved — the child's own argv is untouched."""
+    target = _fake_child(tmp_path)
+    tail = ["--config=/tmp/x.yaml", "mcp", "extra"]
+    resolved, problem = probe.resolve_child_command(
+        [RELATIVE_CHILD, *tail], base_dir=str(tmp_path)
+    )
+    assert problem is None
+    assert resolved == [str(target), *tail]
+
+
+def test_resolve_child_command_leaves_a_bare_name_for_path_lookup(tmp_path: Path) -> None:
+    """``chimera mcp`` stays a PATH lookup — never joined onto base_dir."""
+    _fake_child(tmp_path, "chimera")  # present in base_dir and STILL untouched
+    resolved, problem = probe.resolve_child_command(["chimera", "mcp"], base_dir=str(tmp_path))
+    assert problem is None
+    assert resolved == ["chimera", "mcp"]
+
+
+def test_resolve_child_command_missing_relative_path_is_a_named_error(tmp_path: Path) -> None:
+    """A relative path with no such file is a named usage error, not an exception."""
+    resolved, problem = probe.resolve_child_command(
+        ["nope/bin/chimera-mcp"], base_dir=str(tmp_path)
+    )
+    assert resolved == ["nope/bin/chimera-mcp"]
+    assert problem == (
+        f"child command not found: nope/bin/chimera-mcp (resolved against {tmp_path}); "
+        f"pass an absolute path"
+    )
+
+
+def test_resolve_child_command_uses_the_injected_existence_predicate(tmp_path: Path) -> None:
+    """The rule is testable without the filesystem: nothing named this exists."""
+    seen: list[str] = []
+
+    def exists(path: str) -> bool:
+        seen.append(path)
+        return path == os.path.join(str(tmp_path), "ghost", "chimera-mcp")
+
+    resolved, problem = probe.resolve_child_command(
+        ["ghost/chimera-mcp", "--x"], base_dir=str(tmp_path), exists=exists
+    )
+    assert problem is None
+    assert resolved == [os.path.join(str(tmp_path), "ghost", "chimera-mcp"), "--x"]
+    assert seen == [os.path.join(str(tmp_path), "ghost", "chimera-mcp")]
+
+
+def test_main_resolves_a_relative_child_before_provisioning(
+    capsys, monkeypatch, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    """The usage-example form now drives the probe: absolute token, both steps.
+
+    The resolved token must reach the PROVISIONING step (which runs the child's
+    sibling CLI inside the generated config dir — the second place the relative
+    token used to fail) and ``drive_stdio``; that ordering is the fix.
+    """
+    _fake_child(tmp_path)
+    target = str(tmp_path / RELATIVE_CHILD)
+    captured: dict = {}
+
+    def fake_provision(plan, *, child_cmd, formation, env, credential_env=None):  # noqa: ANN001
+        captured["provision_child_cmd"] = list(child_cmd)
+        return probe.ProvisionResult("/tmp/gen/chimera.yaml", "/tmp/gen", "generated", ())
+
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
+        captured["cmd"] = cmd
+        lines, order, responses = _handshake_lines()
+        return lines, order, responses, ""
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(probe, "provision_config", fake_provision)
+    monkeypatch.setattr(probe, "drive_stdio", fake_drive)
+    rc = probe.main([RELATIVE_CHILD])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert captured["provision_child_cmd"] == [target]
+    assert captured["cmd"] == [target]
+    assert os.path.isabs(captured["cmd"][0])
+    assert f"CHILD_CMD={target}" in out
+    assert "PROBE OK" in out
+
+
+def test_main_missing_relative_child_is_a_usage_error(
+    capsys, monkeypatch, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    """A relative path that is not on disk: exit 2 + named message, no traceback."""
+
+    def explode(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("a missing child must not be provisioned or spawned")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(probe, "provision_config", explode)
+    monkeypatch.setattr(probe, "drive_stdio", explode)
+    rc = probe.main(["nope/venv/bin/chimera-mcp"])
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "child command not found: nope/venv/bin/chimera-mcp" in captured.err
+    assert f"(resolved against {tmp_path})" in captured.err
+    assert "pass an absolute path" in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
+
+
+def test_main_leaves_a_bare_child_name_for_path_lookup(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """``chimera mcp`` is a PATH lookup: never a base_dir join, never an error."""
+    captured: dict = {}
+
+    def fake_provision(plan, *, child_cmd, formation, env, credential_env=None):  # noqa: ANN001
+        captured["provision_child_cmd"] = list(child_cmd)
+        return probe.ProvisionResult(None, "/tmp/gen", "cwd", ())
+
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
+        captured["cmd"] = cmd
+        lines, order, responses = _handshake_lines()
+        return lines, order, responses, ""
+
+    monkeypatch.setattr(probe, "provision_config", fake_provision)
+    monkeypatch.setattr(probe, "drive_stdio", fake_drive)
+    rc = probe.main(["chimera", "mcp"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert captured["provision_child_cmd"] == ["chimera", "mcp"]
+    assert captured["cmd"] == ["chimera", "mcp"]
+    assert "CHILD_CMD=chimera mcp" in out
+
+
+def test_main_passes_an_absolute_child_token_through_unchanged(capsys, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The CI gate's absolute form is unchanged by the resolution step."""
+    captured: dict = {}
+    absolute = "/tmp/release-venv/bin/chimera-mcp"
+
+    def fake_provision(plan, *, child_cmd, formation, env, credential_env=None):  # noqa: ANN001
+        captured["provision_child_cmd"] = list(child_cmd)
+        return probe.ProvisionResult("/tmp/gen/chimera.yaml", "/tmp/gen", "generated", ())
+
+    def fake_drive(cmd, env, cwd, formation):  # noqa: ANN001
+        captured["cmd"] = cmd
+        lines, order, responses = _handshake_lines()
+        return lines, order, responses, ""
+
+    monkeypatch.setattr(probe, "provision_config", fake_provision)
+    monkeypatch.setattr(probe, "drive_stdio", fake_drive)
+    rc = probe.main([absolute])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert captured["provision_child_cmd"] == [absolute]
+    assert captured["cmd"] == [absolute]
+    assert f"CHILD_CMD={absolute}" in out
+

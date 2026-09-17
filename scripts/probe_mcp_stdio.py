@@ -44,6 +44,25 @@ hand-written YAML template that would duplicate the config schema), spawns the
 child with that dir as cwd and ``CHIMERA_CONFIG`` pointed at the generated file,
 and prints ``CONFIG_SOURCE=generated`` / ``CONFIG_PATH=<path>``.
 
+Child command resolution (QA-CHIMERA-V2-17): the child's executable token is
+resolved against the INVOKING cwd BEFORE the config is provisioned and before
+the child is spawned — the generated-config default runs the child in its own
+temp dir (``PROBE_CWD``), so a relative token used to be resolved against that
+temp dir and died as a raw ``FileNotFoundError`` traceback inside
+``subprocess.Popen`` (the module's own usage examples below spell it
+relatively). The rule, applied by :func:`resolve_child_command`:
+
+* an ABSOLUTE token is used exactly as given;
+* a RELATIVE token containing a path separator is resolved against the
+  invoking cwd and absolutized;
+* a relative path that does not exist there is a NAMED usage error naming the
+  token and the base dir (exit 2, never a traceback);
+* a bare command name (no separator, e.g. ``chimera mcp``) is left untouched
+  so ``PATH`` lookup still happens.
+
+Only the executable token is ever rewritten — the rest of the child argv is
+the child's own. What is spawned is what ``CHILD_CMD`` prints.
+
 Options owned by the probe (each a SINGLE ``--opt=VALUE`` token, stripped from
 the child command exactly like ``--formation``; a bare ``--opt VALUE`` pair is
 a usage error, exit 2, because the next token could equally be the child's own
@@ -80,7 +99,8 @@ stdout-leak leg) keeps being exercised and the gate's coverage is not weakened.
 
 The request/validation/provisioning contract lives in importable pure functions
 (``build_messages``, ``parse_owned_options``, ``usage_error``,
-``plan_config_provision``, ``formation_model_references``,
+``resolve_child_command``, ``plan_config_provision``,
+``formation_model_references``,
 ``remap_uncredentialed_models``, ``provider_credential_resolved``,
 ``is_jsonrpc_line``, ``collect_responses``, ``extract_tool_text``,
 ``check_depth_result``, ``check_handshake``, ``server_info_version``,
@@ -113,7 +133,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, NamedTuple
 
@@ -331,6 +351,74 @@ def plan_config_provision(
         cwd=directory,
         config_path=os.path.join(directory, GENERATED_CONFIG_NAME),
         generate=True,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Child command resolution (QA-CHIMERA-V2-17)
+# --------------------------------------------------------------------------- #
+#
+# ``main`` resolves the executable token against the INVOKING cwd before any
+# plan is made, so both the provisioning step (which runs the child's sibling
+# CLI in the generated config dir) and the spawn see the same absolute token.
+
+
+def _has_path_separator(token: str) -> bool:
+    """True when *token* names a path rather than a bare PATH-lookup command."""
+    return os.sep in token or (os.altsep is not None and os.altsep in token)
+
+
+def resolve_child_command(
+    cmd: Sequence[str],
+    *,
+    base_dir: str,
+    exists: Callable[[str], bool] = os.path.isfile,
+) -> tuple[list[str], str | None]:
+    """Resolve the child's executable token against the INVOKING cwd (pure).
+
+    Returns ``(resolved_cmd, usage_error)``: the command to spawn and, when the
+    token names a path that is not there, a named usage message instead of an
+    exception. ``main`` prints that message and exits 2 — a missing child is a
+    usage error, never a traceback from ``subprocess.Popen``.
+
+    Why this is needed (QA-CHIMERA-V2-17): with neither ``--config`` nor
+    ``--cwd`` the probe generates a config in a fresh temp dir and spawns the
+    child with THAT dir as cwd (``PROBE_CWD``), so a relative token was
+    resolved against the temp dir — ``FileNotFoundError: '.venv/bin/chimera-mcp'``
+    at the spawn, and the same unresolvable bin dir broke the provisioning step
+    that runs the child's sibling CLI there. Resolving once, before both, is
+    what keeps the two steps consistent.
+
+    Arms:
+
+    * empty ``cmd`` → returned unchanged (``main`` supplies its own default).
+    * ``cmd[0]`` absolute (after ``~`` expansion, a no-op for ordinary paths)
+      → returned as given; ``CHILD_CMD`` still prints the operator's path.
+    * ``cmd[0]`` relative and ``base_dir/cmd[0]`` exists → absolutized; the
+      rest of the argv is never rewritten.
+    * ``cmd[0]`` relative, containing a path separator, with no such file →
+      named usage error, no exception raised.
+    * ``cmd[0]`` relative without a separator (the bare ``chimera mcp``
+      form) → left untouched so ``PATH`` lookup still happens; it is never
+      joined onto *base_dir*.
+
+    ``exists`` is injectable so the resolution rule can be tested without
+    touching the filesystem.
+    """
+    if not cmd:
+        return list(cmd), None
+    token = os.path.expanduser(cmd[0])
+    if os.path.isabs(token):
+        return [token, *cmd[1:]], None
+    if not _has_path_separator(token):
+        return [token, *cmd[1:]], None
+    candidate = os.path.normpath(os.path.abspath(os.path.join(base_dir, token)))
+    if exists(candidate):
+        return [candidate, *cmd[1:]], None
+    return (
+        list(cmd),
+        f"child command not found: {cmd[0]} (resolved against {base_dir}); "
+        f"pass an absolute path",
     )
 
 
@@ -1022,6 +1110,13 @@ def main(argv: list[str] | None = None) -> int:
     options, cmd = parse_owned_options(raw)
     if not cmd:
         cmd = [os.path.join(REPO, ".venv", "bin", "chimera-mcp")]
+    # Resolve the child token against the INVOKING cwd BEFORE provisioning and
+    # before the spawn: the generated-config default runs the child in its own
+    # temp dir, where a relative token does not exist (QA-CHIMERA-V2-17).
+    cmd, child_problem = resolve_child_command(cmd, base_dir=os.getcwd())
+    if child_problem:
+        print(child_problem, file=sys.stderr)
+        return 2
 
     env = dict(os.environ)
     env["PYTHONUNBUFFERED"] = "1"
