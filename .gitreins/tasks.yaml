@@ -828,3 +828,23 @@ tasks:
   status: complete
   created_at: '2026-09-17T13:40:10.558887+00:00'
   completed_at: '2026-09-17T13:58:30.902724+00:00'
+- id: DF-CHIMERA-V2-10
+  title: OpenAI-compatible usage must report the deliberation-wide token aggregate;
+    document the /web session+SSE surface
+  criteria:
+  - '/v1/chat/completions usage aggregates the whole deliberation: prompt_tokens equals
+    the sum of tokens_input across the dispatch span plus every stage span, completion_tokens
+    equals the sum of tokens_output across the same spans, and total_tokens equals
+    prompt_tokens plus completion_tokens'
+  - A regression test in tests/ fails against the pre-fix split (prompt_tokens = dispatch
+    input only; completion_tokens = total_tokens - dispatch input) and passes after
+    the fix
+  - 'docs/OPENAI_API.md documents the usage semantics: the numbers are the deliberation-wide
+    aggregate across every upstream provider call, not one provider''s usage'
+  - 'docs/INTEGRATION.md lists the /web session and SSE surface: POST /web/sessions,
+    GET /web/sessions/{id}, GET /web/sse/{id}, POST /web/sessions/{id}/chat'
+  - 'The full test suite is green (.venv/bin/python -m pytest tests/ -q, measured
+    at HEAD: 992 passed / 62 skipped / 0 failed) and .venv/bin/ruff check . is clean'
+  status: complete
+  created_at: '2026-09-17T14:58:17.056381+00:00'
+  completed_at: '2026-09-17T14:58:20.500689+00:00'
