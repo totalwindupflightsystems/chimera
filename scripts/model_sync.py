@@ -147,29 +147,76 @@ def _save_seen(seen: set[str]) -> None:
     SEEN_PATH.write_text(json.dumps(sorted(seen), indent=2))
 
 
-def _model_recency_score(provider_data: dict[str, Any], model_id: str) -> float:
-    """Score a model by recency — higher is newer.
+#: Day buckets for the 0-100 recency scale (inclusive upper bounds, in days).
+RECENCY_BUCKETS: tuple[tuple[float, float], ...] = (
+    (7, 100.0),
+    (30, 90.0),
+    (90, 70.0),
+    (180, 50.0),
+)
+RECENCY_OLDEST: float = 30.0
+RECENCY_DEFAULT: float = 40.0
 
-    Uses creation date if available, otherwise falls back to family heuristics.
-    Returns 0-100 where 100 = newest.
+#: Date fields carried by models.dev rows, in preference order. The live cache
+#: (``~/.chimera/models-dev-cache.json``) stores ISO-8601 date strings here —
+#: it does NOT carry the numeric unix ``created`` key the OpenAI-style API uses.
+RECENCY_DATE_FIELDS: tuple[str, ...] = ("release_date", "last_updated")
+
+
+def _score_days_ago(days_ago: float) -> float:
+    """Map an age in days onto the 0-100 recency scale (newer = higher)."""
+    for max_days, score in RECENCY_BUCKETS:
+        if days_ago <= max_days:
+            return score
+    return RECENCY_OLDEST
+
+
+def _parse_iso_timestamp(value: Any) -> float | None:
+    """Parse an ISO-8601 date/datetime (or unix timestamp) into a UTC timestamp.
+
+    Accepts ``"2026-06-13"``, ``"2026-06-13T10:00:00Z"``, ``"2026-06-13T10:00:00+00:00"``,
+    ``"2026/06/13"`` and numeric unix timestamps (int/float or numeric string).
+
+    Returns ``None`` for anything unparseable — a malformed date in the provider
+    cache must never raise, because this runs inside the model-sync cron.
     """
-    model_info = provider_data.get("models", {}).get(model_id, {})
-    created = model_info.get("created")
-    if created and isinstance(created, (int, float)):
-        # Convert Unix timestamp to days ago, then score
-        days_ago = (time.time() - created) / 86400
-        if days_ago <= 7:
-            return 100.0
-        elif days_ago <= 30:
-            return 90.0
-        elif days_ago <= 90:
-            return 70.0
-        elif days_ago <= 180:
-            return 50.0
-        else:
-            return 30.0
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
 
-    # No date — score by family-based heuristics
+    text = value.strip()
+    if not text:
+        return None
+
+    try:
+        # Numeric string — a unix timestamp written as text.
+        return float(text)
+    except ValueError:
+        pass
+
+    candidate = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
+    parsed: datetime | None = None
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        for fmt in ("%Y/%m/%d", "%Y-%m-%d"):
+            try:
+                parsed = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.timestamp()
+
+
+def _family_recency_score(model_id: str) -> float:
+    """Score a model by family/version heuristics — the date-less tie-break."""
     lower = model_id.lower()
     # Newer model families score higher
     if "4.3" in lower or "4.20" in lower:
@@ -189,7 +236,55 @@ def _model_recency_score(provider_data: dict[str, Any], model_id: str) -> float:
     if "m2.7" in lower or "m2.5" in lower:
         return 80.0  # MiniMax M2.x
 
-    return 40.0  # default
+    return RECENCY_DEFAULT  # default
+
+
+def _model_recency_score(provider_data: dict[str, Any], model_id: str) -> float:
+    """Score a model by recency — higher is newer.
+
+    Primary source is a numeric unix ``created`` timestamp (the OpenAI-style API
+    shape); when that is absent — as it is for every row in the live models.dev
+    cache — fall back to the ISO-8601 ``release_date`` and then ``last_updated``
+    strings the cache actually carries. Models with no usable date at all fall
+    back to family heuristics, then the ``RECENCY_DEFAULT`` of 40.0.
+    Returns 0-100 where 100 = newest.
+    """
+    model_info = provider_data.get("models", {}).get(model_id, {})
+    if not isinstance(model_info, dict):
+        model_info = {}
+
+    created = model_info.get("created")
+    if isinstance(created, (int, float)) and not isinstance(created, bool) and created > 0:
+        # Convert Unix timestamp to days ago, then score
+        return _score_days_ago((time.time() - created) / 86400)
+
+    # No numeric timestamp — the live cache carries ISO-8601 date strings.
+    for field in RECENCY_DATE_FIELDS:
+        created_ts = _parse_iso_timestamp(model_info.get(field))
+        if created_ts is not None:
+            return _score_days_ago((time.time() - created_ts) / 86400)
+
+    # No usable date — score by family-based heuristics
+    return _family_recency_score(model_id)
+
+
+def select_top_candidates(
+    candidates: dict[str, list[dict[str, Any]]],
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Flatten provider candidates, sort newest-first, and take the top ``limit``.
+
+    Pure selection used by ``--score`` (top 5) and ``--limit`` (top N): ordering
+    is by ``recency_score`` descending (Python's stable sort keeps the input
+    order for equal scores). ``limit <= 0`` returns every candidate.
+    """
+    flat: list[dict[str, Any]] = []
+    for models in candidates.values():
+        flat.extend(models)
+    flat.sort(key=lambda x: x["recency_score"], reverse=True)
+    if limit > 0:
+        flat = flat[:limit]
+    return flat
 
 
 # ── Main logic ───────────────────────────────────────────────────────────────
@@ -366,12 +461,8 @@ def main() -> None:
     candidates = scan_models_dev()
 
     if args.limit > 0:
-        # Flatten and re-sort by recency, take top N
-        flat = []
-        for models in candidates.values():
-            flat.extend(models)
-        flat.sort(key=lambda x: x["recency_score"], reverse=True)
-        flat = flat[:args.limit]
+        # Flatten, re-sort by recency and keep the top N
+        flat = select_top_candidates(candidates, limit=args.limit)
 
         # Rebuild providers dict
         limited: dict[str, list[dict[str, Any]]] = {}
@@ -410,12 +501,8 @@ def _llm_score_candidates(candidates: dict[str, list[dict[str, Any]]]) -> None:
         print("\n⚠️  --score requires DEEPSEEK_API_KEY in environment. Skipping.")
         return
 
-    # Flatten and take top 5
-    flat = []
-    for models in candidates.values():
-        flat.extend(models)
-    flat.sort(key=lambda x: x["recency_score"], reverse=True)
-    top5 = flat[:5]
+    # Flatten and take top 5 (pure selection — no network, no API key needed)
+    top5 = select_top_candidates(candidates, limit=5)
 
     # Build prompt with model info and category paths
     from chimera.selector import PATH_PATTERNS
