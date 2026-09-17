@@ -1182,16 +1182,76 @@ class Engine:
         for embedding in the audit response::
 
             {"passed": false, "errors": [...]}
+
+        Only the EXTRACTION of the instance is tolerant: a model answer
+        that wraps its JSON in a code fence or in prose is recovered by
+        :meth:`_extract_json_value`. The schema check itself is unchanged —
+        the extracted instance faces the same strict
+        :func:`jsonschema.validate` call, with no coercion or defaults.
         """
         try:
             instance = json.loads(output)
         except (json.JSONDecodeError, TypeError) as exc:
-            return {"passed": False, "errors": [f"Output is not valid JSON: {exc}"]}
+            found, instance = Engine._extract_json_value(output)
+            if not found:
+                return {
+                    "passed": False,
+                    "errors": [f"Output is not valid JSON: {exc}"],
+                }
         try:
             jsonschema.validate(instance=instance, schema=schema)
         except jsonschema.ValidationError as exc:
             return {"passed": False, "errors": [str(exc)]}
         return None  # passed
+
+    @staticmethod
+    def _extract_json_value(text: str) -> tuple[bool, Any]:
+        """Recover a JSON value from an answer that wrapped it in prose.
+
+        Fallback for the schema-validation path, which is handed whatever
+        the model replied with: a fenced ```json block, a sentence before
+        the object, a trailing remark after it, or all three. Two
+        conservative steps, in order:
+
+        1. parse the text as-is, then — if that fails — parse it with a
+           single markdown code fence wrapping the *whole* text removed by
+           :meth:`_strip_final_answer_fences`;
+        2. decode the first complete JSON value with
+           :meth:`json.JSONDecoder.raw_decode`, starting at the first
+           ``{`` or ``[`` — whichever appears earliest. Only object/array
+           openers are scanned, so prose like "I found 5 issues" is never
+           mined for a number, and the decoded value is used alone (any
+           trailing text is discarded, never concatenated).
+
+        Returns ``(found, value)``; ``found`` is False when neither step
+        yields a JSON value, leaving the caller to report its own parse
+        failure against the original text.
+        """
+        if not isinstance(text, str):
+            return False, None
+        candidates = [text]
+        unfenced = Engine._strip_final_answer_fences(text)
+        if unfenced != text:
+            candidates.append(unfenced)
+        for candidate in candidates:
+            try:
+                return True, json.loads(candidate)
+            except (json.JSONDecodeError, TypeError):
+                continue
+        for candidate in candidates:
+            starts = [
+                idx
+                for idx in (candidate.find("{"), candidate.find("["))
+                if idx != -1
+            ]
+            if not starts:
+                continue
+            try:
+                value, _end = json.JSONDecoder().raw_decode(candidate[min(starts):])
+            except json.JSONDecodeError:
+                continue
+            return True, value
+        return False, None
 
     @staticmethod
     def _collect_feedback(

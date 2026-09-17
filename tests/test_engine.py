@@ -861,6 +861,94 @@ class TestSchemaValidation:
         assert _RE_ITERATION_SIGNAL.search(error_json) is not None
 
 
+class TestSchemaValidationWrappedJson:
+    """Wrapped JSON answers must validate; the schema check stays strict.
+
+    Models routinely fence their JSON or wrap it in prose. The extraction
+    step recovers the instance; ``jsonschema.validate`` is unchanged, so an
+    extracted instance that violates the schema must still fail.
+    """
+
+    AUDIT_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "passed": {"type": "boolean"},
+            "score": {"type": "number"},
+        },
+        "required": ["passed", "score"],
+    }
+
+    @pytest.mark.parametrize(
+        "output",
+        [
+            pytest.param(
+                "```json\n" '{"passed": true, "score": 0.9}\n' "```",
+                id="fenced-json",
+            ),
+            pytest.param(
+                "```\n" '{"passed": true, "score": 0.9}\n' "```",
+                id="fenced-no-language-tag",
+            ),
+            pytest.param(
+                "The audit found no blocking issues.\n"
+                '{"passed": true, "score": 0.9}\n'
+                "That is my final answer.",
+                id="prose-then-json",
+            ),
+            pytest.param(
+                '{"passed": true, "score": 0.9}\n{"ignored": true}',
+                id="extra-trailing-json",
+            ),
+            pytest.param(
+                '{"passed": true, "score": 0.9}\nHope that helps!',
+                id="trailing-prose",
+            ),
+            pytest.param(
+                '{"passed": true, "score": 0.9}',
+                id="bare-json",
+            ),
+        ],
+    )
+    def test_wrapped_json_validates(self, output):
+        from chimera.engine import Engine
+
+        assert Engine._validate_against_schema(self.AUDIT_SCHEMA, output) is None
+
+    @pytest.mark.parametrize(
+        "output",
+        [
+            pytest.param(
+                "```json\n" '{"passed": true, "score": "high"}\n' "```",
+                id="fenced-wrong-type",
+            ),
+            pytest.param(
+                "Prose first.\n" '{"passed": true}\n' "Trailing prose.",
+                id="prose-missing-required",
+            ),
+        ],
+    )
+    def test_wrapped_invalid_instance_still_fails(self, output):
+        from chimera.engine import Engine
+
+        result = Engine._validate_against_schema(self.AUDIT_SCHEMA, output)
+        assert result is not None
+        assert result["passed"] is False
+        assert len(result["errors"]) > 0
+        # The error is the jsonschema message, not an extraction failure:
+        # strict validation was NOT loosened.
+        assert "not valid JSON" not in result["errors"][0]
+
+    def test_prose_number_is_not_mined(self):
+        from chimera.engine import Engine
+
+        result = Engine._validate_against_schema(
+            self.AUDIT_SCHEMA, "I found 5 issues in the diff."
+        )
+        assert result is not None
+        assert result["passed"] is False
+        assert "not valid JSON" in result["errors"][0]
+
+
 class TestMaybeUnwrapEnvelope:
     """Test _maybe_unwrap_envelope coercion of non-string answer values."""
 
