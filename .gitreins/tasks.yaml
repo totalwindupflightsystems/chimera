@@ -961,3 +961,18 @@ tasks:
   status: complete
   created_at: '2026-09-17T19:18:47.685820+00:00'
   completed_at: '2026-09-17T19:24:03.991933+00:00'
+- id: DF-CHIMERA-V2-5
+  title: Fix duplicated dispatch-repair warning and lossy worker-error truncation
+  criteria:
+  - 'The dispatch-repair warning prints the note verbatim without duplicating the
+    ''repaired:'' prefix (renders ''warning: dispatch repaired - injected aggregator
+    stage(s) ...'' with exactly one ''repaired'' token)'
+  - Worker-failure errors longer than the display budget are cut at a word boundary
+    with an explicit elision marker naming the omitted character count, and the warning
+    names where the full error is available (trace json / --json)
+  - A regression test fails on the pre-fix output (double 'repaired:' prefix) and
+    passes after the fix
+  - 'Full suite stays green: .venv/bin/python -m pytest -q'
+  status: complete
+  created_at: '2026-09-17T19:56:57.051272+00:00'
+  completed_at: '2026-09-17T20:06:45.411578+00:00'
