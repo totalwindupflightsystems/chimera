@@ -55,18 +55,15 @@ def _require_git_checkout() -> None:
         pytest.skip("not a git checkout — the tracking guard does not apply")
 
 
-def _removal_is_staged() -> bool:
-    """True when the live config's deletion is staged but not yet committed."""
-    out = _git("diff", "--cached", "--name-status", "--diff-filter=D", "--", LIVE_CONFIG)
-    return any(
-        line.split("\t")[-1] == LIVE_CONFIG
-        for line in out.stdout.splitlines()
-        if line.strip()
-    )
-
-
 def test_chimera_yaml_is_not_tracked() -> None:
-    """The live config is absent from the index, and must leave HEAD too."""
+    """The live config is absent from the index, and from HEAD as well.
+
+    The HEAD assertion is deliberately STRICT (no staged-removal escape hatch):
+    the untracking commit is already in history, so HEAD must never list this
+    file again. If it ever needs untracking a second time, land the untracking
+    commit first — this guard runs pre-commit, so a merely-staged removal would
+    fail here by design.
+    """
     _require_git_checkout()
     tracked = _git("ls-files", "--error-unmatch", LIVE_CONFIG)
     assert tracked.returncode != 0, (
@@ -74,12 +71,9 @@ def test_chimera_yaml_is_not_tracked() -> None:
         f"(git ls-files printed: {tracked.stdout.strip()!r})"
     )
     in_head = _git("ls-tree", "HEAD", "--", LIVE_CONFIG).stdout.strip()
-    # A deletion cannot be staged and reflected in HEAD at the same time: while
-    # the untracking change is staged, HEAD still lists the file. That window is
-    # legitimate only when the staged change really removes it.
-    assert not in_head or _removal_is_staged(), (
-        f"{LIVE_CONFIG} is still present in HEAD and its removal is not staged "
-        f"(git ls-tree HEAD printed: {in_head!r})"
+    assert not in_head, (
+        f"{LIVE_CONFIG} is tracked in HEAD — the live config must stay local-only "
+        f"and gitignored (git ls-tree HEAD printed: {in_head!r})"
     )
 
 
