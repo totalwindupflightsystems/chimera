@@ -897,3 +897,20 @@ tasks:
   status: complete
   created_at: '2026-09-17T16:20:41.717668+00:00'
   completed_at: '2026-09-17T16:30:25.743304+00:00'
+- id: DF-CHIMERA-V2-9
+  title: MCP handshake reports the package version, not the mcp SDK version
+  criteria:
+  - The MCP initialize handshake from the real entry point reports serverInfo.version
+    == chimera.__version__ (0.2.6), never the mcp SDK version (1.28.1)
+  - serverInfo.name stays 'chimera' and the three-tool inventory plus JSON-RPC stdout
+    purity are unchanged (tests/test_mcp.py and tests/test_probe_mcp_stdio.py green)
+  - A regression test spawns the real chimera-mcp entry point over stdio and asserts
+    serverInfo.version equals chimera.__version__; the same test fails when the version
+    wiring is reverted
+  - scripts/probe_mcp_stdio.py accepts --expected-version=X (single-token form; bare
+    '--expected-version X' is a usage error, exit 2), always prints SERVER_VERSION=<actual>,
+    and exits 1 naming the mismatch when the handshake version differs from X
+  - Full pytest suite green and ruff clean
+  status: complete
+  created_at: '2026-09-17T16:51:35.908627+00:00'
+  completed_at: '2026-09-17T16:59:50.301354+00:00'
