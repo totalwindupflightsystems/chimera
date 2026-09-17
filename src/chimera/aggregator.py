@@ -15,7 +15,12 @@ import structlog
 
 from chimera.config import ChimeraConfig
 from chimera.dispatcher import DispatchResult, Stage
-from chimera.gateway import Gateway, GatewayResponse
+from chimera.gateway import (
+    FormatCapability,
+    Gateway,
+    GatewayResponse,
+    _get_format_capability,
+)
 
 if TYPE_CHECKING:
     pass
@@ -69,6 +74,96 @@ def _truncate_to_char_budget(text: str, char_budget: int) -> str:
     return text[:keep].rstrip() + _TRUNCATION_MARKER
 
 
+def _schema_enforceable_on_wire(config: ChimeraConfig, model: str) -> bool:
+    """Whether the gateway can ENFORCE a ``json_schema`` format for *model*.
+
+    Mirrors the provider resolution the gateway performs for a stage call
+    (:meth:`chimera.gateway.LiteLLMGateway.complete`): the catalog entry's
+    ``provider``, including the F8 reroute that sends an anthropic model
+    through OpenRouter when no Anthropic credential is configured — OpenRouter
+    is a :attr:`FormatCapability.NONE` provider too, so a schema is no more
+    enforceable there.  The capability table is never re-implemented:
+    :func:`chimera.gateway._get_format_capability` is the single source of
+    truth, the same helper :func:`chimera.gateway.negotiate_response_format`
+    consults before it strips ``response_format``.
+
+    An unknown model is treated as NOT enforceable — the prompt-side
+    restatement is harmless when the schema would have been enforced anyway,
+    whereas skipping it when it was needed is the bug being fixed.
+    """
+    try:
+        provider = config.get_model(model).provider
+    except KeyError:
+        return False
+
+    if provider == "anthropic":
+        # F8, as the gateway applies it: an Anthropic model is served by
+        # OpenRouter when Anthropic itself has no credential (neither the
+        # ``api_keys`` shortcut nor the provider entry) AND an OpenRouter
+        # shortcut key exists.  ``provider_credential_resolved`` cannot answer
+        # this — it deliberately folds the F8 fallback into the Anthropic view,
+        # so it reports True for a native-key-less Anthropic whenever only an
+        # OpenRouter key is configured (the very case that needs the reroute).
+        native = config.api_keys.get("anthropic")
+        if not native:
+            anthropic_cfg = config.providers.get("anthropic")
+            native = anthropic_cfg.api_key if anthropic_cfg is not None else None
+        if not native and config.api_keys.get("openrouter"):
+            provider = "openrouter"
+
+    return _get_format_capability(provider) == FormatCapability.JSON_SCHEMA
+
+
+def _schema_restatement(schema: dict[str, Any]) -> str:
+    """Short prompt-side restatement of a dispatcher-authored output schema.
+
+    Appended only when the wire cannot enforce the schema (a
+    ``FormatCapability.NONE`` provider has ``response_format`` stripped), which
+    is exactly when the model has to be TOLD the shape instead of being
+    constrained to it. Names the required keys, the declared type of each
+    property, and — the failure this exists for — that an array-of-strings
+    property must be a JSON array, never a comma-joined string.
+    """
+    properties = (
+        schema.get("properties")
+        if isinstance(schema.get("properties"), dict)
+        else {}
+    )
+    required = [r for r in (schema.get("required") or []) if isinstance(r, str)]
+
+    described: list[str] = []
+    array_of_strings: list[str] = []
+    for name, subschema in properties.items():
+        if not isinstance(subschema, dict):
+            continue
+        declared = subschema.get("type")
+        if declared == "array":
+            items = subschema.get("items")
+            item_type = items.get("type") if isinstance(items, dict) else None
+            declared = f"array of {item_type}s" if isinstance(item_type, str) else "array"
+            if item_type == "string":
+                array_of_strings.append(name)
+        if not isinstance(declared, str):
+            continue
+        described.append(f"{name}: {declared}")
+
+    lines = [
+        "## Required output shape",
+        "Reply with a single JSON object and nothing else — no prose, no code fences.",
+    ]
+    if required:
+        lines.append("Required keys: " + ", ".join(required) + ".")
+    if described:
+        lines.append("Field types: " + "; ".join(described) + ".")
+    if array_of_strings:
+        lines.append(
+            f"{', '.join(array_of_strings)} MUST be a JSON ARRAY of strings, "
+            'e.g. ["worker_1", "worker_2"] — never a comma-joined string like '
+            '"worker_1, worker_2".'
+        )
+    return "\n".join(lines)
+
+
 def build_merge_prompt(
     stage: Stage,
     dispatch: DispatchResult,
@@ -77,6 +172,7 @@ def build_merge_prompt(
     *,
     max_prompt_tokens: int | None = None,
     output_schema: dict[str, Any] | None = None,
+    wire_enforces_schema: bool = True,
 ) -> list[dict[str, str]]:
     """Build the message list for an aggregator / merge / audit stage.
 
@@ -97,6 +193,17 @@ def build_merge_prompt(
         suppressed — the ``response_format`` parameter on the gateway
         call handles schema enforcement so the prompt should not add
         conflicting JSON instructions.
+    wire_enforces_schema
+        Whether the wire can actually enforce *output_schema* (the
+        stage's provider supports ``json_schema``).  Defaults to
+        ``True`` — the historical assumption, which holds for the
+        providers that support it.  When ``False`` for a
+        ``FormatCapability.NONE`` provider, ``response_format`` is
+        stripped by :func:`chimera.gateway.negotiate_response_format`
+        and the model never sees the schema, so a short textual
+        restatement of the required shape (see
+        :func:`_schema_restatement`) is appended instead.  It has no
+        effect without *output_schema* or when the wire enforces it.
     """
     instructions = _stage_instructions(stage, dispatch)
 
@@ -159,13 +266,21 @@ def build_merge_prompt(
             if output_schema is None
             else ""
         )
+        # The wire can only enforce a schema for json_schema-capable
+        # providers; everywhere else response_format is stripped, so the
+        # shape has to be stated in the prompt or the model guesses it.
+        schema_note = (
+            "\n\n" + _schema_restatement(output_schema)
+            if output_schema is not None and not wire_enforces_schema
+            else ""
+        )
         user = (
             f"## Original user request\n{user_prompt}\n\n"
             f"## Dispatcher's instructions for you ({stage.id})\n{instructions}\n\n"
             f"## Upstream outputs\n{section}\n\n"
             "## Your job\n"
             "Following the instructions above, combine these into the final answer "
-            f"for the user. Output only the final answer.{json_hint}"
+            f"for the user. Output only the final answer.{json_hint}{schema_note}"
         )
         return system, user
 
@@ -290,6 +405,13 @@ class Aggregator:
             stage, dispatch, dependencies, user_prompt,
             max_prompt_tokens=max_prompt_tokens,
             output_schema=output_schema,
+            # Only a json_schema-capable provider actually receives the
+            # schema (`negotiate_response_format` strips `response_format`
+            # for everyone else), so the prompt has to carry the shape
+            # wherever the wire cannot.
+            wire_enforces_schema=_schema_enforceable_on_wire(
+                self.config, stage.model,
+            ),
         )
         log.info(
             "aggregator_execute",

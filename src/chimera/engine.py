@@ -1234,11 +1234,25 @@ class Engine:
 
             {"passed": false, "errors": [...]}
 
-        Only the EXTRACTION of the instance is tolerant: a model answer
-        that wraps its JSON in a code fence or in prose is recovered by
-        :meth:`_extract_json_value`. The schema check itself is unchanged —
-        the extracted instance faces the same strict
-        :func:`jsonschema.validate` call, with no coercion or defaults.
+        Two steps are tolerant, and both exist because the
+        dispatcher-authored schema cannot always be ENFORCED on the wire: a
+        provider with no structured-output support (
+        :class:`~chimera.gateway.FormatCapability.NONE`, e.g. deepseek) has
+        ``response_format`` stripped by
+        :func:`chimera.gateway.negotiate_response_format`, so the model never
+        sees the schema and answers in whatever shape it guesses.
+
+        1. EXTRACTION — an answer that wraps its JSON in a code fence or in
+           prose is recovered by :meth:`_extract_json_value`.
+        2. ONE documented coercion — a property the schema declares as an
+           array of strings whose value came back as a single delimited
+           string (``"sources": "worker_1, worker_2"``) is split by
+           :meth:`_normalize_delimited_string_arrays`.
+
+        Nothing else is coerced: no defaults, no scalar→array widening for
+        non-string items, no ``required`` relaxation, and the *schema* is
+        never mutated. Everything else faces the same strict
+        :func:`jsonschema.validate` call as before.
         """
         try:
             instance = json.loads(output)
@@ -1249,11 +1263,74 @@ class Engine:
                     "passed": False,
                     "errors": [f"Output is not valid JSON: {exc}"],
                 }
+        instance = Engine._normalize_delimited_string_arrays(schema, instance)
         try:
             jsonschema.validate(instance=instance, schema=schema)
         except jsonschema.ValidationError as exc:
             return {"passed": False, "errors": [str(exc)]}
         return None  # passed
+
+    @staticmethod
+    def _normalize_delimited_string_arrays(
+        schema: dict[str, Any], instance: Any
+    ) -> Any:
+        """Split a comma-joined string where the schema wants an array of strings.
+
+        The dispatcher authors the output schema, but the wire cannot always
+        enforce it (see :meth:`_validate_against_schema`): a model that never
+        saw the schema often collapses a list into one string —
+        ``"sources": "worker_1, worker_2"`` for a property the schema declares
+        as ``{"type": "array", "items": {"type": "string"}}``. Failing the
+        audit on that is a formatting disagreement, not a wrong answer, so the
+        engine repairs exactly that shape before validating.
+
+        This is the ONE coercion the engine performs, and it is deliberately
+        narrow:
+
+        * only TOP-LEVEL properties of a dict instance are considered (no
+          recursion into nested objects or array items);
+        * only when the property's subschema says ``type: array`` **and**
+          ``items.type: string``;
+        * only when the instance's value is a ``str`` (an already-correct
+          list, a number, ``None`` — all untouched, so no double
+          normalization is possible);
+        * only when the split yields at least one non-empty part.
+
+        Parts are stripped of surrounding whitespace and empty parts are
+        dropped (``"a, , b"`` → ``["a", "b"]``). A string that yields nothing
+        (``""``, ``"   "``, ``", ,"``) is LEFT ALONE rather than becoming a
+        fabricated ``[]``: it carries no list information, so it still fails
+        the type check and the audit degrades loudly instead of silently
+        inventing "no sources". The instance dict is modified in place and
+        returned; the schema is only read.
+        """
+        if not isinstance(instance, dict):
+            return instance
+        properties = schema.get("properties")
+        if not isinstance(properties, dict):
+            return instance
+        for name, subschema in properties.items():
+            if not isinstance(subschema, dict):
+                continue
+            if subschema.get("type") != "array":
+                continue
+            items = subschema.get("items")
+            if not isinstance(items, dict) or items.get("type") != "string":
+                continue
+            value = instance.get(name)
+            if not isinstance(value, str):
+                continue
+            parts = [part.strip() for part in value.split(",")]
+            parts = [part for part in parts if part]
+            if not parts:
+                continue
+            instance[name] = parts
+            log.info(
+                "engine_schema_array_normalized",
+                property=name,
+                items=len(parts),
+            )
+        return instance
 
     @staticmethod
     def _extract_json_value(text: str) -> tuple[bool, Any]:
