@@ -67,6 +67,16 @@ Health endpoints now expose the running git commit (`/health`,
 `git rev-parse --short HEAD` to prove the deployed process matches the
 checkout. Foreman light-audits do exactly this check on every tick.
 
+### Live config is local-only (never commit it)
+
+`/home/kara/chimera-v2/chimera.yaml` is **untracked and gitignored**
+(DF-CHIMERA-0916B-4) — the repo ships only `chimera.yaml.example`. The unit
+points `Environment=CHIMERA_CONFIG` at that exact path, so the file stays on
+disk here and the deploy steps above are unchanged. After pulling a tree where
+it was untracked, recreate it with `chimera config init` (or restore your
+backup) before restarting: a fresh clone has no live config at all, and the
+service will not boot without one.
+
 ### Live smoke test (one command, end-to-end)
 
 `/v1/health` saying "alive" does NOT prove a deliberation works — provider

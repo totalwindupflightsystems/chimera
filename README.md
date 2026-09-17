@@ -22,8 +22,10 @@ pip install chimera-deliberation[full]        # full CLI + server in a venv
 pipx install chimera-deliberation[full]       # same, isolated in its own env
 pip install chimera-deliberation[server]      # API server only
 
-# Configure
-cp chimera.yaml.example chimera.yaml
+# Configure — the repo ships NO chimera.yaml. Your live config is local-only
+# (gitignored, never committed), so a fresh clone has none — create it:
+chimera config init                           # copies chimera.yaml.example → chimera.yaml
+# (from a repo checkout: cp chimera.yaml.example chimera.yaml works too)
 # Add your API keys (at minimum: DEEPSEEK_API_KEY)
 
 # Run
