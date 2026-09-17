@@ -1026,3 +1026,16 @@ tasks:
   status: complete
   created_at: '2026-09-17T21:58:28.889759+00:00'
   completed_at: '2026-09-17T22:08:23.594774+00:00'
+- id: DF-CHIMERA-0917-4
+  title: Assert the README quickstart CLI surface on ordinary pushes
+  criteria:
+  - The test job in .github/workflows/ci.yml runs scripts/quickstart_battery.py against
+    the editable .venv install with --expected-version taken from pyproject.toml
+  - tests/test_release_workflow.py pins the new step offline from the parsed ci.yml
+    (no network, no GitHub runner)
+  - A locally simulated push run of the battery against an editable venv exits 0 and
+    names no failing check
+  - Full suite stays green and ruff reports no new findings
+  status: complete
+  created_at: '2026-09-17T22:35:40.261244+00:00'
+  completed_at: '2026-09-17T22:44:05.543010+00:00'
