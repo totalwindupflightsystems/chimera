@@ -527,10 +527,13 @@ class TestRunEntrypoint:
     """Cover run() by mocking uvicorn.run and load_config."""
 
     def test_run_calls_uvicorn(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
-        # Write a config file so load_config finds it
+        # Write a config file so load_config finds it. CHIMERA_CONFIG outranks
+        # the cwd walk-up, so clear it (the conftest fresh-checkout fixture sets
+        # it when the repo root has no live chimera.yaml).
         import yaml
         config_path = tmp_path / "chimera.yaml"
         config_path.write_text(yaml.safe_dump(CONFIG_DICT), encoding="utf-8")
+        monkeypatch.delenv("CHIMERA_CONFIG", raising=False)
         monkeypatch.chdir(tmp_path)
 
         uvicorn_called: dict[str, Any] = {}

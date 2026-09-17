@@ -120,6 +120,10 @@ def test_mcp_run_tolerates_missing_config(tmp_path, monkeypatch) -> None:
 
     fake_server = MagicMock(spec=FastMCP)
     fake_server.run = MagicMock()
+    # No config anywhere: CHIMERA_CONFIG outranks the cwd walk-up, so it has to
+    # be cleared too (the conftest fresh-checkout fixture sets it when the repo
+    # root has no live chimera.yaml).
+    monkeypatch.delenv("CHIMERA_CONFIG", raising=False)
     monkeypatch.chdir(tmp_path)  # no chimera.yaml in cwd or any parent
     with patch("chimera.mcp.server.build_server", return_value=fake_server) as build_mock:
         run(config_path=None, parse_argv=False)

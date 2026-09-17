@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -12,6 +14,38 @@ import yaml
 
 from chimera.config import ChimeraConfig
 from chimera.gateway import GatewayResponse
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _config_default_resolution_for_fresh_checkout() -> Any:
+    """Keep default config resolution working in a checkout with no live config.
+
+    ``chimera.yaml`` is a local-only, gitignored file (DF-CHIMERA-0916B-4): a
+    fresh clone and CI have only the shipped ``chimera.yaml.example``. Tests that
+    resolve the config through ``load_config()``/``create_app()`` would otherwise
+    die with "No chimera.yaml found" in CI while passing on a developer box, so
+    when the repo-root live config is absent we point ``CHIMERA_CONFIG`` at the
+    shipped template — the same file ``chimera config init`` copies. A developer
+    checkout with a real ``chimera.yaml`` (or an explicit ``CHIMERA_CONFIG``) is
+    left untouched, and tests that clear the variable themselves (the CH-GAP-050
+    config-less first-run cases) still see no config at all.
+    """
+    live = REPO_ROOT / "chimera.yaml"
+    if live.is_file() or os.environ.get("CHIMERA_CONFIG"):
+        yield
+        return
+    template = REPO_ROOT / "chimera.yaml.example"
+    if not template.is_file():  # pragma: no cover - repo always ships it
+        yield
+        return
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("CHIMERA_CONFIG", str(template))
+    try:
+        yield
+    finally:
+        monkeypatch.undo()
 
 # A compact, deterministic model catalog + formations mirroring chimera.yaml.example
 CONFIG_DICT: dict[str, Any] = {
