@@ -33,4 +33,5 @@ against the live deployment, **not** a description of current behavior.
 - [dogfood/2026-08-23-integration.md](dogfood/2026-08-23-integration.md) — run 3 integration report (2026-08-23)
 - [dogfood/2026-09-04-runB-integration.md](dogfood/2026-09-04-runB-integration.md) — run 6, release-lag + deploy-parity focus (2026-09-04)
 - [dogfood/2026-09-11-integration.md](dogfood/2026-09-11-integration.md) — run 7 integration report (2026-09-11)
+- [dogfood/2026-09-16-runB-integration.md](dogfood/2026-09-16-runB-integration.md) — run 9B, real-SDK + bunker-install focus (2026-09-16)
 - [dogfood/diagnostics.md](dogfood/diagnostics.md) — build/diagnostic trail behind the 2026-08-03 run
