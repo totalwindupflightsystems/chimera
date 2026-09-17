@@ -177,6 +177,24 @@ Common knobs can be set from the environment instead of editing the YAML
   `OPENAI_*`, `XAI_*`, `ZAI_*`, `ANTHROPIC_*`, `GEMINI_*` — populate
   `api_keys.*` for that provider
 
+### First-run remedies
+
+| Symptom | The message names | Do this |
+|---|---|---|
+| `error: No chimera.yaml found. …` (one line, exit 2, no traceback) | `chimera config init` | Run `chimera config init` — it bootstraps `chimera.yaml` from the shipped `chimera.yaml.example` (local copy, repo checkout, or the copy inside the installed wheel, so a bare `pip install` works). `--force` overwrites an existing file. |
+| A provider rejects the call (`401`, `Missing credentials`, `invalid api key`) | the provider **and its own env var**, e.g. `provider 'deepseek' rejected the credentials or none were found: set DEEPSEEK_API_KEY` | Set that variable (or your `providers.<name>.api_key_env`) and re-run. |
+
+The env var is resolved from the provider that actually served the model —
+`providers.<name>.api_key_env` if set, else the canonical name in the table
+above (`google` → `GEMINI_API_KEY`), else `<PROVIDER>_API_KEY`. LiteLLM's own
+error prose is provider-blind (a DeepSeek call is served through the OpenAI
+SDK and mentions `OPENAI_API_KEY`), so Chimera puts its accurate remedy in
+front of it on every surface: CLI, REST body, MCP tool result, trace and logs.
+Keyless loopback providers (`lmstudio`, `ollama`) keep their raw error text —
+Chimera never names a key variable for an endpoint that needs none.
+
+See [docs/CONFIG.md](docs/CONFIG.md#first-run-remedies) for the full chain.
+
 ## Documentation
 
 Detailed guides live in `docs/`:

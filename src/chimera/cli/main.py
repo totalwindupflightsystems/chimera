@@ -38,7 +38,13 @@ from rich.panel import Panel
 from rich.table import Table
 
 from chimera import __version__, blocked_models
-from chimera.config import ChimeraConfig, FormationPreset, Observability, load_config
+from chimera.config import (
+    ChimeraConfig,
+    FormationPreset,
+    Observability,
+    load_config,
+    provider_api_key_env,
+)
 from chimera.engine import Engine
 from chimera.gateway import LiteLLMGateway
 from chimera.observability import configure_logging
@@ -227,7 +233,14 @@ def _load_cfg(ctx: click.Context) -> ChimeraConfig:
     try:
         cfg = load_config(config_path)
     except FileNotFoundError as exc:
-        console.print(f"[red]error:[/red] {exc}")
+        # DF-CHIMERA-V2-8: the remedy names `chimera config init`, which makes
+        # the message ~200 chars — rich would hard-wrap it into three lines at
+        # 80 columns (splitting the command across a boundary at some widths).
+        # soft_wrap keeps the CH-GAP-050 one-liner contract: one logical line,
+        # whatever the terminal width. A real terminal soft-wraps the display
+        # itself, so nothing is lost on screen, and the byte stream stays one
+        # line for pipes, logs and tests.
+        console.print(f"[red]error:[/red] {exc}", soft_wrap=True)
         sys.exit(2)
     # Phase 2: re-pin with the real observability config — still stderr.
     configure_logging(cfg.observability, force_stderr=True)
@@ -358,14 +371,17 @@ def _provider_for_model(model: str, config: ChimeraConfig | None) -> str | None:
 def _provider_api_key_env(provider: str, config: ChimeraConfig | None) -> str:
     """The env var that must hold *provider*'s key.
 
-    Prefers the provider's configured ``api_key_env``; falls back to the
-    ``<PROVIDER>_API_KEY`` convention LiteLLM itself reads (the same names
-    ``config._apply_env_overrides`` mirrors into ``api_keys``).
+    Delegates to :func:`chimera.config.provider_api_key_env` — the same
+    resolver the gateway uses to annotate a credential failure
+    (DF-CHIMERA-V2-8) — so the CLI hint and the error text can never name
+    different variables.  Falls back to the ``<PROVIDER>_API_KEY`` convention
+    that LiteLLM itself reads; this helper is always rendering a *named*
+    provider, so the "keyless local endpoint" case (``None``) still gets a
+    printable name.
     """
-    if config is not None:
-        entry = config.providers.get(provider)
-        if entry is not None and entry.api_key_env:
-            return entry.api_key_env
+    resolved = provider_api_key_env(config, provider)
+    if resolved:
+        return resolved
     return f"{provider.upper().replace('-', '_')}_API_KEY"
 
 

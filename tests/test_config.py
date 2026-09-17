@@ -116,13 +116,21 @@ def test_find_config_path_raises_when_missing(tmp_path: Path) -> None:
 
 
 def test_find_config_path_missing_message_is_actionable(tmp_path: Path) -> None:
-    """CH-GAP-050: the missing-config error names the exact remedy."""
+    """CH-GAP-050 + DF-CHIMERA-V2-8: the error names the remedy that works.
+
+    The old text only said "copy chimera.yaml.example" — which a bare pip
+    install may not have.  ``chimera config init`` bootstraps the file from
+    the wheel-shipped template, so the message must name it.
+    """
     with pytest.raises(FileNotFoundError) as excinfo:
         find_config_path(tmp_path)
+    message = str(excinfo.value)
     assert (
         "No chimera.yaml found. Copy chimera.yaml.example to chimera.yaml."
-        in str(excinfo.value)
+        in message
     )
+    assert "chimera config init" in message
+    assert "\n" not in message
 
 
 def test_defaults_empty_placeholder() -> None:

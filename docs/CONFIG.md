@@ -91,6 +91,40 @@ Add any key your providers need: `anthropic`, `openai`, `xai`, etc.
 
 ---
 
+## First-run remedies
+
+Two failures account for nearly every failed first run. Both messages name
+the fix; this is the chain behind them.
+
+| Symptom | The message names | Do this |
+|---|---|---|
+| `error: No chimera.yaml found. …` — one line, exit code 2, no traceback | `chimera config init` | Run `chimera config init`. It copies the shipped `chimera.yaml.example` into `chimera.yaml`, resolving the template from a local copy, the repo checkout, or the copy inside the installed wheel — so it works for a bare `pip install` with no repo on disk. Add `--force` to overwrite an existing config. |
+| A provider rejects the call (`401`, `Missing credentials`, `invalid api key`) | the provider **and its own env var**, e.g. `provider 'deepseek' rejected the credentials or none were found: set DEEPSEEK_API_KEY` | Set that variable (or the variable your `providers.<name>.api_key_env` names) and re-run. |
+
+Notes:
+
+- The env var in the message is resolved from **the provider that served the
+  model** — an explicit `providers.<name>.api_key_env` first, then the
+  canonical name from the `api_keys` table above, then the
+  `<PROVIDER>_API_KEY` convention. LiteLLM's own prose is provider-blind
+  (every `base_url` provider is reached through the OpenAI SDK, so a DeepSeek
+  failure mentions `OPENAI_API_KEY`); Chimera prepends its accurate remedy
+  before that text, on every surface (CLI, REST body, MCP tool result, trace,
+  structlog stream).
+- **Keyless local endpoints are never told to set a key.** A provider whose
+  `base_url` is loopback (`localhost` / `127.0.0.1` / `0.0.0.0` / `::1`) and
+  that configures neither `api_key_env` nor `api_key` — `lmstudio`, `ollama`,
+  a local llama.cpp/vLLM server — keeps the raw upstream error text, because
+  no env var can be named for it honestly. Give it an `api_key_env` if your
+  local server really does require a token.
+- A *present but invalid* key blocks the model for the block cooldown
+  (`~/.chimera/blocked-models.json`, 7 days by default); the CLI prints the
+  same variable in its `credential failure` hint, and `chimera models` lists
+  the blocked models with their remedy. The block self-clears when the key
+  changes.
+
+---
+
 ## `defaults`
 
 | Field | Type | Default | Description |
@@ -298,6 +332,18 @@ providers:
 
 The `base_url` is used by LiteLLM to route calls. Provider IDs (`deepseek`,
 `openrouter`, `zai`) map to the `provider` field in model entries.
+
+Two optional credential fields per provider:
+
+| Field | Meaning |
+|---|---|
+| `api_key_env` | Name of the environment variable holding this provider's key. **Overrides** the canonical name from `api_keys` (`google` → `GEMINI_API_KEY`) and the `<PROVIDER>_API_KEY` convention. Set it when your key lives under a non-standard name. |
+| `api_key` | Literal key value, or a `${VAR}` token (never hardcode a real key). |
+
+A provider with a **loopback** `base_url` and neither field set is treated as
+keyless (a local `lmstudio`/`ollama`/llama.cpp/vLLM endpoint): credential
+errors from it keep their raw upstream text instead of naming an env var that
+does not exist, and no key is required for it to run.
 
 ---
 

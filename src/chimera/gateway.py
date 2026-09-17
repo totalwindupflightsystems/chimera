@@ -22,8 +22,9 @@ from typing import Any, Protocol, runtime_checkable
 
 import structlog
 
+from chimera.blocked_models import is_credential_error
 from chimera.circuit_breaker import ProviderCircuitBreaker, fast_fail_response
-from chimera.config import ChimeraConfig, ModelEntry
+from chimera.config import ChimeraConfig, ModelEntry, provider_api_key_env
 from chimera.exceptions import BudgetExhaustedError
 
 log = structlog.get_logger("chimera.gateway")
@@ -347,6 +348,53 @@ async def _sleep_ms(ms: float) -> None:
     await asyncio.sleep(ms / 1000.0)
 
 
+def credential_remedy(
+    error: object,
+    *,
+    model: str,
+    provider: str | None,
+    config: ChimeraConfig | None,
+) -> str:
+    """Provider-accurate remedy phrase for a credential-class failure ("" if none).
+
+    LiteLLM's credential errors are **provider-blind**: a missing key for any
+    provider served over the OpenAI SDK (every ``base_url`` provider here) is
+    reported as ``Missing credentials ... set the OPENAI_API_KEY ...``, so a
+    DeepSeek user was told to set ``OPENAI_API_KEY`` — a variable that could
+    not fix their call.  The phrase returned here names the provider and the
+    env var that actually holds its key, and callers place it **before** the
+    generic upstream text so the accurate remedy is what the user reads first.
+
+    This is the ONE seam: the ``GatewayError`` message built at the raise
+    sites below is what the CLI, the REST body, the MCP tool result, the trace
+    and the structlog stream all render (DF-CHIMERA-V2-8).
+
+    Returns ``""`` — meaning "keep the raw upstream message verbatim" — when:
+
+    * *error* is not credential-class (timeouts, 429s and 5xx are retry
+      business, not a key problem);
+    * no provider can be resolved, so no env var could be named honestly;
+    * the provider is a keyless local endpoint (``lmstudio``/``ollama``),
+      where ``provider_api_key_env`` cannot name a variable — the keyless path
+      stays byte-identical to before.
+    """
+    if not is_credential_error(error):
+        return ""
+    if not provider and config is not None:
+        entry = config.models.get(model)
+        provider = entry.provider if entry is not None else None
+    if not provider:
+        return ""
+    env_var = provider_api_key_env(config, provider)
+    if not env_var:
+        return ""
+    return (
+        f"provider '{provider}' rejected the credentials or none were found: "
+        f"set {env_var} (or the variable named by "
+        f"providers.{provider}.api_key_env). upstream error: "
+    )
+
+
 class LiteLLMGateway:
     """Production gateway backed by ``litellm.acompletion``.
 
@@ -432,7 +480,9 @@ class LiteLLMGateway:
             return fast_fail_response(effective_provider)
 
         try:
-            response = await self._complete_with_retry(call_kwargs, model)
+            response = await self._complete_with_retry(
+                call_kwargs, model, provider=effective_provider,
+            )
             if breaker is not None:
                 breaker.on_success()
             return response
@@ -459,7 +509,11 @@ class LiteLLMGateway:
     # ------------------------------------------------------------------ #
 
     async def _complete_with_retry(
-        self, call_kwargs: dict[str, Any], model: str
+        self,
+        call_kwargs: dict[str, Any],
+        model: str,
+        *,
+        provider: str | None = None,
     ) -> GatewayResponse:
         """Call LiteLLM with exponential backoff retry for transient failures.
 
@@ -472,6 +526,12 @@ class LiteLLMGateway:
         Retryable: 429, 5xx, network errors (timeout, connection refused).
         Non-retryable: 401/403, 400, budget exhausted.
         Budget exhaustion (C7): detected and raised as BudgetExhaustedError.
+
+        *provider* is the provider that actually served the call (the caller
+        resolves it, including the F8 Anthropic → OpenRouter fallback), so a
+        credential failure can be reported against the right provider's env
+        var instead of whichever provider LiteLLM's SDK prose happens to name
+        (DF-CHIMERA-V2-8).  ``None`` falls back to the model catalog entry.
         """
         retry_cfg = self.config.retry
         last_error: BaseException | None = None
@@ -512,7 +572,9 @@ class LiteLLMGateway:
                         attempt=attempt,
                     )
                     raise GatewayError(
-                        f"{model} call failed: {exc}"
+                        f"{model} call failed: "
+                        f"{credential_remedy(exc, model=model, provider=provider, config=self.config)}"
+                        f"{exc}"
                     ) from exc
 
                 if attempt >= retry_cfg.max_attempts:
@@ -544,7 +606,9 @@ class LiteLLMGateway:
                 await _sleep_ms(delay)
 
         raise GatewayError(
-            f"{model} call failed after {retry_cfg.max_attempts} attempts: {last_error}"
+            f"{model} call failed after {retry_cfg.max_attempts} attempts: "
+            f"{credential_remedy(last_error, model=model, provider=provider, config=self.config)}"
+            f"{last_error}"
         ) from last_error
 
     def _build_response(self, result: Any, model: str) -> GatewayResponse:
@@ -720,6 +784,7 @@ __all__ = [
     "_is_retryable",
     "_litellm_acomplete",
     "_litellm_sync_complete",
+    "credential_remedy",
     "ensure_litellm_quiet",
     "negotiate_response_format",
     "resolve_litellm_model",

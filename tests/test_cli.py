@@ -618,11 +618,17 @@ def test_cli_formations_dag_summarized(config_file) -> None:  # type: ignore[no-
 
 _CONFIGLESS_MSG = "No chimera.yaml found. Copy chimera.yaml.example to chimera.yaml."
 
+#: DF-CHIMERA-V2-8: the remedy that works from a bare pip install (it
+#: bootstraps from the wheel-shipped template) — a message that only points at
+#: ``chimera.yaml.example`` sends the user hunting for a file they lack.
+_CONFIGLESS_REMEDY = "chimera config init"
+
 
 def _assert_configless_error(result) -> None:  # type: ignore[no-untyped-def]
     """Fresh dir + config-needing command → one-line error, exit 2, no traceback."""
     assert result.exit_code == 2, result.output
     assert _CONFIGLESS_MSG in result.output
+    assert _CONFIGLESS_REMEDY in result.output
     assert "Traceback" not in result.output
 
 
@@ -662,6 +668,25 @@ def test_cli_run_missing_config_one_line_error(tmp_path, monkeypatch) -> None:  
     runner = CliRunner()
     result = runner.invoke(main, ["what is 2+2?"])
     _assert_configless_error(result)
+
+
+def test_cli_missing_config_remedy_is_one_line_at_80_columns(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """DF-CHIMERA-V2-8: the remedy survives a narrow terminal as ONE line.
+
+    Naming ``chimera config init`` grows the message to ~200 chars; rich's
+    default hard-wrap turned it into three lines at 80 columns (and can break
+    inside the command itself at some widths), which defeats both the
+    CH-GAP-050 one-liner contract and the point of naming a runnable remedy.
+    The handler prints it with ``soft_wrap``, so the byte stream is one line
+    at any terminal width — a real terminal still soft-wraps the display.
+    """
+    _fresh_dir(monkeypatch, tmp_path)
+    runner = CliRunner(env={"COLUMNS": "80"})
+    result = runner.invoke(main, ["what is 2+2?"])
+    assert result.exit_code == 2, result.output
+    assert result.output.count("\n") == 1, repr(result.output)
+    assert "chimera config init" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_cli_config_init_creates_working_config(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

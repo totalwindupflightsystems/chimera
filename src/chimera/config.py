@@ -11,6 +11,7 @@ import os
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
@@ -465,6 +466,67 @@ def provider_credential_resolved(config: ChimeraConfig, provider_name: str) -> b
     return _resolved_credential(config, provider_name) is not None
 
 
+#: Canonical API-key env var per provider.  These are the names
+#: ``_apply_env_overrides`` mirrors into ``config.api_keys`` — that table is
+#: the path that actually supplies a key at load time, so this map mirrors it
+#: (not LiteLLM's own per-provider guesses: a DeepSeek call is served over the
+#: OpenAI SDK, and LiteLLM's own "Missing credentials" text names
+#: ``OPENAI_API_KEY`` for it — DF-CHIMERA-V2-8).  ``api.server``'s
+#: ``_PROVIDER_ENV_KEYS`` health-probe table follows the same convention
+#: (with the ``*_KEY`` aliases); keep the canonical names in sync.
+_PROVIDER_API_KEY_ENV: dict[str, str] = {
+    "deepseek": "DEEPSEEK_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "xai": "XAI_API_KEY",
+    "zai": "ZAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "google": "GEMINI_API_KEY",
+}
+
+#: Hosts that mean "this endpoint runs on the operator's own machine", where
+#: running without a key is the normal configuration.
+_LOCAL_PROVIDER_HOSTS = frozenset(
+    {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+)
+
+
+def _is_local_base_url(base_url: str | None) -> bool:
+    """True when *base_url* points at loopback / this machine."""
+    if not base_url:
+        return False
+    host = urlsplit(base_url).hostname or ""
+    return host in _LOCAL_PROVIDER_HOSTS or host.startswith("127.")
+
+
+def provider_api_key_env(config: ChimeraConfig | None, provider: str) -> str | None:
+    """The env var that holds *provider*'s API key, or ``None`` when keyless.
+
+    Resolution order (first hit wins):
+
+    1. ``providers[provider].api_key_env`` — an explicit config always wins,
+       including for a local endpoint that does require a token.
+    2. The canonical name from ``_PROVIDER_API_KEY_ENV`` (``google`` →
+       ``GEMINI_API_KEY``, the var ``_apply_env_overrides`` actually reads).
+    3. ``<PROVIDER>_API_KEY`` — the convention LiteLLM itself reads.
+
+    ``None`` means "no env var can be named honestly": the provider is a
+    **keyless local endpoint** (loopback ``base_url``, no ``api_key_env`` and
+    no ``api_key`` — ``lmstudio``, ``ollama``, a local llama.cpp/vLLM server).
+    Reporters must leave the message untouched in that case instead of
+    inventing ``LMSTUDIO_API_KEY``; naming another provider's variable (the
+    original defect) is equally forbidden.
+    """
+    entry = config.providers.get(provider) if config is not None else None
+    if entry is not None and entry.api_key_env:
+        return entry.api_key_env
+    if entry is not None and not entry.api_key and _is_local_base_url(entry.base_url):
+        return None
+    return _PROVIDER_API_KEY_ENV.get(provider.lower()) or (
+        f"{provider.upper().replace('-', '_')}_API_KEY"
+    )
+
+
 def credentialed_enabled_models(config: ChimeraConfig) -> dict[str, ModelEntry]:
     """Enabled catalog models whose provider has resolved credentials.
 
@@ -567,7 +629,9 @@ def find_config_path(start: Path | str | None = None) -> Path:
         if target.is_file():
             return target
     raise FileNotFoundError(
-        "No chimera.yaml found. Copy chimera.yaml.example to chimera.yaml."
+        "No chimera.yaml found. Copy chimera.yaml.example to chimera.yaml. "
+        "Run `chimera config init` to create one from the shipped template "
+        "(the wheel carries it, so this also works for pip installs)."
     )
 
 
@@ -771,6 +835,7 @@ __all__ = [
     "find_example_config_path",
     "load_config",
     "model_credential_fingerprint",
+    "provider_api_key_env",
     "provider_credential_fingerprint",
     "provider_credential_resolved",
 ]
