@@ -848,3 +848,20 @@ tasks:
   status: complete
   created_at: '2026-09-17T14:58:17.056381+00:00'
   completed_at: '2026-09-17T14:58:20.500689+00:00'
+- id: df-chimera-v2-8
+  title: Name the real remedy for a missing config and a missing provider key (DF-CHIMERA-V2-8)
+  criteria:
+  - In an empty directory with no chimera.yaml, the config-needing CLI command prints
+    a one-line error that names 'chimera config init' as the remedy (exit code stays
+    2, no traceback), asserted by a test and by a live run
+  - With a chimera.yaml present but no resolvable key for a provider, the failure
+    text emitted by the gateway names the provider and the env var to set (DEEPSEEK_API_KEY
+    for deepseek/deepseek-v4-flash), asserted by a hermetic test with litellm mocked
+    to raise the 'Missing credentials' InternalServerError
+  - Regression tests exist for both messages and the full suite (.venv/bin/python
+    -m pytest tests/ -q) passes with no new failures
+  - Docs describe the first-run remedy chain (missing config -> chimera config init;
+    missing provider key -> the provider's api_key_env)
+  status: complete
+  created_at: '2026-09-17T15:09:02.321520+00:00'
+  completed_at: '2026-09-17T15:21:46.308116+00:00'
