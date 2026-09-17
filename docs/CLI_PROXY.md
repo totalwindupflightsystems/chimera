@@ -120,7 +120,7 @@ target is written `provider,model`):
 
 ```json
 {
-  "LOG": true,
+  "LOG": false,
   "HOST": "127.0.0.1",
   "PORT": 3456,
   "Providers": [
@@ -139,6 +139,18 @@ target is written `provider,model`):
   }
 }
 ```
+
+> ⚠️ **`"LOG": true` writes the upstream credential to disk.** Measured on
+> 1.0.73: with logging on, every forwarded request is logged with its headers
+> intact — `"msg":"final request"` records
+> `headers.authorization: "Bearer <the upstream provider key>"` in clear text
+> under `~/.claude-code-router/logs/ccr-<date>.log`. Treat that switch as
+> "hand the provider key to anything that can read this host", which is why the
+> example above ships `false`; the log excerpt further down was captured with it
+> turned on for diagnosis. If you do enable it, keep the log directory out of
+> backups, syncs and shared paths (mode `700`/`600`) and rotate it after
+> debugging. The same question applies to any proxy you point at a paid
+> upstream — check its request-logging switch before wiring it in.
 
 Start it (the cwd stays outside the repo) and probe:
 
@@ -250,3 +262,8 @@ placeholder above, `Missing auth token header` is a keyed proxy.
 - A keyless proxy still needs the environment placeholder described under
   *Credentials*; that requirement comes from Chimera's LiteLLM path, not from
   the proxy.
+- `"LOG": true` captures the upstream `authorization` header — i.e. the
+  provider key itself — in plain text under `~/.claude-code-router/logs/`
+  (measured on 1.0.73, where the files were also group/other-readable). Keep
+  logging off by default and that directory out of any backed-up or shared
+  path.
