@@ -745,3 +745,22 @@ tasks:
   status: complete
   created_at: '2026-09-17T10:07:35.555934+00:00'
   completed_at: '2026-09-17T10:36:16.947961+00:00'
+- id: df-chimera-v2-7
+  title: 'Unknown formation: make the CLI reject it with exit 2 like REST 422 instead
+    of silently using auto'
+  criteria:
+  - chimera -f nope --quiet 'reply with the word ok' exits 2 with an actionable error
+    naming the unknown formation and listing available formations, and stdout carries
+    no answer
+  - POST /v1/deliberate with formation nope still returns HTTP 422 with detail Unknown
+    formation
+  - MCP chimera_deliberate with an unknown formation returns an error payload naming
+    the formation instead of a silent auto deliberation
+  - 'Known formations still deliberate: chimera -f simple --quiet returns an answer
+    with exit 0, and the --dag custom-DAG path is exempt from formation validation'
+  - Regression tests for the CLI and MCP validation paths exist and pass; .venv/bin/python
+    -m pytest tests/ -q reports 0 failed and .venv/bin/ruff check . is clean; tests/test_dispatcher.py::test_dispatcher_unknown_formation_uses_auto
+    stays green
+  status: complete
+  created_at: '2026-09-17T11:34:18.511111+00:00'
+  completed_at: '2026-09-17T11:42:45.140340+00:00'
