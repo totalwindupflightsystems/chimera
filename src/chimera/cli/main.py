@@ -34,6 +34,7 @@ from typing import Any
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -385,6 +386,40 @@ def _provider_api_key_env(provider: str, config: ChimeraConfig | None) -> str:
     return f"{provider.upper().replace('-', '_')}_API_KEY"
 
 
+#: Display budget (characters) for one worker error on the CLI warning line.
+#: The trace keeps the whole message; only this rendering is bounded.
+_WORKER_ERROR_DISPLAY_CHARS = 200
+
+
+def _elide_worker_error(
+    error: str, limit: int = _WORKER_ERROR_DISPLAY_CHARS
+) -> tuple[str, int]:
+    """Return ``(rendered, omitted_chars)`` for a worker-failure *error*.
+
+    An error of at most *limit* characters is returned byte-identical
+    (``omitted_chars == 0``), so the short-error warning is exactly what the
+    CLI has always printed. A longer one is cut at the last whitespace INSIDE
+    the budget — never mid-token, because the old fixed ``error[:197] + "..."``
+    slice turned a real guardrail failure into ``... and data polic...``,
+    dropping the words that actually named the restriction — and the elision is
+    spelled out with the number of dropped characters
+    (``... [truncated 214 chars]``) so the user can tell it was shortened.
+
+    One degenerate case is documented rather than hidden: a single unbroken
+    token longer than the budget has no boundary to cut at, so the budget wins
+    there (the alternative is printing the whole token).
+    """
+    if len(error) <= limit:
+        return error, 0
+    head = error[:limit]
+    boundary = max(head.rfind(ch) for ch in (" ", "\n", "\t"))
+    if boundary > 0:
+        head = head[:boundary]
+    head = head.rstrip()
+    omitted = len(error) - len(head)
+    return f"{head}... [truncated {omitted} chars]", omitted
+
+
 def _print_worker_failures(
     result: Any,
     out: Console = console,
@@ -395,6 +430,13 @@ def _print_worker_failures(
     A degraded worker still lets the deliberation produce an answer, but the
     user must know the panel is partial — otherwise a guardrail/404 failure
     is silent outside the structlog stream.
+
+    A long error is elided lossily-safely (DF-CHIMERA-V2-5): the cut lands on a
+    word boundary and the elision is marked with the omitted character count,
+    plus a line naming the trace as the place the complete message lives. The
+    full text is never dropped silently, and an error within the display budget
+    renders unchanged. The upstream error text is Rich-escaped — its own
+    ``[...]`` runs would otherwise be parsed as markup and dropped.
 
     A **credential-class** failure (present-but-invalid provider key → 401)
     gets an actionable warning on top of the raw error: the provider, the env
@@ -410,12 +452,25 @@ def _print_worker_failures(
         stage_id = getattr(failure, "stage_id", "?")
         model = getattr(failure, "model", "?")
         error = str(getattr(failure, "error", "") or "unknown error")
-        if len(error) > 200:
-            error = error[:197] + "..."
+        displayed, omitted = _elide_worker_error(error)
+        # ``escape`` because the error text is upstream/third-party text: an
+        # unescaped "[...]" in it is parsed as Rich markup and can swallow the
+        # rest of the line (including our "[truncated N chars]" marker).
         out.print(
             f"[yellow]warning:[/yellow] worker '{stage_id}' ({model}) "
-            f"failed: {error}"
+            f"failed: {escape(displayed)}"
         )
+        if omitted:
+            # The elision must be actionable, not merely visible: name where
+            # the complete text is. Both --json and --verbose dump the full
+            # trace, whose worker_failures[] carries the untruncated error.
+            out.print(
+                "  [yellow]full error:[/yellow] the complete upstream message "
+                f"({len(error)} chars) is in the trace — re-run with --json "
+                "(or --verbose) to read it"
+            )
+        # Classify the FULL error, not the elided render: the truncation is
+        # purely presentational and must never hide a credential failure.
         if not blocked_models.is_credential_error(error):
             continue
         provider = _provider_for_model(model, config)
@@ -441,6 +496,40 @@ def _print_worker_failures(
                 "providers: false keeps the full catalog; provider calls "
                 "still fail until the key is valid."
             )
+
+
+#: Self-describing repair prefixes the dispatcher already writes into
+#: ``dispatch_note`` (``dispatcher.py``): the CLI must not label them twice.
+_REPAIR_NOTE_PREFIXES = ("repaired:", "repaired ")
+
+
+def _repair_note_detail(note: str) -> str:
+    """Strip a redundant leading ``repaired:`` / ``repaired`` token from *note*.
+
+    The dispatcher's repair notes are already self-describing — it writes
+    ``"repaired: injected aggregator stage(s) …"`` / ``"repaired: added
+    aggregator stage for 2 worker terminals"`` (``dispatcher.py``) — while the
+    CLI prints its own ``dispatch repaired:`` label. Stacking the two made a
+    real run read ``warning: dispatch repaired: repaired: injected …``
+    (DF-CHIMERA-V2-5), which reads like a second, unexplained repair.
+
+    The note itself stays the single source of truth (it is surfaced verbatim
+    in the ``--json`` trace); only the CLI's rendering de-duplicates it. The
+    match is anchored on a token boundary, so a note that merely starts with a
+    longer word (``"repairedness check failed"``) is returned untouched rather
+    than mangled. Returns ``""`` for a note that carries nothing else.
+    """
+    text = note.strip()
+    while True:
+        lowered = text.lower()
+        if lowered in ("repaired", "repaired:"):
+            return ""
+        for prefix in _REPAIR_NOTE_PREFIXES:
+            if lowered.startswith(prefix):
+                text = text[len(prefix):].lstrip()
+                break
+        else:
+            return text
 
 
 def _print_dispatch_degradation(result: Any, out: Console = console) -> None:
@@ -471,7 +560,14 @@ def _print_dispatch_degradation(result: Any, out: Console = console) -> None:
             f"single-worker formation"
         )
     elif note and ("repaired" in note or "injected" in note):
-        out.print(f"[yellow]warning:[/yellow] dispatch repaired: {note}")
+        # De-duplicate the label: the note already starts with "repaired: " on
+        # a real run, so prefixing it again printed "dispatch repaired:
+        # repaired: injected …" (DF-CHIMERA-V2-5).
+        detail = _repair_note_detail(note)
+        if detail:
+            out.print(f"[yellow]warning:[/yellow] dispatch repaired: {detail}")
+        else:
+            out.print("[yellow]warning:[/yellow] dispatch repaired")
 
 
 def _print_trace(trace: Any) -> None:

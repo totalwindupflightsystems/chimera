@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,7 +13,7 @@ import pytest
 pytest.importorskip("click")
 from click.testing import CliRunner  # noqa: E402
 
-from chimera.cli.main import main  # noqa: E402
+from chimera.cli.main import _elide_worker_error, _repair_note_detail, main  # noqa: E402
 from chimera.config import load_config  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -513,6 +514,214 @@ def test_cli_no_degradation_warning_when_clean(config_file, monkeypatch) -> None
     assert result.exit_code == 0, result.output
     assert "dispatch degraded" not in result.output
     assert "dispatch repaired" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# DF-CHIMERA-V2-5: warning rendering — the dispatch-repair prefix must not be
+# duplicated, and a long worker error must not be cut mid-token in silence.
+# Both defects were hit by a real dogfood run and made a correct answer look
+# suspicious.
+# ---------------------------------------------------------------------------
+
+#: The upstream error a real dogfood run printed. The old fixed 197-char slice
+#: cut it inside "every" ("... so eve..."), dropping the words that named the
+#: restriction and never saying the message had been shortened.
+_LONG_GUARDRAIL_ERROR = (
+    "No endpoints available matching your guardrail restrictions and data "
+    "policy restrictions for model openrouter/qwen/qwen3.7-plus: this account "
+    "has not opted into prompt-training data sharing, so every endpoint for "
+    "that model is filtered out."
+)
+
+#: The dispatcher's REAL repair note — ``dispatcher.py`` writes the
+#: ``repaired: `` prefix itself, which is why the CLI's own label duplicated it.
+_DISPATCHER_REPAIR_NOTE = (
+    "repaired: injected aggregator stage(s) aggregator referenced by "
+    "dispatcher edges but missing from stages (1 edge target)"
+)
+
+
+def _flat(output: str) -> str:
+    """Collapse Rich's word wrapping so assertions can match across folds."""
+    return " ".join(output.split())
+
+
+def test_cli_dispatch_repair_warning_is_not_double_prefixed(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """DF-CHIMERA-V2-5: the note already self-describes — label it once.
+
+    Before the fix a real run printed
+    ``warning: dispatch repaired: repaired: injected aggregator ...``: the
+    duplicated token reads like a second, unexplained repair.
+    """
+    _stub_engine_with_trace(
+        monkeypatch, source="auto", dispatch_note=_DISPATCHER_REPAIR_NOTE
+    )
+    runner = CliRunner()
+    result = runner.invoke(main, ["-c", str(config_file), "hello"])
+    assert result.exit_code == 0, result.output
+    assert "repaired: repaired" not in result.output
+    assert result.output.count("repaired") == 1  # exactly one repaired token
+    assert (
+        "warning: dispatch repaired: injected aggregator stage(s) aggregator "
+        "referenced by dispatcher edges but missing from stages (1 edge target)"
+    ) in _flat(result.output)
+    assert "looks-fine answer" in result.output
+
+
+def test_cli_dispatch_repair_warning_keeps_a_note_without_the_prefix(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A note that does not self-describe still carries the CLI's label."""
+    _stub_engine_with_trace(
+        monkeypatch, source="auto",
+        dispatch_note="injected aggregator stage for 2 worker terminals",
+    )
+    runner = CliRunner()
+    result = runner.invoke(main, ["-c", str(config_file), "hello"])
+    assert result.exit_code == 0, result.output
+    assert (
+        "warning: dispatch repaired: injected aggregator stage for 2 worker "
+        "terminals"
+    ) in _flat(result.output)
+    assert result.output.count("repaired") == 1
+
+
+def test_cli_dispatch_repair_warning_does_not_mangle_other_words(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """``repairedness ...`` merely contains the substring — leave it alone."""
+    _stub_engine_with_trace(
+        monkeypatch, source="auto",
+        dispatch_note="repairedness check found a dangling edge",
+    )
+    runner = CliRunner()
+    result = runner.invoke(main, ["-c", str(config_file), "hello"])
+    assert result.exit_code == 0, result.output
+    assert (
+        "warning: dispatch repaired: repairedness check found a dangling edge"
+    ) in _flat(result.output)
+
+
+@pytest.mark.parametrize(
+    ("note", "expected"),
+    [
+        # Real dispatcher payload: prefix stripped, payload intact.
+        (_DISPATCHER_REPAIR_NOTE, _DISPATCHER_REPAIR_NOTE[len("repaired: "):]),
+        ("repaired: added aggregator stage for 2 worker terminal",
+         "added aggregator stage for 2 worker terminal"),
+        ("REPAIRED: added aggregator stage", "added aggregator stage"),
+        # A doubled prefix is fully collapsed (never "repaired: repaired").
+        ("repaired: repaired: doubly patched", "doubly patched"),
+        # A bare prefix carries no detail.
+        ("repaired", ""),
+        ("repaired:", ""),
+        # Not a repair token: no string surgery on other words.
+        ("injected aggregator stage for 2 worker terminals",
+         "injected aggregator stage for 2 worker terminals"),
+        ("repairedness check found a dangling edge",
+         "repairedness check found a dangling edge"),
+    ],
+)
+def test_repair_note_detail_strips_only_a_leading_repair_token(note: str, expected: str) -> None:
+    assert _repair_note_detail(note) == expected
+
+
+def test_cli_worker_warning_cuts_long_errors_on_a_word_boundary(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """DF-CHIMERA-V2-5: no mid-token chop, an explicit marker, a pointer to the trace."""
+    failure = SimpleNamespace(
+        stage_id="w1",
+        model="openrouter/qwen/qwen3.7-plus",
+        error=_LONG_GUARDRAIL_ERROR,
+    )
+    _stub_engine_with_failures(monkeypatch, [failure])
+    runner = CliRunner()
+    result = runner.invoke(main, ["-c", str(config_file), "hello"])
+    assert result.exit_code == 0, result.output
+    flat = _flat(result.output)
+    assert len(_LONG_GUARDRAIL_ERROR) > 200  # the fixture must exceed the budget
+    match = re.search(r"failed: (.*?)\.\.\. \[truncated (\d+) chars\]", flat)
+    assert match, flat
+    head, omitted = match.group(1), int(match.group(2))
+    # The cut landed ON whitespace and the head ends with a complete word —
+    # the old render ended "... data sharing, so eve...".
+    assert _LONG_GUARDRAIL_ERROR.startswith(head)
+    assert _LONG_GUARDRAIL_ERROR[len(head)] == " "
+    assert head.rsplit(" ", 1)[-1] in _LONG_GUARDRAIL_ERROR.split()
+    assert not head.endswith("eve")
+    assert len(head) <= 200
+    # The elision is explicit and the dropped text is not silently lost.
+    assert omitted == len(_LONG_GUARDRAIL_ERROR) - len(head)
+    assert _LONG_GUARDRAIL_ERROR not in flat
+    # ... and the warning says where the complete message lives.
+    assert "full error" in flat
+    assert "--json" in flat
+    assert str(len(_LONG_GUARDRAIL_ERROR)) in flat
+
+
+def test_cli_worker_warning_short_error_is_unchanged(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """DF-CHIMERA-V2-5: an error within the budget renders exactly as before."""
+    short = "upstream 503: the provider refused the request"
+    exact = ("blocked " * 24) + "12345678"  # exactly 200 chars
+    assert len(exact) == 200
+    for error in (short, exact):
+        _stub_engine_with_failures(
+            monkeypatch, [SimpleNamespace(stage_id="w2", model="m", error=error)]
+        )
+        runner = CliRunner()
+        result = runner.invoke(main, ["-c", str(config_file), "hello"])
+        assert result.exit_code == 0, result.output
+        assert "truncated" not in result.output
+        assert "full error" not in result.output
+        assert _elide_worker_error(error) == (error, 0)
+        assert f"warning: worker 'w2' (m) failed: {error}" in _flat(result.output)
+
+
+def test_elide_worker_error_cuts_on_a_word_boundary_and_counts_the_rest() -> None:
+    rendered, omitted = _elide_worker_error(_LONG_GUARDRAIL_ERROR)
+    assert omitted > 0
+    head = rendered.split("... [truncated")[0]
+    assert _LONG_GUARDRAIL_ERROR.startswith(head)
+    assert _LONG_GUARDRAIL_ERROR[len(head)] == " "
+    assert omitted == len(_LONG_GUARDRAIL_ERROR) - len(head)
+    # The longest word-boundary prefix inside the budget: no gratuitous loss.
+    budget = _LONG_GUARDRAIL_ERROR[:200]
+    assert head == budget[: budget.rfind(" ")].rstrip()
+    assert rendered.endswith(f"... [truncated {omitted} chars]")
+
+
+def test_elide_worker_error_passes_short_errors_through_byte_identically() -> None:
+    for error in ("", "boom", "guardrail refused", "x" * 199, "y" * 200):
+        assert _elide_worker_error(error) == (error, 0)
+
+
+def test_elide_worker_error_bounds_an_unbreakable_token() -> None:
+    """One token longer than the budget has no boundary to cut at (documented)."""
+    rendered, omitted = _elide_worker_error("z" * 500)
+    assert rendered == "z" * 200 + "... [truncated 300 chars]"
+    assert omitted == 300
+
+
+def test_cli_worker_warning_renders_bracket_text_verbatim(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Upstream ``[...]`` text is not Rich markup — it must render verbatim.
+
+    Without escaping, Rich parses a bracketed run as a style tag and DROPS it,
+    which is how the first cut of this fix silently ate its own
+    ``[truncated N chars]`` marker.
+    """
+    cases = [
+        "[Errno 111] Connection refused while contacting the provider",
+        ("[Errno 111] " + "connection refused " * 12).strip(),
+    ]
+    assert len(cases[1]) > 200  # the long case also carries the marker
+    for error in cases:
+        _stub_engine_with_failures(
+            monkeypatch, [SimpleNamespace(stage_id="w3", model="m", error=error)]
+        )
+        runner = CliRunner()
+        result = runner.invoke(main, ["-c", str(config_file), "hello"])
+        assert result.exit_code == 0, result.output
+        flat = _flat(result.output)
+        assert "[Errno 111]" in flat
+        if len(error) > 200:
+            assert "[truncated" in flat
+        else:
+            assert f"failed: {error}" in flat
 
 
 # ---------------------------------------------------------------------------
