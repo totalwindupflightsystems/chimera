@@ -976,3 +976,53 @@ tasks:
   status: complete
   created_at: '2026-09-17T19:56:57.051272+00:00'
   completed_at: '2026-09-17T20:06:45.411578+00:00'
+- id: INT-CI-008
+  title: Audit-stage schema validation must accept fenced or prose-wrapped JSON answers
+  criteria:
+  - Engine._validate_against_schema returns None (pass) for a fenced JSON answer and
+    for a prose-then-JSON answer
+  - 'Strict jsonschema.validate is retained: a schema-violating instance still returns
+    passed=false with the ValidationError message'
+  - Genuinely invalid JSON still returns the 'Output is not valid JSON' failure
+  - New hermetic regression tests fail pre-fix and pass post-fix; tests/test_engine.py
+    green
+  status: complete
+  created_at: '2026-09-17T20:45:28.271510+00:00'
+  completed_at: '2026-09-17T20:56:57.024803+00:00'
+- id: QA-CHIMERA-V2-16
+  title: Trace stages carry resolved provider attribution
+  criteria:
+  - Every stage span in a DeliberationTrace exposes the resolved serving provider
+    and the wire model id actually sent to it (StageSpan gains provider/wire_model/api_base
+    with backward-compatible defaults)
+  - 'Attribution comes from the gateway routing decision (resolve_litellm_model/effective_provider),
+    not from parsing the catalog model-id prefix: a provider-fallback or custom base_url
+    route reports the serving provider even when the catalog id carries a different
+    prefix'
+  - 'Attribution is never fabricated: spans with no routing decision (internal dispatch
+    span, degraded stage, test fake gateway) report an empty provider instead of a
+    guess, and nothing raises on a response whose metadata lacks the keys'
+  - The new fields are visible on the API trace payload (/v1/deliberate response trace
+    stages) with no schema break for existing consumers
+  - New regression tests cover the successful stage, the fallback/custom-base_url
+    route, the degraded stage and the internal dispatch span; the full pytest suite
+    stays green
+  status: complete
+  created_at: '2026-09-17T21:24:48.626613+00:00'
+  completed_at: '2026-09-17T21:39:20.118240+00:00'
+- id: QA-CHIMERA-V2-17
+  title: probe_mcp_stdio.py must resolve a relative child path against the invoking
+    cwd
+  criteria:
+  - Running .venv/bin/python scripts/probe_mcp_stdio.py --expected-version=0.2.6 .venv/bin/chimera-mcp
+    from the repo root resolves the child token to an absolute path before subprocess
+    spawn and before config provisioning, so no FileNotFoundError traceback is raised
+  - A relative child token that does not exist on disk fails fast with exit 2 and
+    a named usage message on stderr, never a traceback
+  - The absolute child-path form is unchanged and still drives a real deliberation
+  - New hermetic tests in tests/test_probe_mcp_stdio.py cover the resolver arms (absolute
+    unchanged, relative-existing absolutized, bare PATH name untouched, relative-missing
+    exit 2) and the whole file stays green
+  status: complete
+  created_at: '2026-09-17T21:58:28.889759+00:00'
+  completed_at: '2026-09-17T22:08:23.594774+00:00'
