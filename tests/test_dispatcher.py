@@ -172,7 +172,7 @@ def test_dispatcher_prompt_auto_includes_catalog_and_request(config) -> None:  #
     assert msgs[0]["role"] == "system"
     sys_text = msgs[0]["content"]
     assert "zai-coding-plan/glm-5.2" in sys_text
-    assert "code=0.95" in sys_text  # deepseek's strongest category
+    assert "code=95.00" in sys_text  # deepseek's strongest category (percent)
     assert "AUTO mode" in sys_text
     assert "Design an e-commerce backend" in msgs[1]["content"]
 

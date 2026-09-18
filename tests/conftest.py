@@ -47,7 +47,45 @@ def _config_default_resolution_for_fresh_checkout() -> Any:
     finally:
         monkeypatch.undo()
 
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_blocked_model_registry(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Any:
+    """Keep the suite out of the developer's real guardrail block state.
+
+    ``blocked_models.shared_registry`` persists to ``DEFAULT_STATE_PATH``
+    (``~/.chimera/blocked-models.json``) — the SAME file the live ``chimera``
+    service writes from real provider traffic. Every test that consults the
+    registry (the dispatcher catalog, the selector, ``chimera models``' blocked
+    section, engine failure handling) would otherwise pass or fail depending on
+    whatever production last blocked, and the engine's failure paths RECORD
+    blocks: one suite run left ``openrouter/google/gemini-2.5-flash`` blocked
+    for the whole cooldown, which made the NEXT run fail
+    ``tests/test_e2e.py::test_e2e_full_pipeline`` (the model vanished from the
+    dispatcher catalog).
+
+    Point the process-wide registry at a per-session temp state file. Tests
+    that isolate themselves further still work: they save/restore whatever
+    instance is installed here.
+    """
+    from chimera import blocked_models
+
+    original = blocked_models.shared_registry
+    state_path = tmp_path_factory.mktemp("blocked-models") / "blocked-models.json"
+    blocked_models.set_shared_registry(
+        blocked_models.ModelBlockRegistry(state_path=state_path)
+    )
+    try:
+        yield
+    finally:
+        blocked_models.set_shared_registry(original)
+
 # A compact, deterministic model catalog + formations mirroring chimera.yaml.example
+# (category scores are PERCENT 0-100, the canonical scale the shipped templates,
+# the live catalog and GET /v1/models all carry — see chimera.config
+# CATEGORY_SCORE_MAX. A catalog on the docs' historical 0.0-1.0 scale is rescaled
+# on load, so it must stay a LOCAL fixture in the tests that exercise that.)
 CONFIG_DICT: dict[str, Any] = {
     "providers": {
         "openrouter": {"base_url": "https://openrouter.ai/api/v1"},
@@ -57,38 +95,38 @@ CONFIG_DICT: dict[str, Any] = {
     },
     "models": {
         "zai-coding-plan/glm-5.2": {
-            "categories": {"code": 0.92, "analysis": 0.90, "design": 0.85,
-                           "audit": 0.88, "reasoning": 0.95},
+            "categories": {"code": 92.0, "analysis": 90.0, "design": 85.0,
+                           "audit": 88.0, "reasoning": 95.0},
             "cost_tier": "premium",
             "provider": "zai",
         },
         "deepseek/deepseek-chat": {
-            "categories": {"code": 0.95, "analysis": 0.85, "design": 0.40,
-                           "audit": 0.60, "reasoning": 0.80},
+            "categories": {"code": 95.0, "analysis": 85.0, "design": 40.0,
+                           "audit": 60.0, "reasoning": 80.0},
             "cost_tier": "budget",
             "provider": "openrouter",
         },
         "deepseek/deepseek-v4-flash": {
-            "categories": {"code": 0.88, "analysis": 0.80, "design": 0.50,
-                           "audit": 0.55, "reasoning": 0.75},
+            "categories": {"code": 88.0, "analysis": 80.0, "design": 50.0,
+                           "audit": 55.0, "reasoning": 75.0},
             "cost_tier": "budget",
             "provider": "deepseek",
         },
         "openrouter/qwen/qwen3-coder": {
-            "categories": {"code": 0.91, "analysis": 0.72, "design": 0.45,
-                           "audit": 0.50, "reasoning": 0.68},
+            "categories": {"code": 91.0, "analysis": 72.0, "design": 45.0,
+                           "audit": 50.0, "reasoning": 68.0},
             "cost_tier": "budget",
             "provider": "openrouter",
         },
         "openrouter/google/gemini-2.5-flash": {
-            "categories": {"code": 0.70, "analysis": 0.75, "design": 0.90,
-                           "audit": 0.50, "reasoning": 0.65},
+            "categories": {"code": 70.0, "analysis": 75.0, "design": 90.0,
+                           "audit": 50.0, "reasoning": 65.0},
             "cost_tier": "budget",
             "provider": "openrouter",
         },
         "openrouter/anthropic/claude-sonnet-4": {
-            "categories": {"code": 0.90, "analysis": 0.92, "design": 0.88,
-                           "audit": 0.85, "reasoning": 0.93},
+            "categories": {"code": 90.0, "analysis": 92.0, "design": 88.0,
+                           "audit": 85.0, "reasoning": 93.0},
             "cost_tier": "premium",
             "provider": "openrouter",
         },

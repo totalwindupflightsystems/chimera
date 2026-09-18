@@ -15,7 +15,7 @@ from chimera.engine import Engine
 from tests.conftest import FakeGateway, dispatch_json, resp
 
 # A dispatcher payload that demonstrates category-weighted routing:
-# code-heavy task → DeepSeek (code=0.95), design-heavy task → Gemini (design=0.90).
+# code-heavy task → DeepSeek (code=95.0), design-heavy task → Gemini (design=90.0).
 REAL_DISPATCH = dispatch_json(
     workers=[
         ("worker_code", "deepseek/deepseek-chat"),
@@ -75,8 +75,8 @@ async def test_e2e_full_pipeline(config) -> None:  # type: ignore[no-untyped-def
     # ---- Correct model assignments (category-weighted routing) ----
     code_worker = next(w for w in trace.workers if w.stage_id == "worker_code")
     design_worker = next(w for w in trace.workers if w.stage_id == "worker_design")
-    assert code_worker.model == "deepseek/deepseek-chat"      # code=0.95
-    assert design_worker.model == "openrouter/google/gemini-2.5-flash"  # design=0.90
+    assert code_worker.model == "deepseek/deepseek-chat"      # code=95.0
+    assert design_worker.model == "openrouter/google/gemini-2.5-flash"  # design=90.0
     assert trace.aggregator.model == "zai-coding-plan/glm-5.2"     # premium reasoning
 
     # ---- Custom (non-identical) worker prompts ----
@@ -96,9 +96,9 @@ async def test_e2e_full_pipeline(config) -> None:  # type: ignore[no-untyped-def
 
     # ---- The dispatcher saw the model catalog with category weights ----
     dispatch_prompt = dispatcher_calls[0][1][0]["content"]
-    assert "code=0.95" in dispatch_prompt       # DeepSeek strength
-    assert "design=0.90" in dispatch_prompt     # Gemini strength
-    assert "reasoning=0.95" in dispatch_prompt  # GLM strength
+    assert "code=95.00" in dispatch_prompt       # DeepSeek strength
+    assert "design=90.00" in dispatch_prompt     # Gemini strength
+    assert "reasoning=95.00" in dispatch_prompt  # GLM strength
 
 
 @pytest.mark.asyncio

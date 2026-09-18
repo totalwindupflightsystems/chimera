@@ -20,4 +20,20 @@ class BudgetExhaustedError(Exception):
         super().__init__(msg)
 
 
-__all__ = ["BudgetExhaustedError"]
+class ConfigError(ValueError):
+    """A ``chimera.yaml`` that parses but is semantically invalid.
+
+    Subclasses ``ValueError`` so existing callers that catch ``ValueError``
+    keep working, while the user-facing edges (the CLI's ``_load_cfg``)
+    render it as ONE actionable line instead of a traceback — the
+    DF-CHIMERA-V2-8 convention.  Raised by
+    :func:`chimera.config.load_config` for defects the pydantic schema
+    cannot express on its own, e.g. a category score on the wrong scale
+    (INT-API-002).
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+__all__ = ["BudgetExhaustedError", "ConfigError"]

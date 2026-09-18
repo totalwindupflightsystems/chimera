@@ -271,12 +271,12 @@ Each model entry:
 
 ```yaml
 model-id:
-  categories:           # 0.0–1.0 scores per category path (leaf or prefix)
-    technology_code/code_generation/python: 0.90
-    technology_code/data_science/analysis: 0.80
-    general_knowledge/reasoning/explanation: 0.75
-    creative_conversational/ux_writing/interface_copy: 0.35
-    technology_code/testing_debugging/error_analysis: 0.55
+  categories:           # 0-100 percent scores per category path (leaf or prefix)
+    technology_code/code_generation/python: 90
+    technology_code/data_science/analysis: 80
+    general_knowledge/reasoning/explanation: 75
+    creative_conversational/ux_writing/interface_copy: 35
+    technology_code/testing_debugging/error_analysis: 55
   cost_tier: budget     # budget | standard | premium
   provider: deepseek    # matches a key in providers:
   # Optional overrides:
@@ -285,6 +285,24 @@ model-id:
   cost_per_1k_output: 0.000196
 ```
 
+**Score scale — percent, 0–100.** The shipped templates
+(`chimera.yaml.example`, `chimera.yaml.docker`), the live catalog and the
+`categories` map served by `GET /v1/models` all use percent, and the selector
+multiplies a score by its task weight with no further rescale — so percent is
+the canonical scale. There is exactly **one scale per catalog**, enforced at
+load:
+
+- a catalog whose values are all ≤ 1.0 is read as **0.0–1.0** (the historical
+  docs scale) and rescaled ×100 on load, with one warning naming how many
+  models were rescaled — so a catalog written from this page competes instead
+  of being silently starved;
+- a 0.0–1.0 value inside an otherwise percent catalog is rescaled per entry,
+  with one warning per affected model + path (`0.9 → 90.0`);
+- an already-percent value is never touched (byte-identical on load);
+- a value outside 0–100, a non-numeric value, or `NaN`/`Infinity` **fails the
+  load** with one actionable line naming the model id, the category path, the
+  value and the accepted range — no traceback, CLI exit code 2.
+
 **Category keys** are slash-delimited hierarchical paths from the selector's
 `PATH_PATTERNS` tree (see `src/chimera/selector.py`), e.g.
 `technology_code/code_generation/python`. A score on a parent path (e.g.
@@ -292,7 +310,7 @@ model-id:
 scoring a few broad paths is enough to cover a whole area.
 
 Short-form aliases are also accepted and resolve to the long-form targets
-below — a model configured with `{code: 0.90}` scores on every path under
+below — a model configured with `{code: 90}` scores on every path under
 `technology_code`:
 
 | Alias | Resolves to |

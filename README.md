@@ -381,7 +381,11 @@ The dispatcher picks models using **category-weighted scoring**:
 | `design` | Creative work, UX, content generation |
 | `audit` | Fact-checking, safety, correctness review |
 
-Each model in the catalog has a score (0.0–1.0) per category. The dispatcher matches
+Each model in the catalog has a percent score (0–100) per category, on the same
+scale as the shipped `chimera.yaml.example` catalog and the `categories` map in
+`GET /v1/models`. A catalog written on the historical 0.0–1.0 scale is accepted
+and rescaled ×100 at load (with a warning); a score outside 0–100 or a
+non-numeric score is rejected at load. The dispatcher matches
 task domains to model strengths. You can override any model choice per request:
 
 ```json

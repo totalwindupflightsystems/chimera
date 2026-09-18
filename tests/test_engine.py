@@ -1352,31 +1352,49 @@ async def test_no_overrides_no_note(config) -> None:  # type: ignore[no-untyped-
 
 @pytest.mark.asyncio
 async def test_worker_failures_populated_on_degraded_worker(config) -> None:  # type: ignore[no-untyped-def]
-    """C2: trace.worker_failures lists each dropped worker with stage/model/error."""
-    failing_model = "openrouter/google/gemini-2.5-flash"
+    """C2: trace.worker_failures lists each dropped worker with stage/model/error.
 
-    class PartialGateway(FakeGateway):
-        async def complete(self, model, messages, response_format=None, **kw):
-            if response_format is not None:
-                return resp(dispatch_json(), model, 10, 10)
-            if "Upstream outputs" in json.dumps(messages):  # aggregator
-                return resp("AGGREGATOR ANSWER", model, 10, 10)
-            if model == failing_model:
-                raise GatewayError(
-                    f"{failing_model} call failed: 404 No endpoints available "
-                    "matching your guardrail restrictions and data policy"
-                )
-            return resp(f"worker output {model}", model, 10, 10)
+    The registry is isolated like its C3 siblings: the engine RECORDS the
+    guardrail block it observes here, and the process-wide registry persists to
+    the developer's real ``~/.chimera/blocked-models.json`` (DEFAULT_STATE_PATH)
+    — which then excludes the model from the dispatcher catalog for the whole
+    cooldown and turns the NEXT suite run red (tests/test_e2e.py asserts the
+    model is visible). This test is about failure surfacing, not persistence.
+    """
+    from chimera import blocked_models
+    from chimera.blocked_models import ModelBlockRegistry, set_shared_registry
 
-    gw = PartialGateway()
-    result = await Engine(config, gw).deliberate("task", "auto")
-    # C4: answer still produced from the surviving worker.
-    assert result.answer == "AGGREGATOR ANSWER"
-    failures = result.trace.worker_failures
-    assert len(failures) == 1
-    assert failures[0].stage_id == "worker_2"
-    assert failures[0].model == failing_model
-    assert "guardrail" in failures[0].error
+    original = blocked_models.shared_registry
+    set_shared_registry(ModelBlockRegistry(state_path=None))
+    try:
+        failing_model = "openrouter/google/gemini-2.5-flash"
+
+        class PartialGateway(FakeGateway):
+            async def complete(self, model, messages, response_format=None, **kw):
+                if response_format is not None:
+                    return resp(dispatch_json(), model, 10, 10)
+                if "Upstream outputs" in json.dumps(messages):  # aggregator
+                    return resp("AGGREGATOR ANSWER", model, 10, 10)
+                if model == failing_model:
+                    raise GatewayError(
+                        f"{failing_model} call failed: 404 No endpoints available "
+                        "matching your guardrail restrictions and data policy"
+                    )
+                return resp(f"worker output {model}", model, 10, 10)
+
+        gw = PartialGateway()
+        result = await Engine(config, gw).deliberate("task", "auto")
+        # C4: answer still produced from the surviving worker.
+        assert result.answer == "AGGREGATOR ANSWER"
+        failures = result.trace.worker_failures
+        assert len(failures) == 1
+        assert failures[0].stage_id == "worker_2"
+        assert failures[0].model == failing_model
+        assert "guardrail" in failures[0].error
+        # The guardrail block IS recorded (in the isolated registry).
+        assert blocked_models.shared_registry.is_blocked(failing_model)
+    finally:
+        set_shared_registry(original)
 
 
 @pytest.mark.asyncio

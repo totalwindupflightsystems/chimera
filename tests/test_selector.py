@@ -526,3 +526,73 @@ class TestBlockedModelExclusion:
         sel = CategorySelector(SAMPLE_MODELS)
         scores = sel.score("Write Python code")
         assert "anthropic/claude-sonnet-4" not in scores
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Scale normalisation is what makes a docs-written catalog selectable
+#  (INT-API-002)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestNormalisedCatalogEquivalence:
+    """A 0.0-1.0 catalog loaded through ``load_config`` must rank exactly like
+    the equivalent percent catalog — that equivalence IS the fix: without the
+    load-time rescale the same catalog scored ~100x lower (INT-API-002)."""
+
+    PERCENT = {
+        "deepseek/percent-a": {
+            "categories": {"technology_code/code_generation/python": 88},
+            "cost_tier": "budget", "provider": "deepseek",
+        },
+        "deepseek/percent-b": {
+            "categories": {"technology_code/code_generation/python": 82},
+            "cost_tier": "budget", "provider": "deepseek",
+        },
+    }
+    UNIT = {
+        "deepseek/unit-a": {
+            "categories": {"technology_code/code_generation/python": 0.88},
+            "cost_tier": "budget", "provider": "deepseek",
+        },
+        "deepseek/unit-b": {
+            "categories": {"technology_code/code_generation/python": 0.82},
+            "cost_tier": "budget", "provider": "deepseek",
+        },
+    }
+
+    @staticmethod
+    def _load(tmp_path, models: dict):  # type: ignore[no-untyped-def]
+        import yaml
+
+        from chimera.config import load_config
+
+        doc = {
+            "providers": {"deepseek": {"base_url": "https://api.deepseek.com/v1"}},
+            "models": models,
+            "defaults": {
+                "dispatcher": "deepseek/percent-a",
+                "default_worker": "deepseek/percent-a",
+                "default_aggregator": "deepseek/percent-a",
+            },
+            "formations": {"auto": {"mode": "auto"}},
+        }
+        path = tmp_path / "chimera.yaml"
+        path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+        return load_config(path)
+
+    def test_unit_catalog_scores_identically_to_percent_catalog(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        percent_cfg = self._load(tmp_path, self.PERCENT)
+        unit_cfg = self._load(tmp_path, self.UNIT)
+
+        task = "Write a Python function to sort a list"
+        percent_scores = CategorySelector(percent_cfg.models).score(task)
+        unit_scores = CategorySelector(unit_cfg.models).score(task)
+
+        assert list(unit_scores.values()) == pytest.approx(
+            list(percent_scores.values())
+        ), (percent_scores, unit_scores)
+        # ...and the ranking order follows, so a docs-written catalog is
+        # selectable rather than silently starved.
+        assert [n for n, _ in sorted(unit_scores.items(), key=lambda kv: -kv[1])] == [
+            "deepseek/unit-a", "deepseek/unit-b"
+        ]

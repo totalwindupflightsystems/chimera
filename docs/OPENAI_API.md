@@ -323,7 +323,7 @@ lookups by model id keep working).
       "object": "model",
       "created": 0,
       "owned_by": "deepseek",
-      "categories": {"code": 0.95, "analysis": 0.85, "reasoning": 0.80, "design": 0.40, "audit": 0.60},
+      "categories": {"code": 95, "analysis": 85, "reasoning": 80, "design": 40, "audit": 60},
       "cost_tier": "budget",
       "provider": "deepseek",
       "enabled": true,
@@ -333,7 +333,7 @@ lookups by model id keep working).
   ],
   "catalog": {
     "deepseek/deepseek-v4-pro": {
-      "categories": {"code": 0.95, "analysis": 0.85, "reasoning": 0.80, "design": 0.40, "audit": 0.60},
+      "categories": {"code": 95, "analysis": 85, "reasoning": 80, "design": 40, "audit": 60},
       "cost_tier": "budget",
       "provider": "deepseek",
       "enabled": true,
@@ -352,7 +352,7 @@ Field semantics:
 | `object` | `string` | Always `"model"` (OpenAI object type) |
 | `created` | `int` | Always `0`: the catalog carries no per-model creation time, so a real epoch value is not invented |
 | `owned_by` | `string` | The model's configured provider (mirrors `provider`) |
-| `categories` | `object` | Weighted category scores (see the `GET /v1/models` catalog columns) |
+| `categories` | `object` | Weighted category scores, **percent 0–100** (see the `GET /v1/models` catalog columns) |
 | `cost_tier` | `string` | `budget` / `standard` / `premium` |
 | `provider` | `string` | Provider key from `chimera.yaml` |
 | `enabled` | `bool` | Whether the catalog entry is selectable |

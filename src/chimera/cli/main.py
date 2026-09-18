@@ -47,6 +47,7 @@ from chimera.config import (
     provider_api_key_env,
 )
 from chimera.engine import Engine
+from chimera.exceptions import ConfigError
 from chimera.gateway import LiteLLMGateway
 from chimera.observability import configure_logging
 
@@ -233,7 +234,7 @@ def _load_cfg(ctx: click.Context) -> ChimeraConfig:
     config_path = ctx.obj.get("config_path") if ctx.obj else None
     try:
         cfg = load_config(config_path)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ConfigError) as exc:
         # DF-CHIMERA-V2-8: the remedy names `chimera config init`, which makes
         # the message ~200 chars — rich would hard-wrap it into three lines at
         # 80 columns (splitting the command across a boundary at some widths).
@@ -241,6 +242,10 @@ def _load_cfg(ctx: click.Context) -> ChimeraConfig:
         # whatever the terminal width. A real terminal soft-wraps the display
         # itself, so nothing is lost on screen, and the byte stream stays one
         # line for pipes, logs and tests.
+        #
+        # INT-API-002: an invalid category score (out of 0-100, non-numeric) is
+        # the same class of user error — one actionable line, exit 2, no
+        # traceback — so ConfigError is rendered here too.
         console.print(f"[red]error:[/red] {exc}", soft_wrap=True)
         sys.exit(2)
     # Phase 2: re-pin with the real observability config — still stderr.

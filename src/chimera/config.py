@@ -7,16 +7,47 @@ as ``${VAR}`` in the YAML are substituted from ``os.environ`` at load time.
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+import structlog
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
+
+from chimera.exceptions import ConfigError
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
+
+#: Logger name for every record this module emits.  Records are emitted
+#: through :func:`_log_warning` rather than a module-level logger *proxy*.
+_CONFIG_LOGGER_NAME = "chimera.config"
+
+
+def _log_warning(event: str, **fields: Any) -> None:
+    """Emit one warning through the *currently configured* structlog pipeline.
+
+    ``observability.configure_logging`` installs a FRESH processor list and
+    logger factory on every sink/level re-pin, and it sets
+    ``cache_logger_on_first_use=True``. A module-level
+    ``structlog.get_logger(...)`` proxy therefore binds exactly ONCE — to the
+    stream and processor chain that happened to be live at its first use — and
+    never follows a re-pin. That breaks the contract the CLI depends on
+    (DF-CHIMERA-V2-3): ``cli.main._load_cfg`` pins ``force_stderr=True``
+    *before* loading the config, yet a proxy materialised earlier by an
+    in-process caller (the API server, an embedding app, another test) keeps
+    writing to its old stream, so a config warning can land on the machine-mode
+    stdout contract instead of stderr.
+
+    Resolving the logger per emission binds against the live configuration, so
+    the record always honours the pin that is in force when the config is read
+    (and ``structlog.testing.capture_logs()`` — which swaps the live processor
+    list — observes it regardless of which logger an earlier caller used).
+    """
+    structlog.get_logger(_CONFIG_LOGGER_NAME).warning(event, **fields)
 
 #: Default per-cost-tier USD rates per 1k tokens (input, output).
 DEFAULT_COST_RATES: dict[str, tuple[float, float]] = {
@@ -671,6 +702,166 @@ def find_example_config_path(start: Path | str | None = None) -> Path:
     )
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  Category-score scale (INT-API-002)
+# ═══════════════════════════════════════════════════════════════════════════
+
+#: The canonical category-score scale: percent.  The shipped templates
+#: (``chimera.yaml.example`` / ``chimera.yaml.docker``), the live catalog and
+#: ``GET /v1/models`` all carry percent values, so percent is what the selector
+#: maths (``selector.CategorySelector.score`` multiplies raw scores with no
+#: rescale) is calibrated for.
+CATEGORY_SCORE_MAX = 100.0
+
+#: Human-readable accepted-range clause shared by every rejection message.
+_CATEGORY_SCORE_RANGE = (
+    "scores must be percent 0-100 (a 0.0-1.0 catalog is accepted and rescaled "
+    "x100 on load)"
+)
+
+
+def _category_score_error(
+    config_path: Path | None,
+    model_id: str,
+    category_path: str,
+    value: Any,
+    reason: str,
+) -> ConfigError:
+    """Build the single actionable line for one invalid category score.
+
+    One line, no traceback: it names the file being loaded, the model id, the
+    category path, the offending value and the accepted range — everything an
+    operator needs to fix the entry without reading a stack trace.
+    """
+    where = f" in {config_path}" if config_path is not None else ""
+    return ConfigError(
+        f"invalid category score{where}: model {model_id!r} category "
+        f"{category_path!r} has value {value!r} ({reason}); {_CATEGORY_SCORE_RANGE}"
+    )
+
+
+def _category_scale_validation_error(
+    exc: ValidationError, config_path: Path | None
+) -> ConfigError | None:
+    """Translate a category-score ``ValidationError`` into one actionable line.
+
+    A *non-numeric* score (``code: high``) never reaches
+    :func:`_normalize_category_scales` — pydantic rejects it while building
+    ``ModelEntry.categories`` (``dict[str, float]``) and raises a
+    ``ValidationError`` whose message is a multi-line report.  That is the one
+    score defect the schema itself catches, so it is translated here into the
+    same single-line ``ConfigError`` the range/finiteness checks raise; every
+    other validation error is left untouched (``None``).
+    """
+    for err in exc.errors():
+        loc = err.get("loc") or ()
+        if len(loc) >= 4 and loc[0] == "models" and loc[2] == "categories":
+            value = err.get("input")
+            if not isinstance(value, (int, float, str)):
+                value = repr(value)
+            return _category_score_error(
+                config_path, str(loc[1]), str(loc[3]), value, "not a number"
+            )
+    return None
+
+
+def _normalize_category_scales(
+    config: ChimeraConfig, config_path: Path | None = None
+) -> None:
+    """Enforce ONE category-score scale (percent) across the whole catalog.
+
+    INT-API-002: the docs described 0.0-1.0 scores while the shipped templates,
+    the live catalog and ``GET /v1/models`` carried 0-100 — and the selector
+    multiplies raw scores with no rescale, so a model configured from the docs
+    landed ~100x below every peer and was silently never selected.  Percent is
+    canonical; a 0-1 catalog keeps working by being rescaled.
+
+    Mutates *config* in place (values only — no schema, no field renames) so
+    every entry point (engine, gateway, web routes, CLI, server) sees the
+    normalised catalog because they all load through :func:`load_config`.
+
+    Rules:
+
+    * a non-numeric, NaN or infinite value is rejected with one actionable line;
+    * a value < 0 or > 100 is rejected the same way;
+    * a catalog with NO value above 1.0 is unit-scale — every value is
+      multiplied by 100 and ONE warning names the model count;
+    * a percent-scale catalog keeps its values, and every value inside the
+      closed interval [0, 1] is multiplied by 100 with one warning per
+      model+path — so a docs-style entry mixed into a template catalog competes
+      instead of starving.
+
+    A 0.0 score is untouched by the rescale and is not reported (it is not
+    "affected": ``0.0 * 100 == 0.0``).
+    """
+    scored: list[tuple[str, str, float]] = []
+    for model_id, entry in config.models.items():
+        for category_path, value in entry.categories.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise _category_score_error(
+                    config_path, model_id, category_path, value, "not a number"
+                )
+            score = float(value)
+            if not math.isfinite(score):
+                raise _category_score_error(
+                    config_path, model_id, category_path, score,
+                    "not a finite number",
+                )
+            if score < 0.0 or score > CATEGORY_SCORE_MAX:
+                raise _category_score_error(
+                    config_path, model_id, category_path, score,
+                    f"outside the accepted range 0.0-{CATEGORY_SCORE_MAX:g}",
+                )
+            scored.append((model_id, category_path, score))
+
+    if not scored:
+        return
+
+    # Scale detection is per CATALOG, not per model: one percent value anywhere
+    # means the whole catalog is percent (a docs-style entry is the exception,
+    # never the key to reinterpreting a template catalog).
+    percent_scale = any(score > 1.0 for _, _, score in scored)
+    if not percent_scale:
+        model_count = len({model_id for model_id, _, _ in scored})
+        for model_id, category_path, score in scored:
+            config.models[model_id].categories[category_path] = score * 100.0
+        _log_warning(
+            "category_scale_normalized",
+            scale="unit",
+            models=model_count,
+            categories=len(scored),
+            factor=100,
+            canonical_scale="percent 0-100",
+        )
+    else:
+        for model_id, category_path, score in scored:
+            if 0.0 < score <= 1.0:
+                rescaled = score * 100.0
+                config.models[model_id].categories[category_path] = rescaled
+                _log_warning(
+                    "category_scale_normalized",
+                    model=model_id,
+                    path=category_path,
+                    old=score,
+                    new=rescaled,
+                )
+
+    # Post-condition: nothing may leave this function outside percent 0-100.
+    for model_id, entry in config.models.items():
+        for category_path, value in entry.categories.items():
+            valid = (
+                not isinstance(value, bool)
+                and isinstance(value, (int, float))
+                and math.isfinite(float(value))
+                and 0.0 <= float(value) <= CATEGORY_SCORE_MAX
+            )
+            if not valid:  # pragma: no cover - defensive internal invariant
+                raise ConfigError(
+                    f"internal error: normalisation left model {model_id!r} category "
+                    f"{category_path!r} at {value!r} (expected a finite 0-100 score)"
+                )
+
+
 def load_config(path: Path | str | None = None) -> ChimeraConfig:
     """Load and validate a Chimera config from YAML.
 
@@ -715,7 +906,20 @@ def load_config(path: Path | str | None = None) -> ChimeraConfig:
     if not isinstance(raw, dict):
         raise ValueError(f"Config {config_path} did not parse to a mapping")
     raw = _substitute_env(raw)
-    config = ChimeraConfig.model_validate(raw)
+    try:
+        config = ChimeraConfig.model_validate(raw)
+    except ValidationError as exc:
+        # A non-numeric score is the one defect the schema itself catches; turn
+        # its multi-line report into the same single actionable line the
+        # range/finiteness checks raise (INT-API-002). Every other validation
+        # error keeps its original type and message.
+        translated = _category_scale_validation_error(exc, config_path)
+        if translated is None:
+            raise
+        raise translated from exc
+    # One choke point: every entry point (engine, gateway, web routes, CLI,
+    # server) loads through here, so no caller can bypass the scale check.
+    _normalize_category_scales(config, config_path)
     _apply_env_overrides(config)
     return config
 

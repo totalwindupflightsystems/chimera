@@ -31,8 +31,8 @@ def test_catalog_description_contains_weights(config: ChimeraConfig) -> None:
     desc = config.catalog_description()
     assert "zai-coding-plan/glm-5.2" in desc
     assert "deepseek/deepseek-chat" in desc
-    # DeepSeek's strongest category (code=0.95) should be listed
-    assert "code=0.95" in desc
+    # DeepSeek's strongest category (code=95.0, percent scale) should be listed
+    assert "code=95.00" in desc
 
 
 def test_resolve_model_alias(config: ChimeraConfig) -> None:
@@ -67,7 +67,7 @@ def test_env_substitution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
         "providers": {"openrouter": {"base_url": "https://x/${MISSING_VAR}/v1"}},
         "models": {
             "deepseek/deepseek-chat": {
-                "categories": {"code": 0.9}, "cost_tier": "budget", "provider": "openrouter"
+                "categories": {"code": 90.0}, "cost_tier": "budget", "provider": "openrouter"
             }
         },
         "defaults": {"dispatcher": "deepseek/deepseek-chat",
@@ -89,6 +89,62 @@ def test_load_config_from_file(config_file: Path) -> None:
     cfg = load_config(config_file)
     assert cfg.defaults.dispatcher == "zai-coding-plan/glm-5.2"
     assert set(cfg.formations) == {"auto", "simple", "debate", "audit", "speed"}
+
+
+def _docs_scale_config(tmp_path: Path) -> Path:
+    """A catalog written the way the pre-INT-API-002 docs described (0.0-1.0)."""
+    doc = {
+        "providers": {"zai": {"base_url": "https://api.z.ai/api/coding/paas/v4"}},
+        "models": {
+            "zai-coding-plan/glm-5.2": {
+                "categories": {"code": 0.92, "reasoning": 0.95, "design": 0.85},
+                "cost_tier": "premium",
+                "provider": "zai",
+            },
+            "zai-coding-plan/glm-4.6": {
+                "categories": {"code": 0.80},
+                "cost_tier": "budget",
+                "provider": "zai",
+            },
+        },
+        "defaults": {
+            "dispatcher": "zai-coding-plan/glm-5.2",
+            "default_worker": "zai-coding-plan/glm-5.2",
+            "default_aggregator": "zai-coding-plan/glm-5.2",
+        },
+        "formations": {"simple": {"workers": 2, "aggregator": "default"}},
+    }
+    path = tmp_path / "docs-scale.yaml"
+    path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    return path
+
+
+def test_load_config_normalises_docs_scale_catalog(tmp_path: Path) -> None:
+    """INT-API-002: a docs-written 0.0-1.0 catalog loads on the percent scale.
+
+    The fixture is LOCAL on purpose: the shared conftest catalog is percent —
+    its own comment says it mirrors ``chimera.yaml.example`` — so a test whose
+    premise is the docs' historical 0.0-1.0 scale must bring its own file.
+    ``tests/test_config_scale.py`` holds the full scale contract; this is the
+    ``load_config``-level smoke of the same rule.
+    """
+    import structlog.testing
+
+    path = _docs_scale_config(tmp_path)
+    with structlog.testing.capture_logs() as logs:
+        cfg = load_config(path)
+
+    glm = cfg.models["zai-coding-plan/glm-5.2"].categories
+    assert glm == {"code": 92.0, "reasoning": 95.0, "design": 85.0}
+    # Every value in the whole catalog is now percent, and in range.
+    values = [v for entry in cfg.models.values() for v in entry.categories.values()]
+    assert values and all(0.0 <= v <= 100.0 for v in values)
+    assert all(v > 1.0 for v in values), "a unit-scale catalog must be rescaled x100"
+
+    records = [entry for entry in logs if entry["event"] == "category_scale_normalized"]
+    assert len(records) == 1, records
+    assert records[0]["log_level"] == "warning"
+    assert records[0]["models"] == len(cfg.models)
 
 
 def test_find_config_path_walks_upwards(tmp_path: Path) -> None:

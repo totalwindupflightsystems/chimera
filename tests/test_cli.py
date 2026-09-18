@@ -766,8 +766,8 @@ def test_cli_models_transposed_weights_present(config_file) -> None:  # type: ig
     # One transposed row per (model, category).
     assert "deepseek/deepseek-chat · code" in result.output
     assert "openrouter/google/gemini-2.5-flash · design" in result.output
-    assert "0.90" in result.output  # gemini design weight
-    assert "0.95" in result.output  # glm-5.2 reasoning weight
+    assert "90.00" in result.output  # gemini design weight (percent scale)
+    assert "95.00" in result.output  # glm-5.2 reasoning weight
 
 
 def test_cli_models_weights_sorted_strongest_first(config_file) -> None:  # type: ignore[no-untyped-def]
@@ -775,8 +775,8 @@ def test_cli_models_weights_sorted_strongest_first(config_file) -> None:  # type
     runner = CliRunner()
     result = runner.invoke(main, ["-c", str(config_file), "models"])
     assert result.exit_code == 0, result.output
-    # glm-5.2: reasoning=0.95 > code=0.92 > analysis=0.90 > audit=0.88 >
-    # design=0.85 — rows must appear in that order.
+    # glm-5.2: reasoning=95.0 > code=92.0 > analysis=90.0 > audit=88.0 >
+    # design=85.0 — rows must appear in that order.
     order = [
         "zai-coding-plan/glm-5.2 · reasoning",
         "zai-coding-plan/glm-5.2 · code",
