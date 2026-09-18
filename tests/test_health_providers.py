@@ -3,18 +3,26 @@
 Covers the dogfood P1 fix (health false negatives):
 * configurable ``health_timeout_s`` (default 10.0, no hardcoded 3.0),
 * cheap ping (``max_tokens=1``) and error classes
-  (``timeout`` | ``missing-credentials`` | ``auth`` | ``api``),
+  (``timeout`` | ``missing-credentials`` | ``auth`` | ``api`` | ``quota``),
 * multi-model retry for non-timeout failures with ``model_tested``
   reflecting the last attempt.
+
+Covers INT-ZAI-002 (probe hygiene):
+* the probe call carries ``probe=True`` so the gateway does not report its own
+  1-token cap as a provider token-limit event, and
+* a quota/billing failure (429, or the INT-ZAI-001 "Insufficient balance or no
+  resource package." prose) is classified ``quota`` — reachable-and-
+  authenticated-but-unfunded — instead of the useless catch-all ``api``.
 """
 
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 from chimera.api.server import _check_providers
 from chimera.config import ChimeraConfig, ServerConfig
-from chimera.gateway import GatewayResponse
+from chimera.gateway import GatewayResponse, _build_response
 
 
 def _config(
@@ -51,11 +59,23 @@ def _config(
     return cfg
 
 
+class _StatusError(RuntimeError):
+    """Provider error carrying an HTTP status code, like litellm's."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+#: The INT-ZAI-001 quota/billing prose (litellm.RateLimitError), verbatim.
+_QUOTA_MESSAGE = "Insufficient balance or no resource package. Please recharge."
+
+
 class _ProbeGateway:
     """Scriptable gateway: per-model behavior + recorded probe calls."""
 
     def __init__(self, behavior: dict[str, str]) -> None:
-        # model name → "ok" | "slow" | "auth" | "api"
+        # model name → "ok" | "slow" | "auth" | "api" | "quota" | "quota_msg"
         self.behavior = behavior
         self.calls: list[tuple[str, list[dict[str, str]]]] = []
         self.kwargs_seen: list[dict[str, object]] = []
@@ -80,7 +100,47 @@ class _ProbeGateway:
             raise RuntimeError("AuthenticationError: 401 invalid api key")
         if action == "api":
             raise RuntimeError("upstream 500: provider exploded")
+        if action == "quota":
+            raise _StatusError("RateLimitError: rate limited", status_code=429)
+        if action == "quota_msg":
+            raise RuntimeError(_QUOTA_MESSAGE)
         raise AssertionError(f"unknown behavior {action!r}")
+
+
+class _TruncatingProbeGateway:
+    """A gateway that answers through the REAL ``_build_response``.
+
+    It replays what :class:`~chimera.gateway.LiteLLMGateway` does for the
+    health ping: a 1-token completion whose ``finish_reason`` is ``"length"``.
+    Passing the received ``probe`` kwarg (defaulting to ``False``, exactly like
+    the real method's signature) makes the warning behaviour OBSERVABLE from
+    the health path: if the probe call site stopped sending ``probe=True``,
+    the warning would come back and these assertions fail.
+    """
+
+    def __init__(self) -> None:
+        self.kwargs_seen: list[dict[str, object]] = []
+        self.responses: list[GatewayResponse] = []
+
+    async def complete(
+        self,
+        model: str,
+        messages: list[dict[str, str]],
+        **kwargs: object,
+    ) -> GatewayResponse:
+        self.kwargs_seen.append(kwargs)
+        result = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    finish_reason="length",
+                    message=SimpleNamespace(content="p"),
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=7, completion_tokens=1),
+        )
+        response = _build_response(result, model, probe=bool(kwargs.get("probe", False)))
+        self.responses.append(response)
+        return response
 
 
 # --------------------------------------------------------------------------- #
@@ -102,6 +162,51 @@ def test_fast_provider_healthy() -> None:
     assert gw.calls[0][1] == [{"role": "user", "content": "ping"}]
     assert gw.kwargs_seen[0]["max_tokens"] == 1
     assert gw.kwargs_seen[0]["temperature"] == 1
+
+
+def test_probe_call_carries_probe_flag() -> None:
+    """INT-ZAI-002: the health ping must mark itself as a probe."""
+    cfg = _config(
+        models={"deepseek/deepseek-v4-flash": "deepseek"},
+        api_keys={"deepseek": "sk-test"},
+    )
+    gw = _ProbeGateway({})
+    asyncio.run(_check_providers(cfg, gw))
+
+    assert gw.kwargs_seen[0]["probe"] is True
+
+
+def test_successful_ping_logs_no_token_limit_warning(capsys) -> None:
+    """INT-ZAI-002: a healthy probe must not look like a token-limit event.
+
+    The stub answers through the real ``_build_response`` with the ping's
+    actual shape (``finish_reason="length"``), so this fails if the probe flag
+    stops flowing from ``_check_providers`` into the gateway.
+    """
+    cfg = _config(
+        models={"deepseek/deepseek-v4-flash": "deepseek"},
+        api_keys={"deepseek": "sk-test"},
+    )
+    gw = _TruncatingProbeGateway()
+    status = asyncio.run(_check_providers(cfg, gw))
+
+    assert status["deepseek"]["healthy"] is True
+    assert gw.responses[0].finish_reason == "length"
+    captured = capsys.readouterr().out
+    assert "token_limit_reached" not in captured, f"false warning emitted: {captured}"
+
+    # Negative control: drop the flag and the same builder warns again.
+    result = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                finish_reason="length",
+                message=SimpleNamespace(content="p"),
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=7, completion_tokens=1),
+    )
+    _build_response(result, "deepseek/deepseek-v4-flash")
+    assert "token_limit_reached" in capsys.readouterr().out
 
 
 def test_multiple_providers_checked_concurrently() -> None:
@@ -215,6 +320,59 @@ def test_api_error_class() -> None:
     info = status["prov"]
     assert info["healthy"] is False
     assert info["error"].startswith("api:")
+    assert info["model_tested"] == "prov/a"
+
+
+# --------------------------------------------------------------------------- #
+# Quota / billing failures → "quota" (INT-ZAI-001 class), non-terminal
+# --------------------------------------------------------------------------- #
+
+
+def test_quota_429_class_retries_all_models_then_unhealthy() -> None:
+    """A 429 is a quota condition and is NOT terminal (all models retried)."""
+    cfg = _config(
+        models={"prov/a": "prov", "prov/b": "prov", "prov/c": "prov"},
+        api_keys={"prov": "sk-test"},
+    )
+    gw = _ProbeGateway({"prov/a": "quota", "prov/b": "quota", "prov/c": "quota"})
+    status = asyncio.run(_check_providers(cfg, gw))
+
+    info = status["prov"]
+    assert info["healthy"] is False
+    assert info["error"].startswith("quota:")
+    assert info["model_tested"] == "prov/c"
+    assert [m for m, _ in gw.calls] == ["prov/a", "prov/b", "prov/c"]
+
+
+def test_quota_429_then_success_is_healthy() -> None:
+    """A blocked model must not condemn a provider that still works."""
+    cfg = _config(
+        models={"prov/a": "prov", "prov/b": "prov"},
+        api_keys={"prov": "sk-test"},
+    )
+    gw = _ProbeGateway({"prov/a": "quota", "prov/b": "ok"})
+    status = asyncio.run(_check_providers(cfg, gw))
+
+    info = status["prov"]
+    assert info["healthy"] is True
+    assert info["model_tested"] == "prov/b"
+    assert [m for m, _ in gw.calls] == ["prov/a", "prov/b"]
+
+
+def test_quota_message_without_status_code_class() -> None:
+    """The INT-ZAI-001 balance prose alone classifies as ``quota``."""
+    cfg = _config(
+        models={"prov/a": "prov"},
+        api_keys={"prov": "sk-test"},
+    )
+    gw = _ProbeGateway({"prov/a": "quota_msg"})
+    status = asyncio.run(_check_providers(cfg, gw))
+
+    info = status["prov"]
+    assert info["healthy"] is False
+    assert info["error"].startswith("quota:")
+    # The provider's own words survive into the operator-facing detail.
+    assert "recharge" in info["error"]
     assert info["model_tested"] == "prov/a"
 
 

@@ -99,6 +99,78 @@ def test_token_limit_detection_logs_warning(capsys) -> None:
     assert "token_limit_reached" in captured, f"Expected token_limit_reached in stdout, got: {captured}"
 
 
+def _length_result() -> SimpleNamespace:
+    """A LiteLLM-shaped result truncated by a ``max_tokens`` cap."""
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                finish_reason="length",
+                message=SimpleNamespace(content="p"),
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=7, completion_tokens=1),
+    )
+
+
+def test_probe_token_cap_does_not_warn(capsys, caplog) -> None:
+    """INT-ZAI-002: the health probe's 1-token ping must NOT look like a
+    token-limit event.
+
+    ``probe=True`` keeps ``finish_reason="length"`` on the response (the
+    caller still sees the truth) but drops the WARNING that made every
+    ``/v1/health`` call write one false ``token_limit_reached`` line per
+    provider into the journal.
+    """
+    import logging
+
+    from chimera.gateway import _build_response
+
+    caplog.set_level(logging.DEBUG)
+    response = _build_response(_length_result(), "deepseek/deepseek-chat", probe=True)
+
+    # The response contract is unchanged by the flag.
+    assert response.finish_reason == "length"
+    assert response.text == "p"
+
+    captured = capsys.readouterr().out
+    assert "token_limit_reached" not in captured, f"unexpected warning: {captured}"
+    assert not any("token_limit_reached" in str(r.message) for r in caplog.records)
+
+    # Negative control: the identical result without the flag still warns, so
+    # the assertion above is about the flag and not about a silent logger.
+    _build_response(_length_result(), "deepseek/deepseek-chat")
+    assert "token_limit_reached" in capsys.readouterr().out
+
+
+async def test_probe_flag_is_not_forwarded_to_litellm(config, capsys) -> None:  # type: ignore[no-untyped-def]
+    """INT-ZAI-002: ``probe`` shapes the response locally and never reaches
+    the LiteLLM call (``**kwargs`` are forwarded verbatim, so a leaked flag
+    would be a hard TypeError upstream).
+    """
+    from unittest.mock import patch
+
+    gw = LiteLLMGateway(config)
+    captured_kwargs: dict[str, object] = {}
+
+    def capture(**kwargs: object) -> object:
+        captured_kwargs.update(kwargs)
+        return _length_result()
+
+    with patch("litellm.acompletion", side_effect=capture):
+        response = await gw.complete(
+            "deepseek/deepseek-v4-flash",
+            [{"role": "user", "content": "ping"}],
+            temperature=1,
+            max_tokens=1,
+            probe=True,
+        )
+
+    assert "probe" not in captured_kwargs
+    assert captured_kwargs["max_tokens"] == 1
+    assert response.finish_reason == "length"
+    assert "token_limit_reached" not in capsys.readouterr().out
+
+
 def test_token_limit_field_on_response() -> None:
     """C3: GatewayResponse carries finish_reason from the provider."""
     from chimera.gateway import GatewayResponse

@@ -124,6 +124,7 @@ class Gateway(Protocol):
         *,
         temperature: float = 0.2,
         response_format: dict[str, Any] | None = None,
+        probe: bool = False,
         **kwargs: Any,
     ) -> GatewayResponse: ...
 
@@ -509,8 +510,19 @@ class LiteLLMGateway:
         *,
         temperature: float = 0.2,
         response_format: dict[str, Any] | None = None,
+        probe: bool = False,
         **kwargs: Any,
     ) -> GatewayResponse:
+        """Complete a prompt.
+
+        *probe* marks the deliberately cheap health-check ping
+        (``max_tokens=1``), which ALWAYS ends with ``finish_reason="length"``
+        after its single output token.  The flag is consumed here and never
+        reaches LiteLLM: it only tells ``_build_response`` that a truncated
+        finish is the probe's own cap rather than a real token-limit event,
+        so no ``token_limit_reached`` warning is logged for it
+        (INT-ZAI-002).
+        """
         entry = self.config.get_model(model)
         api_key = self.config.api_keys.get(entry.provider)
         effective_provider = entry.provider
@@ -590,7 +602,7 @@ class LiteLLMGateway:
 
         try:
             response = await self._complete_with_retry(
-                call_kwargs, model, provider=effective_provider,
+                call_kwargs, model, provider=effective_provider, probe=probe,
             )
             if breaker is not None:
                 breaker.on_success()
@@ -632,6 +644,7 @@ class LiteLLMGateway:
         model: str,
         *,
         provider: str | None = None,
+        probe: bool = False,
     ) -> GatewayResponse:
         """Call LiteLLM with exponential backoff retry for transient failures.
 
@@ -650,6 +663,11 @@ class LiteLLMGateway:
         credential failure can be reported against the right provider's env
         var instead of whichever provider LiteLLM's SDK prose happens to name
         (DF-CHIMERA-V2-8).  ``None`` falls back to the model catalog entry.
+
+        *probe* is forwarded to :meth:`_build_response` (it is NOT part of
+        ``call_kwargs``, so it never reaches the LiteLLM call) and only
+        selects probe-flavoured truncation logging — see
+        :func:`_build_response`.
         """
         retry_cfg = self.config.retry
         last_error: BaseException | None = None
@@ -661,7 +679,7 @@ class LiteLLMGateway:
                 # Fall back to sync completion on a dedicated large pool if
                 # acompletion is unavailable or raises TypeError/NotImplemented.
                 result = await _litellm_acomplete(call_kwargs)
-                return self._build_response(result, model)
+                return self._build_response(result, model, probe=probe)
             except Exception as exc:
                 last_error = exc
 
@@ -729,16 +747,32 @@ class LiteLLMGateway:
             f"{last_error}"
         ) from last_error
 
-    def _build_response(self, result: Any, model: str) -> GatewayResponse:
+    def _build_response(
+        self, result: Any, model: str, probe: bool = False,
+    ) -> GatewayResponse:
         """Build a GatewayResponse from a LiteLLM result, with token limit
-        and empty response detection (C3, C4)."""
-        return _build_response(result, model)
+        and empty response detection (C3, C4).
+
+        *probe* (INT-ZAI-002) selects probe-flavoured truncation logging.
+        """
+        return _build_response(result, model, probe=probe)
 
 
-def _build_response(result: Any, model: str) -> GatewayResponse:
+def _build_response(
+    result: Any, model: str, probe: bool = False,
+) -> GatewayResponse:
     """Build a GatewayResponse from a LiteLLM result (standalone, testable).
 
     Detects token limit (C3) and empty responses (C4).
+
+    *probe* marks the health-check ping (``max_tokens=1``), whose single
+    output token makes ``finish_reason == "length"`` the NORMAL, successful
+    outcome.  For a probe that truncation is logged at DEBUG
+    (``probe_token_cap_reached``) instead of the WARNING
+    ``token_limit_reached``, which otherwise wrote one false "the provider
+    hit its token limit" line per provider into the journal on every
+    ``/v1/health`` call (INT-ZAI-002).  A non-probe call is unchanged and
+    still warns.
     """
     text = _extract_text(result)
     usage = getattr(result, "usage", None)
@@ -755,12 +789,23 @@ def _build_response(result: Any, model: str) -> GatewayResponse:
     is_empty = not bool(text)
 
     if finish_reason == "length":
-        log.warning(
-            "token_limit_reached",
-            model=model,
-            tokens_input=tok_in,
-            tokens_output=tok_out,
-        )
+        if probe:
+            # The health ping's own 1-token cap, not a provider quota event
+            # (INT-ZAI-002).  DEBUG keeps it out of the journal's WARNING
+            # stream; the response still carries finish_reason="length".
+            log.debug(
+                "probe_token_cap_reached",
+                model=model,
+                tokens_input=tok_in,
+                tokens_output=tok_out,
+            )
+        else:
+            log.warning(
+                "token_limit_reached",
+                model=model,
+                tokens_input=tok_in,
+                tokens_output=tok_out,
+            )
 
     return GatewayResponse(
         text=text,

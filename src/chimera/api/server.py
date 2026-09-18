@@ -707,26 +707,45 @@ def _provider_has_credentials(config: ChimeraConfig, provider_name: str) -> bool
     return any(os.environ.get(env_var) for env_var in _PROVIDER_ENV_KEYS.get(provider_name, ()))
 
 
+#: Message tokens that mean "the provider refused for auth reasons".  Checked
+#: BEFORE the quota tokens so a failure that says both ("401 ... quota") stays
+#: ``auth`` — an auth failure is the more actionable verdict.
+_AUTH_TOKENS: tuple[str, ...] = (
+    "401", "403", "unauthorized", "authentication",
+    "invalid api key", "api key", "forbidden", "permission denied",
+)
+
+#: Message tokens that mean "the provider was reachable and authenticated, but
+#: the account has no budget/quota left" — the INT-ZAI-001 class
+#: (litellm.RateLimitError "Insufficient balance or no resource package.
+#: Please recharge.").  Reported as ``quota`` so an operator sees "top up the
+#: account" instead of the useless catch-all ``api``.  A 429 status code is
+#: the same condition signalled structurally and is checked first.
+_QUOTA_TOKENS: tuple[str, ...] = (
+    "insufficient_quota", "quota", "insufficient_credits",
+    "insufficient balance", "no resource package", "recharge", "billing",
+    "payment required", "spending limit", "rate limit", "out of credits",
+)
+
+
 def _classify_provider_error(exc: BaseException) -> str:
-    """Classify a provider failure as ``timeout`` | ``auth`` | ``api``."""
+    """Classify a provider failure as ``timeout`` | ``auth`` | ``api`` | ``quota``."""
     status_code = getattr(exc, "status_code", None)
     if status_code is None:
         response = getattr(exc, "response", None)
         if response is not None:
             status_code = getattr(response, "status_code", None)
+    if status_code == 429:
+        return "quota"
     if status_code in (401, 403):
         return "auth"
     message = str(exc).lower()
+    if any(token in message for token in _AUTH_TOKENS):
+        return "auth"
+    if any(token in message for token in _QUOTA_TOKENS):
+        return "quota"
     if "timeout" in message or "timed out" in message:
         return "timeout"
-    if any(
-        token in message
-        for token in (
-            "401", "403", "unauthorized", "authentication",
-            "invalid api key", "api key", "forbidden", "permission denied",
-        )
-    ):
-        return "auth"
     return "api"
 
 
@@ -740,10 +759,16 @@ async def _check_providers(
     Provider checks run concurrently under ``config.server.health_timeout_s``
     (default 10.0 s).  Providers without resolvable credentials are reported
     immediately as ``missing-credentials`` (no live call).  For non-timeout
-    failures (``auth`` / ``api``) up to ``_MAX_PROBE_MODELS`` models from the
-    provider are tried before it is marked unhealthy; the last model attempted
-    is reported in ``model_tested``.  A timeout is terminal per provider —
-    one model is enough to prove connectivity.
+    failures (``auth`` / ``api`` / ``quota``) up to ``_MAX_PROBE_MODELS``
+    models from the provider are tried before it is marked unhealthy; the last
+    model attempted is reported in ``model_tested``.  A timeout is terminal per
+    provider — one model is enough to prove connectivity.
+
+    The probe ping is sent with ``probe=True`` (INT-ZAI-002): the deliberately
+    cheap ``max_tokens=1`` call always ends with ``finish_reason="length"``,
+    which the gateway would otherwise report as a token-limit event.  The flag
+    keeps that expected truncation out of the ``token_limit_reached`` warning
+    stream, so a healthy provider no longer looks like it is out of quota.
     """
     async def check_one(provider_name: str) -> tuple[str, dict[str, Any]]:
         model_names = [
@@ -774,6 +799,7 @@ async def _check_providers(
                     [{"role": "user", "content": "ping"}],
                     temperature=1,
                     max_tokens=1,
+                    probe=True,
                 )
                 return provider_name, {
                     "healthy": True,
