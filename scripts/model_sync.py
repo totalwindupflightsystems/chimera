@@ -20,6 +20,7 @@ import json
 import os
 import sys
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -547,13 +548,127 @@ def main() -> None:
         _llm_score_candidates(candidates)
 
 
+# ── LLM scoring (``--score``) ────────────────────────────────────────────────
+
+#: DeepSeek chat-completions endpoint used by ``--score``.
+SCORE_ENDPOINT: str = "https://api.deepseek.com/v1/chat/completions"
+
+#: Model that scores candidates. Reasoning models share this endpoint, so the
+#: reply may carry ``content=""`` + ``finish_reason="length"`` (see
+#: ``_extract_json_object``); the retry ladder below handles that.
+SCORE_MODEL: str = "deepseek-v4-flash"
+
+#: Token budget for the first scoring call; doubled on a truncated reply.
+SCORE_MAX_TOKENS: int = 8192
+
+#: Hard ceiling for the retry ladder — a reply truncated even here is an error.
+SCORE_MAX_TOKENS_CEILING: int = 32768
+
+
+def _extract_json_object(text: str | None) -> dict[str, Any]:
+    """Parse a JSON object out of a model reply, tolerating fences and prose.
+
+    Raises ``ValueError`` with a diagnostic message — never a bare
+    ``json.JSONDecodeError``. An empty ``content`` is the signature of a
+    reasoning model that spent its entire ``max_tokens`` budget on
+    ``reasoning_content`` and returned ``finish_reason="length"``; the caller
+    retries with a larger budget and needs to be able to tell that apart from
+    a genuinely unparsable reply.
+    """
+    if not text or not text.strip():
+        raise ValueError("empty model content (reasoning likely consumed the whole max_tokens budget)")
+
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        stripped = "\n".join(lines).strip()
+
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        start, end = stripped.find("{"), stripped.rfind("}")
+        if start == -1 or end <= start:
+            raise ValueError(f"no JSON object in model content: {stripped[:120]!r}") from None
+        return json.loads(stripped[start:end + 1])
+
+
+def _score_request_body(model: str, prompt: str, max_tokens: int) -> bytes:
+    """Build the JSON request body for one scoring call."""
+    return json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.0,
+        "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+    }).encode()
+
+
+def _post_score_request(
+    model: str,
+    prompt: str,
+    max_tokens: int,
+    api_key: str,
+    timeout: float = 120.0,
+) -> dict[str, Any]:
+    """POST one scoring request to DeepSeek and return the decoded response."""
+    import urllib.request
+
+    req = urllib.request.Request(
+        SCORE_ENDPOINT,
+        data=_score_request_body(model, prompt, max_tokens),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def _score_llm_reply(
+    prompt: str,
+    api_key: str,
+    post: Callable[[str, str, int, str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Ask DeepSeek to score the candidates, retrying a truncated reply.
+
+    ``deepseek-v4-flash`` is a reasoning model: at a small ``max_tokens`` the
+    whole budget goes to ``reasoning_content`` and ``content`` comes back
+    empty with ``finish_reason="length"`` — the 2026-09-18 cron run failed with
+    ``Expecting value: line 1 column 1 (char 0)`` for exactly this reason.
+    Doubling the budget on that signal (up to ``SCORE_MAX_TOKENS_CEILING``)
+    leaves room for the JSON payload; anything else raises.
+    """
+    post = post or _post_score_request
+    budget = SCORE_MAX_TOKENS
+
+    while True:
+        data = post(SCORE_MODEL, prompt, budget, api_key)
+        choices = data.get("choices") or [{}]
+        choice = choices[0] or {}
+        message = choice.get("message") or {}
+        finish_reason = choice.get("finish_reason")
+
+        try:
+            return _extract_json_object(message.get("content"))
+        except ValueError as exc:
+            truncated = finish_reason == "length"
+            if not truncated or budget >= SCORE_MAX_TOKENS_CEILING:
+                raise ValueError(
+                    f"{exc} (model={SCORE_MODEL}, finish_reason={finish_reason}, max_tokens={budget})"
+                ) from None
+            budget = min(budget * 2, SCORE_MAX_TOKENS_CEILING)
+
+
 def _llm_score_candidates(candidates: dict[str, list[dict[str, Any]]]) -> None:
     """Use DeepSeek to score top candidates on Chimera's hierarchical category paths.
 
     Saves scored models to reports/model_scores_<timestamp>.yaml.
     """
-    import urllib.request
-
     deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
     if not deepseek_key:
         print("\n⚠️  --score requires DEEPSEEK_API_KEY in environment. Skipping.")
@@ -606,27 +721,8 @@ Only include paths where score ≥60. Use whole numbers only.
 Be conservative — only score categories the model is known to excel at
 based on benchmarks and provider claims."""
 
-    body = json.dumps({
-        "model": "deepseek-v4-flash",
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.0,
-        "max_tokens": 4096,
-        "response_format": {"type": "json_object"},
-    }).encode()
-
     try:
-        req = urllib.request.Request(
-            "https://api.deepseek.com/v1/chat/completions",
-            data=body,
-            headers={
-                "Authorization": f"Bearer {deepseek_key}",
-                "Content-Type": "application/json",
-            },
-        )
-        resp = urllib.request.urlopen(req, timeout=120)
-        data = json.loads(resp.read())
-        content = data["choices"][0]["message"]["content"]
-        scored = json.loads(content)
+        scored = _score_llm_reply(prompt, deepseek_key)
 
         # Save to YAML
         reports_dir = REPO_ROOT / "reports"
