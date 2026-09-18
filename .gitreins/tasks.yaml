@@ -1070,3 +1070,18 @@ tasks:
   status: complete
   created_at: '2026-09-17T23:29:57.949723+00:00'
   completed_at: '2026-09-17T23:49:53.229127+00:00'
+- id: INT-ZAI-002
+  title: Provider health probes must not emit false token_limit_reached warnings,
+    and provider failures must carry an actionable class
+  criteria:
+  - probe=True with finish_reason=length writes no token_limit_reached warning while
+    the default non-probe path still warns (tests/test_gateway.py)
+  - "the /v1/health probe path passes probe=True \u2014 proven by recorded call kwargs\
+    \ in tests/test_health_providers.py"
+  - _classify_provider_error returns quota for a 429 exception and for the INT-ZAI-001
+    balance message, with timeout/auth outputs unchanged
+  - full suite green (no new failures/skips vs 1149 passed / 62 skipped) and ruff
+    check src tests clean at the commit
+  status: complete
+  created_at: '2026-09-18T00:16:03.144252+00:00'
+  completed_at: '2026-09-18T00:26:53.237465+00:00'
