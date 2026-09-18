@@ -1085,3 +1085,19 @@ tasks:
   status: complete
   created_at: '2026-09-18T00:16:03.144252+00:00'
   completed_at: '2026-09-18T00:26:53.237465+00:00'
+- id: INT-MIRROR-001
+  title: Push a workflow-touching commit to the public mirror without silent drift
+  criteria:
+  - scripts/push_remotes.py retries a push over the repo's SSH URL when git rejects
+    it for missing workflow scope, and a hermetic test proves the fallback fires on
+    the rejection text without network access
+  - The helper verifies post-push parity for every remote it pushed (git ls-remote
+    <remote> refs/heads/main equals local HEAD) and exits non-zero when a remote ref
+    does not match
+  - AGENTS.md names the working command for a workflow-touching mirror push (the rejected
+    HTTPS token path and the SSH remedy), machine-checked by a test that reads AGENTS.md
+  - --dry-run performs no push, the full test suite stays green, and ruff reports
+    no new findings
+  status: complete
+  created_at: '2026-09-18T00:39:01.164534+00:00'
+  completed_at: '2026-09-18T00:57:27.875153+00:00'
