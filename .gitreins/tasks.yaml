@@ -1142,3 +1142,45 @@ tasks:
   status: complete
   created_at: '2026-09-18T04:55:39.737070+00:00'
   completed_at: '2026-09-18T05:23:09.924677+00:00'
+- id: INT-GATE-002
+  title: Gate the commit path with the real quality harness instead of an advisory
+    hook
+  criteria:
+  - The tracked .gitreins/pre-commit refuses a commit (rc!=0) when a staged Python
+    file carries a lint error that gitreins guard's lint lane reports
+  - A staged file that passes every lane still commits (rc=0) - the hook is not an
+    unconditional blocker
+  - When the gitreins engine or a lane tool is missing the hook degrades loudly (named
+    warning) and still commits, instead of silently passing
+  - AGENTS.md and docs/GITREINS.md state exactly what blocks a commit and match the
+    observed hook behaviour
+  status: complete
+  created_at: '2026-09-18T06:29:12.749571+00:00'
+  completed_at: '2026-09-18T06:41:21.076422+00:00'
+- id: INT-API-001
+  title: '[P1] Gate the /web/* surface behind the API key when auth.enabled'
+  criteria:
+  - With auth.enabled=true and no credentials, POST /web/sessions and POST /web/sessions/{id}/chat
+    return HTTP 401 on a freshly started server
+  - With auth.enabled=true and a valid key, the same endpoints behave as before (no
+    regression)
+  - With auth.enabled=false (the default) keyless web requests keep working exactly
+    as today
+  - docs/SECURITY.md and docs/INTEGRATION.md list every path the service actually
+    serves keyless, and the docs no longer claim /web/* is open when auth is on
+  status: complete
+  created_at: '2026-09-18T08:17:14.255626+00:00'
+  completed_at: '2026-09-18T08:34:11.431121+00:00'
+- id: INT-API-004
+  title: Serve GET /v1/models as an OpenAI list envelope (additive catalog map)
+  criteria:
+  - GET /v1/models returns {"object":"list","data":[{id,object,created,owned_by,categories,cost_tier,provider,enabled,cost_per_1k_input,cost_per_1k_output}],"catalog":{<model_id>:<payload>}}
+    with no model id as a top-level key
+  - openai.OpenAI(base_url=...).models.list() iterates 42 models against a fresh server
+    started from this tree (no NoneType TypeError)
+  - the route stays keyless and documented-open; docs/OPENAI_API.md + docs/INTEGRATION.md
+    document the envelope, the catalog extension and what is not implemented; touched
+    tests and the full unit suite are green
+  status: complete
+  created_at: '2026-09-18T08:52:19.550252+00:00'
+  completed_at: '2026-09-18T08:56:28.810743+00:00'
