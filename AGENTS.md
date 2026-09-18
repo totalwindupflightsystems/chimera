@@ -32,6 +32,33 @@ tests/
   compat/           — Compatibility tests
 ```
 
+### Repository root
+
+Around the package tree above, the tracked root entries are the container builds
+(`Dockerfile`, `Dockerfile.dev`, `docker-compose.yml`), packaging
+(`pyproject.toml`, `uv.lock`), the shipped config templates
+(`chimera.yaml.example`, `chimera.yaml.docker`), `docs/`, `specs/`, `skills/`,
+`scripts/`, `bin/`, the CI workflow (`.github/`), and the quality/harness state
+(`.gitreins/`, `.coding-hermes/`, `.memory-bank/`, `.vfs/`).
+
+Intentional exceptions a directory listing cannot explain:
+
+- `chimera.yaml` is **untracked and gitignored** — it is the live config, and the
+  systemd unit points `Environment=CHIMERA_CONFIG` at the repo-root path.
+- `chimera.yaml.example` / `chimera.yaml.docker` **are** tracked: the wheel
+  force-includes both (`[tool.hatch.build.targets.wheel.force-include]`), so a
+  release build needs them in the checkout.
+- `.vfs/graph/` and `.gitreins/logs/` are derived local caches and gitignored;
+  the config, manifest, board and history files beside them are tracked on
+  purpose. `.gitignore` carries class rules (`.vfs/graph/`, `.gitreins/logs/`,
+  `dagger.db*`), not one live filename per artifact — add a class when a new
+  artifact appears.
+- No `_foreman_*.py` scratch file belongs at the root: four tracked 33-byte
+  foreman run leftovers were deleted by CLN-1 and `tests/test_repo_hygiene.py`
+  fails if one is tracked again. Keep run scratch outside the repo.
+
+Full inventory and the ignore-rule policy: `docs/REPO_LAYOUT.md`.
+
 ## Build & Test Commands
 
 ```bash
