@@ -172,13 +172,23 @@ If guards fail, the commit is BLOCKED. You cannot skip this.
 ### Quick check before committing:
 
 ```bash
-PATH="$HOME/gitreins-poc/.venv/bin:$PATH" gitreins guard
+PATH="$(git rev-parse --show-toplevel)/.venv/bin:$PATH" gitreins guard
 ```
+
+The repo venv first on PATH is load-bearing, not cosmetic: GitReins resolves its
+`lsp` lane tool (`pylsp`) from PATH only, and a lane that finds no tool is a SKIP —
+a DEGRADED run, which reads red in this repo because `guards.allow_skips` is
+deliberately left unset. Get the lane's tool from the dev extra
+(`pip install -e ".[dev]"`), and stage before you guard: `test_mode: diff` grades
+the STAGED diff, so an empty index grades nothing. See
+[docs/GITREINS.md](docs/GITREINS.md) for the DEGRADED-PASS rules and the
+staged-diff verdict-ordering trap.
 
 ### What's checked:
 - **secrets** — API keys, tokens, passwords (BLOCKS on fail — no exceptions)
 - **lint** — ruff (WARNS on fail)
 - **tests** — pytest for changed packages (BLOCKS on fail)
+- **lsp** — `pylsp` over the staged Python files (a missing tool is a SKIP, not a pass)
 
 ### Test mode: diff
 Only packages with staged changes are tested. Pre-existing failures in

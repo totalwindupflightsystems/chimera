@@ -78,6 +78,13 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=5.0",
     "pytest-timeout>=2.3.0",
+    # GitReins' `lsp` guard lane resolves the binary with shutil.which(), i.e.
+    # from PATH only, and a lane that cannot find its tool is not a pass — it is
+    # a SKIP, which degrades the whole run (and reads FAIL here, because
+    # guards.allow_skips stays unset on purpose). The documented guard command
+    # puts this venv first on PATH, so declaring the server as a dev dependency
+    # is what makes the lane deterministic instead of a silent skip.
+    "python-lsp-server>=1.12.0",
     "ruff>=0.6.0",
 ]
 full = [
