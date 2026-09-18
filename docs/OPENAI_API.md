@@ -1,7 +1,18 @@
 # OpenAI-Compatible API
 
 Chimera implements the OpenAI chat completions API. Drop it in as a replacement
-— same endpoint, same request/response format, plus Chimera's multi-model features.
+— same endpoint, same successful request/response format, plus Chimera's
+multi-model features. The request body is OpenAI-shaped and `model` is
+**optional** (it selects a *formation*, and omitting it selects `"auto"`), so a
+client that sends only `messages` works.
+
+Error bodies are **not** uniformly OpenAI-shaped. Only three responses carry a
+top-level OpenAI `error` object: the 404 `model_not_found`, the 400
+`stream_not_supported`, and the 502 `upstream_error`. Every other failure is
+rendered the way FastAPI renders it — a `detail` value (an array for schema
+validation, a plain string, or an `{"error": …, "message": …}` object for
+401/429). The per-status table is in
+[Errors and Status Codes](#errors-and-status-codes).
 
 ## Endpoint
 
@@ -13,16 +24,22 @@ Base URL: `http://localhost:8765` (default, configurable in `chimera.yaml`)
 
 ## Basic Usage
 
+The minimal documented request carries only `messages` — omit `model` and
+Chimera deliberates with the `"auto"` formation:
+
 ```bash
 curl http://localhost:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "auto",
     "messages": [
       {"role": "user", "content": "Rank Rust, Go, Python for HFT systems"}
     ]
   }'
 ```
+
+`"model": "auto"` is the same request written explicitly; it is the only value
+that may be omitted, and the response always echoes the resolved formation in
+its `model` field (`"auto"` either way).
 
 Response:
 
@@ -129,7 +146,7 @@ defaults to budget-friendly auto-deliberation.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `model` | `string` | `"auto"` | **Formation selector** — `"auto"`, a preset (`"simple"`, `"debate"`, `"audit"`, `"speed"`), or `"custom"` (with a DAG). It is **not** a model ID: a key from `GET /v1/models` sent here returns HTTP 404 `model_not_found` (see [Errors](#errors-and-status-codes)). To pin a specific model, keep `model: "auto"` and use `worker_model` / `stage_models` / `allowed_models` below |
+| `model` | `string` | `"auto"` | **Optional** — omitted entirely is the same as `"auto"`. An explicitly empty string (`""`) is a schema validation error (422, see [Invalid request body](#invalid-request-body--http-422-fastapi-validation-not-openai-shaped)). **Formation selector** — `"auto"`, a preset (`"simple"`, `"debate"`, `"audit"`, `"speed"`), or `"custom"` (with a DAG). It is **not** a model ID: a key from `GET /v1/models` sent here returns HTTP 404 `model_not_found` (see [Errors](#errors-and-status-codes)). To pin a specific model, keep `model: "auto"` and use `worker_model` / `stage_models` / `allowed_models` below |
 | `dispatcher_model` | `string` | config | Override the dispatcher model |
 | `aggregator_model` | `string` | config | Override the aggregator model |
 | `worker_model` | `string` | config | Override ALL worker models |
@@ -190,6 +207,9 @@ support `json_schema` (e.g. DeepSeek), Chimera automatically retries with
 ```
 
 The dispatcher writes custom prompts for each stage but uses YOUR exact structure.
+Sending `dag` without `allow_custom_dag: true` is rejected with HTTP 400 —
+`{"detail": "Custom DAG requires allow_custom_dag=true"}` (a `detail` string,
+not the OpenAI-style `error` object).
 
 ## Per-Stage Model Selection
 
@@ -246,6 +266,11 @@ response = client.chat.completions.create(
 
 print(response.choices[0].message.content)
 ```
+
+The endpoint accepts a body without `model`, but the official SDK's own
+`create()` signature requires the argument, so SDK callers keep passing
+`model="auto"` — omitting it is a raw-HTTP convenience (a hand-rolled
+`curl`/`httpx` client that does not know about formations).
 
 ### Forcing a specific catalog model from the OpenAI SDK
 
@@ -402,9 +427,59 @@ served as-is, and a caller should not expect OpenAI semantics from them:
 
 ## Errors and Status Codes
 
-Chimera distinguishes **which** field carried the bad value — the top-level
-`model` is a formation selector, while the override fields name catalog
-models — so the two failures have different status codes and body shapes.
+Chimera is OpenAI-compatible in its request and response *shape*, not in every
+error body, and the bodies are **not** uniform. Every status this endpoint can
+emit, with the body it actually returns:
+
+| Status | Body shape | Cause |
+|---|---|---|
+| 400 | OpenAI `error` (code `stream_not_supported`) | `"stream": true` — see [Streaming](#streaming) |
+| 400 | FastAPI `detail` **string** | `dag` sent without `allow_custom_dag: true` |
+| 400 | FastAPI `detail` **string** | Unknown catalog model in `worker_model` / `aggregator_model` / `stage_models` |
+| 401 | FastAPI `detail` **object** — `{"error": "unauthorized", "message": …}` | Missing/invalid API key, when auth is enabled |
+| 404 | OpenAI `error` (code `model_not_found`) | `model` is not a formation — see below |
+| 422 | FastAPI `detail` **array** | Request body failed schema validation — see below |
+| 429 | FastAPI `detail` **object** — `{"error": "rate_limited", "message": …}` + `Retry-After` | Rate limit exhausted for the key |
+| 502 | JSON body with an `error` object (`upstream_error` + `request_id`) | Deliberation produced no usable answer |
+| 503 | FastAPI `detail` **string** + `Retry-After: 5` | Request queue full |
+
+Only three of those bodies are OpenAI-shaped — the 400 `stream_not_supported`,
+the 404 `model_not_found`, and the 502 `upstream_error`. Everything else is
+FastAPI's own error rendering (`detail`), so a client that only understands
+`{"error": {...}}` will misread most failures. The two `detail` cases with their
+own subsections follow; the remaining bodies are given verbatim below.
+
+### Invalid request body → HTTP 422 (FastAPI validation, NOT OpenAI-shaped)
+
+The request *schema* is enforced before any handler runs, and its failures are
+returned by FastAPI exactly as FastAPI renders them: a `detail` array of
+per-field errors (Pydantic's `loc` / `msg` / `type` / `input`). There is **no**
+`error` object, no `type` / `param` / `code` keys. `messages` is required and
+must be a non-empty list; `model` is optional, **but must be non-empty when
+present** — `"model": ""` lands here instead of on the `"auto"` default:
+
+```json
+{
+  "detail": [
+    {
+      "type": "string_too_short",
+      "loc": ["body", "model"],
+      "msg": "String should have at least 1 character",
+      "input": "",
+      "ctx": {"min_length": 1}
+    }
+  ]
+}
+```
+
+Same shape, other members of this class: `{}` (no `messages` at all) →
+`loc: ["body", "messages"]` with `"type": "missing"`; `{"messages": []}` →
+`loc: ["body", "messages"]` with `"type": "too_short"`. An OpenAI SDK client
+maps the status to a distinct 4xx error type of its own, so a client that
+parses the body as an OpenAI `error` object must handle this shape too — it is
+this endpoint's one non-OpenAI error surface, and it is deliberate: the schema
+lives in the OpenAPI document, so `/openapi.json` (and `/docs`) is the
+authoritative contract for rejected request bodies.
 
 ### Top-level `model` is not a formation → HTTP 404
 
@@ -451,11 +526,22 @@ Two asymmetric cases are worth knowing:
   rejected up front; it surfaces as an upstream provider error (or as a
   worker-failure trace) rather than as a 400.
 
-### Other status codes
+### Other status codes — the bodies verbatim
 
-| Status | `code` | Cause |
+| Status | When | Body |
 |---|---|---|
-| 400 | `stream_not_supported` | `"stream": true` — see [Streaming](#streaming) |
-| 401 | — | Missing/invalid API key (when auth is enabled) |
-| 503 | — | Request queue full (`Retry-After` header set) |
-| 502 | — | Deliberation produced no usable answer (upstream failures) |
+| 400 | `"stream": true` | OpenAI `error`, `code: "stream_not_supported"` — see [Streaming](#streaming) |
+| 400 | `dag` without `allow_custom_dag: true` | `{"detail": "Custom DAG requires allow_custom_dag=true"}` |
+| 400 | unknown model in an override field | `{"detail": "Unknown model/formation: …"}` — see [above](#unknown-model-name-inside-an-override-field--http-400) |
+| 401 | auth enabled, missing/invalid key | `{"detail": {"error": "unauthorized", "message": "…"}}` |
+| 422 | body failed schema validation | `{"detail": [ … ]}` — see [Invalid request body](#invalid-request-body--http-422-fastapi-validation-not-openai-shaped) |
+| 429 | rate limit exhausted for the key | `{"detail": {"error": "rate_limited", "message": "…"}}` + `Retry-After` |
+| 502 | deliberation produced no usable answer | `{"error": {"message": "…", "type": "upstream_error", "request_id": "…"}}` |
+| 503 | request queue full | `{"detail": "Server busy — queue full. Retry later."}` + `Retry-After: 5` |
+
+Note the 401 and 429 shape: `error` and `message` are nested **inside**
+`detail`, they are not the top-level OpenAI `error` object. Only the `stream`
+400, the 404 `model_not_found`, and the 502 `upstream_error` carry that
+top-level object — and the 502's `type` is `upstream_error`, which OpenAI does
+not define. Dispatch on the status code first; treat `body.error` as
+OpenAI-shaped only for those three.

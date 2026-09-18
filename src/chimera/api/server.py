@@ -248,7 +248,12 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str = Field(..., min_length=1)
+    # INT-API-003: `model` is OPTIONAL and defaults to the "auto" formation, so
+    # the minimal documented request is just `messages`. The default is the
+    # only substitution that happens here: min_length=1 keeps an explicit
+    # empty string a 422, and the handler still hard-errors (404) on any other
+    # explicitly supplied non-formation value — never a silent fall back.
+    model: str = Field("auto", min_length=1)
     messages: list[ChatMessage] = Field(..., min_length=1)
     temperature: float | None = None
     response_format: dict[str, Any] | None = None  # OpenAI-compatible structured output
@@ -604,6 +609,8 @@ def _register_routes(app: FastAPI) -> None:
                     detail="Custom DAG requires allow_custom_dag=true",
                 )
             prompt = "\n".join(m.content for m in body.messages if m.role != "system")
+            # `body.model` already defaults to "auto" (INT-API-003), so an
+            # omitted `model` deliberates with the auto dispatcher.
             formation = body.model or "auto"
             # OpenAI-compat contract: an unknown model is a hard error, NOT a
             # silent substitution (CH-GAP-027). Valid values: "auto", a
