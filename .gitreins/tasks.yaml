@@ -1184,3 +1184,12 @@ tasks:
   status: complete
   created_at: '2026-09-18T08:52:19.550252+00:00'
   completed_at: '2026-09-18T08:56:28.810743+00:00'
+- id: INT-PKG-001
+  title: Make bare install chimera serve fail with actionable extra guidance
+  criteria:
+  - Bare install chimera serve exits nonzero with one actionable line naming pip install
+    chimera-deliberation[server] or [full], with no traceback
+  - Full extra/server extra still serve normally and focused regression tests pass
+  status: complete
+  created_at: '2026-09-18T12:06:00.016375+00:00'
+  completed_at: '2026-09-18T12:19:01.843044+00:00'
