@@ -10,6 +10,13 @@ This is the cheap pre-flight check for provider/auth/format regressions
 (INT-ZAI-001 class): /v1/health can say "alive" while the first real call
 fails. This script is that first real call, automated.
 
+The provider-health report is class-aware (DF-CHIMERA-V2-4). Providers with no
+configured API key (``error_class: missing_credentials``) are reported as INFO —
+they are expected on a fresh install — while every other class (``timeout``,
+``auth``, ``quota``, ``api``, ``unknown``) warns with its class and, for a
+quota failure, the provider's own reset-time message.  NEITHER case changes the
+exit code: only the deliberation decides pass/fail.
+
 Exit codes:
     0 — merged answer received and non-empty
     1 — deliberation failed (clear, actionable diagnostics printed)
@@ -33,10 +40,135 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from typing import NamedTuple
 
 DEFAULT_BASE_URL = "http://localhost:8765"
 DEFAULT_PROMPT = "What is the capital of France? Answer in one short sentence."
 SMOKE_FORMATION = "simple"  # deterministic 2-worker + aggregator pipeline, cheap
+
+#: ``error_class`` meaning "no API key resolved for this provider".  A fresh
+#: install legitimately has these, so they are INFORMATION, not a degradation.
+KEYLESS_ERROR_CLASS = "missing_credentials"
+
+#: The degradation warning's prefix, as one constant: the keyless path must NOT
+#: emit it, and a literal in two places is how the two cases drift back into the
+#: identical wording this script is being fixed for.
+UNHEALTHY_WARNING_PREFIX = "WARNING: providers reported unhealthy by /v1/health"
+
+
+class ProviderIssue(NamedTuple):
+    """One unhealthy provider as reported by ``/v1/health``.
+
+    ``error_class`` is the machine-readable reason (``missing_credentials``,
+    ``timeout``, ``auth``, ``quota``, ``api`` — or ``unknown`` when the payload
+    omits it); ``error`` is the provider's own text when the payload carries it.
+    """
+
+    name: str
+    error_class: str = "unknown"
+    error: str = ""
+
+
+def classify_provider_health(details: dict) -> list[ProviderIssue]:
+    """Unhealthy providers from a ``/v1/health`` ``details`` payload.
+
+    Pure: reads ``details["providers"][<name>]`` and nothing else — no I/O, no
+    config, no network.  An entry is unhealthy when it says ``healthy: false``
+    (or omits ``healthy``: absent evidence is not proof of health).  The result
+    is sorted by provider name so the report is deterministic.
+    """
+    providers = details.get("providers") if isinstance(details, dict) else None
+    if not isinstance(providers, dict):
+        return []
+    issues: list[ProviderIssue] = []
+    for name, entry in providers.items():
+        info = entry if isinstance(entry, dict) else {}
+        if info.get("healthy"):
+            continue
+        issues.append(ProviderIssue(
+            name=str(name),
+            error_class=str(info.get("error_class") or "unknown"),
+            error=str(info.get("error") or ""),
+        ))
+    return sorted(issues, key=lambda issue: issue.name)
+
+
+def _message_without_class_prefix(error: str, error_class: str) -> str:
+    """The provider's own message, without ``/v1/health``'s ``<class>: `` prefix.
+
+    The producer writes ``error`` as ``f"{error_class}: {exc}"``, so printing the
+    class beside the raw text would read ``zai [timeout]: timeout: no response``.
+    Only a literal leading ``<class>:`` (either separator spelling) is removed; a
+    free-text provider message is returned unchanged.
+    """
+    text = (error or "").strip()
+    for spelling in (error_class, error_class.replace("_", "-"), error_class.replace("-", "_")):
+        head = f"{spelling}:"
+        if spelling and text.lower().startswith(head.lower()):
+            return text[len(head):].strip()
+    return text
+
+
+def provider_health_lines(details: dict, unhealthy_providers: list[str] | None = None) -> list[str]:
+    """The provider-health report for a ``/v1/health`` payload, split by MEANING.
+
+    Two cases that used to print identical wording are different findings:
+
+    * ``missing_credentials`` — no API key resolved for the provider.  Expected
+      on a fresh install, so it is an INFO line: the deliberation that follows is
+      the actual proof this deployment works.
+    * every other class (``timeout``, ``auth``, ``quota``, ``api``, ``unknown``
+      …) — a real degradation, so it is a WARNING naming each provider with its
+      class.  A ``quota`` provider also surfaces its own message (reset time)
+      when the payload carries it in ``error``.
+
+    The healthy/total count is computed from the payload's provider map — never
+    from ``providers_configured``, which counts CONFIGURED providers and says
+    nothing about whether any of them answered.  Pure: rendering only, no I/O,
+    and no influence on the exit code (``main`` owns that).
+    """
+    details = details if isinstance(details, dict) else {}
+    providers = details.get("providers")
+    if not isinstance(providers, dict) or not providers:
+        # No per-provider detail at all: the probe itself failed SERVER-side.  In
+        # that case /v1/health names every configured provider in
+        # `unhealthy_providers` (none was proven healthy) and puts the reason in
+        # `details.error` — report that instead of claiming a healthy count.
+        names = (
+            [str(name) for name in unhealthy_providers]
+            if isinstance(unhealthy_providers, (list, tuple))
+            else []
+        )
+        if not names:
+            return ["providers: no per-provider health data in the /v1/health response"]
+        reason = str(details.get("error") or "").strip()
+        suffix = f": {reason}" if reason else ""
+        return [
+            f"{UNHEALTHY_WARNING_PREFIX} (no per-provider detail, error_class "
+            f"unknown): {', '.join(names)}{suffix}"
+        ]
+
+    issues = classify_provider_health(details)
+    lines = [f"providers: {len(providers) - len(issues)}/{len(providers)} healthy"]
+
+    keyless = [issue.name for issue in issues if issue.error_class == KEYLESS_ERROR_CLASS]
+    if keyless:
+        lines.append(
+            "INFO: providers without a configured API key "
+            f"(expected on a fresh install): {', '.join(keyless)} — the "
+            "deliberation below is the actual proof this deployment works."
+        )
+
+    degraded = [issue for issue in issues if issue.error_class != KEYLESS_ERROR_CLASS]
+    if degraded:
+        rendered = []
+        for issue in degraded:
+            message = _message_without_class_prefix(issue.error, issue.error_class)
+            rendered.append(
+                f"{issue.name} [{issue.error_class}]" + (f": {message}" if message else "")
+            )
+        lines.append(f"{UNHEALTHY_WARNING_PREFIX}: " + "; ".join(rendered))
+    return lines
 
 
 def _http_json(url: str, method: str = "GET", body: dict | None = None,
@@ -100,18 +232,14 @@ def main() -> int:
         print(f"WARNING: deployed commit {running_commit} != local HEAD {head} "
               f"— service runs older code; restart it (sudo systemctl restart chimera).")
 
-    # 2) Provider health battery (warn on degradation, don't hard-fail here —
-    #    the deliberation below is the actual proof)
+    # 2) Provider health battery. The report is class-aware (DF-CHIMERA-V2-4):
+    #    keyless providers are informational, real classes warn, and the
+    #    degradation is NEVER the verdict — the deliberation below is the actual
+    #    proof, and it alone decides the exit code.
     status, v1 = _http_json(f"{base}/v1/health", timeout=60)
     if status == 200:
-        details = v1.get("details", {})
-        provs = details.get("providers", {})
-        unhealthy = [n for n, p in provs.items() if not p.get("healthy")]
-        if unhealthy:
-            print(f"WARNING: providers reported unhealthy by /v1/health: {', '.join(unhealthy)}")
-        else:
-            print(f"providers: {details.get('providers_configured')}/"
-                  f"{details.get('providers_configured')} healthy")
+        for line in provider_health_lines(v1.get("details"), v1.get("unhealthy_providers")):
+            print(line)
     else:
         print(f"WARNING: /v1/health probe failed (status={status}) — continuing to the real call")
 

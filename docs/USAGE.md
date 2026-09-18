@@ -332,6 +332,24 @@ default. It verifies liveness + the running commit, probes `/v1/health`, then
 POSTs a real `/v1/deliberate` and prints the merged answer. Exit 0 = answer
 received, 1 = failure (auth/formation/busy/provider hints), 2 = usage error.
 
+**How the provider lines read (DF-CHIMERA-V2-4).** The probe's report is split by
+meaning, because a fresh install and a real degradation used to print identical
+words:
+
+* `providers: <healthy>/<total> healthy` — counted from the payload's provider
+  map, never from `providers_configured` (that counts CONFIGURED providers);
+* `INFO: providers without a configured API key (expected on a fresh install): …`
+  — providers whose `error_class` is `missing_credentials` (see the health
+  section above). No key configured is normal on a new deployment, so the
+  deliberation below is the real proof it works;
+* `WARNING: providers reported unhealthy by /v1/health: <name> [<class>] …` — any
+  other class (`timeout`, `auth`, `quota`, `api`, `unknown`), each provider named
+  with its class, plus the provider's own message when it sends one (e.g. a quota
+  reset time).
+
+Neither line changes the exit code: the provider block never fails the run, so a
+degraded provider list still exits 0 when the deliberation succeeds.
+
 ### Blocked models (a present-but-invalid provider key)
 
 A key that is *present* but wrong or expired is not visible to config

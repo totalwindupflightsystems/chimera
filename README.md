@@ -406,6 +406,24 @@ POSTs a real `/v1/deliberate` and prints the merged answer. Exit `0` = merged
 answer received, `1` = failure with an actionable message, `2` = usage/config
 error. Stdlib-only.
 
+The provider-health block is **class-aware** (DF-CHIMERA-V2-4), because a fresh
+install and a real degradation used to print the same words:
+
+* `providers: <healthy>/<total> healthy` — counted from the payload's provider
+  map, never from `providers_configured` (that counts CONFIGURED providers and
+  says nothing about whether any of them answered);
+* `INFO: providers without a configured API key (expected on a fresh install):
+  …` — the providers whose `error_class` is `missing_credentials`. Expected on a
+  fresh install, so it is information rather than a warning: the deliberation
+  below is the real proof that the deployment works;
+* `WARNING: providers reported unhealthy by /v1/health: <name> [<class>] …` —
+  every other class (`timeout`, `auth`, `quota`, `api`, `unknown`), naming each
+  provider with its class and surfacing the provider's own message (a quota
+  reset time, for example).
+
+Neither line changes the exit code: the provider block never fails the run —
+only the deliberation decides pass/fail.
+
 ## Model Selection
 
 The dispatcher picks models using **category-weighted scoring**:
