@@ -320,7 +320,8 @@ Health probes (all return JSON):
 
 **`/v1/health` status semantics.** `healthy` means every configured provider's
 live probe succeeded. `degraded` means **at least one provider probe failed** —
-missing credentials, an auth error (`401`/`403`), an API error, a probe
+missing credentials, an auth error (`401`/`403`), a quota/billing failure
+(`429`, insufficient balance, "no resource package"), an API error, a probe
 timeout, or an exception inside the check itself. The endpoint always answers
 **HTTP 200** and reports the verdict in the `status` field (plus a `details`
 object with per-provider `healthy` / `error` / `model_tested`), so monitoring
