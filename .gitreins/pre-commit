@@ -1,7 +1,31 @@
 #!/usr/bin/env bash
-# GitReins Tier 1 — pre-commit guards (secrets + lint + tests)
+# GitReins Tier 1 — the pre-commit gate for this repo.
+#
+# Two arms, in this order:
+#
+#   1. the built-in secrets scan. It always runs, and it BLOCKS (exit 1). It is
+#      deliberately self-contained: it is the only gate still available on a box
+#      where the `gitreins` engine is not installed.
+#
+#   2. the real quality harness — `gitreins guard` (docs/GITREINS.md). Its exit
+#      code is a VERDICT, not just an error level, so the hook maps it:
+#
+#        0  every substantive lane did work and passed           -> PASS, commit
+#        1  a lane RAN and FAILED (e.g. a ruff finding)          -> BLOCK, exit 1
+#        2  DEGRADED: a substantive lane did NO work (a skip)    -> warn, commit
+#        *  engine error, or no engine on PATH at all            -> warn, commit
+#
+#      Blocking on 2 would make the repo uncommittable on any box whose PATH
+#      lacks the lsp lane's tool (`pylsp`) — the run says "a gate never ran",
+#      which is not "a gate FAILED". Blocking on 1 is the point of this hook: a
+#      graded FAIL must not reach a commit.
+#
+# There is deliberately NO bypass variable. `git commit --no-verify` remains the
+# only escape hatch, and AGENTS.md forbids it for code changes.
 set -e
-cd "$(git rev-parse --show-toplevel)"
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
 
 STAGED=$(git diff --cached --name-only --diff-filter=ACM)
 [ -z "$STAGED" ] && exit 0
@@ -46,31 +70,71 @@ if [ $FAILED -eq 1 ]; then
 fi
 echo "✓ GitReins Tier 1: Secrets scan — PASS"
 
-# ── 2. Lint (Python files only) ──────────────────────────
-PY_FILES=$(echo "$STAGED" | grep '\.py$' || true)
-if [ -n "$PY_FILES" ] && command -v ruff &>/dev/null; then
-  if ! ruff check $PY_FILES --quiet 2>/dev/null; then
-    echo "⚠ GitReins Tier 1: Lint — ISSUES FOUND (non-blocking)" >&2
-  else
-    echo "✓ GitReins Tier 1: Lint — PASS"
-  fi
+# ── 2. The quality harness (gitreins guard) ──────────────
+# The verdict must be VISIBLE — the engine's own output is teed, never
+# swallowed — and the rc is handled explicitly, because `set -e` above would
+# otherwise turn every non-zero verdict into an indistinguishable abort.
+if ! command -v gitreins >/dev/null 2>&1; then
+  echo "" >&2
+  echo "⚠ GitReins Tier 1: harness did NOT run — engine not found ('gitreins' is not on PATH)." >&2
+  echo "  lint / tests / lsp did NOT grade this commit (the secrets scan above did)." >&2
+  echo "  Install the engine (pipx install gitreins) and re-commit to be graded." >&2
+  exit 0
 fi
 
-# ── 3. Tests ─────────────────────────────────────────────
-# Auto-detect Python: prefer .venv → venv → system python3
-if [ -x .venv/bin/python ]; then
-  PYTHON=.venv/bin/python
-elif [ -x venv/bin/python ]; then
-  PYTHON=venv/bin/python
+GUARD_LOG="$(mktemp "${TMPDIR:-/tmp}/gitreins-guard.XXXXXX" 2>/dev/null || true)"
+
+# Repo venv FIRST: GitReins resolves its lsp lane's tool (`pylsp`) from PATH
+# only, and a lane that finds no tool is a SKIP (docs/GITREINS.md, "Running it").
+set +e
+if [ -n "$GUARD_LOG" ]; then
+  trap 'rm -f "$GUARD_LOG"' EXIT
+  PATH="$ROOT/.venv/bin:$PATH" gitreins guard 2>&1 | tee "$GUARD_LOG"
+  RC=${PIPESTATUS[0]}
 else
-  PYTHON=python3
+  # An unwritable TMPDIR must not turn the gate into an outage: run the guard
+  # anyway (only the per-lane skip detail is lost).
+  echo "⚠ GitReins Tier 1: no writable temp file for the guard log — running the guard uncaptured." >&2
+  PATH="$ROOT/.venv/bin:$PATH" gitreins guard
+  RC=$?
 fi
-if [ -x "$PYTHON" ] && [ -d tests ]; then
-  if $PYTHON -m pytest tests/ -x -q 2>&1 >/dev/null; then
-    echo "✓ GitReins Tier 1: Tests — PASS"
-  else
-    echo "⚠ GitReins Tier 1: Tests — FAILED" >&2
-  fi
-fi
+set -e
 
-exit 0
+case "$RC" in
+  0)
+    echo "✓ GitReins Tier 1: PASS (gitreins guard)"
+    exit 0
+    ;;
+  1)
+    echo "" >&2
+    echo "COMMIT BLOCKED: gitreins guard reported FAIL" >&2
+    echo "  Fix the findings above, re-stage, and commit again." >&2
+    echo "  Do NOT reach for --no-verify on a code change (AGENTS.md)." >&2
+    exit 1
+    ;;
+  2)
+    SKIPS=""
+    if [ -n "$GUARD_LOG" ]; then
+      SKIPS="$(grep -E 'skipped' "$GUARD_LOG" 2>/dev/null || true)"
+    fi
+    echo "" >&2
+    echo "⚠ GitReins Tier 1: DEGRADED (gitreins guard exit 2) — the commit PROCEEDS anyway." >&2
+    echo "  A DEGRADED run means a substantive lane did NO work, not that a lane failed." >&2
+    if [ -n "$SKIPS" ]; then
+      echo "  Lanes that graded nothing this run:" >&2
+      printf '%s\n' "$SKIPS" | while IFS= read -r line; do
+        echo "    $line" >&2
+      done
+    else
+      echo "  (the engine named no individual skip lines — read the output above)" >&2
+    fi
+    echo "  Repair the skipped lane (pip install -e \".[dev]\" provides pylsp) and re-guard." >&2
+    exit 0
+    ;;
+  *)
+    echo "" >&2
+    echo "⚠ GitReins Tier 1: harness produced no verdict (gitreins guard exit $RC) — the commit PROCEEDS anyway." >&2
+    echo "  lint / tests / lsp did NOT grade this commit (the secrets scan above did)." >&2
+    exit 0
+    ;;
+esac

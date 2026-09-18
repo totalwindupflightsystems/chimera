@@ -47,7 +47,7 @@ below applies to 0.13.0+.
 | Lane | Tool | On failure |
 | --- | --- | --- |
 | `secrets` | gitleaks, else the built-in scanner (it warns when gitleaks is missing) | BLOCKS |
-| `lint` | `ruff check` over the staged Python files | BLOCKS — a failing lint lane makes the run FAIL (exit 1). (The pre-commit *hook* treats lint and tests as non-blocking warnings; `gitreins guard` does not — it is the stricter of the two, which is why AGENTS.md's "WARNS on fail" reads wrong.) |
+| `lint` | `ruff check` over the staged Python files | BLOCKS — a failing lint lane makes the run FAIL (exit 1). The pre-commit hook delegates to this same command, so a lint finding blocks a commit too (see "The pre-commit hook" below). |
 | `tests` | `pytest` (see test mode) | BLOCKS |
 | `lsp` | `pylsp` over the staged files | BLOCKS |
 
@@ -57,6 +57,53 @@ with an empty index the lanes have nothing to grade. Two exceptions make the ful
 suite run as a safety net: a safety-trigger file in the staged set
 (`pyproject.toml`, `Makefile`, `.gitreins/config.yaml`, other config — the run
 then prints `full suite — safety trigger`), and the `guard --full` flag.
+
+## The pre-commit hook
+
+Every commit runs `.gitreins/pre-commit` (installed into `.git/hooks/`). It has
+two arms, and only the second is the harness this page describes:
+
+1. **The built-in secrets scan** — self-contained, always runs, and BLOCKS the
+   commit (exit 1) on a match, honouring `.gitreins/secrets-ignore`. It is
+   deliberately independent of the engine: it is the only gate still available
+   where `gitreins` is not installed.
+2. **`gitreins guard`** — run with the repo venv first on PATH (see "Running
+   it"), its output teed to the console rather than swallowed.
+
+The guard's exit code is a **verdict**, not just an error level, and the hook
+maps it:
+
+| `gitreins guard` exit | Verdict | What the hook does |
+| --- | --- | --- |
+| `0` | `Tier 1 Guards: PASS` | prints `✓ GitReins Tier 1: PASS (gitreins guard)` — the commit proceeds |
+| `1` | `Tier 1 Guards: FAIL` — a lane RAN and failed (e.g. a ruff finding) | prints `COMMIT BLOCKED: gitreins guard reported FAIL` on stderr — **the commit aborts** |
+| `2` | `Tier 1: DEGRADED PASS` — a substantive lane did **no work** | prints a loud warning naming each skipped lane — the commit proceeds |
+| anything else, or `gitreins` not on PATH | the harness never produced a verdict | prints a loud warning naming the rc / the missing engine — the commit proceeds |
+
+Blocking on `2` would make the repo uncommittable on any box whose PATH lacks
+the `lsp` lane's tool (`pylsp`): "a gate never ran" is not "a gate FAILED".
+Blocking on `1` is the point — a graded FAIL must not reach a commit.
+
+### Installing it
+
+```bash
+bash scripts/install_hooks.sh            # install / repair (idempotent)
+bash scripts/install_hooks.sh --check    # verify parity, write nothing (non-zero on drift)
+bash scripts/install_hooks.sh --dry-run  # print the plan, write nothing
+```
+
+`.git/hooks/` is untracked, so the tracked gate is copied into it. The installer
+deliberately does **not** set `core.hooksPath`: the same `.git/hooks/` directory
+carries the fleet `prepare-commit-msg` hook that appends the `Co-authored-by:`
+trailer to every commit, and `core.hooksPath` moves git's whole hook lookup —
+setting it would silently shadow that trailer hook.
+
+### The bypass
+
+`git commit --no-verify` is the only way past the hook; there is no environment
+variable that turns the gate off. AGENTS.md forbids it for code changes — use it
+for a docs-only change or a GitReins self-upgrade, and expect CI to re-run the
+same guards regardless.
 
 ## Reading the verdict (engine 0.13.0+)
 

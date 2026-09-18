@@ -186,9 +186,16 @@ staged-diff verdict-ordering trap.
 
 ### What's checked:
 - **secrets** — API keys, tokens, passwords (BLOCKS on fail — no exceptions)
-- **lint** — ruff (WARNS on fail)
+- **lint** — ruff (BLOCKS on fail — the pre-commit hook delegates to `gitreins guard`, which fails the run on a lint finding)
 - **tests** — pytest for changed packages (BLOCKS on fail)
 - **lsp** — `pylsp` over the staged Python files (a missing tool is a SKIP, not a pass)
+
+At commit time `.gitreins/pre-commit` runs the built-in secrets scan and then
+`gitreins guard`: it **blocks** on the secrets scan and on a graded
+`gitreins guard` FAIL, **warns loudly and commits anyway** on a DEGRADED run
+(`skips: …`, exit 2) or when the engine is missing, and
+`scripts/install_hooks.sh` installs it (`--check` verifies parity).
+The exit-code policy is in [docs/GITREINS.md](docs/GITREINS.md).
 
 ### Test mode: diff
 Only packages with staged changes are tested. Pre-existing failures in
