@@ -118,6 +118,9 @@ exist and returns **405** (`GET /web/sessions/{id}` is the per-session read,
 is installed (`pip install chimera-deliberation[web]`); open the UI at
 `/web/` and let it create the session and subscribe to `/web/sse/{id}`.
 
+Every `/web/*` row in that table requires the API key when `auth.enabled: true`
+— including `GET /web/` itself (see §3 below and `docs/SECURITY.md`).
+
 ## 3. Authentication (CHIMERA_API_KEY)
 
 Enable API key auth in `chimera.yaml`:
@@ -159,8 +162,14 @@ curl -H "X-API-Key: sk-prod-abc123" http://localhost:8765/v1/chat/completions ..
 
 When auth is disabled, requests pass through unauthenticated. The following
 endpoints are always open regardless of auth settings (safe for load-balancer
-health checks): `/v1/health`, `/v1/health/ready`, `/v1/health/live`,
-`/v1/models`, `/v1/formations`, `/docs`.
+health checks): `/health` (alias of `/v1/health`), `/v1/health`,
+`/v1/health/ready`, `/v1/health/live`, `/v1/models`, `/v1/formations`, `/docs`
+(plus `/docs/oauth2-redirect`), `/redoc`, `/openapi.json`.
+
+The `/web/*` surface is **not** on that list: every path under it — including
+the SPA shell at `GET /web/` — requires the API key whenever
+`auth.enabled: true`, because it runs deliberations through the same engine as
+`/v1/deliberate`. See `docs/SECURITY.md` for the full open/closed split.
 
 ## 4. Client Examples
 

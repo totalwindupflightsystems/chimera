@@ -46,13 +46,35 @@ Each key is independent; all share the same rate limit pool by default.
 
 ### Unauthenticated Endpoints
 
-These endpoints remain open regardless of auth settings:
+These are the only paths served without credentials when `auth.enabled: true`
+(measured against a live server — re-verify with `curl -o /dev/null -w '%{http_code}'`
+against your own deployment, and see `GET /openapi.json` for the routed surface):
+
+- `GET /health` — alias of `/v1/health`
 - `GET /v1/health`
 - `GET /v1/health/ready`
 - `GET /v1/health/live`
 - `GET /v1/models`
 - `GET /v1/formations`
-- `GET /docs`
+- `GET /docs` and `GET /docs/oauth2-redirect` — Swagger UI
+- `GET /redoc` — ReDoc UI
+- `GET /openapi.json` — machine-readable spec
+
+Everything else requires the key: `POST /v1/deliberate`,
+`POST /v1/chat/completions`, and the **entire** `/web/*` surface —
+`POST /web/sessions`, `POST /web/sessions/{id}/chat`, `GET /web/sessions/{id}`,
+`GET /web/sse/{id}`, `POST /web/debug/reset`, and the SPA shell at `GET /web/`.
+The web surface runs deliberations through the same engine as `/v1/deliberate`,
+so leaving it open would be a keyless, billable equivalent of the protected API.
+An anonymous request is refused by the auth layer before any handler, session or
+provider call runs (401, never 404).
+
+Because the auth dependency is attached to the router, gating covers `/web/*`
+as a whole — including the SPA shell. The bundled browser UI therefore targets
+auth-disabled deployments; with auth enabled the UI's own requests have nowhere
+to put a header, so drive `/web/*` from an API client that sends
+`Authorization: Bearer <key>` or `X-API-Key: <key>` (or keep the UI behind your
+own authenticating reverse proxy).
 
 ### Error Response (401)
 

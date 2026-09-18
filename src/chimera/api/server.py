@@ -181,7 +181,14 @@ def create_app(
     # Web UI (session-backed multi-turn with live DAG viz + SSE)
     try:
         from chimera.web import router as web_router
-        app.include_router(web_router)
+        # INT-API-001: the whole /web/* surface (sessions, chat, SSE, the SPA
+        # shell at GET /web/) runs deliberations through the same engine as
+        # /v1/deliberate, so it gets the same authentication. The dependency is
+        # attached at the ROUTER, not per-handler: one line covers every
+        # current and future web route, including the SPA. With auth disabled
+        # ``require_api_key`` returns "anonymous" before reading any header, so
+        # the default deployment is unchanged.
+        app.include_router(web_router, dependencies=[Depends(require_api_key)])
     except ImportError:
         pass  # web extra not installed — skip gracefully
 
