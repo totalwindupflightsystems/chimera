@@ -619,19 +619,6 @@ tasks:
   status: complete
   created_at: '2026-09-13T23:30:52.504007+00:00'
   completed_at: '2026-09-13T23:38:21.904891+00:00'
-- id: DF-CHIMERA-V2-4
-  title: 'Docs gaps: env substitution, smoke_live flags, MCP tool names, degraded
-    health, --version'
-  criteria:
-  - README documents ${VAR} env-substitution and .env auto-load behavior
-  - README/scripts documentation covers smoke_live.py usage with its real flags (--base-url)
-  - README MCP row lists all tools from tools/list (chimera_deliberate, chimera_formations,
-    chimera_models)
-  - README or docs explain /v1/health degraded semantics
-  - chimera --version prints the version successfully
-  status: complete
-  created_at: '2026-09-14T05:48:44.798418+00:00'
-  completed_at: '2026-09-14T05:54:58.474351+00:00'
 - id: DF-CHIMERA-0911-3
   title: Explain OpenAI model formation semantics
   criteria:
@@ -1193,3 +1180,47 @@ tasks:
   status: complete
   created_at: '2026-09-18T12:06:00.016375+00:00'
   completed_at: '2026-09-18T12:19:01.843044+00:00'
+- id: DF-CHIMERA-V2-14
+  title: 'Health/compat diagnostics: /v1/health degraded carries a machine-readable
+    reason; document the gateway_format_removed warning'
+  criteria:
+  - GET /v1/health degraded response carries an additive top-level unhealthy_providers
+    sorted list plus a per-provider error_class, with every pre-existing key and value
+    shape unchanged
+  - error_class distinguishes missing_credentials, timeout, and other probe failures,
+    reusing the existing classifier
+  - README and docs/USAGE describe unhealthy_providers and error_class accurately;
+    docs/OPENAI_API.md documents the gateway_format_removed/gateway_format_downgrade
+    log events
+  - unit tests cover the summary field and the classification; ruff clean; full suite
+    green; test_docs_index green
+  status: complete
+  created_at: '2026-09-18T16:51:21.238032+00:00'
+  completed_at: '2026-09-18T16:59:19.597208+00:00'
+- id: DF-CHIMERA-V2-4
+  title: 'smoke_live.py: honest, class-aware provider-health reporting'
+  criteria:
+  - 'C1: with a /v1/health payload whose only unhealthy providers carry error_class
+    ''missing_credentials'', smoke_live prints an informational line (no ''WARNING:
+    providers reported unhealthy'') naming those providers and stating that providers
+    without configured keys are expected on a fresh install while the deliberation
+    decides pass/fail'
+  - 'C2: with unhealthy providers carrying a real error_class (timeout, quota, auth,
+    http_5xx), smoke_live prints a WARNING naming each provider together with its
+    error_class, and for a quota class surfaces the provider''s own message (e.g.
+    the reset time) when the payload carries it'
+  - 'C3: the healthy path prints healthy/total computed from the payload providers
+    (never configured/configured), proven by a test with 9 providers of which 8 are
+    healthy printing ''8/9'''
+  - 'C4: exit-code semantics unchanged - a provider-health warning never fails the
+    run, only the deliberation result does (exit 0 on a merged answer, exit 1 otherwise);
+    tests are hermetic (no network) and the classification path plus smoke_live.py
+    itself stay stdlib-only'
+  - 'C5: README.md and docs/USAGE.md document the new provider-health lines (absent-key
+    providers are informational; only the deliberation decides pass/fail) and tests/test_docs_index.py
+    stays green'
+  - 'C6: new hermetic tests fail against the pre-fix script (mutation check) and the
+    full unit suite plus ruff stay clean'
+  status: complete
+  created_at: '2026-09-18T18:55:49.092890+00:00'
+  completed_at: '2026-09-18T19:12:21.295710+00:00'
