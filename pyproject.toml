@@ -84,7 +84,13 @@ dev = [
     # guards.allow_skips stays unset on purpose). The documented guard command
     # puts this venv first on PATH, so declaring the server as a dev dependency
     # is what makes the lane deterministic instead of a silent skip.
-    "python-lsp-server>=1.12.0",
+    #
+    # The extras are load-bearing for the same reason (INT-GATE-003): pylsp
+    # advertises its lint plugins (`pycodestyle`, `pyflakes`) as entry points,
+    # but the libraries those plugin modules import live behind the extras. A
+    # bare install starts a server that publishes no diagnostic for anything
+    # and the lane prints `pylsp — clean` on every diff — a vacuous green.
+    "python-lsp-server[pycodestyle,pyflakes]>=1.12.0",
     "ruff>=0.6.0",
 ]
 full = [

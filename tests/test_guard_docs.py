@@ -86,8 +86,14 @@ def test_dev_extra_accepts_the_python_lsp_server() -> None:
     )
 
     declared = next(req for req in dev if _requirement_names([req])[0] == LSP_SERVER)
-    assert "," not in declared, f"unexpected multi-specifier requirement: {declared!r}"
-    floor = declared.partition(">=")[2]
+    # The requirement carries pylsp's lint extras (`python-lsp-server[pycodestyle,
+    # pyflakes]`, INT-GATE-003), so clear the bracket group before reading the
+    # version floor — a comma left outside it still means a specifier list this
+    # crude parse would silently mis-read. tests/test_lsp_lint_plugins.py owns the
+    # extras contract itself.
+    bare = re.sub(r"\[[^\]]*\]", "", declared)
+    assert "," not in bare, f"unexpected multi-specifier requirement: {declared!r}"
+    floor = bare.partition(">=")[2]
     assert floor, (
         f"{declared!r} declares no `>=` lower bound — the lane's tool must be pinned "
         f"to at least {'.'.join(str(part) for part in LSP_MIN)}"
