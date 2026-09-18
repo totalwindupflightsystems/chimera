@@ -23,10 +23,13 @@ report a deliberate mistake while a clean file stays clean.
 Hermetic by construction: the metadata/lock contracts are offline (stdlib
 ``tomllib``), and the behavioural probe drives the installed pylsp plugin
 functions in-process (no LSP subprocess, no network). The probe skips only when
-``pylsp`` itself is absent — CI installs ``.[full]``, which deliberately does not
-carry the dev extra. The lane's own enablement (``lsp: true``,
-``lsp_tools: [pylsp]``) is asserted in ``tests/test_guard_docs.py``; this module
-owns the extras that lane needs to do any work.
+``pylsp`` itself is absent — a ``.[full]``-only environment, which is why the
+``test`` job in ``.github/workflows/ci.yml`` installs ``.[dev,full]``: CI runs
+this module, and ``.[full]`` does not carry the dev extra that provides pylsp
+(INT-GATE-003 rework; the install is pinned in ``tests/test_release_workflow.py``).
+The lane's own enablement (``lsp: true``, ``lsp_tools: [pylsp]``) is asserted in
+``tests/test_guard_docs.py``; this module owns the extras that lane needs to do
+any work.
 """
 
 from __future__ import annotations
@@ -191,7 +194,8 @@ def _load_lint_plugins() -> dict[str, ModuleType]:
     """Import the plugin modules pylsp loads — the step the bare install breaks."""
     pytest.importorskip(
         "pylsp",
-        reason=f"{LSP_SERVER} is not installed here (the dev extra provides it; CI installs .[full])",
+        reason=f"{LSP_SERVER} is not installed here (the dev extra provides it; "
+        f"CI's unit job installs .[dev,full])",
     )
     modules: dict[str, ModuleType] = {}
     for name in LINT_EXTRA_PLUGINS:

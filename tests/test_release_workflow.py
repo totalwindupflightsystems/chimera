@@ -39,7 +39,12 @@ no provider keys:
   handshake's reported version must be the package's (not the ``mcp`` SDK's),
   and reads the installed ``chimera.config`` missing-config remedy so it must
   name ``chimera config init``. The 0.2.5-wheel shapes are replayed against it
-  and must exit 1 with the failing check named.
+  and must exit 1 with the failing check named;
+* the ``test`` job's install reaches the tooling its unit lane imports
+  (INT-GATE-003): the job installs ``.[dev,full]``, because
+  ``tests/test_lsp_lint_plugins.py`` drives pylsp's lint backends and those live
+  behind the dev extra — ``.[full]`` alone failed every matrix version with
+  ``ModuleNotFoundError: No module named 'pylsp'`` (CI 35355829236).
 """
 
 from __future__ import annotations
@@ -50,12 +55,14 @@ import re
 import shlex
 import subprocess
 import sys
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
 import pytest
 import yaml
+from packaging.requirements import Requirement
 
 REPO = Path(__file__).resolve().parent.parent
 WORKFLOW_PATH = REPO / ".github" / "workflows" / "ci.yml"
@@ -679,9 +686,8 @@ def _assert_test_job_runs_quickstart_battery(job: dict) -> dict:
 
     steps = job["steps"]
     battery_index = steps.index(step)
-    install_index = next(
-        i for i, s in enumerate(steps) if '.venv/bin/pip install -e ".[full]"' in s.get("run", "")
-    )
+    install_step = _assert_test_job_installs_the_dev_extras(job)
+    install_index = steps.index(install_step)
     assert install_index < battery_index, (
         f"the battery needs the editable install ({install_index}) to precede it ({battery_index})"
     )
@@ -845,6 +851,182 @@ def test_secret_reference_fails_the_pin(tmp_path: Path) -> None:
         assert step["env"]
 
     _assert_mutated_copy_fails(tmp_path, add_secret, "the battery is keyless")
+
+
+# --- the unit lane's install reaches the LSP tooling (INT-GATE-003) ---------- #
+#
+# CI runs 35355829236 / 35355973875 failed every Python version of the `test`
+# job with:
+#
+#     tests/test_lsp_lint_plugins.py::test_pyflakes_reports_an_undefined_name
+#     - ModuleNotFoundError: No module named 'pylsp'
+#
+# The job installed only `.[full]`, and `python-lsp-server[pycodestyle,pyflakes]`
+# is declared in the dev extra alone — the same extra the documented contributor
+# install uses, because the guard's `lsp` lane resolves `pylsp` from PATH
+# (tests/test_guard_docs.py owns that half). A unit lane that runs an LSP
+# regression test therefore has to install the extra that provides the tool. The
+# workflow line is the fix; these tests are what keep it from drifting back to
+# `.[full]`.
+
+#: The repo-editable install in a job's run block, capturing its extras list —
+#: ``.venv/bin/pip install -e ".[dev,full]"`` -> ``dev,full``.
+EDITABLE_INSTALL_RE = re.compile(r'\.venv/bin/pip install -e "\.\[([^"\]]*)\]"')
+
+#: Extras the `test` job must request: `dev` provides the LSP tooling its unit
+#: lane exercises, `full` the runtime/web pins the suite imports.
+TEST_JOB_EXTRAS = {"dev", "full"}
+
+#: The LSP server the dev extra declares, and the lint backends it gates behind
+#: its own extras. tests/test_lsp_lint_plugins.py owns that declaration contract;
+#: reading it here is what makes "the job installs dev" mean the lane can work.
+LSP_SERVER = "python-lsp-server"
+LSP_LINT_BACKENDS = ("pycodestyle", "pyflakes")
+
+#: The unit lane's LSP regression test — the reason the extras are installed.
+LSP_TESTS_PATH = REPO / "tests" / "test_lsp_lint_plugins.py"
+
+
+def _editable_installs(job: dict) -> list[tuple[int, dict, set[str]]]:
+    """``(step index, step, extras)`` for every repo-editable install in a job."""
+    installs: list[tuple[int, dict, set[str]]] = []
+    for index, step in enumerate(job["steps"]):
+        for extras in EDITABLE_INSTALL_RE.findall(step.get("run", "")):
+            names = {name.strip() for name in extras.split(",") if name.strip()}
+            installs.append((index, step, names))
+    return installs
+
+
+def _dev_extra_lsp_requirement() -> Requirement:
+    """The dev extra's requirement for the LSP server the guard's lane runs."""
+    data = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
+    dev = list(data["project"]["optional-dependencies"]["dev"])
+    matches = [Requirement(spec) for spec in dev if Requirement(spec).name == LSP_SERVER]
+    assert len(matches) == 1, f"expected exactly one {LSP_SERVER} dev requirement, got {matches}"
+    return matches[0]
+
+
+def _assert_test_job_installs_the_dev_extras(job: dict) -> dict:
+    """Assert the `test` job installs the extras its unit lane needs; return the step.
+
+    The whole contract lives in this one helper so the mutation tests below judge
+    a mutated COPY by exactly the assertions the real workflow passes.
+    """
+    installs = _editable_installs(job)
+    assert len(installs) == 1, (
+        "the `test` job must declare exactly one editable install of this package, got "
+        f"{[(index, sorted(extras)) for index, _, extras in installs]} — the unit lane's "
+        "dependencies come from `.[dev,full]`, never from a bare `pip install -e .`"
+    )
+    index, step, extras = installs[0]
+
+    assert extras == TEST_JOB_EXTRAS, (
+        f"the `test` job installs extras {sorted(extras)} instead of {sorted(TEST_JOB_EXTRAS)} "
+        f"(missing {sorted(TEST_JOB_EXTRAS - extras)}, unexpected {sorted(extras - TEST_JOB_EXTRAS)}). "
+        "The job runs tests/test_lsp_lint_plugins.py, which drives pylsp's pycodestyle and "
+        "pyflakes backends — those live behind the dev extra, so `.[full]` alone fails every "
+        "matrix version with ModuleNotFoundError: No module named 'pylsp' (CI 35355829236). "
+        f"Install `.[{','.join(sorted(TEST_JOB_EXTRAS))}]`."
+    )
+
+    missing_backends = sorted(set(LSP_LINT_BACKENDS) - set(_dev_extra_lsp_requirement().extras))
+    assert not missing_backends, (
+        f"the dev extra declares {LSP_SERVER} without {missing_backends}, so installing the dev "
+        "extra in CI would still leave the LSP lane — and the unit test that exercises it — "
+        "without a working lint backend"
+    )
+
+    steps = job["steps"]
+    unit_index = next((i for i, s in enumerate(steps) if "-m pytest tests/" in s.get("run", "")), None)
+    assert unit_index is not None, "premise broken: the `test` job declares no unit-test step"
+    assert index < unit_index, (
+        f"the editable install (step {index}) must precede the unit tests (step {unit_index}) — "
+        "installing the extras afterwards provisions a lane that has already run"
+    )
+    return step
+
+
+def test_test_job_installs_the_extras_its_unit_lane_imports(workflow: dict) -> None:
+    """INT-GATE-003: the unit job installs `.[dev,full]`, so pylsp is present."""
+    step = _assert_test_job_installs_the_dev_extras(workflow["jobs"]["test"])
+    assert ".[dev,full]" in step["run"], step["run"]
+
+
+def test_the_lsp_regression_test_still_imports_pylsp() -> None:
+    """Premise guard: the install pin is only meaningful while that reason holds.
+
+    Without this the pin could stay green after the LSP regression test was
+    renamed or deleted, and the next `.[full]` regression would look harmless.
+    """
+    assert LSP_TESTS_PATH.exists(), (
+        f"{LSP_TESTS_PATH.name} is gone — the `test` job's extra install guards nothing. "
+        "Re-derive which extras the unit lane needs before keeping this pin."
+    )
+    source = LSP_TESTS_PATH.read_text(encoding="utf-8")
+    assert "from pylsp import lsp" in source, (
+        "the LSP regression test no longer imports pylsp at test level, which was the shape "
+        "that failed CI 35355829236; re-check the unit lane's real dependency set"
+    )
+
+
+def _assert_mutated_test_job_install_fails(
+    tmp_path: Path, mutate: Callable[[dict], None], match: str
+) -> None:
+    """A mutated COPY of ci.yml must FAIL the install contract (real file untouched)."""
+    doc = _load_workflow()
+    mutate(doc["jobs"]["test"])
+    mutated = _load_workflow(_write_workflow_copy(tmp_path, doc))
+    with pytest.raises(AssertionError, match=re.escape(match)):
+        _assert_test_job_installs_the_dev_extras(mutated["jobs"]["test"])
+
+
+def test_dropping_the_dev_extra_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: the exact CI regression — `.[full]` alone — must FAIL the pin."""
+
+    def drop_dev(job: dict) -> None:
+        installs = _editable_installs(job)
+        assert len(installs) == 1, f"premise broken: expected one install, got {installs}"
+        assert installs[0][2] == TEST_JOB_EXTRAS, "premise broken: the install line changed shape"
+        step = installs[0][1]
+        step["run"] = step["run"].replace('".[dev,full]"', '".[full]"')
+        assert _editable_installs(job)[0][2] == {"full"}, "premise broken: the mutation did not land"
+
+    _assert_mutated_test_job_install_fails(tmp_path, drop_dev, "missing ['dev']")
+
+
+def test_bare_editable_install_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: `pip install -e .` requests no extras at all — no pylsp, no pins."""
+
+    def strip_extras(job: dict) -> None:
+        installs = _editable_installs(job)
+        assert len(installs) == 1, f"premise broken: expected one install, got {installs}"
+        step = installs[0][1]
+        assert ".[dev,full]" in step["run"], "premise broken: the install line changed shape"
+        step["run"] = step["run"].replace('".[dev,full]"', ".")
+        assert not _editable_installs(job), "premise broken: the install still matches"
+
+    _assert_mutated_test_job_install_fails(tmp_path, strip_extras, "exactly one editable install")
+
+
+def test_install_after_the_unit_tests_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: installing the extras after the unit tests provisions nothing."""
+
+    def move_after_tests(job: dict) -> None:
+        installs = _editable_installs(job)
+        assert len(installs) == 1, f"premise broken: expected one install, got {installs}"
+        install_index, step, _ = installs[0]
+        steps = job["steps"]
+
+        def unit_index() -> int:
+            return next(i for i, s in enumerate(steps) if "-m pytest tests/" in s.get("run", ""))
+
+        assert install_index < unit_index(), "premise broken: the install already ran after the tests"
+        steps.remove(step)
+        target = unit_index()
+        steps.insert(target + 1, step)
+        assert _editable_installs(job)[0][0] == target + 1, "premise broken: step not moved"
+
+    _assert_mutated_test_job_install_fails(tmp_path, move_after_tests, "must precede the unit tests")
 
 
 # --- release content: the published artifact carries the first-run fixes ------ #
