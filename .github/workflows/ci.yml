@@ -228,6 +228,27 @@ jobs:
           # exits 1 naming the failing check.
           python scripts/quickstart_battery.py --venv /tmp/release-venv --expected-version "${VERSION}"
 
+      - name: Release-content check on the PUBLISHED wheel — MCP initialize version + missing-config remedy (DF-CHIMERA-V2-9 / DF-CHIMERA-V2-8 gate)
+        run: |
+          # Two first-run behaviours of the INSTALLED artifact, both fixed after
+          # the tag that shipped without them, and neither asserted by any other
+          # gate in this job:
+          #   DF-CHIMERA-V2-9: the chimera-mcp initialize handshake must
+          #     advertise chimera's PACKAGE version. Pre-fix it advertised the
+          #     mcp SDK's own version (1.28.1) for a 0.2.6 build, so an MCP
+          #     client could not tell which chimera build it had reached.
+          #   DF-CHIMERA-V2-8: the installed missing-config error must name
+          #     `chimera config init`. Pre-fix it only said to copy
+          #     chimera.yaml.example from the cwd — impossible for a bare pip
+          #     install, whose template lives inside the wheel.
+          # scripts/release_content_check.py EXECUTES the pinned venv: a real
+          # initialize request over stdio (version compared with the tag AND
+          # with that venv's own mcp distribution), plus the installed config
+          # module's error message read in a fresh empty temp cwd. Offline and
+          # keyless, so it runs here — after the pinned install and before the
+          # expensive live gates — and exits non-zero naming the failing check.
+          python scripts/release_content_check.py --venv /tmp/release-venv --expected-version "${VERSION}"
+
       - name: Quickstart E2E — config init + bare run at the exact tag version (DF-CHIMERA-0906-1 gate)
         run: |
           cd /tmp

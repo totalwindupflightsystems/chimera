@@ -31,7 +31,15 @@ no provider keys:
   GitHub substituted it with an empty string and the step ran
   half-configured — silently, until the probe failed on an unsatisfiable
   formation;
-* scripts/release_expected_version.py derives/validates the version offline.
+* scripts/release_expected_version.py derives/validates the version offline;
+* the installed artifact carries the two first-run fixes a tag can ship
+  WITHOUT (DF-CHIMERA-V2-9 / DF-CHIMERA-V2-8): scripts/release_content_check.py
+  runs against ``/tmp/release-venv`` after the pinned install and before the
+  expensive live gates, drives a real MCP ``initialize`` request so the
+  handshake's reported version must be the package's (not the ``mcp`` SDK's),
+  and reads the installed ``chimera.config`` missing-config remedy so it must
+  name ``chimera config init``. The 0.2.5-wheel shapes are replayed against it
+  and must exit 1 with the failing check named.
 """
 
 from __future__ import annotations
@@ -54,6 +62,7 @@ WORKFLOW_PATH = REPO / ".github" / "workflows" / "ci.yml"
 PROBE_PATH = REPO / "scripts" / "probe_mcp_stdio.py"
 VERSION_SCRIPT_PATH = REPO / "scripts" / "release_expected_version.py"
 QUICKSTART_PATH = REPO / "scripts" / "quickstart_battery.py"
+RELEASE_CONTENT_PATH = REPO / "scripts" / "release_content_check.py"
 
 
 def _load_workflow(path: Path = WORKFLOW_PATH) -> dict:
@@ -81,6 +90,7 @@ def _load_module(name: str, path: Path) -> ModuleType:
 probe = _load_module("probe_mcp_stdio", PROBE_PATH)
 release_version = _load_module("release_expected_version", VERSION_SCRIPT_PATH)
 quickstart = _load_module("quickstart_battery", QUICKSTART_PATH)
+release_content = _load_module("release_content_check", RELEASE_CONTENT_PATH)
 
 
 @pytest.fixture(scope="module")
@@ -835,3 +845,515 @@ def test_secret_reference_fails_the_pin(tmp_path: Path) -> None:
         assert step["env"]
 
     _assert_mutated_copy_fails(tmp_path, add_secret, "the battery is keyless")
+
+
+# --- release content: the published artifact carries the first-run fixes ------ #
+#
+# DF-CHIMERA-V2-9 (d44599e): the `chimera-mcp` initialize handshake must
+# advertise CHIMERA's package version; pre-fix it advertised the mcp SDK's own
+# version (1.28.1) for a 0.2.6 build, so a client could not tell which chimera
+# build it had reached.
+# DF-CHIMERA-V2-8 (82fc656): the installed missing-config error must name
+# `chimera config init`; pre-fix it only pointed at copying chimera.yaml.example
+# out of the cwd — impossible for a bare pip install, whose template lives
+# inside the wheel.
+#
+# Both are behaviours of the INSTALLED artifact, and both fixes landed after the
+# tag that shipped without them, so scripts/release_content_check.py EXECUTES the
+# pinned venv (a real stdio initialize request, plus the installed config module
+# in a fresh empty temp cwd) instead of judging the checkout. The stale shapes
+# are replayed offline here through a stand-in venv.
+
+#: The release-content step contract, pinned exactly: the runner's `python`, the
+#: standalone script, the pinned release venv, and the tag-derived version
+#: (never a literal, never read back from the artifact under test).
+RELEASE_CONTENT_COMMAND = [
+    "python",
+    "scripts/release_content_check.py",
+    "--venv",
+    "/tmp/release-venv",
+    "--expected-version",
+    "${VERSION}",
+]
+
+
+def _release_content_steps(job: dict) -> list[dict]:
+    """The job's steps that invoke the release-content check."""
+    return [step for step in job["steps"] if "release_content_check.py" in step.get("run", "")]
+
+
+def _assert_release_verify_runs_release_content_check(job: dict) -> dict:
+    """Assert the release-content contract, and return the step it pinned.
+
+    The whole contract lives in this one helper so the mutation tests below
+    judge a mutated COPY by exactly the assertions the real workflow passes.
+    """
+    steps = job["steps"]
+    content_steps = _release_content_steps(job)
+    assert len(content_steps) == 1, (
+        f"release-verify must declare exactly one release-content step, found {len(content_steps)}"
+    )
+    step = content_steps[0]
+    run = step["run"]
+
+    invocations = [
+        line.strip()
+        for line in run.splitlines()
+        if "release_content_check.py" in line and not line.strip().startswith("#")
+    ]
+    assert len(invocations) == 1, f"expected exactly one invocation, got {invocations}"
+    command = shlex.split(invocations[0])
+    assert command == RELEASE_CONTENT_COMMAND, (
+        "the release-content check must run on the pinned /tmp/release-venv (the exact "
+        f"published artifact) with the tag-derived version, got {command}"
+    )
+
+    assert not step.get("env"), (
+        f"the release-content check is offline and keyless, got env={step.get('env')}"
+    )
+    assert "secrets." not in yaml.safe_dump(step), f"the check is keyless, got {step}"
+    assert "curl" not in run and "pip install" not in run, run
+
+    content_index = steps.index(step)
+    install_index = next(
+        i
+        for i, s in enumerate(steps)
+        if "chimera-deliberation[full]==${VERSION}" in s.get("run", "")
+    )
+    live_indices = [
+        i
+        for i, s in enumerate(steps)
+        if "GATE-OK" in s.get("run", "") or "probe_mcp_stdio" in s.get("run", "")
+    ]
+    assert live_indices, "premise broken: release-verify declares no live gate"
+    first_live_index = min(live_indices)
+    assert install_index < content_index < first_live_index, (
+        "the release-content check must run AFTER the pinned install and BEFORE the expensive "
+        f"live gates (install={install_index}, content={content_index}, "
+        f"first live gate={first_live_index})"
+    )
+    return step
+
+
+def test_release_content_check_wired_into_release_verify(workflow: dict) -> None:
+    """The two first-run fixes are asserted against the published artifact."""
+    step = _assert_release_verify_runs_release_content_check(workflow["jobs"]["release-verify"])
+    assert "PUBLISHED" in step["name"], step["name"]
+    assert "DF-CHIMERA-V2-9" in step["name"] and "DF-CHIMERA-V2-8" in step["name"], step["name"]
+
+
+#: The venv interpreter an editable install is exercised through.
+REPO_VENV_PYTHON = REPO / ".venv" / "bin" / "python"
+
+requires_repo_venv = pytest.mark.skipif(
+    not REPO_VENV_PYTHON.exists(), reason="the repo .venv (editable install) is required"
+)
+
+
+def _repo_version() -> str:
+    """The version pyproject.toml declares — the editably-installed version."""
+    return release_version.pyproject_version(REPO / "pyproject.toml")
+
+
+# --- offline stand-ins for an installed release venv -------------------------- #
+
+#: Stand-in for the installed `chimera-mcp` console script: reads one request
+#: line (as the real stdio server does) and answers it.
+_FAKE_MCP_TEMPLATE = '''#!__INTERPRETER__
+"""Offline stand-in for the installed chimera-mcp console script (test fixture)."""
+import json
+import sys
+
+sys.stdin.readline()
+print(json.dumps({"jsonrpc": "2.0", "id": 1, "result": __RESULT__}))
+'''
+
+#: Stand-in for an entry point that never answers (exits non-zero, no JSON-RPC).
+_FAKE_SILENT_MCP_TEMPLATE = '''#!__INTERPRETER__
+"""Offline stand-in for a chimera-mcp that never answers (test fixture)."""
+import sys
+
+sys.stdin.readline()
+print("not a JSON-RPC response")
+raise SystemExit(7)
+'''
+
+#: Stand-in for the venv interpreter: answers the documented remedy probe and
+#: refuses anything else, so the fixture exercises the real invocation contract.
+_FAKE_PYTHON_TEMPLATE = '''#!__INTERPRETER__
+"""Offline stand-in for the installed venv interpreter (test fixture)."""
+import json
+import sys
+
+code = " ".join(sys.argv[1:])
+if "release-content-remedy" not in code:
+    print("unexpected probe: %r" % (sys.argv[1:],), file=sys.stderr)
+    raise SystemExit(9)
+print(json.dumps({"remedy": __REMEDY__}))
+'''
+
+CURRENT_INIT_RESULT = {
+    "protocolVersion": "2025-03-26",
+    "capabilities": {},
+    "serverInfo": {"name": "chimera", "version": "0.2.6"},
+}
+#: What the pre-0.2.6 server reported: the mcp SDK's own version.
+SDK_VERSION_INIT_RESULT = {
+    "protocolVersion": "2025-03-26",
+    "capabilities": {},
+    "serverInfo": {"name": "chimera", "version": "1.28.1"},
+}
+NO_VERSION_INIT_RESULT = {
+    "protocolVersion": "2025-03-26",
+    "capabilities": {},
+    "serverInfo": {"name": "chimera"},
+}
+
+#: The remedy a bare pip install cannot follow (pre-82fc656), and the one it can.
+OLD_REMEDY = "No chimera.yaml found. Copy chimera.yaml.example to chimera.yaml."
+CURRENT_REMEDY = (
+    "No chimera.yaml found. Copy chimera.yaml.example to chimera.yaml. "
+    "Run `chimera config init` to create one from the shipped template "
+    "(the wheel carries it, so this also works for pip installs)."
+)
+
+
+def _make_fake_release_venv(
+    tmp_path: Path,
+    *,
+    dist_version: str = "0.2.6",
+    sdk_version: str | None = "1.28.1",
+    init_result: dict | None = None,
+    remedy: str | None = CURRENT_REMEDY,
+    silent_mcp: bool = False,
+) -> Path:
+    """A release-venv-shaped directory whose entry points are offline stand-ins."""
+    venv = tmp_path / "fake-release-venv"
+    site = venv / "lib" / "python3.11" / "site-packages"
+    site.mkdir(parents=True, exist_ok=True)
+    (site / f"chimera_deliberation-{dist_version}.dist-info").mkdir()
+    if sdk_version is not None:
+        (site / f"mcp-{sdk_version}.dist-info").mkdir()
+
+    bindir = venv / "bin"
+    bindir.mkdir(parents=True, exist_ok=True)
+    if silent_mcp:
+        mcp_body = _FAKE_SILENT_MCP_TEMPLATE
+    else:
+        mcp_body = _FAKE_MCP_TEMPLATE.replace(
+            "__RESULT__", repr(init_result if init_result is not None else CURRENT_INIT_RESULT)
+        )
+    python_body = _FAKE_PYTHON_TEMPLATE.replace("__REMEDY__", repr(remedy))
+    for name, body in (("chimera-mcp", mcp_body), ("python", python_body)):
+        entry = bindir / name
+        entry.write_text(body.replace("__INTERPRETER__", sys.executable), encoding="utf-8")
+        entry.chmod(0o755)
+    return venv
+
+
+def _run_release_content(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
+    """Run the check as a real process — its exit codes ARE the contract."""
+    return subprocess.run(
+        [sys.executable, str(RELEASE_CONTENT_PATH), *args],
+        capture_output=True,
+        text=True,
+        cwd=str(cwd or REPO),
+        timeout=120,
+    )
+
+
+def test_release_content_accepts_a_current_package(tmp_path: Path) -> None:
+    """GREEN control: a wheel with both first-run fixes passes, 3/3 checks."""
+    venv = _make_fake_release_venv(tmp_path)
+    proc = _run_release_content("--venv", str(venv), "--expected-version", "0.2.6")
+    assert proc.returncode == 0, f"{proc.stdout}\n{proc.stderr}"
+    assert "CHECKS_PASSED=3 CHECKS_FAILED=0" in proc.stdout
+    assert "RELEASE CONTENT OK" in proc.stdout
+    assert "HANDSHAKE_VERSION=0.2.6" in proc.stdout
+
+
+def test_release_content_rejects_the_mcp_sdk_version_in_the_handshake(tmp_path: Path) -> None:
+    """RED shape of the pre-d44599e wheel: the handshake reports the mcp SDK version.
+
+    The 0.2.6-tagged build advertised 1.28.1 (the mcp distribution's own
+    version) while `chimera --version` said 0.2.6. The check must fail, name the
+    SDK-version defect, and leave the two unrelated checks passing.
+    """
+    venv = _make_fake_release_venv(tmp_path, init_result=SDK_VERSION_INIT_RESULT)
+    proc = _run_release_content("--venv", str(venv), "--expected-version", "0.2.6")
+    assert proc.returncode == 1, f"{proc.stdout}\n{proc.stderr}"
+    assert "[FAIL] mcp-handshake-version" in proc.stdout, proc.stdout
+    assert "advertises the mcp SDK version 1.28.1" in proc.stdout, proc.stdout
+    assert "instead of the package version 0.2.6" in proc.stdout, proc.stdout
+    assert "DF-CHIMERA-V2-9" in proc.stdout, proc.stdout
+    assert "HANDSHAKE_VERSION=1.28.1" in proc.stdout, proc.stdout
+    # Localised: the fix's own check fails, nothing else does.
+    assert "[PASS] installed-dist-version" in proc.stdout
+    assert "[PASS] missing-config-remedy" in proc.stdout
+    assert "RELEASE CONTENT FAIL" in proc.stdout
+
+
+def test_release_content_rejects_a_handshake_without_a_version(tmp_path: Path) -> None:
+    """A handshake carrying no version must never be read as a match."""
+    venv = _make_fake_release_venv(tmp_path, init_result=NO_VERSION_INIT_RESULT)
+    proc = _run_release_content("--venv", str(venv), "--expected-version", "0.2.6")
+    assert proc.returncode == 1, f"{proc.stdout}\n{proc.stderr}"
+    assert "[FAIL] mcp-handshake-version" in proc.stdout, proc.stdout
+    assert "carried no serverInfo.version" in proc.stdout, proc.stdout
+    assert "HANDSHAKE_VERSION=(missing)" in proc.stdout, proc.stdout
+
+
+def test_release_content_rejects_a_silent_mcp_entry_point(tmp_path: Path) -> None:
+    """An entry point that never answers is a failure, promptly and named."""
+    venv = _make_fake_release_venv(tmp_path, silent_mcp=True)
+    proc = _run_release_content("--venv", str(venv), "--expected-version", "0.2.6")
+    assert proc.returncode == 1, f"{proc.stdout}\n{proc.stderr}"
+    assert "[FAIL] mcp-handshake-version" in proc.stdout, proc.stdout
+    assert "no JSON-RPC initialize response" in proc.stdout, proc.stdout
+    assert "HANDSHAKE_VERSION=(no response)" in proc.stdout, proc.stdout
+
+
+def test_release_content_rejects_the_old_copy_only_remedy(tmp_path: Path) -> None:
+    """RED shape of the pre-82fc656 wheel: the remedy is a copy from the cwd.
+
+    A bare pip install has no chimera.yaml.example in its cwd, so that remedy
+    cannot be followed; the check must fail and name `chimera config init`.
+    """
+    venv = _make_fake_release_venv(tmp_path, remedy=OLD_REMEDY)
+    proc = _run_release_content("--venv", str(venv), "--expected-version", "0.2.6")
+    assert proc.returncode == 1, f"{proc.stdout}\n{proc.stderr}"
+    assert "[FAIL] missing-config-remedy" in proc.stdout, proc.stdout
+    assert "does not name `chimera config init`" in proc.stdout, proc.stdout
+    assert "DF-CHIMERA-V2-8" in proc.stdout, proc.stdout
+    # Localised: the MCP check the same wheel gets right still passes.
+    assert "[PASS] mcp-handshake-version" in proc.stdout
+    assert "[PASS] installed-dist-version" in proc.stdout
+
+
+def test_release_content_rejects_a_venv_that_is_not_the_pinned_version(tmp_path: Path) -> None:
+    """A venv holding another version cannot judge this release."""
+    venv = _make_fake_release_venv(tmp_path, dist_version="0.2.5")
+    proc = _run_release_content("--venv", str(venv), "--expected-version", "0.2.6")
+    assert proc.returncode == 1, f"{proc.stdout}\n{proc.stderr}"
+    assert "[FAIL] installed-dist-version" in proc.stdout, proc.stdout
+    assert "metadata says 0.2.5, expected 0.2.6" in proc.stdout, proc.stdout
+
+
+@requires_repo_venv
+def test_release_content_accepts_the_repo_editable_install() -> None:
+    """GREEN control against the REAL package: both fixes are present at HEAD.
+
+    The same prologue the release gate runs, minus the venv: this is the
+    behaviour the check exists to protect, executed end-to-end (a real
+    initialize handshake, a real `find_config_path` message).
+    """
+    version = _repo_version()
+    proc = _run_release_content("--venv", str(REPO / ".venv"), "--expected-version", version)
+    assert proc.returncode == 0, f"{proc.stdout}\n{proc.stderr}"
+    assert "CHECKS_PASSED=3 CHECKS_FAILED=0" in proc.stdout, proc.stdout
+    assert f"HANDSHAKE_VERSION={version}" in proc.stdout, proc.stdout
+    assert "RELEASE CONTENT OK" in proc.stdout
+
+
+@requires_repo_venv
+def test_release_content_probes_in_a_temp_cwd_not_the_callers(tmp_path: Path) -> None:
+    """A chimera.yaml in the CALLER's cwd must not mask the missing-config probe.
+
+    The check must execute the installed package from a fresh empty temp cwd
+    (the fresh-user shape); if it inherited the caller's directory, the probe
+    would find this chimera.yaml and the remedy could never be judged.
+    """
+    (tmp_path / "chimera.yaml").write_text("server: {}\n", encoding="utf-8")
+    proc = _run_release_content(
+        "--venv", str(REPO / ".venv"), "--expected-version", _repo_version(), cwd=tmp_path
+    )
+    assert proc.returncode == 0, f"{proc.stdout}\n{proc.stderr}"
+    assert "missing-config error names `chimera config init`" in proc.stdout, proc.stdout
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        (),  # --expected-version is required
+        ("--venv", "/tmp"),  # venv given, version missing
+        ("--expected-version", ""),  # blank value
+        ("--expected-version", "0.2.6", "--bogus"),  # unknown option
+        ("--expected-version", "0.2.6", "--venv"),  # missing option value
+        ("--expected-version", "0.2.6", "--venv", "/nonexistent-venv-v29"),  # not a dir
+        ("--expected-version", "0.2.6", "positional"),  # unexpected positional
+    ],
+)
+def test_release_content_usage_errors_exit_2(args: tuple[str, ...]) -> None:
+    """Documented exit contract: bad input is 2 — never 1 and never a traceback."""
+    proc = _run_release_content(*args)
+    assert proc.returncode == 2, (
+        f"expected usage exit 2 for {args}, got {proc.returncode}\n{proc.stdout}\n{proc.stderr}"
+    )
+    assert "usage error" in proc.stderr, proc.stderr
+    assert "Traceback" not in proc.stderr, proc.stderr
+
+
+def test_release_content_installed_dist_version_reads_the_venv_metadata(tmp_path: Path) -> None:
+    """The version comes from the venv's own dist-info, and only from there."""
+    site = tmp_path / "lib" / "python3.12" / "site-packages"
+    site.mkdir(parents=True)
+    (site / "chimera_deliberation-9.9.9.dist-info").mkdir()
+    (site / "mcp-1.28.1.dist-info").mkdir()
+    assert release_content.installed_dist_version(tmp_path, "chimera-deliberation") == "9.9.9"
+    assert release_content.installed_dist_version(tmp_path, "chimera_deliberation") == "9.9.9"
+    assert release_content.installed_dist_version(tmp_path, "mcp") == "1.28.1"
+    assert release_content.installed_dist_version(tmp_path, "not-installed") is None
+
+
+def test_release_content_server_info_version_rejects_empty_shapes() -> None:
+    """Only a non-blank string version counts — never a missing/odd shape."""
+    assert release_content.server_info_version({"serverInfo": {"version": "0.2.6"}}) == "0.2.6"
+    assert release_content.server_info_version({"serverInfo": {"version": " 0.2.6 "}}) == "0.2.6"
+    for shape in (
+        None,
+        {},
+        {"serverInfo": None},
+        {"serverInfo": {}},
+        {"serverInfo": {"version": ""}},
+        {"serverInfo": {"version": "   "}},
+        {"serverInfo": {"version": 3}},
+        {"serverInfo": "chimera"},
+    ):
+        assert release_content.server_info_version(shape) is None, shape
+
+
+def test_release_content_handshake_problem_names_the_sdk_version_shape() -> None:
+    """A match is silent; the SDK-version shape is named; nothing is guessed."""
+    assert release_content.handshake_version_problem("0.2.6", "0.2.6", "1.28.1") is None
+
+    sdk = release_content.handshake_version_problem("0.2.6", "1.28.1", "1.28.1")
+    assert sdk is not None
+    assert "mcp SDK version 1.28.1" in sdk
+    assert "package version 0.2.6" in sdk
+    assert "DF-CHIMERA-V2-9" in sdk
+
+    missing = release_content.handshake_version_problem("0.2.6", None, "1.28.1")
+    assert missing is not None and "no serverInfo.version" in missing
+
+    other = release_content.handshake_version_problem("0.2.6", "0.2.5", "1.28.1")
+    assert other is not None
+    assert "advertises 0.2.5 instead of the package version 0.2.6" in other
+    assert "mcp SDK version" not in other
+
+
+def test_release_content_remedy_problem_accepts_only_a_runnable_remedy() -> None:
+    """The current message passes; the copy-only message and silence fail."""
+    assert release_content.remedy_problem(CURRENT_REMEDY) is None
+
+    stale = release_content.remedy_problem(OLD_REMEDY)
+    assert stale is not None
+    assert "`chimera config init`" in stale
+    assert "DF-CHIMERA-V2-8" in stale
+
+    absent = release_content.remedy_problem(None)
+    assert absent is not None and "no error message" in absent
+
+
+def test_release_content_reports_a_silent_child_without_hanging(tmp_path: Path) -> None:
+    """The driver bounds a child that never answers instead of blocking forever."""
+    timeout = 1
+    outcome = release_content.drive_initialize(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        release_content.child_env(),
+        str(tmp_path),
+        timeout,
+    )
+    assert outcome.responded is False
+    assert outcome.version is None
+    assert outcome.problem is not None
+    assert f"no JSON-RPC initialize response within {timeout}s" in outcome.problem
+
+
+# --- the pin cannot be removed, weakened, or pointed at the checkout ---------- #
+
+
+def _assert_mutated_release_verify_fails(
+    tmp_path: Path, mutate: Callable[[dict], None], match: str
+) -> None:
+    """A mutated COPY of ci.yml must FAIL the contract (the real file is untouched)."""
+    doc = _load_workflow()
+    mutate(doc["jobs"]["release-verify"])
+    mutated = _load_workflow(_write_workflow_copy(tmp_path, doc))
+    with pytest.raises(AssertionError, match=re.escape(match)):
+        _assert_release_verify_runs_release_content_check(mutated["jobs"]["release-verify"])
+
+
+def test_release_content_step_removed_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: drop the step -> the assertions must FAIL."""
+
+    def remove_step(job: dict) -> None:
+        before = len(_release_content_steps(job))
+        job["steps"] = [
+            s for s in job["steps"] if "release_content_check.py" not in s.get("run", "")
+        ]
+        after = len(_release_content_steps(job))
+        assert (before, after) == (1, 0), f"premise broken: {before} -> {after}"
+
+    _assert_mutated_release_verify_fails(tmp_path, remove_step, "exactly one release-content step")
+
+
+def test_pointing_the_release_content_check_at_the_checkout_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: judging the checkout `.venv` instead of the artifact must FAIL.
+
+    This is the whole defect class the check exists for: a gate that inspects
+    the source tree stays green while the published wheel lacks the fix.
+    """
+
+    def use_repo_venv(job: dict) -> None:
+        step = _release_content_steps(job)[0]
+        assert "--venv /tmp/release-venv" in step["run"], "premise broken: invocation changed shape"
+        step["run"] = step["run"].replace("--venv /tmp/release-venv", "--venv .venv")
+        assert "--venv .venv" in step["run"]
+
+    _assert_mutated_release_verify_fails(
+        tmp_path, use_repo_venv, "must run on the pinned /tmp/release-venv"
+    )
+
+
+def test_expected_version_removed_fails_the_release_content_pin(tmp_path: Path) -> None:
+    """NEGATIVE: without --expected-version the check only compares the artifact
+    against itself, so the pin must FAIL."""
+
+    def strip_expected_version(job: dict) -> None:
+        step = _release_content_steps(job)[0]
+        assert '--expected-version "${VERSION}"' in step["run"], "premise broken: shape changed"
+        step["run"] = step["run"].replace('--expected-version "${VERSION}"', "")
+        assert "--expected-version" not in step["run"]
+
+    _assert_mutated_release_verify_fails(
+        tmp_path, strip_expected_version, "must run on the pinned /tmp/release-venv"
+    )
+
+
+def test_release_content_step_secret_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: the check is offline; a secrets.* env must FAIL the pin."""
+
+    def add_secret(job: dict) -> None:
+        step = _release_content_steps(job)[0]
+        step["env"] = {"DEEPSEEK_API_KEY": "${{ secrets.DEEPSEEK_API_KEY }}"}
+        assert step["env"]
+
+    _assert_mutated_release_verify_fails(
+        tmp_path, add_secret, "the release-content check is offline and keyless"
+    )
+
+
+def test_release_content_check_after_the_live_gates_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: it must run BEFORE the expensive live gates, not after."""
+
+    def move_to_the_end(job: dict) -> None:
+        step = _release_content_steps(job)[0]
+        job["steps"].remove(step)
+        job["steps"].append(step)
+        assert _release_content_steps(job) == [step], "premise broken: step lost"
+
+    _assert_mutated_release_verify_fails(
+        tmp_path, move_to_the_end, "AFTER the pinned install and BEFORE the expensive"
+    )
+
+
