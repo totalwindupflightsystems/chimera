@@ -93,7 +93,7 @@ async def test_health_ready(live_server: str) -> None:
 
 @pytest.mark.asyncio
 async def test_models(live_server: str) -> None:
-    """``GET /v1/models`` — list configured models with category weights."""
+    """``GET /v1/models`` — OpenAI list envelope + chimera catalog (INT-API-004)."""
     import httpx
 
     async with httpx.AsyncClient() as client:
@@ -101,19 +101,34 @@ async def test_models(live_server: str) -> None:
 
     assert r.status_code == 200
     body = r.json()
-    assert isinstance(body, dict)
-    assert len(body) > 0, "no models returned"
 
-    # Verify schema for each model entry
-    for name, entry in body.items():
-        assert "categories" in entry, f"Model {name} missing 'categories'"
+    # OpenAI ListModelsResponse envelope — what the official SDK reads.
+    assert body["object"] == "list"
+    assert isinstance(body["data"], list)
+    assert len(body["data"]) > 0, "no models returned"
+    # The pre-envelope keyed map is still served, additively.
+    catalog = body["catalog"]
+    assert isinstance(catalog, dict)
+    assert len(catalog) == len(body["data"])
+
+    # Every data[] entry is an OpenAI model object carrying the chimera fields.
+    for entry in body["data"]:
+        assert entry["object"] == "model"
+        assert isinstance(entry["created"], int)
+        assert isinstance(entry["owned_by"], str)
+        assert "categories" in entry, f"Model {entry['id']} missing 'categories'"
         assert isinstance(entry["categories"], dict)
-        assert "cost_tier" in entry, f"Model {name} missing 'cost_tier'"
-        assert "provider" in entry, f"Model {name} missing 'provider'"
+        assert "cost_tier" in entry, f"Model {entry['id']} missing 'cost_tier'"
+        assert "provider" in entry, f"Model {entry['id']} missing 'provider'"
+        assert entry["id"] in catalog
+        assert entry["owned_by"] == entry["provider"]
+
+    # data ids and catalog keys are the same set.
+    assert {e["id"] for e in body["data"]} == set(catalog)
 
     # Should contain the budget models we use in other tests
-    assert "deepseek/deepseek-v4-flash" in body, "deepseek-v4-flash not in models"
-    assert "deepseek/deepseek-v4-pro" in body, "deepseek-v4-pro not in models"
+    assert "deepseek/deepseek-v4-flash" in catalog, "deepseek-v4-flash not in models"
+    assert "deepseek/deepseek-v4-pro" in catalog, "deepseek-v4-pro not in models"
 
 
 @pytest.mark.asyncio

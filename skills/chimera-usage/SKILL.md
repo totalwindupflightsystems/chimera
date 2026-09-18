@@ -334,11 +334,12 @@ healthy; repo HEAD 3b6ae77). The entry-point verdict table as of this run:
 ### Run-9 lessons (2026-09-16, field-tested on the PUBLISHED wheel + fresh clone)
 
 27. **Use the official OpenAI SDK, not curl, when testing "OpenAI-compatible"
-    claims.** `client.models.list()` FAILS against :8765 — GET /v1/models
-    returns a bare {model_id: {...}} map, not {"object":"list","data":[...]}
-    (TypeError: NoneType has no len). chat.completions itself works through
-    the SDK (model="simple" → "Paris" in 27s). Until DF-CHIMERA-0916B-2
-    lands, skip models.list() and use httpx/GET for the catalog.
+    claims.** `client.models.list()` now works: GET /v1/models serves the
+    OpenAI `ListModelsResponse` envelope (`object`/`data`) with the legacy
+    keyed map kept, additively, under `catalog` (INT-API-004, fixing
+    DF-CHIMERA-0916B-2; before it the bare map made `page.data` None →
+    TypeError: NoneType has no len). chat.completions itself works through
+    the SDK (model="simple" → "Paris" in 27s).
 28. **MCP probes MUST keep stdin open until the response lands.** A
     printf-pipe closes stdin after the request; the server hits EOF and
     exits BEFORE a long deliberation responds, so naive probes report a

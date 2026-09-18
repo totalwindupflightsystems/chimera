@@ -63,9 +63,13 @@ def test_list_models(config) -> None:  # type: ignore[no-untyped-def]
     client = _client(config)
     r = client.get("/v1/models")
     assert r.status_code == 200
-    data = r.json()
-    assert "deepseek/deepseek-chat" in data
-    assert data["deepseek/deepseek-chat"]["cost_tier"] == "budget"
+    body = r.json()
+    # INT-API-004: an OpenAI ListModelsResponse envelope. The pre-envelope
+    # keyed map is still served, additively, under `catalog`.
+    assert body["object"] == "list"
+    assert "deepseek/deepseek-chat" in body["catalog"]
+    assert body["catalog"]["deepseek/deepseek-chat"]["cost_tier"] == "budget"
+    assert "deepseek/deepseek-chat" in {e["id"] for e in body["data"]}
 
 
 def test_deliberate(config) -> None:  # type: ignore[no-untyped-def]
@@ -554,7 +558,7 @@ def test_chat_completions_catalog_model_id_returns_actionable_404(config) -> Non
     """
     client, gateway = _client_with_gateway(config, _standard_responder)
     model_id = "deepseek/deepseek-v4-flash"
-    assert model_id in client.get("/v1/models").json()  # premise: a catalog key
+    assert model_id in client.get("/v1/models").json()["catalog"]  # premise: a catalog key
 
     r = client.post(
         "/v1/chat/completions",

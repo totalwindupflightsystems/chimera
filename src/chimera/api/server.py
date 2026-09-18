@@ -4,7 +4,7 @@ Endpoints:
 * ``POST /v1/deliberate``       — full pipeline, returns answer + trace.
 * ``POST /v1/chat/completions`` — OpenAI-compatible drop-in.
 * ``GET  /v1/formations``       — list formation presets.
-* ``GET  /v1/models``           — list models with category weights.
+* ``GET  /v1/models``           — OpenAI-shaped model list (+ chimera catalog).
 * ``GET  /v1/health``           — health check (healthy/degraded/unhealthy).
 * ``GET  /v1/health/ready``     — readiness probe (provider connectivity).
 * ``GET  /v1/health/live``      — liveness probe (process alive).
@@ -327,6 +327,25 @@ def aggregate_usage(trace: DeliberationTrace) -> tuple[int, int, int]:
 # Route registration
 # --------------------------------------------------------------------------- #
 
+def _catalog_entry_payload(entry: Any) -> dict[str, Any]:
+    """Per-model payload served by ``GET /v1/models`` (INT-API-004).
+
+    Single source of truth for BOTH the OpenAI ``data[]`` entries and the
+    chimera ``catalog`` map, so the two field sets cannot drift apart.
+    The field set and every value's meaning are unchanged from the
+    pre-envelope route: ``cost_per_1k_*`` stays ``None``/``null`` when the
+    catalog entry declares no explicit rate.
+    """
+    return {
+        "categories": entry.categories,
+        "cost_tier": entry.cost_tier,
+        "provider": entry.provider,
+        "enabled": entry.enabled,
+        "cost_per_1k_input": entry.cost_per_1k_input,
+        "cost_per_1k_output": entry.cost_per_1k_output,
+    }
+
+
 def _register_routes(app: FastAPI) -> None:
     from fastapi.responses import JSONResponse
 
@@ -431,17 +450,38 @@ def _register_routes(app: FastAPI) -> None:
 
     @app.get("/v1/models")
     async def models(request: Request) -> dict[str, Any]:
+        """List models as an OpenAI ``ListModelsResponse`` (INT-API-004).
+
+        ``object``/``data`` make the route spec-shaped so the official SDK's
+        ``client.models.list()`` works: the SDK needs ``data`` to be a list,
+        and the old bare ``{model_id: {...}}`` map made ``page.data`` None
+        (``TypeError: object of type 'NoneType' has no len()``) for every
+        proxy/UI that enumerates models through the SDK.
+
+        The chimera catalog map is still served, additively, under
+        ``catalog`` — same per-model payloads as ``data[]``, keyed by model
+        id — so existing keyed lookups keep working. ``created`` is always
+        ``0``: the catalog carries no per-model timestamp and inventing one
+        would be a fabricated fact. ``owned_by`` is the configured provider.
+        The route stays keyless (docs/SECURITY.md open-endpoint list).
+        """
         cfg: ChimeraConfig = request.app.state.config
+        catalog = {
+            name: _catalog_entry_payload(entry) for name, entry in cfg.models.items()
+        }
         return {
-            name: {
-                "categories": entry.categories,
-                "cost_tier": entry.cost_tier,
-                "provider": entry.provider,
-                "enabled": entry.enabled,
-                "cost_per_1k_input": entry.cost_per_1k_input,
-                "cost_per_1k_output": entry.cost_per_1k_output,
-            }
-            for name, entry in cfg.models.items()
+            "object": "list",
+            "data": [
+                {
+                    "id": name,
+                    "object": "model",
+                    "created": 0,
+                    "owned_by": payload["provider"],
+                    **payload,
+                }
+                for name, payload in catalog.items()
+            ],
+            "catalog": catalog,
         }
 
     @app.post("/v1/deliberate", response_model=DeliberateResponse)

@@ -93,6 +93,11 @@ class TestAuthEnvMode:
         client = _auth_client(config)
         r = client.get("/v1/models")
         assert r.status_code == 200
+        # Keyless AND still a usable catalog: the OpenAI envelope (INT-API-004)
+        # is served without credentials, legacy map included under `catalog`.
+        body = r.json()
+        assert body["object"] == "list"
+        assert body["catalog"]
 
     def test_formations_is_open(self) -> None:
         config = _make_auth_config("env")

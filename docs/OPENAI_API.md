@@ -284,7 +284,7 @@ of `extra_body` entries.
 |---|---|---|
 | `POST` | `/v1/chat/completions` | OpenAI-compatible deliberation |
 | `POST` | `/v1/deliberate` | Full control (formation, overrides, trace) |
-| `GET` | `/v1/models` | Model catalog with category weights |
+| `GET` | `/v1/models` | OpenAI `ListModelsResponse` envelope + chimera `catalog` map |
 | `GET` | `/v1/formations` | Available formation presets |
 | `GET` | `/v1/health` | Health check |
 | `GET` | `/docs` | OpenAPI/Swagger UI |
@@ -308,20 +308,87 @@ and all prompts/responses.
 
 ### `/v1/models`
 
+An **OpenAI `ListModelsResponse`**, so `client.models.list()` works through the
+official SDK. The per-model chimera payload is unchanged; it is served twice —
+once per entry in the spec-shaped `data[]`, and once in the `catalog` map that
+is a **chimera extension** (the pre-envelope response shape, kept so keyed
+lookups by model id keep working).
+
 ```json
 {
-  "deepseek/deepseek-v4-pro": {
-    "categories": {"code": 0.95, "analysis": 0.85, "reasoning": 0.80, "design": 0.40, "audit": 0.60},
-    "cost_tier": "budget",
-    "provider": "deepseek"
-  },
-  "z-ai/glm-5.2": {
-    "categories": {"code": 0.92, "analysis": 0.90, "reasoning": 0.95, "design": 0.85, "audit": 0.88},
-    "cost_tier": "premium",
-    "provider": "zai"
+  "object": "list",
+  "data": [
+    {
+      "id": "deepseek/deepseek-v4-pro",
+      "object": "model",
+      "created": 0,
+      "owned_by": "deepseek",
+      "categories": {"code": 0.95, "analysis": 0.85, "reasoning": 0.80, "design": 0.40, "audit": 0.60},
+      "cost_tier": "budget",
+      "provider": "deepseek",
+      "enabled": true,
+      "cost_per_1k_input": 0.00055,
+      "cost_per_1k_output": 0.00219
+    }
+  ],
+  "catalog": {
+    "deepseek/deepseek-v4-pro": {
+      "categories": {"code": 0.95, "analysis": 0.85, "reasoning": 0.80, "design": 0.40, "audit": 0.60},
+      "cost_tier": "budget",
+      "provider": "deepseek",
+      "enabled": true,
+      "cost_per_1k_input": 0.00055,
+      "cost_per_1k_output": 0.00219
+    }
   }
 }
 ```
+
+Field semantics:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | `string` | Catalog model id — the same key `catalog` uses |
+| `object` | `string` | Always `"model"` (OpenAI object type) |
+| `created` | `int` | Always `0`: the catalog carries no per-model creation time, so a real epoch value is not invented |
+| `owned_by` | `string` | The model's configured provider (mirrors `provider`) |
+| `categories` | `object` | Weighted category scores (see the `GET /v1/models` catalog columns) |
+| `cost_tier` | `string` | `budget` / `standard` / `premium` |
+| `provider` | `string` | Provider key from `chimera.yaml` |
+| `enabled` | `bool` | Whether the catalog entry is selectable |
+| `cost_per_1k_*` | `float \| null` | Explicit rate when the entry declares one, else `null` (the tier default is applied at billing time — this route reports the configured value, not the derived one) |
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8765/v1", api_key="not-needed")
+
+page = client.models.list()
+print(len(page.data), page.data[0].id)   # -> 42 deepseek/deepseek-v4-pro
+
+# Chimera extension: the keyed catalog map, same payloads as data[].
+import httpx
+catalog = httpx.get("http://localhost:8765/v1/models").json()["catalog"]
+```
+
+The route is keyless (see [docs/SECURITY.md](SECURITY.md) for the open-endpoint
+list) and stays that way.
+
+**Not implemented** — the deviation is deliberate; these are unauthenticated,
+served as-is, and a caller should not expect OpenAI semantics from them:
+
+- `GET /v1/models/{model}` (`client.models.retrieve(...)`) — **404**. Read the
+  entry out of `data[]` / `catalog` instead.
+- Pagination (`limit` / `after` query parameters) — ignored. The catalog is
+  small and returned in full.
+- `GET /v1/models` is **read-only discovery**: it lists what `chimera.yaml`
+  configures. It does not imply every listed model is reachable — unused
+  credentials for a provider surface at call time (see
+  [Errors and Status Codes](#errors-and-status-codes)).
+- Passing a listed `id` as the top-level `model` on
+  `/v1/chat/completions` is still a 404: `model` selects a **formation**, not
+  a catalog model — see
+  [Forcing a specific catalog model from the OpenAI SDK](#forcing-a-specific-catalog-model-from-the-openai-sdk).
 
 ### `/v1/formations`
 

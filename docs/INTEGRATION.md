@@ -99,7 +99,7 @@ Available endpoints once running:
 |---|---|---|
 | `POST` | `/v1/chat/completions` | OpenAI-compatible deliberation (drop-in) |
 | `POST` | `/v1/deliberate` | Full control: formation, overrides, trace |
-| `GET` | `/v1/models` | Model catalog with category weights |
+| `GET` | `/v1/models` | OpenAI-shaped model list (`object`/`data`) with the chimera catalog map under `catalog` |
 | `GET` | `/v1/formations` | Available formation presets |
 | `GET` | `/v1/health` | Health check (healthy / degraded / unhealthy) |
 | `GET` | `/v1/health/ready` | Readiness probe (provider connectivity) |

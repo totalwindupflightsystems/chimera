@@ -437,7 +437,7 @@ The dispatcher writes custom prompts for each stage but uses YOUR structure exac
 |---|---|---|
 | **REST API** | `POST /v1/chat/completions` | OpenAI-compatible drop-in |
 | **REST API** | `POST /v1/deliberate` | Full control (DAG, overrides, trace) |
-| **REST API** | `GET /v1/models` | Model catalog with weights |
+| **REST API** | `GET /v1/models` | OpenAI-shaped model list (`data`) + chimera `catalog` map |
 | **REST API** | `GET /v1/formations` | Available formation presets |
 | **CLI** | `chimera run` | Command-line usage (add `--quiet` / `--json` for machine-readable output, `--version` for the package version) |
 | **MCP** | `chimera_deliberate` | Run a deliberation from an agent |
