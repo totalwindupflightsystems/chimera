@@ -360,10 +360,16 @@ def _register_routes(app: FastAPI) -> None:
 
     @app.get("/v1/health")
     async def health(request: Request) -> dict[str, Any]:
-        """Health check — returns healthy, degraded, or unhealthy.
+        """Health check — returns healthy or degraded.
 
         Verifies: config loaded, at least one provider reachable.
         Backward compatible: always returns 200 with a JSON body.
+
+        ``unhealthy_providers`` (DF-CHIMERA-V2-14) is the machine-readable
+        companion to ``status``: the sorted names of the providers whose
+        probe did not succeed, so a client does not have to walk
+        ``details.providers`` and string-match ``error``.  It is present in
+        every response — ``[]`` exactly when ``status == "healthy"``.
         """
         cfg: ChimeraConfig = request.app.state.config
         details: dict[str, Any] = {
@@ -379,16 +385,30 @@ def _register_routes(app: FastAPI) -> None:
             provider_status = await _check_providers(cfg, gw)
             details["providers"] = provider_status
 
-            if all(p["healthy"] for p in provider_status.values()):
-                return {"status": "healthy", "details": details}
-            if any(p["healthy"] for p in provider_status.values()):
-                return {"status": "degraded", "details": details}
-            return {"status": "degraded", "details": details}
+            unhealthy = _unhealthy_provider_names(provider_status)
+            # "healthy" is equivalent to "no provider failed"; the previous
+            # two identical `degraded` branches are collapsed into this one
+            # without changing the status value or the body shape.
+            status = (
+                "healthy"
+                if all(p["healthy"] for p in provider_status.values())
+                else "degraded"
+            )
+            return {
+                "status": status,
+                "unhealthy_providers": unhealthy,
+                "details": details,
+            }
         except Exception as exc:
             log.warning("health_check_error", error=str(exc))
-            # Don't fail health check — report degraded
+            # Don't fail health check — report degraded.  No per-provider
+            # result exists here, so every configured provider is named:
+            # none of them was PROVEN healthy, and the field must not read
+            # as "degraded with nothing wrong" (`details.error` carries the
+            # real reason).
             return {
                 "status": "degraded",
+                "unhealthy_providers": sorted(cfg.providers),
                 "details": {**details, "error": str(exc)[:200]},
             }
 
@@ -397,6 +417,8 @@ def _register_routes(app: FastAPI) -> None:
         """Readiness probe — checks provider connectivity.
 
         Returns 200 if at least one provider is reachable, 503 otherwise.
+        The 200 body carries `unhealthy_providers` alongside `providers`
+        (DF-CHIMERA-V2-14) with the same meaning as on `/v1/health`.
         """
         cfg: ChimeraConfig = request.app.state.config
         try:
@@ -404,7 +426,11 @@ def _register_routes(app: FastAPI) -> None:
             provider_status = await _check_providers(cfg, gw)
             ready = any(p["healthy"] for p in provider_status.values())
             if ready:
-                return {"status": "ready", "providers": provider_status}
+                return {
+                    "status": "ready",
+                    "unhealthy_providers": _unhealthy_provider_names(provider_status),
+                    "providers": provider_status,
+                }
             raise HTTPException(
                 status_code=503,
                 detail="Not ready — no providers reachable",
@@ -803,12 +829,36 @@ def _classify_provider_error(exc: BaseException) -> str:
     return "api"
 
 
+def _unhealthy_provider_names(
+    provider_status: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Sorted names of the providers whose probe did not succeed.
+
+    The machine-readable companion to the ``/v1/health`` ``status`` field
+    (DF-CHIMERA-V2-14): ``[]`` exactly when every provider reported
+    ``healthy``, so a client can branch on the list instead of walking
+    ``details.providers`` and string-matching ``error``.  A provider entry
+    with no ``healthy`` key counts as unhealthy (nothing was proven).
+    """
+    return sorted(
+        name
+        for name, info in provider_status.items()
+        if not info.get("healthy", False)
+    )
+
+
 async def _check_providers(
     config: ChimeraConfig, gateway: Any,
 ) -> dict[str, dict[str, Any]]:
     """Check connectivity to each configured provider.
 
     Returns a dict mapping provider name → {healthy: bool, error?: str, ...}.
+
+    Every FAILED provider also carries ``error_class`` (DF-CHIMERA-V2-14): a
+    machine-readable reason, one of ``missing_credentials`` | ``timeout`` |
+    ``auth`` | ``quota`` | ``api``.  It is ADDITIVE — the ``error`` text,
+    ``healthy``, ``model_tested`` and ``note`` fields are unchanged, and a
+    healthy provider keeps its exact previous shape (no ``error_class``).
 
     Provider checks run concurrently under ``config.server.health_timeout_s``
     (default 10.0 s).  Providers without resolvable credentials are reported
@@ -841,6 +891,7 @@ async def _check_providers(
                     "missing-credentials: no API key resolved "
                     f"for provider '{provider_name}'"
                 ),
+                "error_class": "missing_credentials",
             }
 
         last_error: BaseException | None = None
@@ -869,6 +920,7 @@ async def _check_providers(
         return provider_name, {
             "healthy": False,
             "error": f"{error_class}: {str(last_error)[:200]}",
+            "error_class": error_class,
             "model_tested": last_model,
         }
 
@@ -890,7 +942,11 @@ async def _check_providers(
     for task in done:
         provider_name = tasks[task]
         if task.cancelled():
-            status[provider_name] = {"healthy": False, "error": timeout_error}
+            status[provider_name] = {
+                "healthy": False,
+                "error": timeout_error,
+                "error_class": "timeout",
+            }
             continue
         try:
             _, result = task.result()
@@ -899,10 +955,15 @@ async def _check_providers(
             status[provider_name] = {
                 "healthy": False,
                 "error": f"api: {str(exc)[:200]}",
+                "error_class": _classify_provider_error(exc),
             }
     for task in pending:
         task.cancel()
-        status[tasks[task]] = {"healthy": False, "error": timeout_error}
+        status[tasks[task]] = {
+            "healthy": False,
+            "error": timeout_error,
+            "error_class": "timeout",
+        }
 
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)

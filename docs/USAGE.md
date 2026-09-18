@@ -299,6 +299,23 @@ when no provider is reachable. The probe is a real (tiny) completion per
 provider (`max_tokens=1`), so polling costs a small number of tokens and is
 bounded by `server.health_timeout_s` (default 10 s).
 
+**Why it is degraded, without string-matching (DF-CHIMERA-V2-14).** The
+response carries the reason twice, both additive:
+
+* top-level `unhealthy_providers` — the sorted names of the providers whose
+  probe did not succeed, present in every response and `[]` exactly when
+  `status` is `healthy`;
+* `details.providers.<name>.error_class` on every failed provider —
+  `missing_credentials` (no resolvable key, no live call), `timeout`, `auth`,
+  `quota`, or `api` (unclassified; treat an unknown value as opaque).
+
+So `curl -s localhost:8765/v1/health | jq -r '.unhealthy_providers[]'` lists
+the offenders and `jq '.details.providers | to_entries[] | "\(.key): \(.value.error_class)"'`
+names the class per provider. `GET /v1/health/ready` carries the same
+`unhealthy_providers` list in its 200 body. A healthy provider has no
+`error_class`; when the probe itself raises, every configured provider is named
+(none was proven healthy) and `details.error` holds the real reason.
+
 ### Live Smoke Test
 
 Health endpoints do not prove a deliberation works. After a deploy (or whenever

@@ -183,9 +183,46 @@ curl http://localhost:8765/v1/chat/completions \
   }'
 ```
 
-Chimera passes the schema through to the aggregator. If the aggregator model doesn't
-support `json_schema` (e.g. DeepSeek), Chimera automatically retries with
-`json_object`, then plain text as a last resort.
+Chimera passes the schema through to the aggregator **when the aggregator's
+provider supports it**. If it does not, the format is negotiated down (or
+stripped) before the call rather than retried afterwards — see below for exactly
+what goes on the wire, and for the log events that record the loss.
+
+### When the format cannot be honored (and the log events that say so)
+
+Format support is decided **before** the call, per resolved provider, from a
+capability table (`chimera.gateway.negotiate_response_format`) — not by
+trial-and-error retries:
+
+| Provider capability | You asked for | What is actually sent |
+|---|---|---|
+| `json_schema` — `openai`, `anthropic`, `google`, `zai` | anything | passed through unchanged |
+| `json_object` — `moonshot` | `json_schema` | downgraded to `{"type": "json_object"}` (schema dropped) |
+| `json_object` | `json_object` | passed through unchanged |
+| none — any provider **not** in the table (e.g. `deepseek`, `openrouter`, a `base_url` provider) | any format | **removed** — the call goes out as plain text |
+
+Two structured log events (INFO, on the `chimera.gateway` logger) mark the
+lossy paths, and each one means the response is **less constrained than you
+asked for**:
+
+- `gateway_format_downgrade` — fields `from_format=json_schema`,
+  `to_format=json_object`, `provider`. The provider can return generic JSON but
+  not a schema, so your schema is discarded. Expect JSON; do not expect your
+  shape or `required` fields.
+- `gateway_format_removed` — fields `requested_type`, `provider`. The resolved
+  provider is not in the capability table, so the `response_format` field is
+  stripped entirely and the model answers as plain text.
+
+What to do as a caller: either pin a schema-capable provider for the stage
+(`aggregator_model` / `stage_models`, or `worker_model` for every worker) or
+treat a logged event as a signal to validate and repair the JSON in your own
+code. Chimera does not retry with a weaker format after the fact: the
+negotiation happens once, before the call. Note the table keys on the
+**resolved** provider — a model routed through a generic provider (including
+the automatic Anthropic→OpenRouter credential fallback, which logs
+`gateway_anthropic_fallback`) loses the requested format, and an
+`openrouter`-facing aggregator is therefore a common source of
+`gateway_format_removed` on real requests.
 
 ## Custom DAG: Full Control
 

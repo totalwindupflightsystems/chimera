@@ -340,8 +340,31 @@ timeout, or an exception inside the check itself. The endpoint always answers
 **HTTP 200** and reports the verdict in the `status` field (plus a `details`
 object with per-provider `healthy` / `error` / `model_tested`), so monitoring
 must read `status`, not the HTTP code. Any probe failure — including "all
-providers failed" — reports `degraded`; the `unhealthy` value is declared in
-the server docstring but is not currently emitted.
+providers failed" — reports `degraded`; an `unhealthy` status value is not
+emitted.
+
+**Machine-readable degraded reason (DF-CHIMERA-V2-14).** `status` alone tells
+you *that* something is wrong, not *what*:
+
+- the **top-level** `unhealthy_providers` list names the providers whose probe
+  did not succeed, **sorted**. It is present in every response and is `[]`
+  exactly when `status` is `healthy`, so a client can branch on it instead of
+  walking `details.providers` and string-matching `error`.
+- every failed entry under `details.providers.<name>` carries an
+  `error_class`: `missing_credentials` (no resolvable key — no live call was
+  made), `timeout` (no response within `server.health_timeout_s`), `auth`
+  (`401`/`403` or auth prose), `quota` (`429`, insufficient balance, "no
+  resource package"), or `api` (anything else). A healthy provider has no
+  `error_class`; treat an unrecognized value as opaque.
+- if the probe itself raises, the response is still `degraded` with every
+  configured provider named in `unhealthy_providers` — none of them was
+  *proven* healthy — and the underlying reason in `details.error`.
+
+Both are **additive**: `status`, `details.config_loaded`,
+`details.models_configured`, `details.providers_configured`, `details.commit`,
+and the per-provider `healthy` / `error` / `model_tested` / `note` fields keep
+their names and meanings, and the HTTP status stays 200. `GET
+/v1/health/ready` carries the same `unhealthy_providers` list in its 200 body.
 
 **The provider probe costs money.** Each `/v1/health` (and `/v1/health/ready`)
 call runs a **real** completion per configured provider — `gateway.complete(model,
