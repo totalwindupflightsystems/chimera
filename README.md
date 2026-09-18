@@ -360,6 +360,16 @@ you *that* something is wrong, not *what*:
   configured provider named in `unhealthy_providers` — none of them was
   *proven* healthy — and the underlying reason in `details.error`.
 
+**A probe is one upstream attempt per model (DF-CHIMERA-V2-16).** The health
+probe does **not** use the retry ladder a normal completion uses: it makes
+exactly one call per model and reports whatever the provider answers. A
+provider that replies with a fast `429`/`401` is therefore reported as its real
+class (`quota` / `auth`) carrying the provider's own message — a quota reset
+timestamp, say — instead of being retried with backoff until the shared
+`server.health_timeout_s` budget expires and the verdict turns into a
+fabricated `timeout`. Retrying an answer that is already final buys nothing and
+destroys the signal; the non-probe retry policy (`config.retry`) is unchanged.
+
 Both are **additive**: `status`, `details.config_loaded`,
 `details.models_configured`, `details.providers_configured`, `details.commit`,
 and the per-provider `healthy` / `error` / `model_tested` / `note` fields keep
@@ -381,6 +391,10 @@ poll it in a tight loop:
   `10.0` s); providers still pending at that bound are reported unhealthy with
   a `timeout:` error. Slow tail latency is therefore indistinguishable from a
   dead provider — raise `server.health_timeout_s` if your provider is merely slow.
+- each of those probes is **one** upstream attempt per model — the retry ladder
+  is not used (DF-CHIMERA-V2-16), so a provider that answers with a fast
+  `429`/`401` is reported as `quota`/`auth` with the provider's own message
+  (including a quota reset time) rather than retried into the timeout budget.
 
 `chimera-mcp` runs the MCP server over stdio so AI agents (Hermes, Claude
 Code, etc.) can call Chimera directly. Both read the same `chimera.yaml`

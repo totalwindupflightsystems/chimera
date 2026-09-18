@@ -631,6 +631,159 @@ class TestLiteLLMGatewayComplete:
         assert mock.call_count == 2
 
     @pytest.mark.asyncio
+    async def test_probe_retryable_error_is_one_attempt_without_sleep(self) -> None:
+        """DF-CHIMERA-V2-16: a probe makes exactly ONE upstream attempt.
+
+        A health probe reports what the provider says *now*: retrying a 429 that
+        answers in under a second (three attempts + 500/1000 ms backoff) is what
+        burned the shared ``health_timeout_s`` budget and produced a fabricated
+        ``timeout`` for zai.  One litellm call, no retry sleep, and the verdict
+        keeps the provider's status code.
+        """
+        import httpx
+        config = _gateway_config(retry={
+            "max_attempts": 3, "base_delay_ms": 500, "max_delay_ms": 1000,
+        })
+        gw = LiteLLMGateway(config)
+
+        req = httpx.Request(
+            "POST", "https://api.z.ai/api/coding/paas/v4/chat/completions",
+        )
+        resp_429 = httpx.Response(429, request=req)
+        exc = httpx.HTTPStatusError("rate limited", request=req, response=resp_429)
+
+        slept: list[float] = []
+
+        async def _record_sleep(ms: float) -> None:
+            slept.append(ms)
+
+        with (
+            patch("litellm.acompletion", side_effect=exc) as mock,
+            patch("chimera.gateway._sleep_ms", side_effect=_record_sleep),
+            pytest.raises(GatewayError) as err,
+        ):
+            await gw.complete(
+                "deepseek/deepseek-chat",
+                [{"role": "user", "content": "ping"}],
+                temperature=1,
+                max_tokens=1,
+                probe=True,
+            )
+
+        assert mock.call_count == 1
+        assert slept == []
+        assert err.value.status_code == 429
+
+    @pytest.mark.asyncio
+    async def test_probe_success_is_one_attempt(self) -> None:
+        """A successful probe also makes exactly one litellm call."""
+        config = _gateway_config(retry={"max_attempts": 3, "base_delay_ms": 500})
+        gw = LiteLLMGateway(config)
+        fake_result = _litellm_result(
+            "pong", finish_reason="length", prompt_tokens=7, completion_tokens=1,
+        )
+
+        with patch("litellm.acompletion", return_value=fake_result) as mock:
+            resp = await gw.complete(
+                "deepseek/deepseek-chat",
+                [{"role": "user", "content": "ping"}],
+                temperature=1,
+                max_tokens=1,
+                probe=True,
+            )
+
+        assert mock.call_count == 1
+        assert resp.text == "pong"
+
+    @pytest.mark.asyncio
+    async def test_non_probe_retryable_error_still_uses_full_ladder(self) -> None:
+        """The retry ladder is unchanged when probe is False (criterion 3)."""
+        import httpx
+        config = _gateway_config(retry={
+            "max_attempts": 3, "base_delay_ms": 500, "max_delay_ms": 1000,
+        })
+        gw = LiteLLMGateway(config)
+
+        req = httpx.Request("POST", "https://api.z.ai/api/coding/paas/v4/chat/completions")
+        resp_429 = httpx.Response(429, request=req)
+        exc = httpx.HTTPStatusError("rate limited", request=req, response=resp_429)
+
+        slept: list[float] = []
+
+        async def _record_sleep(ms: float) -> None:
+            slept.append(ms)
+
+        with (
+            patch("litellm.acompletion", side_effect=exc) as mock,
+            patch("chimera.gateway._sleep_ms", side_effect=_record_sleep),
+            pytest.raises(GatewayError) as err,
+        ):
+            await gw.complete(
+                "deepseek/deepseek-chat",
+                [{"role": "user", "content": "hi"}],
+            )
+
+        assert mock.call_count == 3
+        assert len(slept) == 2  # backoff between attempts survives
+        assert err.value.status_code == 429
+
+    @pytest.mark.asyncio
+    async def test_non_probe_auth_error_short_circuits_without_retry(self) -> None:
+        """A 401 stays non-retryable: one attempt, no backoff (criterion 3)."""
+        import httpx
+        config = _gateway_config(retry={
+            "max_attempts": 3, "base_delay_ms": 500, "max_delay_ms": 1000,
+        })
+        gw = LiteLLMGateway(config)
+
+        req = httpx.Request("POST", "https://api.z.ai/api/coding/paas/v4/chat/completions")
+        resp_401 = httpx.Response(401, request=req)
+        exc = httpx.HTTPStatusError("invalid api key", request=req, response=resp_401)
+
+        slept: list[float] = []
+
+        async def _record_sleep(ms: float) -> None:
+            slept.append(ms)
+
+        with (
+            patch("litellm.acompletion", side_effect=exc) as mock,
+            patch("chimera.gateway._sleep_ms", side_effect=_record_sleep),
+            pytest.raises(GatewayError) as err,
+        ):
+            await gw.complete(
+                "deepseek/deepseek-chat",
+                [{"role": "user", "content": "hi"}],
+            )
+
+        assert mock.call_count == 1
+        assert slept == []
+        # The status code comes off the httpx response, not the message text.
+        assert err.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_gateway_error_status_code_none_when_provider_exposes_none(self) -> None:
+        """No status code on the provider error ⇒ the attribute is None."""
+        config = _gateway_config(retry={"max_attempts": 2, "base_delay_ms": 1})
+        gw = LiteLLMGateway(config)
+
+        with (
+            patch("litellm.acompletion", side_effect=RuntimeError("provider exploded")),
+            pytest.raises(GatewayError) as err,
+        ):
+            await gw.complete(
+                "deepseek/deepseek-chat",
+                [{"role": "user", "content": "hi"}],
+            )
+
+        assert err.value.status_code is None
+
+    def test_gateway_error_single_argument_still_works(self) -> None:
+        """Existing one-argument raises keep working (status_code defaults None)."""
+        err = GatewayError("plain message")
+        assert str(err) == "plain message"
+        assert err.status_code is None
+
+    @pytest.mark.asyncio
     async def test_budget_exhausted_raises_immediately(self) -> None:
         """Quota error → BudgetExhaustedError, no retry."""
         config = _gateway_config(retry={"max_attempts": 3, "base_delay_ms": 1})

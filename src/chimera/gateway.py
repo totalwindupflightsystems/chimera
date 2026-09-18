@@ -90,7 +90,21 @@ def _get_gateway_executor() -> ThreadPoolExecutor:
 
 
 class GatewayError(Exception):
-    """Raised when a provider call fails (auth, network, bad request, ...)."""
+    """Raised when a provider call fails (auth, network, bad request, ...).
+
+    ``status_code`` is the HTTP status the provider reported, when the wrapped
+    exception exposed one (``status_code`` on an openai/litellm APIStatusError,
+    or ``response.status_code`` on an httpx error).  It is ``None`` when the
+    provider said nothing structural — a timeout, a transport error, a config
+    problem.  Callers (``chimera.api.server._classify_provider_error``) branch
+    on this instead of string-matching the message prose
+    (DF-CHIMERA-V2-16).  The keyword is optional, so every existing
+    ``GatewayError("text")`` raise keeps working unchanged.
+    """
+
+    def __init__(self, *args: Any, status_code: int | None = None) -> None:
+        super().__init__(*args)
+        self.status_code = status_code
 
 
 @dataclass(slots=True)
@@ -428,6 +442,24 @@ def _is_retryable(exc: BaseException) -> bool:
     return False
 
 
+def _status_code_of(exc: BaseException | None) -> int | None:
+    """HTTP status code a provider exception carries, if it exposed one.
+
+    litellm/openai raise ``APIStatusError`` subclasses with a ``status_code``
+    attribute; httpx raises ``HTTPStatusError`` with a ``response``.  Returns
+    ``None`` when neither shape is present, so a caller can classify a failure
+    from data rather than from the message prose (DF-CHIMERA-V2-16).
+    """
+    if exc is None:
+        return None
+    code = getattr(exc, "status_code", None)
+    if code is None:
+        response = getattr(exc, "response", None)
+        if response is not None:
+            code = getattr(response, "status_code", None)
+    return code if isinstance(code, int) else None
+
+
 async def _sleep_ms(ms: float) -> None:
     """Small async sleep helper."""
     await asyncio.sleep(ms / 1000.0)
@@ -668,7 +700,16 @@ class LiteLLMGateway:
         ``call_kwargs``, so it never reaches the LiteLLM call) and only
         selects probe-flavoured truncation logging — see
         :func:`_build_response`.
+
+        A *probe* call does NOT enter the retry ladder (DF-CHIMERA-V2-16): a
+        health probe makes exactly one upstream attempt per model — see
+        :meth:`_complete_probe_once`.
         """
+        if probe:
+            return await self._complete_probe_once(
+                call_kwargs, model, provider=provider,
+            )
+
         retry_cfg = self.config.retry
         last_error: BaseException | None = None
 
@@ -710,7 +751,8 @@ class LiteLLMGateway:
                     raise GatewayError(
                         f"{model} call failed: "
                         f"{credential_remedy(exc, model=model, provider=provider, config=self.config)}"
-                        f"{exc}"
+                        f"{exc}",
+                        status_code=_status_code_of(exc),
                     ) from exc
 
                 if attempt >= retry_cfg.max_attempts:
@@ -744,8 +786,50 @@ class LiteLLMGateway:
         raise GatewayError(
             f"{model} call failed after {retry_cfg.max_attempts} attempts: "
             f"{credential_remedy(last_error, model=model, provider=provider, config=self.config)}"
-            f"{last_error}"
+            f"{last_error}",
+            status_code=_status_code_of(last_error),
         ) from last_error
+
+    async def _complete_probe_once(
+        self,
+        call_kwargs: dict[str, Any],
+        model: str,
+        *,
+        provider: str | None = None,
+    ) -> GatewayResponse:
+        """One upstream attempt, no retry ladder — the health-probe path.
+
+        A probe exists to report what the provider says *now* (DF-CHIMERA-V2-16).
+        Retrying a retryable failure here is actively harmful: a z.ai account
+        that answers ``429 Weekly/Monthly Limit Exhausted. Your limit will reset
+        at <two days out>`` in under a second was retried three times with
+        backoff, so three models blew past the shared
+        ``server.health_timeout_s`` budget, the probe task was cancelled, and
+        ``/v1/health`` reported the fabricated verdict
+        ``timeout: no response within 10.0s`` — with no ``model_tested`` — for a
+        provider that had already answered, accurately, in 0.93-1.30s.
+
+        So: exactly one LiteLLM call per model, and whatever the provider
+        answers is final.  The failure is still translated into
+        :class:`GatewayError` — with the provider's ``status_code`` preserved —
+        so callers keep the same exception contract as a laddered call and can
+        classify the verdict from data (429 → ``quota``) instead of prose.
+        """
+        log.debug(
+            "gateway_probe_no_retry",
+            model=model,
+            provider=provider,
+        )
+        try:
+            result = await _litellm_acomplete(call_kwargs)
+        except Exception as exc:
+            raise GatewayError(
+                f"{model} call failed: "
+                f"{credential_remedy(exc, model=model, provider=provider, config=self.config)}"
+                f"{exc}",
+                status_code=_status_code_of(exc),
+            ) from exc
+        return self._build_response(result, model, probe=True)
 
     def _build_response(
         self, result: Any, model: str, probe: bool = False,

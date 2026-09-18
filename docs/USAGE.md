@@ -316,6 +316,14 @@ names the class per provider. `GET /v1/health/ready` carries the same
 `error_class`; when the probe itself raises, every configured provider is named
 (none was proven healthy) and `details.error` holds the real reason.
 
+**A probe is one attempt per model (DF-CHIMERA-V2-16).** The health probe does
+not use the completion retry ladder: it makes exactly one upstream call per
+model, so a provider that answers with a fast `429`/`401` is reported as
+`quota`/`auth` with its own message and reset time — never retried with backoff
+until the shared `server.health_timeout_s` budget expires and the verdict
+becomes a fabricated `timeout`. Retry policy (`config.retry`) is unchanged for
+real completions.
+
 ### Live Smoke Test
 
 Health endpoints do not prove a deliberation works. After a deploy (or whenever

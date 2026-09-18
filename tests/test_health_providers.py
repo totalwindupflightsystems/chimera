@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -37,7 +38,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from chimera.api.server import _check_providers, create_app  # noqa: E402
 from chimera.config import ChimeraConfig, ServerConfig  # noqa: E402
 from chimera.engine import Engine  # noqa: E402
-from chimera.gateway import GatewayResponse, _build_response  # noqa: E402
+from chimera.gateway import GatewayResponse, LiteLLMGateway, _build_response  # noqa: E402
 from tests.conftest import FakeGateway  # noqa: E402
 
 
@@ -46,6 +47,7 @@ def _config(
     models: dict[str, str],
     health_timeout_s: float = 5.0,
     api_keys: dict[str, str] | None = None,
+    retry: dict[str, Any] | None = None,
 ) -> ChimeraConfig:
     """Build a minimal config mapping model name → provider name."""
     first_model = next(iter(models))
@@ -69,6 +71,8 @@ def _config(
             "health_timeout_s": health_timeout_s,
         },
     }
+    if retry is not None:
+        cfg_dict["retry"] = retry
     cfg = ChimeraConfig.model_validate(cfg_dict)
     if api_keys:
         cfg.api_keys.update(api_keys)
@@ -86,12 +90,20 @@ class _StatusError(RuntimeError):
 #: The INT-ZAI-001 quota/billing prose (litellm.RateLimitError), verbatim.
 _QUOTA_MESSAGE = "Insufficient balance or no resource package. Please recharge."
 
+#: The measured z.ai quota-exhaustion condition (DF-CHIMERA-V2-16, 2026-09-18):
+#: http=429 in 0.93-1.30 s with this body while the account is exhausted.
+_ZAI_QUOTA_MESSAGE = (
+    "litellm.RateLimitError: Weekly/Monthly Limit Exhausted. "
+    "Your limit will reset at 2026-09-20 04:07:32"
+)
+
 
 class _ProbeGateway:
     """Scriptable gateway: per-model behavior + recorded probe calls."""
 
     def __init__(self, behavior: dict[str, str]) -> None:
         # model name → "ok" | "slow" | "auth" | "api" | "quota" | "quota_msg"
+        #            | "zai_quota"
         self.behavior = behavior
         self.calls: list[tuple[str, list[dict[str, str]]]] = []
         self.kwargs_seen: list[dict[str, object]] = []
@@ -120,6 +132,10 @@ class _ProbeGateway:
             raise _StatusError("RateLimitError: rate limited", status_code=429)
         if action == "quota_msg":
             raise RuntimeError(_QUOTA_MESSAGE)
+        if action == "zai_quota":
+            # The measured DF-CHIMERA-V2-16 condition: a real 429 + the
+            # provider's own reset prose.
+            raise _StatusError(_ZAI_QUOTA_MESSAGE, status_code=429)
         raise AssertionError(f"unknown behavior {action!r}")
 
 
@@ -390,6 +406,120 @@ def test_quota_message_without_status_code_class() -> None:
     # The provider's own words survive into the operator-facing detail.
     assert "recharge" in info["error"]
     assert info["model_tested"] == "prov/a"
+
+
+# --------------------------------------------------------------------------- #
+# DF-CHIMERA-V2-16: a quota-exhausted provider is reported as quota, not timeout
+# --------------------------------------------------------------------------- #
+
+#: The body z.ai returns while the account is quota-exhausted (measured
+#: 2026-09-18: http=429, 0.93-1.30 s, while the retry ladder took 10.17-17.01 s).
+_ZAI_QUOTA_BODY = (
+    "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-09-20 04:07:32"
+)
+
+
+def _zai_quota_rate_limit_error() -> Exception:
+    """The measured zai 429 as ``litellm`` raises it — real class, no network.
+
+    ``litellm.RateLimitError`` is an ``APIStatusError``: it carries
+    ``status_code=429``, and its ``str()`` is
+    ``"litellm.RateLimitError: <provider body>"``.  That combination is what
+    the probe must classify from, instead of counting tries until the shared
+    health budget expires.
+    """
+    import httpx
+    import litellm
+
+    request = httpx.Request(
+        "POST", "https://api.z.ai/api/coding/paas/v4/chat/completions",
+    )
+    response = httpx.Response(
+        429, request=request, json={"error": {"code": "1310", "message": _ZAI_QUOTA_BODY}},
+    )
+    return litellm.RateLimitError(
+        message=_ZAI_QUOTA_BODY,
+        llm_provider="openai",
+        model="glm-5.2",
+        response=response,
+    )
+
+
+def test_zai_quota_429_reports_quota_with_provider_message() -> None:
+    """DF-CHIMERA-V2-16 (criterion 2): quota, with the provider's own reset time.
+
+    One upstream attempt per model means the fast 429 is what the probe sees:
+    the verdict is ``quota`` (not the ``timeout`` the retry ladder fabricated),
+    ``model_tested`` names the last model tried, and the operator reads z.ai's
+    own words plus the reset timestamp.
+    """
+    models = {
+        "zai-coding-plan/glm-5.2": "zai",
+        "z-ai/glm-5": "zai",
+        "z-ai/glm-5-turbo": "zai",
+    }
+    cfg = _config(
+        models=models, api_keys={"zai": "sk-test"}, health_timeout_s=0.5,
+    )
+    gw = _ProbeGateway(dict.fromkeys(models, "zai_quota"))
+    status = asyncio.run(_check_providers(cfg, gw))
+
+    info = status["zai"]
+    assert info["healthy"] is False
+    assert info["error_class"] == "quota"
+    assert info["model_tested"] == "z-ai/glm-5-turbo"
+    assert "Weekly/Monthly Limit Exhausted" in info["error"]
+    assert "2026-09-20 04:07:32" in info["error"]
+    assert "timeout: no response within" not in info["error"]
+    assert info["error"].startswith("quota:")
+    # quota stays NON-terminal: all three models were probed (3 calls, not 1).
+    assert [m for m, _ in gw.calls] == [
+        "zai-coding-plan/glm-5.2", "z-ai/glm-5", "z-ai/glm-5-turbo",
+    ]
+
+
+def test_real_gateway_zai_quota_is_quota_not_timeout_offline() -> None:
+    """DF-CHIMERA-V2-16 end-to-end over the REAL gateway, no network.
+
+    ``litellm.acompletion`` is patched to raise the measured zai 429, the
+    retry policy stays at 3 attempts with 500/1000 ms backoff, and the health
+    budget is a deliberately tight 0.5 s.  Before the fix the ladder slept
+    through that budget and ``/v1/health`` read ``timeout: no response within
+    0.5s`` (no ``model_tested``); with one attempt per model the probe reports
+    the provider's own verdict, and exactly one upstream call happens per
+    model.
+    """
+    models = {
+        "zai-coding-plan/glm-5.2": "zai",
+        "z-ai/glm-5": "zai",
+        "z-ai/glm-5-turbo": "zai",
+    }
+    cfg = _config(
+        models=models,
+        api_keys={"zai": "sk-test"},
+        health_timeout_s=0.5,
+        retry={"max_attempts": 3, "base_delay_ms": 500, "max_delay_ms": 1000},
+    )
+    exc = _zai_quota_rate_limit_error()
+    attempts: list[str] = []
+
+    def _always_429(**kwargs: Any) -> Any:
+        attempts.append(str(kwargs.get("model")))
+        raise exc
+
+    gw = LiteLLMGateway(cfg)
+    with patch("litellm.acompletion", side_effect=_always_429):
+        status = asyncio.run(_check_providers(cfg, gw))
+
+    info = status["zai"]
+    assert info["healthy"] is False
+    assert info["error_class"] == "quota"
+    assert info["model_tested"] == "z-ai/glm-5-turbo"
+    assert "Weekly/Monthly Limit Exhausted" in info["error"]
+    assert "2026-09-20 04:07:32" in info["error"]
+    assert "timeout: no response within" not in info["error"]
+    # ONE attempt per model: 3 models → 3 upstream calls, never 3x3.
+    assert len(attempts) == 3
 
 
 def test_timeout_error_does_not_retry_next_model() -> None:
