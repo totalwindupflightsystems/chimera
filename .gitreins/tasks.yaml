@@ -1224,3 +1224,43 @@ tasks:
   status: complete
   created_at: '2026-09-18T18:55:49.092890+00:00'
   completed_at: '2026-09-18T19:12:21.295710+00:00'
+- id: DF-CHIMERA-V2-16
+  title: 'Health probe mislabels a quota-exhausted provider as timeout: retry ladder
+    burns the 10s probe budget so the provider''s own 429 never surfaces'
+  criteria:
+  - 'A probe call makes exactly one upstream attempt per model: chimera.gateway.LiteLLMGateway.complete
+    with probe=True returns or raises after a single litellm call, so a retryable
+    provider error (HTTP 429 / litellm.RateLimitError) no longer sleeps and re-issues
+    the request. Proven by a unit test that injects a failing litellm call and asserts
+    the call counter is 1 and no sleep helper was awaited.'
+  - 'Running chimera.api.server._check_providers offline with a gateway stub whose
+    first model raises the measured zai condition (litellm RateLimitError carrying
+    status_code 429 and the message Weekly/Monthly Limit Exhausted) reports that provider
+    as healthy=False with error_class == quota, a non-empty model_tested, and an error
+    string that contains the provider''s own message text and the reset timestamp
+    - NOT the string timeout: no response within. Proven by a hermetic test in tests/test_health_providers.py
+    with no network access.'
+  - 'The retry ladder is unchanged for non-probe calls: a non-probe completion that
+    raises a retryable error is still retried up to config.retry.max_attempts times
+    and a non-probe 401/403 still short-circuits without retry. Proven by unit tests
+    asserting attempt counts for both paths against a fake litellm completion.'
+  - chimera.gateway.GatewayError carries the status_code of the exception it wraps
+    when the provider error exposed one, so a caller can classify the failure without
+    string matching. Proven by a unit test that raises a 429-carrying provider error
+    through a non-probe completion and asserts isinstance(exc, GatewayError) and exc.status_code
+    == 429, plus a second assertion that a provider error with no status code leaves
+    the attribute None.
+  - 'Measured on the live zai provider: one probe call to a zai catalog model returns
+    in under about 3 seconds instead of the measured 10.17 to 17.01 seconds before
+    the fix, and the resulting /v1/health entry for zai reads error_class quota with
+    the provider''s own Weekly/Monthly Limit Exhausted text and its reset timestamp,
+    while the remaining providers keep their previous shape. Evidence is the command
+    output pasted into the commit message or the board row, not a claim.'
+  - The full hermetic suite passes (pytest tests/ excluding tests/integration and
+    tests/compat), ruff reports clean, tests/test_docs_index.py stays green, and the
+    changed behavior is documented where the error_class vocabulary is already documented
+    (README.md and docs/USAGE.md) - including that a health probe is one attempt per
+    model. No new dependency is added.
+  status: complete
+  created_at: '2026-09-18T19:41:15.721634+00:00'
+  completed_at: '2026-09-18T19:57:05.833428+00:00'
