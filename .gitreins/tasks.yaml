@@ -1101,3 +1101,25 @@ tasks:
   status: complete
   created_at: '2026-09-18T00:39:01.164534+00:00'
   completed_at: '2026-09-18T00:57:27.875153+00:00'
+- id: CLN-1
+  title: 'Repo hygiene: remove tracked foreman scratch junk, close the artifact-ignore
+    gaps, and document the repo-root layout'
+  criteria:
+  - The four tracked root scratch files (_foreman_check_duckbrain.py, _foreman_check_scheduler.py,
+    _foreman_set_cooldown.py, _foreman_verify_cooldown.py) are deleted from the tree
+    and the index; git grep at HEAD for those names returns zero hits and nothing
+    under tests/, .github/, scripts/ or docs/ references them
+  - '.gitignore covers the artifact classes proven live at tick open: .gitreins/logs/,
+    dagger.db-wal, dagger.db-shm, .vfs/graph/.parse_cache.json, .vfs/graph/.last_reconcile
+    - git check-ignore -v names a rule for each'
+  - 'An offline stdlib regression test asserts the hygiene contract: no tracked repo-root
+    entry matches the foreman scratch pattern and the known artifact paths are ignored;
+    the test fails on the pre-fix tree'
+  - AGENTS.md records the tracked repo-root layout and the intentional local-only
+    exceptions (chimera.yaml, .vfs, .gitreins, .coding-hermes, .memory-bank) so a
+    reader can tell junk from intentional
+  - Full suite green with no new failures (.venv/bin/python -m pytest -q) including
+    tests/test_docs_index.py; no stray untracked local artifact is deleted
+  status: complete
+  created_at: '2026-09-18T02:52:14.146602+00:00'
+  completed_at: '2026-09-18T03:14:24.283356+00:00'
