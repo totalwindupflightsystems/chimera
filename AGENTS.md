@@ -96,6 +96,45 @@ and prints the merged answer. Exit 0 = merged answer received; exit 1 =
 failure with an actionable message (auth/formation/busy/provider hints);
 exit 2 = usage error. Stdlib-only, no extra dependencies.
 
+### Pushing to the public mirror (workflow-touching commits)
+
+Two remotes are configured: `origin` (the private GitLab primary) and `github`
+(the PUBLIC mirror). The `github` push path is an HTTPS URL whose credential is
+a `gh` OAuth app with scopes `repo, read:org, gist`, and GitHub enforces the
+workflow scope at RECEIVE time — so any commit that touches
+`.github/workflows/` is rejected server-side, no matter that every local gate
+passed:
+
+    ! [remote rejected] main -> main (refusing to allow an OAuth App to create
+      or update workflow .github/workflows/ci.yml without `workflow` scope)
+
+That token cannot be widened in place, so the HTTPS push can never succeed for
+such a commit; the rejection is easy to miss and the mirror drifts behind. The
+same account authenticates over SSH — re-push the SAME commit over the SSH URL:
+
+```bash
+git push git@github.com:totalwindupflightsystems/chimera.git main
+```
+
+`scripts/push_remotes.py` (stdlib-only) does this for every remote: it pushes,
+retries ONCE over the derived SSH URL exactly on that rejection, then verifies
+ref parity. Use it instead of hand-picking a remote; `--dry-run` prints the
+exact commands (including the fallback) without pushing anything:
+
+```bash
+python scripts/push_remotes.py --dry-run     # plan only: no push, no ls-remote
+python scripts/push_remotes.py               # every remote; exit 0 = pushed + parity
+python scripts/push_remotes.py --remote github --branch main
+```
+
+Then run the parity check the helper enforces — the mirror is behind until its
+`refs/heads/main` equals local `HEAD` (the read path is unaffected by the
+missing workflow scope):
+
+```bash
+git ls-remote github refs/heads/main   # must equal: git rev-parse HEAD
+```
+
 ---
 
 ## GitReins Quality Harness (MANDATORY)
