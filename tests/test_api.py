@@ -482,6 +482,84 @@ def test_deliberate_trace_worker_failures_empty_when_healthy(config) -> None:  #
     assert r.json()["trace"]["worker_failures"] == []
 
 
+# --------------------------------------------------------------------------- #
+# DF-CHIMERA-V2-5: dispatcher repairs are machine-readable in the trace
+# --------------------------------------------------------------------------- #
+
+#: The malformed auto DAG a real dogfood run produced: both workers, but the
+#: aggregator only in ``edges`` (CH-GAP-044). The dispatcher repairs it in
+#: place (source stays ``auto``) and records what it patched.
+_PHANTOM_EDGE_DISPATCH = {
+    "formation": {
+        "stages": [
+            {"id": "worker_1", "kind": "worker",
+             "model": "deepseek/deepseek-chat", "depends_on": []},
+            {"id": "worker_2", "kind": "worker",
+             "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+        ],
+        "edges": [["worker_1", "aggregator"], ["worker_2", "aggregator"]],
+    },
+    "worker_prompts": [
+        {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
+         "prompt": "Custom subtask for worker_1", "expected_output_schema": None},
+        {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
+         "prompt": "Custom subtask for worker_2", "expected_output_schema": None},
+    ],
+    "aggregator_instructions": "",
+    "stage_instructions": {},
+}
+
+
+def _repaired_dispatch(model, messages, response_format=None, **kw):  # type: ignore[no-untyped-def]
+    """Dispatcher emits a repairable DAG; every stage then succeeds."""
+    if response_format is not None:
+        return _resp(json.dumps(_PHANTOM_EDGE_DISPATCH), model, 10, 10)
+    joined = json.dumps(messages)
+    if "Upstream outputs" in joined:
+        return _resp("REAL MERGED ANSWER", model, 60, 90)
+    return _resp(f"worker {model}", model, 20, 40)
+
+
+def test_deliberate_trace_serializes_dispatch_repairs(config) -> None:  # type: ignore[no-untyped-def]
+    """DF-CHIMERA-V2-5: API consumers get the repair provenance structured.
+
+    The free-form ``dispatch_note`` stays for humans; an API/SDK consumer must
+    be able to tell what the dispatcher patched without parsing prose — the
+    same fact is serialized as ``trace.dispatch_repairs``.
+    """
+    client = _client_with(config, _repaired_dispatch)
+    r = client.post("/v1/deliberate", json={"prompt": "hello", "formation": "auto"})
+    assert r.status_code == 200, r.text
+    trace = r.json()["trace"]
+
+    assert trace["source"] == "auto"  # a repair, not a silent fallback
+    assert "repaired" in trace["dispatch_note"]
+    assert trace["dispatch_repairs"] == [
+        {
+            "kind": "missing_edge_target",
+            "action": "injected_stage",
+            "stage_ids": ["aggregator"],
+            "depends_on": ["worker_1", "worker_2"],
+            "reason": trace["dispatch_note"],
+        }
+    ]
+    # The injected stage really ran: the trace has the aggregator span.
+    assert {s["stage_id"] for s in trace["stages"]} == {
+        "worker_1", "worker_2", "aggregator",
+    }
+
+
+def test_deliberate_trace_dispatch_repairs_empty_when_healthy(config) -> None:  # type: ignore[no-untyped-def]
+    """A clean dispatch serializes a stable empty list, never an invented one."""
+    client = _client(config)
+    r = client.post("/v1/deliberate", json={"prompt": "hello", "formation": "auto"})
+    assert r.status_code == 200, r.text
+    trace = r.json()["trace"]
+    assert trace["source"] == "auto"
+    assert trace["dispatch_note"] is None
+    assert trace["dispatch_repairs"] == []
+
+
 def test_chat_completions_unknown_model_returns_404(config) -> None:  # type: ignore[no-untyped-def]
     """OpenAI-compat contract: unknown model is a hard error (CH-GAP-027).
 

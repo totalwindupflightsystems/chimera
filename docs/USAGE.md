@@ -71,8 +71,8 @@ chimera --json run "Compare React and Vue"
 The `trace` value is the complete trace serialization
 (`DeliberationTrace.model_dump(mode="json")`) — every field the REST API
 returns, including `dispatch`, `stages`, `worker_failures`, `dispatch_note`,
-token and cost totals. Unicode is preserved (`ensure_ascii=False`), so
-`café` is written as `café`, never `caf\u00e9`.
+`dispatch_repairs`, token and cost totals. Unicode is preserved
+(`ensure_ascii=False`), so `café` is written as `café`, never `caf\u00e9`.
 
 Streams and exit codes:
 
@@ -91,8 +91,8 @@ Notes:
 - Operational truth is never hidden: the dropped-worker and
   dispatch-degradation/repair warnings that human mode prints beside the
   panel are written to **stderr** in the machine modes (the JSON's
-  `trace.worker_failures` / `trace.dispatch_note` carry the same facts
-  machine-readably).
+  `trace.worker_failures` / `trace.dispatch_note` / `trace.dispatch_repairs`
+  carry the same facts machine-readably).
 - `--verbose` is ignored under `--quiet` / `--json` — the trace is already in
   the JSON, and `--quiet` stays a single line.
 - The flags govern DELIBERATION output (the `run` path). `chimera models` and

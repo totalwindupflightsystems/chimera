@@ -38,6 +38,7 @@ pytest.importorskip("click")
 from click.testing import CliRunner  # noqa: E402
 
 from chimera.cli.main import main  # noqa: E402
+from chimera.dispatcher import DispatchRepair  # noqa: E402
 from chimera.engine import (  # noqa: E402
     DeliberationResult,
     DeliberationTrace,
@@ -77,6 +78,7 @@ def _result(
     *,
     source: str = "auto",
     dispatch_note: str | None = None,
+    dispatch_repairs: list[DispatchRepair] | None = None,
     worker_failures: list[WorkerFailure] | None = None,
 ) -> DeliberationResult:
     """A REAL pydantic result (not a SimpleNamespace) — so ``--json`` is
@@ -92,6 +94,7 @@ def _result(
         total_cost=0.001,
         total_duration_ms=42,
         dispatch_note=dispatch_note,
+        dispatch_repairs=dispatch_repairs or [],
         worker_failures=worker_failures or [],
     )
     return DeliberationResult(answer=answer, trace=trace)
@@ -352,6 +355,79 @@ def test_json_has_no_rich_panel_or_trace_table(config_file, monkeypatch) -> None
     assert json.loads(result.stdout)["answer"] == "42"
     assert "full trace json" not in result.stdout
     assert "total:" not in result.stdout
+
+
+#: The dispatcher's REAL repair note (``dispatcher.py`` writes the prefix).
+_REPAIR_NOTE = "repaired: added aggregator stage for 2 worker terminals"
+
+
+def test_json_carries_structured_dispatch_repairs(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """DF-CHIMERA-V2-5: machine-readable repair provenance reaches CLI JSON.
+
+    A repaired dispatch used to reach ``--json`` consumers as an opaque
+    free-form ``dispatch_note``; the structured ``dispatch_repairs`` list is
+    now part of the trace they receive.
+    """
+    _stub_engine(
+        monkeypatch,
+        _result(
+            "42",
+            source="auto",
+            dispatch_note=_REPAIR_NOTE,
+            dispatch_repairs=[
+                DispatchRepair(
+                    kind="missing_aggregator",
+                    action="appended_aggregator",
+                    stage_ids=["aggregator"],
+                    depends_on=["worker_1", "worker_2"],
+                    reason=_REPAIR_NOTE,
+                )
+            ],
+        ),
+    )
+
+    result = _invoke(config_file, "--json", "hello")
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["trace"]["dispatch_note"] == _REPAIR_NOTE
+    assert payload["trace"]["dispatch_repairs"] == [
+        {
+            "kind": "missing_aggregator",
+            "action": "appended_aggregator",
+            "stage_ids": ["aggregator"],
+            "depends_on": ["worker_1", "worker_2"],
+            "reason": _REPAIR_NOTE,
+        }
+    ]
+
+
+def test_verbose_trace_json_includes_dispatch_repairs(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """``--verbose``'s full-trace JSON panel shows the repair provenance."""
+    _stub_engine(
+        monkeypatch,
+        _result(
+            "42",
+            source="auto",
+            dispatch_note=_REPAIR_NOTE,
+            dispatch_repairs=[
+                DispatchRepair(
+                    kind="missing_aggregator",
+                    action="appended_aggregator",
+                    stage_ids=["aggregator"],
+                    depends_on=["worker_1", "worker_2"],
+                    reason=_REPAIR_NOTE,
+                )
+            ],
+        ),
+    )
+
+    result = _invoke(config_file, "--verbose", "hello")
+
+    assert result.exit_code == 0, result.output
+    assert "full trace json" in result.stdout
+    assert '"dispatch_repairs"' in result.stdout
+    assert "missing_aggregator" in result.stdout
 
 
 # ---------------------------------------------------------------------------

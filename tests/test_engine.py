@@ -1186,6 +1186,76 @@ async def test_phantom_edge_aggregator_repaired_not_fallback(config) -> None:  #
 
 
 @pytest.mark.asyncio
+async def test_trace_carries_structured_dispatch_repairs(config) -> None:  # type: ignore[no-untyped-def]
+    """DF-CHIMERA-V2-5: the trace exposes the repair provenance structurally.
+
+    ``dispatch_note`` is prose for humans; API/SDK trace consumers get the same
+    repair as a ``DispatchRepair`` on ``trace.dispatch_repairs`` (kind /
+    action / stage_ids / depends_on / reason), so "what was patched" is
+    readable without parsing a free-form string.
+    """
+    payload = json.dumps({
+        "formation": {
+            "stages": [
+                {"id": "worker_1", "kind": "worker",
+                 "model": "deepseek/deepseek-chat", "depends_on": []},
+                {"id": "worker_2", "kind": "worker",
+                 "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+            ],
+            "edges": [["worker_1", "aggregator"], ["worker_2", "aggregator"]],
+        },
+        "worker_prompts": [
+            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
+             "prompt": "Custom subtask for worker_1", "expected_output_schema": None},
+            {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
+             "prompt": "Custom subtask for worker_2", "expected_output_schema": None},
+        ],
+        "aggregator_instructions": "",
+        "stage_instructions": {},
+    })
+    gw = FakeGateway(_engine_responder(config, payload=payload))
+    result = await Engine(config, gw).deliberate("Design + build a service", "auto")
+
+    assert result.trace.source == "auto"
+    assert result.trace.dispatch_note is not None
+    repairs = result.trace.dispatch_repairs
+    assert len(repairs) == 1
+    repair = repairs[0]
+    assert repair.kind == "missing_edge_target"
+    assert repair.action == "injected_stage"
+    assert repair.stage_ids == ["aggregator"]
+    assert repair.depends_on == ["worker_1", "worker_2"]
+    assert repair.reason == result.trace.dispatch_note
+
+    # The serialized trace (what the API/SDK layer returns) carries it too.
+    dumped = json.loads(result.trace.model_dump_json())
+    assert dumped["dispatch_repairs"] == [
+        {
+            "kind": "missing_edge_target",
+            "action": "injected_stage",
+            "stage_ids": ["aggregator"],
+            "depends_on": ["worker_1", "worker_2"],
+            "reason": dumped["dispatch_note"],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_trace_dispatch_repairs_empty_when_clean_or_fallback(config) -> None:  # type: ignore[no-untyped-def]
+    """No repair ran → a stable empty list on the trace, never an invented one."""
+    gw = FakeGateway(_engine_responder(config))
+    result = await Engine(config, gw).deliberate("task", "auto")
+    assert result.trace.dispatch_note is None
+    assert result.trace.dispatch_repairs == []
+    assert json.loads(result.trace.model_dump_json())["dispatch_repairs"] == []
+
+    gw_fallback = FakeGateway(_engine_responder(config, payload="this is not json {{{"))
+    result_fallback = await Engine(config, gw_fallback).deliberate("task", "auto")
+    assert result_fallback.trace.source == "fallback"
+    assert result_fallback.trace.dispatch_repairs == []
+
+
+@pytest.mark.asyncio
 async def test_trace_surfaces_fallback_reason(config) -> None:  # type: ignore[no-untyped-def]
     """A malformed dispatcher payload falls back with a visible trace note."""
     gw = FakeGateway(_engine_responder(config, payload="this is not json {{{"))

@@ -159,6 +159,31 @@ class WorkerPrompt(BaseModel):
     expected_output_schema: dict[str, Any] | None = None
 
 
+class DispatchRepair(BaseModel):
+    """Structured provenance for one non-fatal repair of a dispatcher DAG.
+
+    ``dispatch_note`` stays the human-readable summary (the CLI renders it
+    unchanged); this record is its machine-readable counterpart, so API/SDK
+    trace consumers can tell *what* was repaired without parsing prose
+    (DF-CHIMERA-V2-5).
+    """
+
+    kind: str
+    """What was malformed: ``"missing_edge_target"`` (an ``edges`` entry
+    referenced a stage absent from ``stages``) or ``"missing_aggregator"``
+    (a worker-only DAG carried no aggregator/merge/audit stage)."""
+    action: str
+    """What the repair did: ``"injected_stage"`` (added the stage the edges
+    referenced) or ``"appended_aggregator"`` (added an aggregator over the
+    terminal workers)."""
+    stage_ids: list[str] = Field(default_factory=list)
+    """Ids of the stages the repair introduced into the formation."""
+    depends_on: list[str] = Field(default_factory=list)
+    """Ids of the pre-existing stages the introduced stages were wired to."""
+    reason: str
+    """Human-readable detail — the same wording as ``dispatch_note``."""
+
+
 class DispatchResult(BaseModel):
     """What the dispatcher produces in one call."""
 
@@ -174,6 +199,9 @@ class DispatchResult(BaseModel):
     dispatch_note: str | None = None
     """Non-fatal dispatch annotation (e.g. ``"repaired: added aggregator stage
     for 2 worker terminals"``). ``None`` when nothing notable happened."""
+    dispatch_repairs: list[DispatchRepair] = Field(default_factory=list)
+    """Structured form of the repairs summarised by ``dispatch_note`` — empty
+    for a clean dispatch and for a fallback (no repair runs on either)."""
 
     def worker_prompt_for(self, stage_id: str) -> WorkerPrompt | None:
         for wp in self.worker_prompts:
@@ -716,6 +744,15 @@ def _repair_missing_edge_targets(
         f"referenced by dispatcher edges but missing from stages "
         f"({n} edge target{'s' if n != 1 else ''})"
     )
+    result.dispatch_repairs.append(
+        DispatchRepair(
+            kind="missing_edge_target",
+            action="injected_stage",
+            stage_ids=list(missing),
+            depends_on=sorted({src for src, tgt in dag.edges if tgt in missing and src in ids}),
+            reason=result.dispatch_note,
+        )
+    )
     log.info("dispatch_repaired_missing_edge_targets", injected=missing)
 
 
@@ -751,6 +788,15 @@ def _repair_missing_aggregator(
     n = len(terminal_worker_ids)
     result.dispatch_note = (
         f"repaired: added aggregator stage for {n} worker terminal{'s' if n != 1 else ''}"
+    )
+    result.dispatch_repairs.append(
+        DispatchRepair(
+            kind="missing_aggregator",
+            action="appended_aggregator",
+            stage_ids=[aggregator.id],
+            depends_on=list(terminal_worker_ids),
+            reason=result.dispatch_note,
+        )
     )
     log.info("dispatch_repaired_missing_aggregator", terminals=terminal_worker_ids)
 

@@ -27,6 +27,7 @@ from chimera.config import (
 from chimera.dispatcher import (
     Dispatcher,
     DispatchOutcome,
+    DispatchRepair,
     DispatchResult,
     FormationDAG,
     Stage,
@@ -70,6 +71,7 @@ __all__ = [
     "DeliberationResult",
     "DeliberationTrace",
     "DispatchOutcome",
+    "DispatchRepair",
     "DispatchResult",
     "Dispatcher",
     "Engine",

@@ -30,6 +30,7 @@ from chimera.config import (
 from chimera.dispatcher import (
     Dispatcher,
     DispatchOutcome,
+    DispatchRepair,
     DispatchResult,
     FormationDAG,
     Stage,
@@ -143,6 +144,12 @@ class DeliberationTrace(BaseModel):
     """Dispatch fallback reason or repair note (e.g. ``"malformed_json"``,
     ``"repaired: added aggregator stage for 2 worker terminals"``). ``None``
     for a clean auto/preset/custom dispatch."""
+    dispatch_repairs: list[DispatchRepair] = Field(default_factory=list)
+    """Machine-readable form of the repairs summarised by ``dispatch_note``:
+    one :class:`~chimera.dispatcher.DispatchRepair` per structural repair the
+    dispatcher applied (kind, action, stage ids, reason). Empty for a clean
+    dispatch and for a fallback — a fallback discards the design rather than
+    repairing it (DF-CHIMERA-V2-5)."""
     worker_failures: list[WorkerFailure] = Field(default_factory=list)
     """Worker (and other) stages that degraded with an upstream error — the
     machine-readable form of the CLI's dropped-worker warning. Empty when
@@ -1606,6 +1613,7 @@ class Engine:
             total_tokens=total_tokens,
             iteration_count=iteration_count,
             dispatch_note=dispatch.fallback_reason or dispatch.dispatch_note,
+            dispatch_repairs=list(dispatch.dispatch_repairs),
             worker_failures=list(worker_failures or []),
         )
 

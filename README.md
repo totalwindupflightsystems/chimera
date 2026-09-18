@@ -74,7 +74,8 @@ readability — the real trace is the complete `DeliberationTrace` dump):
     "total_cost": 0.012,
     "total_duration_ms": 15234,
     "worker_failures": [],
-    "dispatch_note": null
+    "dispatch_note": null,
+    "dispatch_repairs": []
   }
 }
 ```
@@ -82,6 +83,13 @@ readability — the real trace is the complete `DeliberationTrace` dump):
 The `trace` value is the COMPLETE trace serialization (`model_dump(mode="json")`)
 — the same object the REST API returns. Unicode answers are preserved
 (`ensure_ascii=False`), so `café` stays `café`.
+
+When the dispatcher had to repair a malformed auto DAG (an `edges` entry
+pointing at a stage missing from `stages`, or a worker-only DAG with no
+aggregator), `trace.dispatch_note` carries the human-readable summary and
+`trace.dispatch_repairs` carries the same fact in machine-readable form — one
+record per repair with `kind`, `action`, `stage_ids`, `depends_on` and
+`reason`. Clean dispatches and fallbacks serialize `[]`.
 
 Operational warnings are never suppressed: dropped-worker and
 dispatch-degradation/repair warnings (which the human mode prints next to the

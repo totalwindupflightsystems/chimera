@@ -7,6 +7,7 @@ with a scripted gateway.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -16,6 +17,7 @@ from chimera.config import FormationPreset
 from chimera.dispatcher import (
     Dispatcher,
     DispatchOutcome,
+    DispatchRepair,
     FormationDAG,
     Stage,
     _repair_formation,
@@ -955,6 +957,146 @@ def test_parse_dispatch_result_repairs_missing_non_aggregator_edge_target(config
     assert reviewer.depends_on == ["worker_1"]
     assert result.dispatch_note is not None
     assert "reviewer" in result.dispatch_note
+
+
+# --------------------------------------------------------------------------- #
+# DF-CHIMERA-V2-5: structured repair provenance
+# --------------------------------------------------------------------------- #
+# ``dispatch_note`` is prose for humans. API/SDK trace consumers need the
+# machine-readable counterpart, so every repair appends a ``DispatchRepair``
+# (kind / action / stage_ids / depends_on / reason) to
+# ``DispatchResult.dispatch_repairs`` — empty for a clean dispatch and for a
+# fallback, which discards the design instead of repairing it.
+# --------------------------------------------------------------------------- #
+
+
+def _worker_only_payload(*, edges: list[list[str]]) -> dict[str, Any]:
+    """A dispatcher payload with two worker stages and no aggregator stage."""
+    return {
+        "formation": {
+            "stages": [
+                {"id": "worker_1", "kind": "worker",
+                 "model": "deepseek/deepseek-chat", "depends_on": []},
+                {"id": "worker_2", "kind": "worker",
+                 "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+            ],
+            "edges": edges,
+        },
+        "worker_prompts": [
+            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
+             "prompt": "Custom subtask for worker_1", "expected_output_schema": None},
+            {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
+             "prompt": "Custom subtask for worker_2", "expected_output_schema": None},
+        ],
+        "aggregator_instructions": "",
+        "stage_instructions": {},
+    }
+
+
+def test_dispatch_repairs_records_missing_edge_target(config) -> None:  # type: ignore[no-untyped-def]
+    """The phantom-edge repair is exposed as a structured DispatchRepair."""
+    raw = _worker_only_payload(edges=[["worker_1", "aggregator"], ["worker_2", "aggregator"]])
+    result = parse_dispatch_result(raw, config)
+
+    assert result.source == "auto"
+    assert result.fallback_reason is None
+    assert len(result.dispatch_repairs) == 1
+    repair = result.dispatch_repairs[0]
+    assert isinstance(repair, DispatchRepair)
+    assert repair.kind == "missing_edge_target"
+    assert repair.action == "injected_stage"
+    assert repair.stage_ids == ["aggregator"]
+    assert repair.depends_on == ["worker_1", "worker_2"]
+    # ``reason`` carries exactly the human-readable note (one source of truth).
+    assert repair.reason == result.dispatch_note
+    assert "repaired" in repair.reason
+    # JSON-serializable: the shape API/web/SDK consumers actually receive.
+    assert json.loads(result.model_dump_json())["dispatch_repairs"] == [
+        {
+            "kind": "missing_edge_target",
+            "action": "injected_stage",
+            "stage_ids": ["aggregator"],
+            "depends_on": ["worker_1", "worker_2"],
+            "reason": result.dispatch_note,
+        }
+    ]
+
+
+def test_dispatch_repairs_records_missing_aggregator(config) -> None:  # type: ignore[no-untyped-def]
+    """A worker-only DAG records the appended aggregator, not a fallback."""
+    result = parse_dispatch_result(_worker_only_payload(edges=[]), config)
+
+    assert result.source == "auto"
+    assert result.fallback_reason is None
+    assert len(result.dispatch_repairs) == 1
+    repair = result.dispatch_repairs[0]
+    assert repair.kind == "missing_aggregator"
+    assert repair.action == "appended_aggregator"
+    assert repair.stage_ids == ["aggregator"]
+    assert repair.depends_on == ["worker_1", "worker_2"]
+    assert repair.reason == result.dispatch_note
+    assert "repaired" in repair.reason
+
+
+def test_dispatch_repairs_record_non_aggregator_edge_target(config) -> None:  # type: ignore[no-untyped-def]
+    """A missing non-aggregator edge target is recorded with the same kind."""
+    raw = {
+        "formation": {
+            "stages": [
+                {"id": "worker_1", "kind": "worker",
+                 "model": "deepseek/deepseek-chat", "depends_on": []},
+                {"id": "aggregator", "kind": "aggregator",
+                 "model": "zai-coding-plan/glm-5.2", "depends_on": ["worker_1"]},
+            ],
+            "edges": [["worker_1", "aggregator"], ["worker_1", "reviewer"]],
+        },
+        "worker_prompts": [],
+        "aggregator_instructions": "Merge.",
+        "stage_instructions": {},
+    }
+    result = parse_dispatch_result(raw, config)
+
+    assert result.source == "auto"
+    assert len(result.dispatch_repairs) == 1
+    repair = result.dispatch_repairs[0]
+    assert repair.kind == "missing_edge_target"
+    assert repair.stage_ids == ["reviewer"]
+    assert repair.depends_on == ["worker_1"]
+    assert "reviewer" in repair.reason
+
+
+def test_dispatch_repairs_empty_on_clean_dispatch(config) -> None:  # type: ignore[no-untyped-def]
+    """A clean parse invents no provenance — a stable empty list, not None."""
+    result = parse_dispatch_result(dispatch_json(), config)
+
+    assert result.source == "auto"
+    assert result.dispatch_note is None
+    assert result.dispatch_repairs == []
+    assert json.loads(result.model_dump_json())["dispatch_repairs"] == []
+
+
+def test_dispatch_repairs_empty_on_fallback(config) -> None:  # type: ignore[no-untyped-def]
+    """A fallback discards the design: a reason, but no repair record."""
+    result = parse_dispatch_result("this is not json {{{", config)
+
+    assert result.source == "fallback"
+    assert result.fallback_reason == "malformed_json"
+    assert result.dispatch_repairs == []
+
+
+def test_dispatch_repairs_are_idempotent(config) -> None:  # type: ignore[no-untyped-def]
+    """Re-running the repair neither duplicates records nor rewrites the note."""
+    raw = _worker_only_payload(edges=[["worker_1", "aggregator"], ["worker_2", "aggregator"]])
+    result = parse_dispatch_result(raw, config)
+    repairs_before = [r.model_dump() for r in result.dispatch_repairs]
+    note_before = result.dispatch_note
+
+    _repair_formation(result, config)
+    _repair_formation(result, config)
+
+    assert [r.model_dump() for r in result.dispatch_repairs] == repairs_before
+    assert result.dispatch_note == note_before
+    assert len(result.dispatch_repairs) == 1
 
 
 def test_parse_dispatch_result_malformed_sets_reason(config) -> None:  # type: ignore[no-untyped-def]
