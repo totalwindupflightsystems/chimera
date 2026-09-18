@@ -728,6 +728,83 @@ def models(ctx: click.Context) -> None:
     console.print(detail)
 
 
+#: Top-level distribution names behind the optional ``[server]`` extra
+#: (``pyproject.toml``). Only a missing module from THIS set is converted into
+#: the install remedy — see ``_missing_server_extra`` (INT-PKG-001).
+_SERVER_EXTRA_TOP_LEVEL = frozenset({"fastapi", "uvicorn"})
+
+
+def _missing_server_extra(exc: BaseException) -> bool:
+    """Is *exc* a ``ModuleNotFoundError`` for a ``[server]`` extra dependency?
+
+    INT-PKG-001: the guard is deliberately NARROW. It matches the exception
+    type exactly (a plain ``ImportError`` — e.g. an installed-but-too-old
+    fastapi missing a symbol — keeps its traceback, because "install the
+    extra" is not the remedy for a version mismatch) and compares the
+    TOP-LEVEL name only, with any dotted remainder stripped
+    (``uvicorn.loops`` → ``uvicorn``); the comparison is exact and never a
+    prefix match, so a missing ``fastapi_utils`` is NOT reported as a missing
+    extra. Everything else is a real packaging/code bug whose traceback must
+    survive.
+    """
+    if not isinstance(exc, ModuleNotFoundError):
+        return False
+    top_level = (exc.name or "").partition(".")[0]
+    return top_level in _SERVER_EXTRA_TOP_LEVEL
+
+
+def _import_run_api() -> Any:
+    """Import the REST entry point (``chimera.api.server.run``).
+
+    A one-line seam on purpose: the serve command's missing-extra remedy is
+    only reachable when this import raises, and a bare-install condition
+    cannot be reproduced in a worker venv that has fastapi installed — so the
+    tests drive the remedy through this function instead of uninstalling
+    anything.
+    """
+    from chimera.api.server import run as run_api
+
+    return run_api
+
+
+def _load_run_api() -> Any:
+    """Import the REST entry point, remedying a missing ``[server]`` extra.
+
+    INT-PKG-001: on a bare ``pip install chimera-deliberation`` the serve path
+    died with a raw ``ModuleNotFoundError`` traceback naming fastapi, because
+    ``fastapi``/``uvicorn`` live in the optional ``[server]``/``[full]``
+    extras. A bare install is a missing extra, not a package bug, so it gets
+    the CH-GAP-050 treatment: one actionable ``error:`` line on stderr
+    (``soft_wrap`` keeps it ONE logical line at any terminal width) naming the
+    exact pip remedy, and exit 2.
+
+    Unrelated import failures are re-raised untouched — see
+    ``_missing_server_extra`` for the exact boundary.
+    """
+    try:
+        return _import_run_api()
+    except ModuleNotFoundError as exc:
+        if not _missing_server_extra(exc):
+            raise
+        extras = ", ".join(sorted(_SERVER_EXTRA_TOP_LEVEL))
+        # escape(): the remedy is a literal ``...deliberation[server]`` and
+        # rich would otherwise eat "[server]"/"[full]" as style tags (the
+        # message printed with the extras missing is exactly the failure mode
+        # this command exists to prevent).
+        err_console.print(
+            "[red]error:[/red] "
+            + escape(
+                f"`chimera serve` requires the optional server dependencies "
+                f"({extras}), but {exc.name!r} is not installed. Install them "
+                f"with `pip install chimera-deliberation[server]` (or "
+                f"`pip install chimera-deliberation[full]` for the web UI and "
+                f"MCP extras)."
+            ),
+            soft_wrap=True,
+        )
+        sys.exit(2)
+
+
 @main.command()
 @click.option(
     "--host",
@@ -750,7 +827,10 @@ def serve(ctx: click.Context, host: str | None, port: int | None) -> None:
     # [server] extra (fastapi/uvicorn) is not installed (CH-GAP-050).
     config = _load_cfg(ctx)
 
-    from chimera.api.server import run as run_api
+    # _load_run_api (not a bare import) so the same bare wheel gets the pip
+    # remedy for the missing [server] extra instead of a raw traceback
+    # (INT-PKG-001).
+    run_api = _load_run_api()
 
     host = host or _os.environ.get("CHIMERA_HOST") or config.server.host
     port = port or int(_os.environ.get("CHIMERA_PORT", 0)) or config.server.port

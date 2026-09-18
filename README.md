@@ -305,6 +305,12 @@ sequenceDiagram
 
 ## Server & MCP
 
+`chimera serve` needs the `[server]` extra (`fastapi`/`uvicorn`) — it is part
+of the `[full]` extra too. On a bare `pip install chimera-deliberation` the
+command does not crash with a traceback: it exits 2 with the exact remedy
+(`pip install chimera-deliberation[server]`, or `[full]` for the web UI and MCP
+extras). `chimera serve --help` works either way.
+
 `chimera serve` starts the REST API plus the web UI:
 
 - http://localhost:8765/v1/chat/completions — OpenAI-compatible endpoint
