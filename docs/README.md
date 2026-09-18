@@ -11,6 +11,7 @@
 - [RESILIENCE.md](RESILIENCE.md) — retries, backpressure, format negotiation
 - [FAILURE_RESILIENCE.md](FAILURE_RESILIENCE.md) — partial failures, token limits, budget exhaustion
 - [LOCAL_CI.md](LOCAL_CI.md) — reproduce the hosted CI workflow locally with `act` (runner image pin, per-job commands)
+- [REPO_LAYOUT.md](REPO_LAYOUT.md) — tracked repo-root layout, plus the intentional local-only exceptions (live config, harness state, ignore-rule policy)
 - [model-catalog.yaml](model-catalog.yaml) — generated model catalog: category weights + cost tiers
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — dev setup, tests, PR process
 - [CHANGELOG.md](../CHANGELOG.md) — release history
