@@ -1127,9 +1127,50 @@ def test_release_content_check_wired_into_release_verify(workflow: dict) -> None
 #: The venv interpreter an editable install is exercised through.
 REPO_VENV_PYTHON = REPO / ".venv" / "bin" / "python"
 
+
+def _path_probeable(path: Path) -> bool:
+    """True when ``path`` exists, treating an unreadable component as absent.
+
+    ``Path.exists()`` RAISES PermissionError (OSError) instead of returning
+    False when a path component is not traversable — e.g. a synced .venv whose
+    ``bin/python`` is an absolute symlink into a 0700 home. Evaluated at
+    module import, that interrupts collection for the WHOLE session, so the
+    guard below must skip, never crash (QA-CHIMERA-V2-18).
+    """
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
 requires_repo_venv = pytest.mark.skipif(
-    not REPO_VENV_PYTHON.exists(), reason="the repo .venv (editable install) is required"
+    not _path_probeable(REPO_VENV_PYTHON),
+    reason="the repo .venv (editable install) is required (absent or unreadable)",
 )
+
+
+def test_repo_venv_guard_treats_unreadable_venv_as_absent(tmp_path: Path) -> None:
+    """An unreadable .venv must SKIP the venv-gated tests, never crash collection.
+
+    Regression for QA-CHIMERA-V2-18: the module-level skipif used to probe
+    with bare ``Path.exists()``, which raises PermissionError for a path with
+    an untraversable component (here: a ``bin`` directory with mode 000 — the
+    hermetic stand-in for a synced .venv whose binary lives under a 0700
+    home). The probe must treat unreadable as absent.
+    """
+    readable = tmp_path / "readable"
+    readable.write_bytes(b"")
+    assert _path_probeable(readable) is True
+    assert _path_probeable(tmp_path / "missing") is False
+
+    bin_dir = tmp_path / ".venv" / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "python").write_bytes(b"")
+    bin_dir.chmod(0o000)
+    try:
+        assert _path_probeable(bin_dir / "python") is False
+    finally:
+        bin_dir.chmod(0o755)  # restore BEFORE pytest removes tmp_path
 
 
 def _repo_version() -> str:
