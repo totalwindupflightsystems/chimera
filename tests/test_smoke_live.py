@@ -26,7 +26,11 @@ tests pin the class-aware rendering:
 * C3 — the healthy/total count comes from the payload's provider map, never from
   ``providers_configured`` (regression test for the 9/9 bug);
 * C4 — exit codes unchanged (only the deliberation decides pass/fail), tests
-  hermetic, script stdlib-only.
+  hermetic, script stdlib-only;
+* C5 — proven-healthy counting (CH-GAP-053): an entry counts as healthy only
+  with ``healthy: true`` AND a non-empty ``model_tested`` — a note-only
+  provider (no models configured, nothing probed) pads the total, never the
+  healthy count.
 
 Hermetic by construction: ``_http_json`` and ``_local_head`` are monkeypatched, so
 no test opens a socket, spawns ``git``, or touches a live server.  Paths resolve
@@ -395,6 +399,42 @@ def test_healthy_run_prints_the_full_count(monkeypatch: pytest.MonkeyPatch,
 
     assert "providers: 5/5 healthy" in out
     assert smoke_live.UNHEALTHY_WARNING_PREFIX not in out
+
+
+def test_note_only_providers_do_not_pad_the_healthy_count() -> None:
+    """C5 (CH-GAP-053): 8 model-tested healthy + 2 note-only entries -> ``8/10``.
+
+    A provider with no models configured was never probed — it inflates the
+    total but must never pad the healthy count.
+    """
+    providers = _healthy(8)
+    providers["empty_a"] = {"healthy": False, "note": "no models configured for provider"}
+    providers["empty_b"] = {"healthy": False, "note": "no models configured for provider"}
+
+    lines = smoke_live.provider_health_lines(_details(providers), ["empty_a", "empty_b"])
+
+    assert "providers: 8/10 healthy" in lines
+
+
+def test_proven_healthy_requires_a_model_tested() -> None:
+    """C5 (CH-GAP-053) per shape: ``healthy: true`` alone is NOT proven healthy.
+
+    A stale payload that still claims ``healthy: true`` for a note-only entry
+    must not pad the count either — the flag/model conjunction is the
+    contract, not membership in the issues list.
+    """
+    providers = {
+        "real": {"healthy": True, "model_tested": "real/model"},
+        "claimed": {"healthy": True, "note": "no models configured for provider"},
+        "blank_model": {"healthy": True, "model_tested": "   "},
+        "not_a_dict": "garbage",
+    }
+
+    lines = smoke_live.provider_health_lines(
+        _details(providers), ["claimed", "blank_model", "not_a_dict"],
+    )
+
+    assert "providers: 1/4 healthy" in lines
 
 
 # --------------------------------------------------------------------------- #

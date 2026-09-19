@@ -35,9 +35,24 @@ from tests.conftest import (  # noqa: E402
 # =========================================================================== #
 
 
-def _make_auth_config(mode: str = "env", keys: list[AuthKeyEntry] | None = None) -> ChimeraConfig:
-    """Build a config with auth enabled."""
+def _make_auth_config(
+    mode: str = "env",
+    keys: list[AuthKeyEntry] | None = None,
+    drop_providers: tuple[str, ...] = (),
+) -> ChimeraConfig:
+    """Build a config with auth enabled.
+
+    ``drop_providers`` removes configured providers by name.  Used where a
+    test needs an all-model-bearing provider set: under CH-GAP-053 a provider
+    with no models is never probed and reports unhealthy, which would flip
+    /v1/health to ``degraded`` for a reason unrelated to the test's subject.
+    """
     cfg_dict = dict(CONFIG_DICT)
+    if drop_providers:
+        cfg_dict["providers"] = {
+            name: spec for name, spec in cfg_dict["providers"].items()
+            if name not in drop_providers
+        }
     cfg_dict["auth"] = {
         "enabled": True,
         "mode": mode,
@@ -81,7 +96,7 @@ class TestAuthEnvMode:
             monkeypatch.setenv(env_var, "test-key")
 
     def test_health_is_open(self) -> None:
-        config = _make_auth_config("env")
+        config = _make_auth_config("env", drop_providers=("anthropic",))
         client = _auth_client(config)
         r = client.get("/v1/health")
         assert r.status_code == 200

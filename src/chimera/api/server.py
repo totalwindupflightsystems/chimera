@@ -862,8 +862,12 @@ async def _check_providers(
 
     Provider checks run concurrently under ``config.server.health_timeout_s``
     (default 10.0 s).  Providers without resolvable credentials are reported
-    immediately as ``missing-credentials`` (no live call).  For non-timeout
-    failures (``auth`` / ``api`` / ``quota``) up to ``_MAX_PROBE_MODELS``
+    immediately as ``missing-credentials`` (no live call).  A provider with no
+    models in the catalog is never probed and proves nothing, so it is
+    reported ``healthy: false`` with only a ``note`` (CH-GAP-053) — it lands
+    in ``unhealthy_providers`` instead of silently reading as healthy.  For
+    non-timeout failures (``auth`` / ``api`` / ``quota``) up to
+    ``_MAX_PROBE_MODELS``
     models from the provider are tried before it is marked unhealthy; the last
     model attempted is reported in ``model_tested``.  A timeout is terminal per
     provider — one model is enough to prove connectivity.
@@ -880,8 +884,12 @@ async def _check_providers(
             if entry.provider == provider_name
         ]
         if not model_names:
+            # CH-GAP-053: nothing was probed, so nothing was proven.  A
+            # note-only entry must not read as healthy — reporting it
+            # unhealthy is what keeps ``status`` and ``unhealthy_providers``
+            # honest (and makes the smoke script's count honest).
             return provider_name, {
-                "healthy": True,
+                "healthy": False,
                 "note": "no models configured for provider",
             }
         if not _provider_has_credentials(config, provider_name):

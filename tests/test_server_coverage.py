@@ -16,7 +16,12 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
-from chimera.api.server import RequestQueue, _check_providers, create_app  # noqa: E402
+from chimera.api.server import (  # noqa: E402
+    RequestQueue,
+    _check_providers,
+    _unhealthy_provider_names,
+    create_app,
+)
 from chimera.config import ChimeraConfig  # noqa: E402
 from chimera.engine import Engine  # noqa: E402
 from chimera.gateway import GatewayResponse  # noqa: E402
@@ -183,9 +188,11 @@ class TestHealthEndpoints:
     ) -> None:
         """When gateway always fails, readiness should return 503.
 
-        Note: providers without any configured models are always marked healthy
-        (they never get tested). We remove the 'anthropic' provider (no models)
-        to ensure ALL providers actually fail the connectivity check.
+        Providers without configured models are never probed and are reported
+        unhealthy with a note (CH-GAP-053), which would also force a 503 —
+        but for the wrong reason.  We remove the 'anthropic' provider (no
+        models) so every remaining provider actually fails the connectivity
+        check and the 503 is earned by real failed probes.
         """
         cfg_dict = dict(CONFIG_DICT)
         cfg_dict["providers"] = {
@@ -219,7 +226,20 @@ class TestHealthEndpoints:
     def test_health_returns_healthy_when_all_ok(
         self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
-        """When all providers respond, /v1/health returns healthy."""
+        """When every provider responds, /v1/health returns healthy.
+
+        The fixture's 'anthropic' provider has no models, so under the new
+        contract (CH-GAP-053) it is never probed and counts as unhealthy;
+        rebuild the config without it so every remaining provider is proven
+        healthy by a real probe.
+        """
+        cfg_dict = dict(CONFIG_DICT)
+        cfg_dict["providers"] = {
+            name: spec for name, spec in cfg_dict["providers"].items()
+            if name != "anthropic"
+        }
+        config = ChimeraConfig.model_validate(cfg_dict)
+
         client = _client(config)
         r = client.get("/v1/health")
         assert r.status_code == 200
@@ -229,6 +249,25 @@ class TestHealthEndpoints:
         assert details["config_loaded"] is True
         assert details["models_configured"] == len(config.models)
         assert details["providers_configured"] == len(config.providers)
+
+    def test_health_marks_note_only_provider_unhealthy(
+        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+    ) -> None:
+        """CH-GAP-053: a provider with no models proves nothing — degraded.
+
+        'anthropic' is configured but has no models in the catalog, so it is
+        never probed: it must carry healthy=false with the note, and its name
+        must appear in ``unhealthy_providers`` (the endpoint-level contract).
+        """
+        client = _client(config)
+        r = client.get("/v1/health")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["status"] == "degraded"
+        assert "anthropic" in data["unhealthy_providers"]
+        entry = data["details"]["providers"]["anthropic"]
+        assert entry["healthy"] is False
+        assert entry["note"] == "no models configured for provider"
 
     def test_health_handles_gateway_exception(
         self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
@@ -249,8 +288,9 @@ class TestHealthEndpoints:
     ) -> None:
         """If _check_providers raises unexpectedly, readiness returns 503.
 
-        Remove the 'anthropic' provider (no models → always healthy) so that
-        every provider actually exercises the gateway path and fails.
+        Remove the 'anthropic' provider (no models → never probed, reported
+        unhealthy with a note under CH-GAP-053) so that every provider
+        actually exercises the gateway path and fails.
         """
         cfg_dict = dict(CONFIG_DICT)
         cfg_dict["providers"] = {
@@ -429,14 +469,29 @@ class TestCheckProviders:
 
     @pytest.mark.asyncio
     async def test_all_providers_healthy(self, config: ChimeraConfig) -> None:  # type: ignore[no-untyped-def]
+        """GoodGateway proves every MODEL-BEARING provider healthy.
+
+        CH-GAP-053: the fixture's 'anthropic' provider has no models — it is
+        never probed and is reported unhealthy with the note, so the healthy
+        set is exactly the model-bearing providers.
+        """
         class GoodGateway:
             async def complete(self, model: str, messages: list, **kw: Any):
                 return _resp("ok", model)
 
         result = await _check_providers(config, GoodGateway())
         assert len(result) == len(config.providers)
-        for _name, status in result.items():
-            assert status["healthy"] is True
+        expected_healthy = {
+            name for name in config.providers
+            if any(m.provider == name for m in config.models.values())
+        }
+        for name, status in result.items():
+            if name in expected_healthy:
+                assert status["healthy"] is True
+            else:
+                assert status["healthy"] is False
+                assert status["note"] == "no models configured for provider"
+        assert _unhealthy_provider_names(result) == ["anthropic"]
 
     @pytest.mark.asyncio
     async def test_provider_timeout_marked_unhealthy(
@@ -444,8 +499,9 @@ class TestCheckProviders:
     ) -> None:
         """Providers that time out are marked unhealthy.
 
-        Only check providers that have models (openrouter, zai) — the
-        'anthropic' provider has no models and is always healthy.
+        Only the model-bearing providers (openrouter, zai) are probed — the
+        'anthropic' provider has no models, is never probed, and is reported
+        unhealthy with a note (CH-GAP-053), so it is skipped here too.
         """
         class TimeoutGateway:
             async def complete(self, model: str, messages: list, **kw: Any):
@@ -462,8 +518,9 @@ class TestCheckProviders:
     ) -> None:
         """Providers that raise are marked unhealthy.
 
-        Only check providers that have models (openrouter, zai) — the
-        'anthropic' provider has no models and is always healthy.
+        Only the model-bearing providers (openrouter, zai) are probed — the
+        'anthropic' provider has no models, is never probed, and is reported
+        unhealthy with a note (CH-GAP-053), so it is skipped here too.
         """
         class ErrorGateway:
             async def complete(self, model: str, messages: list, **kw: Any):
@@ -478,7 +535,11 @@ class TestCheckProviders:
     async def test_provider_with_no_models_reports_note(
         self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
-        """Provider with no models → healthy with note."""
+        """Provider with no models → healthy=False with the note (CH-GAP-053).
+
+        Nothing was probed, so nothing was proven: the note-only entry must
+        read as unhealthy, and the unhealthy-name list must include it.
+        """
         # Add a provider with no associated models
         from chimera.config import Provider
         config.providers["orphan"] = Provider(base_url="https://orphan.test")
@@ -489,8 +550,9 @@ class TestCheckProviders:
                 return _resp("ok", model)
 
         result = await _check_providers(config, GoodGateway())
-        assert result["orphan"]["healthy"] is True
-        assert "note" in result["orphan"]
+        assert result["orphan"]["healthy"] is False
+        assert result["orphan"]["note"] == "no models configured for provider"
+        assert "orphan" in _unhealthy_provider_names(result)
 
     @pytest.mark.asyncio
     async def test_empty_config_returns_none_marker(self) -> None:

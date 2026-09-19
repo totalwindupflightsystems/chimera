@@ -538,7 +538,12 @@ def test_timeout_error_does_not_retry_next_model() -> None:
     assert [m for m, _ in gw.calls] == ["prov/a"]
 
 
-def test_no_models_for_provider_is_healthy_note() -> None:
+def test_no_models_for_provider_is_unhealthy_note() -> None:
+    """A provider with no models is never probed — proven nothing (CH-GAP-053).
+
+    The note stays, but ``healthy`` is now false: a probe that cannot run
+    must not read as a passing one.
+    """
     cfg = _config(models={"other/model": "other"})
     # A configured provider that has no models in the catalog.
     cfg.providers["lonely"] = cfg.providers["other"].model_copy(
@@ -548,7 +553,7 @@ def test_no_models_for_provider_is_healthy_note() -> None:
     status = asyncio.run(_check_providers(cfg, gw))
 
     info = status["lonely"]
-    assert info["healthy"] is True
+    assert info["healthy"] is False
     assert "no models configured" in info["note"]
     assert gw.calls == []
 
@@ -648,8 +653,12 @@ def test_healthy_provider_keeps_exact_previous_shape() -> None:
     assert info == {"healthy": True, "model_tested": "prov/a"}
 
 
-def test_no_models_provider_keeps_exact_previous_shape() -> None:
-    """The ``no models configured`` note path is unchanged too."""
+def test_no_models_provider_note_only_shape() -> None:
+    """The note-only path carries exactly the note, nothing else (CH-GAP-053).
+
+    No ``error_class`` — the provider did not fail a probe, it never had one
+    to fail; the note is the machine-readable reason.
+    """
     cfg = _config(models={"other/model": "other"})
     cfg.providers["lonely"] = cfg.providers["other"].model_copy(
         update={"base_url": "https://lonely.example/v1"},
@@ -657,7 +666,7 @@ def test_no_models_provider_keeps_exact_previous_shape() -> None:
     gw = _ProbeGateway({})
     info = asyncio.run(_check_providers(cfg, gw))["lonely"]
 
-    assert info == {"healthy": True, "note": "no models configured for provider"}
+    assert info == {"healthy": False, "note": "no models configured for provider"}
 
 
 # --------------------------------------------------------------------------- #

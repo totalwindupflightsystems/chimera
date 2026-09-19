@@ -124,8 +124,14 @@ def provider_health_lines(details: dict, unhealthy_providers: list[str] | None =
 
     The healthy/total count is computed from the payload's provider map — never
     from ``providers_configured``, which counts CONFIGURED providers and says
-    nothing about whether any of them answered.  Pure: rendering only, no I/O,
-    and no influence on the exit code (``main`` owns that).
+    nothing about whether any of them answered.  Within the map, an entry only
+    counts as healthy when the payload proves it: ``healthy: true`` AND a
+    non-empty ``model_tested`` (CH-GAP-053).  Note-only entries (no models
+    configured, so nothing was probed) are ``healthy: false`` since the server
+    made that honest; the conjunction keeps the count right even against an
+    older payload that still claims ``healthy: true`` for one.  Pure:
+    rendering only, no I/O, and no influence on the exit code (``main`` owns
+    that).
     """
     details = details if isinstance(details, dict) else {}
     providers = details.get("providers")
@@ -149,7 +155,17 @@ def provider_health_lines(details: dict, unhealthy_providers: list[str] | None =
         ]
 
     issues = classify_provider_health(details)
-    lines = [f"providers: {len(providers) - len(issues)}/{len(providers)} healthy"]
+    # CH-GAP-053: healthy = proven healthy (flag true AND a model actually
+    # tested), not merely "not in the issues list".  A note-only entry (no
+    # models configured) proves nothing and must not pad the count.
+    proven_healthy = sum(
+        1
+        for entry in providers.values()
+        if isinstance(entry, dict)
+        and entry.get("healthy")
+        and str(entry.get("model_tested") or "").strip()
+    )
+    lines = [f"providers: {proven_healthy}/{len(providers)} healthy"]
 
     keyless = [issue.name for issue in issues if issue.error_class == KEYLESS_ERROR_CLASS]
     if keyless:
