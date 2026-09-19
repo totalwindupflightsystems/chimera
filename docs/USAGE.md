@@ -345,7 +345,10 @@ meaning, because a fresh install and a real degradation used to print identical
 words:
 
 * `providers: <healthy>/<total> healthy` — counted from the payload's provider
-  map, never from `providers_configured` (that counts CONFIGURED providers);
+  map, never from `providers_configured` (that counts providers **explicitly
+  declared in the config**, excluding auto-discovery additions — see
+  `providers_discovered` for those — and says nothing about whether any of them
+  answered);
 * `INFO: providers without a configured API key (expected on a fresh install): …`
   — providers whose `error_class` is `missing_credentials` (see the health
   section above). No key configured is normal on a new deployment, so the

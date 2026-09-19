@@ -372,10 +372,17 @@ def _register_routes(app: FastAPI) -> None:
         every response — ``[]`` exactly when ``status == "healthy"``.
         """
         cfg: ChimeraConfig = request.app.state.config
+        # CH-GAP-053: count only the providers the config declared — the
+        # providers map also carries auto-discovery additions, which used to
+        # inflate this count. Discovery-added names are reported separately.
+        configured_count, discovered_names = (
+            _split_configured_and_discovered_providers(cfg)
+        )
         details: dict[str, Any] = {
             "config_loaded": True,
             "models_configured": len(cfg.models),
-            "providers_configured": len(cfg.providers),
+            "providers_configured": configured_count,
+            "providers_discovered": discovered_names,
             "commit": _running_commit(),
         }
 
@@ -845,6 +852,31 @@ def _unhealthy_provider_names(
         for name, info in provider_status.items()
         if not info.get("healthy", False)
     )
+
+
+def _split_configured_and_discovered_providers(
+    config: ChimeraConfig,
+) -> tuple[int, list[str]]:
+    """Count the declared providers; name the discovery-added ones.
+
+    ``config.providers`` is mutated in place by provider auto-discovery
+    (``load_config`` → ``_apply_env_overrides``), so ``len(config.providers)``
+    silently includes whatever models.dev contributed (CH-GAP-053).  This
+    helper splits the map using ``declared_provider_names``:
+
+    * returns the **configured** count = number of explicitly declared
+      providers, and
+    * the **discovered** names, sorted, = names in ``providers`` that the
+      config did not declare.
+
+    Names only — no credential or ``Provider`` payload is exposed.  For a
+    config built programmatically (no load-time metadata) the fallback keeps
+    the old contract: everything currently in the map counts as configured
+    and the discovered list is empty.
+    """
+    declared = config.declared_provider_names
+    discovered = sorted(set(config.providers) - declared)
+    return len(declared), discovered
 
 
 async def _check_providers(

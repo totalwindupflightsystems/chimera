@@ -387,10 +387,15 @@ Three probes, all unauthenticated, all return HTTP 200 with a JSON body:
     "config_loaded": true,
     "models_configured": 42,
     "providers_configured": 5,
+    "providers_discovered": [],
     "providers": { "deepseek": {"healthy": true} }
   }
 }
 ```
+
+`providers_configured` counts only the providers explicitly declared in the
+config; providers added at load time by auto-discovery (`provider_discovery`)
+are named separately in the sorted `providers_discovered` list (CH-GAP-053).
 
 Status semantics:
 

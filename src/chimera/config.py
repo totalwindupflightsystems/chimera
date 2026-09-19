@@ -316,6 +316,21 @@ class ChimeraConfig(BaseModel):
 
     providers: dict[str, Provider] = Field(default_factory=dict)
     models: dict[str, ModelEntry] = Field(default_factory=dict)
+    configured_provider_names: set[str] = Field(
+        default_factory=set,
+        exclude=True,
+    )
+    """Provider names explicitly declared in the loaded config, recorded
+    before provider auto-discovery mutates ``providers`` (CH-GAP-053).
+
+    Internal bookkeeping, not a YAML field: ``exclude=True`` keeps it out of
+    every serialization and absent from validation requirements, so
+    ``model_validate`` / ``model_copy`` / hand-built fixtures are unaffected.
+    An empty set means "no load-time metadata" — consumers (see
+    ``declared_provider_names``) then fall back to treating the current
+    ``providers`` entries as configured, preserving the pre-discovery
+    behavior for programmatically built configs.
+    """
     defaults: Defaults
     formations: dict[str, FormationPreset] = Field(default_factory=dict)
     observability: Observability = Field(default_factory=Observability)
@@ -359,6 +374,19 @@ class ChimeraConfig(BaseModel):
     def enabled_models(self) -> dict[str, ModelEntry]:
         """Return only enabled models from the catalog."""
         return {k: v for k, v in self.models.items() if v.enabled}
+
+    @property
+    def declared_provider_names(self) -> set[str]:
+        """Providers explicitly declared in the config (CH-GAP-053).
+
+        Auto-discovery merges extra providers into ``providers`` after load,
+        so counting that map conflates the YAML's choices with whatever
+        models.dev happened to offer. This returns the names recorded at
+        load time when present; a config built programmatically (no load
+        metadata) falls back to the current ``providers`` keys, which keeps
+        the pre-discovery "everything in the map is configured" contract.
+        """
+        return self.configured_provider_names or set(self.providers)
 
     def resolve_model_alias(self, name: str) -> str:
         """Resolve ``"default"`` aliases for aggregator/worker to real model names."""
@@ -920,6 +948,12 @@ def load_config(path: Path | str | None = None) -> ChimeraConfig:
     # One choke point: every entry point (engine, gateway, web routes, CLI,
     # server) loads through here, so no caller can bypass the scale check.
     _normalize_category_scales(config, config_path)
+    # Record the explicitly declared provider names BEFORE discovery mutates
+    # ``providers`` (CH-GAP-053): /v1/health must count what the config
+    # declared, not the discovery-merged map. Keys only — Provider values can
+    # carry credential fingerprints, so nothing but names is stored.
+    if isinstance(raw.get("providers"), dict):
+        config.configured_provider_names = set(raw["providers"])
     _apply_env_overrides(config)
     return config
 

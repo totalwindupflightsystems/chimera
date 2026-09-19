@@ -756,7 +756,7 @@ def test_health_response_keeps_every_pre_existing_key(
     details = data["details"]
     assert set(details) == {
         "config_loaded", "models_configured", "providers_configured",
-        "commit", "providers",
+        "providers_discovered", "commit", "providers",
     }
     assert details["config_loaded"] is True
     assert details["models_configured"] == len(cfg.models)

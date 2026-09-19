@@ -371,10 +371,23 @@ fabricated `timeout`. Retrying an answer that is already final buys nothing and
 destroys the signal; the non-probe retry policy (`config.retry`) is unchanged.
 
 Both are **additive**: `status`, `details.config_loaded`,
-`details.models_configured`, `details.providers_configured`, `details.commit`,
+`details.models_configured`, `details.providers_configured`,
+`details.providers_discovered`, `details.commit`,
 and the per-provider `healthy` / `error` / `model_tested` / `note` fields keep
 their names and meanings, and the HTTP status stays 200. `GET
 /v1/health/ready` carries the same `unhealthy_providers` list in its 200 body.
+
+**Configured vs discovered providers (CH-GAP-053).** `details.providers_configured`
+counts only the providers **explicitly declared in `chimera.yaml`** — not the
+full provider map. Provider auto-discovery (on by default, `provider_discovery:
+true`) merges extra providers from models.dev into `config.providers` at load
+time, and `providers_configured` used to silently include them. The
+discovery-added names are now reported separately in the additive
+`details.providers_discovered` list (sorted, names only — no credentials). The
+per-provider map under `details.providers` still lists every provider, both
+declared and discovered; a config built programmatically (no YAML load) keeps
+the old behavior where everything in the map counts as configured and
+`providers_discovered` is `[]`.
 
 **The provider probe costs money.** Each `/v1/health` (and `/v1/health/ready`)
 call runs a **real** completion per configured provider — `gateway.complete(model,
@@ -424,8 +437,10 @@ The provider-health block is **class-aware** (DF-CHIMERA-V2-4), because a fresh
 install and a real degradation used to print the same words:
 
 * `providers: <healthy>/<total> healthy` — counted from the payload's provider
-  map, never from `providers_configured` (that counts CONFIGURED providers and
-  says nothing about whether any of them answered);
+  map, never from `providers_configured` (that counts providers **explicitly
+  declared in the config**, excluding auto-discovery additions — see
+  `providers_discovered` for those — and says nothing about whether any of them
+  answered);
 * `INFO: providers without a configured API key (expected on a fresh install):
   …` — the providers whose `error_class` is `missing_credentials`. Expected on a
   fresh install, so it is information rather than a warning: the deliberation
