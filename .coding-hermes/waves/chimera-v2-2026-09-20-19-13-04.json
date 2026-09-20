@@ -1,49 +1,54 @@
 {
-  "tick_id": "chimera-v2-2026-09-20-19-13-04",
-  "composed_at": "2026-09-20T19:20:00-05:00",
-  "closed_at": "2026-09-20T20:55:00-05:00",
-  "wave_budget": 12,
-  "workers": 3,
-  "base_sha": "fa1dc79",
-  "model": "glm-5.3-flash",
-  "provider": "zai-glm-default",
-  "outcome": "3/3 landed, all pushed to origin + github mirror at parity 472a6dd",
-  "tasks": [
-    {
-      "id": "DF-CHIMERA-V2-29",
-      "priority": "P1",
-      "attempts": 2,
-      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-29",
-      "branch": "wt/DF-CHIMERA-V2-29",
-      "commit": "24d5cb4",
-      "rework_commit": "9b2bbc0",
-      "merge_commit": "472a6dd",
-      "status": "complete",
-      "note": "Attempt 1 landed the live-mode stream lifecycle + SPA reconnect. The FOREMAN's own live-browser check then FAILED (EventSource OPEN but zero dispatched events) and isolated the real root cause: SSEEvent.format() emitted one trailing newline instead of the blank-line terminator the SSE spec dispatches on (0 occurrences of \\n\\n on the wire). Attempt 2 fixed the framing; the browser criterion then PASSED on :8802 and again on merged main :8803."
-    },
-    {
-      "id": "DF-CHIMERA-V2-26",
-      "priority": "P2",
-      "attempts": 1,
-      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-26",
-      "branch": "wt/DF-CHIMERA-V2-26",
-      "commit": "8b10854",
-      "merge_commit": "36d351b",
-      "status": "complete",
-      "note": "Reseller watch list + named Blind Spot section + per-run scan-scope statement. stepfun/step-5-preview now surfaces. 10/10 fixture tests."
-    },
-    {
-      "id": "DF-CHIMERA-V2-27",
-      "priority": "P2",
-      "attempts": 1,
-      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-27",
-      "branch": "wt/DF-CHIMERA-V2-27",
-      "commit": "4d59d6f",
-      "merge_commit": "6ee6444",
-      "status": "complete",
-      "note": "Over-budget providers report error_class 'slow' with measured latency instead of permanently degrading /v1/health; real failures stay distinct. Judge independently RED-proved (9 failures pre-fix)."
-    }
-  ],
-  "filed_residuals": ["DF-CHIMERA-V2-30", "DF-CHIMERA-V2-31"],
-  "verification_note": "Every task gated on the merged tree: suite 1613 passed / 62 skipped, ruff clean. No green build was treated as proof of completion."
+ "tick_id": "chimera-v2-2026-09-20-19-13-04",
+ "round": 2,
+ "composed_at": "2026-09-20T21:35:00-05:00",
+ "harvested_at": "2026-09-20T23:10:00-05:00",
+ "harvested_by_tick": "chimera-v2-2026-09-20-22-28-37",
+ "wave_budget": 12,
+ "workers": 3,
+ "base_sha": "b8fbe1f",
+ "model": "glm-5.3-flash",
+ "provider": "zai-glm-default",
+ "status": "HARVESTED — 3/3 landed",
+ "note": "The tick run that dispatched this wave died before harvest. The 22-28-37 re-fire detected the manifest at open, found all three workers exited with honest commits on their branches, and ran the foreman merge phase: serial --no-ff merges, guard --full 5/5 after each, AC verification on the merged tree, gitreins lifecycle (restage-then-judge per INT-GATE-001), push parity 0cffd37 on origin+github, deploy + live smoke PASS. Round-1 summary (this file's earlier version, preserved in git history): DF-CHIMERA-V2-29 9b2bbc0/472a6dd, DF-CHIMERA-V2-26 8b10854/36d351b, DF-CHIMERA-V2-27 4d59d6f/6ee6444.",
+ "tasks": [
+  {
+   "id": "DF-CHIMERA-V2-30",
+   "priority": "P2",
+   "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-30",
+   "branch": "wt/DF-CHIMERA-V2-30",
+   "base_sha": "b8fbe1f",
+   "status": "complete",
+   "commit": "f4f23ee",
+   "merge_commit": "3621dfb",
+   "judge": "foreman adversarial probe: 30/30 passes under real 4-way suite load (pre-fix ~5% loaded failure rate); async tier2 job-95ee560e",
+   "scope": "tests/test_concurrency.py only"
+  },
+  {
+   "id": "DF-CHIMERA-V2-31",
+   "priority": "P3",
+   "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-31",
+   "branch": "wt/DF-CHIMERA-V2-31",
+   "base_sha": "b8fbe1f",
+   "status": "complete",
+   "commit": "06efd5f",
+   "merge_commit": "a1919c0",
+   "judge": "foreman verified seed script + self-seeding lane; async tier2 job-e752586d",
+   "scope": ".gitreins/config.yaml + scripts/seed_worktree_venv.sh + docs/GITREINS.md"
+  },
+  {
+   "id": "DF-CHIMERA-V2-21",
+   "priority": "P3",
+   "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-21",
+   "branch": "wt/DF-CHIMERA-V2-21",
+   "base_sha": "b8fbe1f",
+   "status": "complete",
+   "commit": "4e8869b",
+   "merge_commit": "0cffd37",
+   "judge": "live deploy evidence (restart to 0cffd37, smoke_live PASS); async tier2 job-7a5c039a",
+   "scope": "src/chimera/web/static/* + src/chimera/web/routes.py + tests/test_web_static_assets.py"
+  }
+ ],
+ "middle_out_check": "30 = test-only (tests/), 31 = harness config (.gitreins/ + docs), 21 = web static asset (src/chimera/web/static). No shared import chain: a test file, a YAML config, and a static HTML asset touch disjoint bands. Verified no depends_on edges on any row.",
+ "verification_note": "Each merge re-ran the full suite + ruff via guard --full on the MERGED tree before the next merge and before push. No worker pushed; foreman-only push via scripts/push_remotes.py after gates. Worktrees reaped, branches deleted post-merge."
 }
