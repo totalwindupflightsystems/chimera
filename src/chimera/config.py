@@ -180,6 +180,19 @@ class ServerConfig(BaseModel):
     openrouter, ...) were previously misreported as unhealthy under the
     hardcoded 3.0 s budget.
     """
+    health_probe_grace_s: float = 1.0
+    """Extra patience for probes still outstanding at ``health_timeout_s``
+    (DF-CHIMERA-V2-17).
+
+    When the shared ``health_timeout_s`` budget expires, probes that have not
+    answered get this many extra seconds to land before they are cancelled and
+    reported ``timeout``.  A probe that finishes inside the grace reports its
+    REAL verdict (``quota`` / ``auth`` / ``api`` + ``model_tested``) — this is
+    what keeps the first ``/v1/health`` call after a process restart honest
+    when litellm's one-off client/TLS/provider-discovery warm-up (measured
+    ~10.3s vs ~2.8-3.2s warm) briefly exceeds the budget.  ``0`` disables the
+    grace and reproduces the previous cancel-at-deadline behaviour exactly.
+    """
 
 
 class AuthKeyEntry(BaseModel):

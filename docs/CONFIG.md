@@ -460,7 +460,10 @@ Notes for this shape of provider:
 - **`/v1/health` runs a real completion** against a model of every configured
   provider, bounded by `server.health_timeout_s` (default `10.0` s). A gateway
   that takes longer than that to answer a 1-token probe is reported
-  `degraded`; keep `health_timeout_s` above the gateway's own latency.
+  `degraded`; keep `health_timeout_s` above the gateway's own latency. A probe
+  still outstanding at the deadline gets `server.health_probe_grace_s` extra
+  seconds (default `1.0`) to land before it is reported `timeout`
+  (DF-CHIMERA-V2-17).
 - **A lane behind a routing gateway can be out of quota.** 9router serves each
   upstream prefix from its own account, so one exhausted lane answers
   `429`/`403` for every model behind it while the gateway itself is healthy and

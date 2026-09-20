@@ -26,6 +26,7 @@ Covers DF-CHIMERA-V2-14 (machine-readable degraded reason):
 from __future__ import annotations
 
 import asyncio
+import time
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
@@ -48,8 +49,14 @@ def _config(
     health_timeout_s: float = 5.0,
     api_keys: dict[str, str] | None = None,
     retry: dict[str, Any] | None = None,
+    health_probe_grace_s: float | None = None,
 ) -> ChimeraConfig:
-    """Build a minimal config mapping model name → provider name."""
+    """Build a minimal config mapping model name → provider name.
+
+    ``health_probe_grace_s=None`` omits the key entirely (ServerConfig's own
+    default applies), so every pre-existing call site builds byte-identical
+    configs (DF-CHIMERA-V2-17).
+    """
     first_model = next(iter(models))
     cfg_dict = {
         "providers": {
@@ -71,6 +78,8 @@ def _config(
             "health_timeout_s": health_timeout_s,
         },
     }
+    if health_probe_grace_s is not None:
+        cfg_dict["server"]["health_probe_grace_s"] = health_probe_grace_s
     if retry is not None:
         cfg_dict["retry"] = retry
     cfg = ChimeraConfig.model_validate(cfg_dict)
@@ -836,4 +845,171 @@ def test_ready_reports_unhealthy_providers(
     assert data["status"] == "ready"
     assert data["unhealthy_providers"] == ["b"]
     assert data["providers"] == probe_status
+
+
+# --------------------------------------------------------------------------- #
+# DF-CHIMERA-V2-17: a late cold-start probe reports its REAL verdict, not a
+# fabricated timeout
+# --------------------------------------------------------------------------- #
+
+
+class _DelayedProbeGateway:
+    """A gateway whose completion takes ``delay_s``, then raises *error*.
+
+    ``error=None`` answers a healthy ``pong`` after the delay instead.
+
+    This is the measured cold-start shape (tick 247): litellm's one-off
+    client/TLS/provider-discovery warm-up pushes the FIRST probe of a fresh
+    process past the shared budget (10.34s vs 10.0s), and the warm probes
+    answer with the provider's real condition (~2.8-3.2s).  The real verdict
+    exists — it just lands a little late.
+    """
+
+    def __init__(self, delay_s: float, error: Exception | None) -> None:
+        self.delay_s = delay_s
+        self.error = error
+        self.calls: list[str] = []
+
+    async def complete(
+        self,
+        model: str,
+        messages: list[dict[str, str]],
+        **kwargs: object,
+    ) -> GatewayResponse:
+        self.calls.append(model)
+        await asyncio.sleep(self.delay_s)
+        if self.error is not None:
+            raise self.error
+        return GatewayResponse(
+            text="pong", model=model, tokens_input=1, tokens_output=1,
+        )
+
+
+_LATE_QUOTA_ERROR = _StatusError(_ZAI_QUOTA_MESSAGE, status_code=429)
+
+
+def test_late_cold_start_probe_reports_real_quota_not_timeout() -> None:
+    """Criterion 1: a probe landing inside the grace reports its REAL class.
+
+    The gateway answers later than ``health_timeout_s`` but inside
+    ``health_timeout_s + health_probe_grace_s`` — the measured tick-247
+    cold-start shape.  The verdict must be the provider's own ``quota`` (with
+    ``model_tested`` and z.ai's reset prose), NOT the fabricated
+    ``timeout: no response within ...``.
+    """
+    cfg = _config(
+        models={"z-ai/glm-5": "zai"},
+        health_timeout_s=0.2,
+        health_probe_grace_s=1.5,
+        api_keys={"zai": "sk-test"},
+    )
+    gw = _DelayedProbeGateway(0.5, _LATE_QUOTA_ERROR)
+    info = asyncio.run(_check_providers(cfg, gw))["zai"]
+
+    assert info["healthy"] is False
+    assert info["error_class"] == "quota"
+    assert info["model_tested"] == "z-ai/glm-5"
+    assert info["error"].startswith("quota:")
+    assert "Weekly/Monthly Limit Exhausted" in info["error"]
+    assert "timeout: no response within" not in info["error"]
+    # The cancelled-outcome set is never consulted for a grace-completed task.
+    assert gw.calls == ["z-ai/glm-5"]
+
+
+def test_probe_still_outstanding_after_grace_is_timeout() -> None:
+    """Criterion 2: the grace must not turn a genuinely hung provider vague.
+
+    The gateway never returns inside the budget plus the grace, so today's
+    verdict stands verbatim: ``error_class: "timeout"``, the same
+    ``timeout: no response within <budget>s`` text (the BUDGET, not the
+    budget+grace), and ``healthy: false``.
+    """
+    cfg = _config(
+        models={"p1/slow": "p1"},
+        health_timeout_s=0.2,
+        health_probe_grace_s=0.3,
+        api_keys={"p1": "sk-test"},
+    )
+    gw = _DelayedProbeGateway(30.0, _LATE_QUOTA_ERROR)
+    info = asyncio.run(_check_providers(cfg, gw))["p1"]
+
+    assert info == {
+        "healthy": False,
+        "error": "timeout: no response within 0.2s",
+        "error_class": "timeout",
+    }
+
+
+def test_zero_grace_reproduces_pre_change_timeout_verdict() -> None:
+    """Criterion 3a: ``health_probe_grace_s=0`` keeps the old answer exactly.
+
+    The same late-but-successful probe that criterion 1 turns into ``quota``
+    is a fabricated ``timeout`` again when the knob is 0 — the new behaviour
+    is configurable and today's behaviour stays reachable.
+    """
+    cfg = _config(
+        models={"z-ai/glm-5": "zai"},
+        health_timeout_s=0.3,
+        health_probe_grace_s=0.0,
+        api_keys={"zai": "sk-test"},
+    )
+    gw = _DelayedProbeGateway(0.6, _LATE_QUOTA_ERROR)
+    info = asyncio.run(_check_providers(cfg, gw))["zai"]
+
+    assert info == {
+        "healthy": False,
+        "error": "timeout: no response within 0.3s",
+        "error_class": "timeout",
+    }
+    # The probe task was cancelled at the deadline, not allowed to finish.
+    assert gw.calls == ["z-ai/glm-5"]
+
+
+def test_server_config_health_probe_grace_default() -> None:
+    """Criterion 3b: ServerConfig defaults health_probe_grace_s to 1.0."""
+    assert ServerConfig().health_probe_grace_s == 1.0
+    assert ServerConfig(health_probe_grace_s=2.5).health_probe_grace_s == 2.5
+    assert ServerConfig(health_probe_grace_s=0.0).health_probe_grace_s == 0.0
+
+
+def test_late_probe_lands_exactly_one_grace_window_late() -> None:
+    """The grace bounds the endpoint's extra wait, it does not hang.
+
+    A probe landing just past the deadline costs roughly the grace window on
+    top of the budget — far below the gateway's own 30s ``slow`` sleep, which
+    proves the second ``asyncio.wait`` is genuinely bounded by the knob.
+    """
+    cfg = _config(
+        models={"p1/slow": "p1"},
+        health_timeout_s=0.2,
+        health_probe_grace_s=0.3,
+        api_keys={"p1": "sk-test"},
+    )
+    gw = _DelayedProbeGateway(30.0, RuntimeError("never lands"))
+    started = time.perf_counter()
+    info = asyncio.run(_check_providers(cfg, gw))["p1"]
+
+    elapsed = time.perf_counter() - started
+    assert info["error_class"] == "timeout"
+    # budget + grace + scheduling slack, far below the 30s hung probe.
+    assert elapsed < 0.2 + 0.3 + 1.0, f"endpoint waited {elapsed:.2f}s"
+
+
+def test_grace_completed_healthy_probe_keeps_exact_previous_shape() -> None:
+    """A probe that lands inside the grace keeps the warm payload verbatim.
+
+    The additive promise extends to the grace path: a late healthy answer is
+    exactly ``{"healthy": True, "model_tested": ...}`` — no new fields, no
+    ``error_class``.
+    """
+    cfg = _config(
+        models={"prov/a": "prov"},
+        health_timeout_s=0.2,
+        health_probe_grace_s=0.5,
+        api_keys={"prov": "sk-test"},
+    )
+    gw = _DelayedProbeGateway(0.4, None)
+    info = asyncio.run(_check_providers(cfg, gw))["prov"]
+
+    assert info == {"healthy": True, "model_tested": "prov/a"}
 
