@@ -488,7 +488,10 @@ def test_session_chat_runs_engine_records_turn_and_injects_history(config) -> No
     assert history["turns"][0]["timestamp"] > 0
 
 
-def test_debug_reset_replaces_singletons(config) -> None:  # type: ignore[no-untyped-def]
+def test_debug_reset_replaces_singletons(config, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # Opt in to the destructive dev switch (DF-CHIMERA-V2-20): the route is a
+    # no-op 404 unless the server process opted in.
+    monkeypatch.setenv(web_routes._DEBUG_RESET_ENV, "1")
     client = _client(config)
     client.post("/web/sessions")
     old_manager = web_routes._session_manager
@@ -502,6 +505,74 @@ def test_debug_reset_replaces_singletons(config) -> None:  # type: ignore[no-unt
     assert web_routes._session_manager is not old_manager
     assert web_routes._session_manager.session_count == 0
     assert web_routes._sse_broadcaster is not old_broadcaster
+
+
+def test_debug_reset_disabled_by_default(config, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Default app: the destructive reset answers 404 and keeps sessions.
+
+    An anonymous (and even a keyed) POST must NOT rebind the global session
+    manager — a session that existed before the call still resolves after it
+    (DF-CHIMERA-V2-20).
+    """
+    monkeypatch.delenv(web_routes._DEBUG_RESET_ENV, raising=False)
+    client = _client(config)
+    session_id = client.post("/web/sessions").json()["session_id"]
+    client.post(
+        f"/web/sessions/{session_id}/chat",
+        json={"prompt": "hi", "formation": "simple"},
+    )
+    old_manager = web_routes._session_manager
+    old_broadcaster = web_routes._sse_broadcaster
+
+    response = client.post("/web/debug/reset")
+
+    assert response.status_code == 404
+    assert web_routes._session_manager is old_manager
+    assert web_routes._sse_broadcaster is old_broadcaster
+    # The session created BEFORE the reset attempt still resolves.
+    history = client.get(f"/web/sessions/{session_id}")
+    assert history.status_code == 200
+    assert history.json()["turn_count"] == 1
+
+
+def test_debug_reset_switch_accepts_true_spelling(config, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """``CHIMERA_WEB_DEBUG_RESET=true`` enables the reset like ``1`` does."""
+    monkeypatch.setenv(web_routes._DEBUG_RESET_ENV, "true")
+    client = _client(config)
+    client.post("/web/sessions")
+    old_manager = web_routes._session_manager
+
+    response = client.post("/web/debug/reset")
+
+    assert response.status_code == 200
+    assert web_routes._session_manager is not old_manager
+
+
+def test_security_doc_matches_the_implemented_reset_gate() -> None:
+    """The SECURITY.md claims about /web/debug/reset must match the code.
+
+    Hermetic doc↔code parity guard (DF-CHIMERA-V2-20): the doc names the env
+    var that actually gates the route, states the default is a 404, and states
+    the blast radius. The pre-fix doc claimed the path required the API key and
+    answered 401 — the opposite of the observed anonymous 200.
+    """
+    doc = (Path(__file__).resolve().parents[1] / "docs" / "SECURITY.md").read_text()
+
+    # The switch the doc names is the one the code reads.
+    assert web_routes._DEBUG_RESET_ENV in doc
+    assert web_routes._DEBUG_RESET_ENV == "CHIMERA_WEB_DEBUG_RESET"
+
+    # The doc must NOT keep claiming the reset path is part of the keyed surface.
+    keyed_para = doc.split("requires the key")[1].split("Because the auth dependency")[0]
+    assert "/web/debug/reset" not in keyed_para, (
+        "SECURITY.md still lists /web/debug/reset among the key-required web paths"
+    )
+
+    # Default-off + 404 + blast radius are all stated for that path.
+    section = doc.split("`POST /web/debug/reset`")[1]
+    assert "404" in section
+    assert "disabled by default" in section
+    assert "every" in section.lower() and "session" in section.lower()
 
 
 @pytest.mark.asyncio

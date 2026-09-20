@@ -20,9 +20,11 @@ both are imported from the API module, which is the reference implementation.
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Annotated, Any
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
@@ -34,9 +36,24 @@ from chimera.web.trace_viz import trace_to_mermaid
 
 router = APIRouter(prefix="/web", tags=["web"])
 
+log = structlog.get_logger("chimera.web")
+
+#: Dev/test switch for ``POST /web/debug/reset`` (DF-CHIMERA-V2-20).  The
+#: handler rebinds the module-global session manager and SSE broadcaster,
+#: destroying EVERY live session, so it must not answer on a server anyone
+#: shares.  Set ``CHIMERA_WEB_DEBUG_RESET`` to ``1`` or ``true`` in the
+#: SERVER's environment to enable it; anything else (the default) keeps the
+#: route answering 404 without touching any state.
+_DEBUG_RESET_ENV = "CHIMERA_WEB_DEBUG_RESET"
+
 # Single shared instances, initialized when routes are registered.
 _session_manager = SessionManager()
 _sse_broadcaster = SSEBroadcaster()
+
+
+def _debug_reset_enabled() -> bool:
+    """Whether the destructive ``/web/debug/reset`` route may fire."""
+    return os.environ.get(_DEBUG_RESET_ENV, "").lower() in ("1", "true")
 
 
 # ── Request / response models ──────────────────────────────────────────────
@@ -314,10 +331,19 @@ async def get_session(session_id: str) -> SessionInfo:
 async def debug_reset():
     """Reset singleton state between integration tests.
 
-    Clears session manager and SSE broadcaster so tests start clean.
-    Only available when server is running locally (no auth required).
+    Destructive: rebinds the shared session manager and SSE broadcaster so
+    every live session and subscriber is dropped.  Disabled unless the server
+    was started with ``CHIMERA_WEB_DEBUG_RESET=1`` (or ``true``) — any other
+    deployment gets a 404 and keeps its sessions.
     """
     global _session_manager, _sse_broadcaster
+    if not _debug_reset_enabled():
+        raise HTTPException(status_code=404, detail="Not found")
+    log.warning(
+        "web_debug_reset_fired",
+        session_count=_session_manager.session_count,
+        switch=_DEBUG_RESET_ENV,
+    )
     _session_manager = SessionManager()
     _sse_broadcaster = SSEBroadcaster()
     return {"status": "ok", "message": "singletons reset"}
