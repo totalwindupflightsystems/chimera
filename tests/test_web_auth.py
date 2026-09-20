@@ -259,7 +259,9 @@ def test_every_registered_web_path_is_gated() -> None:
             assert response.status_code == 401, f"{method.upper()} {path} -> {response.status_code}"
             gated.append(f"{method.upper()} {path}")
 
-    assert len(gated) == 6, gated
+    # DF-CHIMERA-V2-21: the vendored-asset catch-all (GET /web/vendor/…) is
+    # the 7th gated path — key-gated like the rest of the surface.
+    assert len(gated) == 7, gated
     assert gateway.calls == []
 
 
