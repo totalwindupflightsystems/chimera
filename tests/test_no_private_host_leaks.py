@@ -9,34 +9,23 @@ Rationale: the mirror is public, and board/QA rows are written by automated
 lanes that quote raw stderr (``dial tcp <ip>:10001: i/o timeout``). Referencing
 hosts by name (``bunker-las-03``) carries the same diagnostic value with no
 address disclosure, so the fix is always "use the name".
+
+The pattern set lives in :mod:`tests.private_host_scan` and is shared with the
+pre-commit leak arm (DF-CHIMERA-V2-24), so the commit gate flags a leak with
+the SAME patterns this suite guard uses — before it can be committed, not on
+the next full-suite run.
 """
 
 from __future__ import annotations
 
-import re
 import subprocess
 from pathlib import Path
 
+from tests.private_host_scan import scan_file
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Private ranges plus the CGNAT block Tailscale hands out for tailnet IPs.
-# Assembled from parts so this file never contains an address it forbids.
-_OCTET = r"\d{1,3}"
-_PRIVATE_CIDRS = [
-    r"10\." + r"\.".join([_OCTET] * 3),
-    r"192\.168\." + r"\.".join([_OCTET] * 2),
-    r"172\.(?:1[6-9]|2\d|3[01])\." + r"\.".join([_OCTET] * 2),
-    r"100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\." + r"\.".join([_OCTET] * 2),
-]
-_PRIVATE_RE = re.compile(r"\b(?:" + "|".join(_PRIVATE_CIDRS) + r")\b")
-
-# MagicDNS tailnet hostnames are private too.
-_TAILNET_DNS_RE = re.compile(r"\b[a-z0-9][a-z0-9-]*\.ts\.net\b", re.IGNORECASE)
-
-# Loopback / unspecified / documentation ranges are legitimate in a repo.
-_ALLOWED = {"127.0.0.1", "0.0.0.0", "255.255.255.255", "1.2.3.4"}
-
-# This file necessarily describes the patterns it forbids.
+# This file necessarily describes the policy it forbids.
 _SELF = Path(__file__).name
 
 
@@ -60,22 +49,9 @@ def _findings() -> list[str]:
     for path in _tracked_files():
         if path.name == _SELF or not path.is_file():
             continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue  # binary or unreadable — not published as text
         rel = path.relative_to(REPO_ROOT)
-        for lineno, line in enumerate(text.splitlines(), start=1):
-            for match in _PRIVATE_RE.finditer(line):
-                if match.group(0) in _ALLOWED:
-                    continue
-                # CIDR notation ("100.64.0.0/10") documents a range, not a host —
-                # describing the policy must not itself trip the policy.
-                if line[match.end():match.end() + 1] == "/":
-                    continue
-                findings.append(f"{rel}:{lineno}: private address {match.group(0)!r}")
-            for match in _TAILNET_DNS_RE.finditer(line):
-                findings.append(f"{rel}:{lineno}: tailnet hostname {match.group(0)!r}")
+        for lineno, matched in scan_file(path):
+            findings.append(f"{rel}:{lineno}: forbidden host {matched!r}")
     return findings
 
 
@@ -84,6 +60,5 @@ def test_no_private_host_addresses_in_tracked_content() -> None:
     findings = _findings()
     assert not findings, (
         "Private/tailnet addresses found in tracked content (public mirror). "
-        "Replace them with the host name (e.g. 'bunker-las-03'):\n  "
-        + "\n  ".join(findings)
+        "Replace them with the host name (e.g. 'bunker-las-03'):\n  " + "\n  ".join(findings)
     )
