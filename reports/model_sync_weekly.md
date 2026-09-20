@@ -1,122 +1,216 @@
 # Chimera Model Sync — Weekly Report
 
-**Date:** 2026-09-19 (script stamp 17:00 UTC / wrapper run 12:00 local -05)
-**Run:** `scripts/model_sync_cron.py` → `model_sync.py --diff --output reports/latest.md`, then `--diff --score`
-**Diff result:** **1 new candidate** across 13 core providers — `zhipuai/glm-5.3-flashx` (GLM-5.3-FlashX).
-**Cache:** hit, age ~1,663 s, `stale=False` — 222 provider blocks / 7,086 in-scope discovery models across 12 recognised providers.
-**`.seen_models.json`:** **217 entries** (09-18 report: 216 — the +1 is exactly today's candidate).
+**Date:** 2026-09-20 (cron run 17:00 UTC / 12:00 local −05)
+**Run:** `scripts/model_sync_cron.py` → `model_sync.py --diff --output reports/latest.md`. Auto-score step **not reached** (diff = 0, wrapper short-circuits).
+**Diff result:** **0 new candidates** across 13 core providers — `reports/latest.md` reads "Candidates: 0 new models across 13 providers".
+**Cache:** hit, age ~496 s, `stale=False` — 222 provider blocks / 7,085 discovery models across 12 recognised providers.
+**`.seen_models.json`:** **217 entries**, unchanged from the 09-19 run.
 **Catalog:** **42 models**, all `enabled: true`; `chimera.yaml` **untouched** by this run (recommend-only mandate).
-**Archive process note:** the prior (09-18) weekly report was never committed and got overwritten by this run **without**
-an archive — that week's full text is lost (only its head was captured pre-overwrite; archives on disk/git exist
-through `20260917`). A timestamped copy of THIS report was created post-write:
-`reports/model_sync_weekly_20260919_archive.md`.
-**Scores file:** `reports/model_scores_20260919_1201.yaml` (LLM-scored top-5, all paths validated against the canonical 32-path list).
+**Archive:** the pre-run file was byte-identical to `model_sync_weekly_20260919_archive.md`; a copy was verified with `diff -q` before overwrite, so no text is lost. (Last week's 09-18 report had already been lost by the pre-overwrite path; this run checked first.)
 
 ---
 
-## 1. Diff honesty check (seen-file trap) — honest, +1 exactly accounted for
+## 1. Diff honesty check (seen-file trap) — honest, 0 is real
 
-`model_sync.py`'s scan + seen/catalog loaders were re-run **without** `--diff`:
+The scan + seen/catalog loaders were re-run **without** `--diff` (`/tmp/_diag_scan.py`):
 
 | Check | Result |
 |---|---|
 | Core providers scanned | 13 |
-| In-scope candidates (full scan, no `--diff`) | **172** (171 on 09-18) |
-| Candidates **not** in `.seen_models.json` | 1 — today's candidate (after this run's write) |
-| Seen-file size | 217 entries (was 216) → **+1 = exactly the candidate** |
-| Catalog hits filtered before the seen filter | 171 of 172 (scan drops catalog models first) |
+| In-scope candidates (full scan, no `--diff`) | **172** (171 on 09-19) |
+| Candidates **not** in `.seen_models.json` | **0** |
+| Seen-file size | 217 entries (was 217) → no writes |
+| Catalog models filtered before the seen filter | 42 |
 
-**Conclusion:** the 1-candidate diff is real and complete — nothing else landed in
-`openai / anthropic / deepseek / google / xai / mistral / moonshot / minimax / alibaba / zhipuai / meta / stepfun / xiaomi`.
+**Conclusion:** the 0-candidate diff is real and complete *for the scan's own scope*.
+Nothing new landed in `openai / anthropic / deepseek / google / xai / mistral / moonshotai /
+minimax / alibaba / zhipuai / meta / stepfun / xiaomi` since 09-19.
 
-**Honest window boundary.** The only in-scope (core-13) row with a `release_date` in this window is
-`zhipuai/glm-5.3-flashx` (**2026-09-18**). Everything else new in the cache this week sits outside the core-13
-provider scope (e.g. `~deepseek/deepseek-flash-latest`, an OpenRouter alias row). That is the measured statement,
-not a claim that nothing was released anywhere.
+**⚠️ But "0 new models" is NOT the honest headline this week — the scope is the problem.**
+A genuine frontier release shipped today and the scan is structurally unable to see it (§2).
 
 ---
 
-## 2. Candidate: `glm-5.3-flashx` — **VERIFIED REAL, RECOMMENDED (native zai)**
+## 2. The real finding: StepFun **Step-5 Preview** shipped 2026-09-20 and the sync cannot see it
 
 | Field | Value |
 |---|---|
-| models.dev row (`zhipuai`) | name "GLM-5.3-FlashX", `release_date`/`last_updated` **2026-09-18**, ctx **1,000,000**, out 131,072, **$0.37 / $1.25 per MTok**, cache_read $0.075, `reasoning: true`, `tool_call: true`, `attachment: true` |
-| OpenRouter | `openrouter.ai/api/v1/models/z-ai/glm-5.3-flashx/endpoints` → **HTTP 200**, id `z-ai/glm-5.3-flashx`, "Z.ai: GLM 5.3 FlashX", **1 endpoint (Z.AI direct)**, ctx 1,048,576, $0.37/$1.25 per MTok, **uptime_last_30m = 100** |
-| Provider confirmation | **Yes** — Zhipu's official WeChat announcement, Sep 18, covered by TechFlow, BigGo Finance, KuCoin, PANews, Phemex, HuggingNews: officially launched GLM-5.3-FlashX (previously previewed globally as **"Ox Alpha"**); API and experience center open |
-| What it is | A **high-speed serving tier of GLM-5.3-Flash** — inference raised from ~30–50 tok/s to up to **200 tok/s** on ~100k domestic chips. Press is explicit: **no new benchmarks, no architectural changes** — a speed/cost-optimized variant |
-| Pricing position | $0.37/$1.25 per M sits between deepseek-flash ($0.15/$0.60 official) and GLM-5.3 standard ($1.40/$4.40); cache read $0.075/M. **Budget tier** |
-| Newness | Genuinely new model id (new API product), released yesterday — not a relay/alias mapping like last week's `mistral/zai-glm-5-3` |
-| Addability | **This deployment holds a `ZAI_API_KEY`** and the `zai` provider (`base_url`) is configured → addable natively, unlike last week's Mistral relay entry which had no credential |
+| What it is | StepFun's new flagship: **600B/27B sparse MoE** (27B active), 92-layer narrow-deep stack, **1M-token context**, native text+image+video input, reasoning + tool use. Aimed at coding, long-document work and long-horizon agents |
+| Announced / released | **2026-09-18** (StepFun announcement) / cache + press **2026-09-20**; open weights promised **Oct 15** |
+| Pricing | **$1.00 / $2.70 per MTok**, cache read $0.05 (Artificial Analysis, myclaw, StepFun rate card) |
+| Benchmark | **AA Intelligence Index 44** — press positions it "global top 25" at ~1/5 the price of comparable frontiers |
+| Native API | **LIVE** — `GET https://api.stepfun.ai/v1/models` (with `STEPFUN_API_KEY`) → **HTTP 200**, 16 models, `step-5-preview` present: `enable_vision_input: true`, `enable_reason: true`, `max_input_tokens: 1024000`, protocols `chat, messages, responses` |
+| Provider announcement | **Yes** — StepFun's own platform docs + Pandaily, Intelligent Living, runtimewire, myclaw, Artificial Analysis |
+| OpenRouter page | **NO** — `GET /api/v1/models` (446 models) lists only `stepfun/step-3.7-flash` and `stepfun/step-3.5-flash`; `…/models/stepfun/step-5-preview/endpoints` → **HTTP 404**. Not on OR yet |
+| models.dev **core** `stepfun` row | **ABSENT** — still only `step-1-32k, step-2-16k, step-3.5-flash, step-3.5-flash-2603, step-3.7-flash, step-tts-2, stepaudio-2.5-*`. Verified in the on-disk cache **and** on a fresh `urllib` fetch of `models.dev/api.json` (222 providers) |
+| Where it IS in models.dev | Only `nano-gpt/stepfun/step-5-preview` and `vercel/stepfun/step-5-preview` — **both outside `CORE_PROVIDERS`** |
 
-**Verdict: RECOMMEND adding `z-ai/glm-5.3-flashx`.** It is the first Z.AI-direct flash-family entry in the catalog —
-the nearest existing relative, `hermes/glm-5.3-flash`, routes through the local Hermes gateway, not Z.AI direct.
-Use cases: fast worker/aggregator stages and the plan-lane chain (xkiro → 9router → **zai** → deepseek), where its
-200 tok/s + 1M ctx + $0.37/$1.25 pricing is a strong slot. Caveats: (a) it inherits the **zai weekly quota cap**
-(err 1310) that is currently exhausted until 2026-09-20 04:07 UTC — a new entry does not bypass that; (b) the
-LLM-scored categories below are inferred from positioning (no published benchmarks), so treat them as provisional.
+**Why the sync reports 0:** `scripts/model_sync.py` iterates exactly `CORE_PROVIDERS`
+(13 ids) and resolves each row to a chimera id. A release whose only models.dev rows sit
+under a **reseller/aggregator** id is never a candidate — the model is not filtered out, it
+is never *seen*. Resolution check: `nano-gpt + step-5-preview → "nano-gpt/step-5-preview"`,
+which is neither a catalog key nor a native lab id, so widening `CORE_PROVIDERS` naively
+would produce junk ids rather than the model.
 
-### Proposed entry (for approval — NOT applied)
+**Blind-spot scale (measured, not estimated):** **39 model ids** with `release_date ≥ 2026-09-10`
+exist *only* in non-core rows — `step-5-preview`, `ternary-bonsai-2-27b`, `pareto`,
+`qwen3.8-omni-flash`, `fugu-max`, `fugu-ultra-v2`, `gpt-{astra,sol,luna,terra}-latest`,
+`schematron-v2-small/-turbo`, `arrow-2`, `arrow-2-telos`, `qwen3.8-27b-cybersecurity`, ….
+The 09-17 report already recorded the sibling case (`sakana/fugu-max`, 09-11, verified live on
+OpenRouter) as *"a sync-scope decision is needed to ever see it."* **That decision is now overdue.**
 
-```yaml
-  z-ai/glm-5.3-flashx:
-    categories:
-      technology_code/code_generation/python: 78
-      technology_code/code_generation/javascript: 74
-      technology_code/code_generation/shell: 72
-      technology_code/data_interaction/file_based/json: 66
-      technology_code/system_design/devops: 65
-      technology_code/testing_debugging/error_analysis: 68
-      complex_reasoning_agency/tool_use/code_execution: 75
-      complex_reasoning_agency/self_correction/debugging: 70
-      complex_reasoning_agency/multi_step_planning/task_decomposition: 64
-    cost_tier: budget
-    provider: zai
-    enabled: true
-    cost_per_1k_input: 0.00037
-    cost_per_1k_output: 0.00125
-```
+**Verdict: DO NOT ADD yet — the account cannot serve it.**
+The deployment holds `STEPFUN_API_KEY` and `GET /v1/models` succeeds, but **every chat call
+returns HTTP 402** `{"type":"quota_exceeded","message":"You exceeded your current quota,
+please check your plan and billing details"}`, reproduced on **three** models
+(`step-3.5-flash`, `step-3.7-flash`, `step-5-preview`) — so it is **account-wide, not
+model-specific**, and not an invalid key. Endpoint gotcha recorded: the same key against
+`https://api.stepfun.com/v1` (China) returns **HTTP 401 `Incorrect API key provided`** — the
+China and Global endpoints are **not interchangeable**.
 
-*ID note:* the sync proposed `zai/glm-5.3-flashx` (provider-name prefix strips cleanly to the native API id
-`glm-5.3-flashx`); the existing catalog convention for Z.AI-direct entries is `z-ai/…` (`z-ai/glm-5`,
-`z-ai/glm-5-turbo`). Either works; the block above follows the existing `z-ai/` convention. OpenRouter wiring
-(`openrouter/z-ai/glm-5.3-flashx`) is **not** recommended — OR exposes exactly one endpoint (Z.AI itself), so it
-adds fees with no redundancy.
-
-If approved: add to `chimera.yaml`, `cp` to `chimera.yaml.example` + `chimera.yaml.docker`, restart the unit,
-`curl /v1/models` for 43, then live-smoke the new stage (after zai quota resets 09-20 04:07 UTC).
+→ Filed as **DF-CHIMERA-V2-26** (scan blind spot) and **DF-CHIMERA-V2-28** (route + quota).
 
 ---
 
-## 3. `--score` top-5 (carried queue — all already seen, none new this week)
+## 3. Carried candidate from 09-19: `z-ai/glm-5.3-flashx` — now BLOCKED for a new reason
 
-The `--score` path deliberately pulls its top-5 from **all** candidates (not just the diff), so previously-seen
-gaps stay reachable. All five below are in the seen file and unchanged from prior weeks' assessments:
+The 09-19 report recommended adding this and named its only caveat as the zai weekly quota
+(reset 2026-09-20 04:07 UTC). **Measured today, after the reset:**
+
+```
+zai glm-5.3-flashx → HTTP 429 {"error":{"code":"1311",
+   "message":"Your current subscription plan does not yet include access to GLM-5.3-FlashX"}}
+zai glm-5.3-flash  → HTTP 200 in 4.1 s   (control: provider is healthy, key is valid)
+```
+
+The quota reset; the entitlement did not arrive. **The recommendation is downgraded to
+"hold"** — it is not addable on this subscription, regardless of the YAML patch. It remains
+"recommended when/if the plan gains the model". (The unit is otherwise healthy: the deployed
+service is at HEAD and `/v1/health` shows zai healthy on `zai-coding-plan/glm-5.2`.)
+
+---
+
+## 4. Deployment drift found and FIXED this tick
+
+The tick opened with the supervised service **stale**: `/health` reported `commit 69acfb4`
+while local HEAD was `6fcfbb1` — **15 commits behind**, i.e. `Restart=always` had not
+recovered the drift. Two of those commits are security-relevant, so this was not cosmetic:
+
+- **Verified live pre-restart:** `POST /web/debug/reset` → **HTTP 200 `{"status":"ok"}`** on a
+  **`0.0.0.0`-bound** server. That endpoint rebinds the global session manager and SSE
+  broadcaster — **one anonymous request wipes every live session**. The fix (`796d396`, now
+  deployed) gates it on `CHIMERA_WEB_DEBUG_RESET`.
+- The same window carried the private-host leak gate, the stage-observer SSE fix and the
+  `/web` queue/rate-limit parity fix.
+
+**After restart:** `/health` → `commit 6fcfbb1` == `git rev-parse --short HEAD`.
+**Re-verified:** `POST /web/debug/reset` → **HTTP 404 `{"detail":"Not found"}`** ✅.
+**Smoke:** `scripts/smoke_live.py --formation simple` → **SMOKE PASS**, merged answer returned
+(request `fb43b06cd08e4d25`), exit 0, `providers: 6/9 healthy`.
+
+---
+
+## 5. Second finding: the `hermes` provider can never pass the health probe
+
+`/v1/health` reports `status: degraded` with `hermes: {healthy: false, error: "timeout: no
+response within 10.0s"}` on every probe. The gateway is demonstrably alive — but the gate is
+**structural**, not load:
+
+| Probe | Result |
+|---|---|
+| `GET 127.0.0.1:8642/v1/models` (same key) | **HTTP 200 in 0.33 s** — alive |
+| `POST :8642/v1/chat/completions` `{max_tokens: 1}` | **HTTP 200 after 108.3 s**, `prompt_tokens=43599` |
+| Same call, second attempt | still running at **300 s** |
+| **Control**: same model direct against `api.z.ai` | **HTTP 200 in 1.9 s**, `prompt_tokens=13` |
+| `server.health_timeout_s` (live config) | **10.0 s** |
+
+The gateway **injects its own ~43.6k-token agent system prompt**, so the provider's floor
+latency is ~100 s+ against a 10 s budget — no realistic `health_timeout_s` fixes it without
+turning the probe into a hanging request for every other provider. DF-CHIMERA-V2-17's
+cold-start grace (default 1.0 s) cannot cover a 100 s floor. Effect: the documented health
+contract can never be satisfied while `hermes` is configured, and a **real** hermes outage is
+indistinguishable from the standing condition.
+
+→ Filed as **DF-CHIMERA-V2-27**.
+
+---
+
+## 6. `--score` top-5 (carried queue — none new this week)
+
+The `--score` path pulls its top-5 from **all** candidates, so previously-seen gaps stay
+reachable; the wrapper skipped it this run because the diff was empty. Queue unchanged:
 
 | Model | Released | $/MTok in/out | Status |
 |---|---|---|---|
+| `zhipuai/glm-5.3-flashx` | 09-18 | $0.37 / $1.25 | **BLOCKED** — plan entitlement missing (§3) |
 | `openai/gpt-6-astra` | 09-04 | $10 / $50 | Verified live on OR (earlier runs); premium flagship — user decision pending |
-| `google/gemini-3.8-flash` | 09-02 | $0.75 / $3.75 | OR + google rows; note the standing pitfall: gemini-3.x are Vertex/OR-only, direct `v1beta` 404s |
+| `google/gemini-3.8-flash` | 09-02 | $0.75 / $3.75 | OR + google rows; standing pitfall: gemini-3.x are Vertex/OR-only, direct `v1beta` 404s |
 | `meta/muse-spark-1.3` | 09-02 | $1.25 / $4.25 | OR + native meta rows; no mistral/meta credential in this deployment |
-| `deepseek/deepseek-flash` | 09-10 | $0.15 / $0.60 | **Not a new model** — same flash product under current DeepSeek naming (API accepts `deepseek-flash` / `deepseek-v4-pro`); already represented by `deepseek/deepseek-v4-flash` catalog entries |
-| `zhipuai/glm-5.3-flashx` | 09-18 | $0.37 / $1.25 | Today's candidate — see §2 |
+| `deepseek/deepseek-flash` | 09-10 | $0.15 / $0.60 | **Not a new model** — same flash product under current DeepSeek naming; already represented |
 
 ---
 
-## 4. Deployment state (measured this tick)
+## 7. Carried minor findings (status re-measured, not assumed)
 
-- `/health` → `{"status":"alive","uptime_models":42,"commit":"ff952d9"}`; local HEAD = **51b7359** → **deploy drift**:
-  the running service predates today's stand-in PM cycle commit. `sudo systemctl restart chimera` needed to load it
-  (then `/health` must show `51b7359`).
-- Live smoke test: **PASS** (formation=simple, merged answer returned), **8/9 providers healthy**.
-- `zai` unhealthy: weekly quota exhausted (err 1310 class), resets **2026-09-20 04:07:32 UTC** — known weekly-cap
-  behavior, self-heals; plan lanes already chain around it.
+1. **Three-YAML drift — now measured by parse, not grep.** Line counts 1580 / 1649 / 1376
+   (`chimera.yaml` / `.example` / `.docker`); model keys **42 / 43 / 36**.
+   - `.example` has 1 extra: `cliproxy/deepseek,deepseek-v4-flash` (documented example entry) — **intentional**.
+   - `.docker` is missing **6** catalog entries: `hermes/glm-5.3-flash`, `router9/ds/deepseek-v4-flash`,
+     `router9/ds/deepseek-v4-pro`, `router9/mmx/MiniMax-M3`, `router9/openrouter/x-ai/grok-4.6`,
+     `router9/xai/grok-4` — **real drift** (the `router9` + `hermes` provider families never propagated).
+   - `server.health_timeout_s` is in the live file (10.0) and **absent from both** derived configs.
+   - *Correction to prior reports:* the 09-17 archive claimed `health_timeout_s` present in `.example` — a
+     grep count of 1 there is a **comment/other match**; a real YAML parse reads `None`. Grep counts on
+     these files are not evidence; parse them.
+2. **Stale cron docstring** — `scripts/model_sync_cron.py:1` still says *"Mondays 12:00 CT"*; observed
+   cadence is **daily 12:00 local**. Two-line fix, unfixed since 09-14.
+3. **`DF-CHIMERA-V2-13`** (AGENTS.md describes model-sync auto-scoring as "when `DEEPSEEK_API_KEY` is
+   set") — still `pending`; the dotenv fallback has been live since 09-17. One-line docs fix.
 
 ---
 
-## 5. Action items
+## 8. Deployment state (measured this tick, post-restart)
 
-1. **Bane decision:** approve adding `z-ai/glm-5.3-flashx` (§2) — recommended; budget tier, 1M ctx, fastest Z.AI
-   serving tier. Not added without approval per the recommend-only mandate.
-2. On approval: apply the entry + sync both derived configs + restart + verify `/v1/models` count 43 + smoke.
-3. **Restart the service** to clear the `ff952d9` → `51b7359` deploy drift (independent of item 1).
-4. No catalog action on the other four scored models (§3) — no credentials / duplicates / prior decisions stand.
+- `/v1/health` → `status: degraded`, `commit 6fcfbb1` == local HEAD ✅
+  `providers_configured: 7`, `providers_discovered: [openai, xai]` (discovery-only phantoms, correctly
+  reported as `healthy: false` + note after CH-GAP-053).
+- Healthy and probed: `anthropic` (claude-opus-4.8), `google` (gemini-3.1-pro-preview), `openrouter`
+  (qwen/qwen3.7-max), `router9` (ds/deepseek-v4-flash), `deepseek` (deepseek-v4-flash), `zai`
+  (zai-coding-plan/glm-5.2). Unhealthy: `hermes` (timeout, §5), `openai`/`xai` (no models configured).
+  `smoke_live.py` renders **6/9** counting only model-tested entries.
+- `GET /v1/models` == **42** == `load_config().models`; all `enabled: true`.
+- **zai weekly quota: recovered** (429 code 1310 gone; 1311 entitlement error is model-specific, §3).
+- `chimera.yaml` mtime unchanged by this run.
+
+---
+
+## 9. Action items
+
+1. **Bane decision — the sync-scope question is now blocking real value.** Approve one of:
+   (a) reseller/aggregator watch list + native cross-check, (b) native lab API scanning, or
+   (c) a mandatory named "blind spot" section in every weekly report. **DF-CHIMERA-V2-26.**
+2. **Bane decision — StepFun billing.** The native account is quota-exhausted (402) while a
+   600B frontier model ships on it. Top up → then route natively; or leave it unused. **DF-CHIMERA-V2-28.**
+3. **`z-ai/glm-5.3-flashx`: HOLD** (§3) — the 09-19 recommendation is not actionable on this plan.
+4. **`hermes` provider health** — approve per-provider probe control or a liveness-only probe. **DF-CHIMERA-V2-27.**
+5. **Deploy drift** — done this tick; the running service now matches HEAD. The pattern (15 commits of
+   drift, including an open destructive endpoint) argues for the foreman's existing `/health`-vs-HEAD
+   audit to *restart*, not just report.
+6. Carried docs fixes: cron docstring (§7.2), `DF-CHIMERA-V2-13` (§7.3), `.docker` model drift (§7.1).
+
+---
+
+## 10. Findings filed as board rows this run
+
+Per Bane's ops doctrine (findings become rows on the owning project, not report prose only):
+
+| Row | Priority | Finding |
+|---|---|---|
+| **DF-CHIMERA-V2-26** | P2 | Sync blind spot: a release whose only models.dev rows are reseller/aggregator ids is invisible — `step-5-preview` is the proof; 39 such ids measured since 09-10 |
+| **DF-CHIMERA-V2-27** | P2 | `hermes` can never pass the `/v1/health` probe — 43.6k-token injected prompt, 108 s measured floor vs 10 s budget |
+| **DF-CHIMERA-V2-28** | P3 | StepFun routed via OpenRouter while a native `STEPFUN_API_KEY` exists — and the native account 402s account-wide (policy-gated on billing) |
+
+Board delta: **194 → 197 rows**, appended via `~/.hermes/scripts/board_append.py`
+(`APPENDED=3 PRIOR=194 TOTAL=197`), one object per physical line, file ends with exactly one
+newline. `DF-CHIMERA-V2-25` was not modified by this run (its `pending → in_progress` flip in
+the working tree is the live foreman's 11:54 dispatch).
