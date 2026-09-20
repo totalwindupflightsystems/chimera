@@ -1439,3 +1439,35 @@ tasks:
   status: complete
   created_at: '2026-09-20T19:19:41.046174+00:00'
   completed_at: '2026-09-20T20:40:27.896091+00:00'
+- id: DF-CHIMERA-V2-30
+  title: Deflake test_saturated_queue_refuses_web_chat_exactly_like_v1
+  criteria:
+  - The test passes 30 consecutive times under real CPU load on the merged tree
+  - The wait for queue arrivals is bounded by time, not by a fixed loop-turn count
+  - The original assertion semantics and failure messages are preserved (no skip,
+    no xfail, tests-only diff)
+  status: complete
+  created_at: '2026-09-20T22:41:50.321657+00:00'
+  completed_at: '2026-09-20T22:41:59.186621+00:00'
+- id: DF-CHIMERA-V2-31
+  title: Fresh-worktree guards self-seed the venv
+  criteria:
+  - The tests lane works from a fresh worktree without a manual uv sync --extra dev
+  - The seeded venv is Python 3.11 with the dev extra, matching the repo floor
+  - A one-command bootstrap script exists and is idempotent, and docs/GITREINS.md
+    documents the worktree venv gap
+  status: complete
+  created_at: '2026-09-20T22:41:50.549161+00:00'
+  completed_at: '2026-09-20T22:48:17.051946+00:00'
+- id: DF-CHIMERA-V2-21
+  title: Vendor mermaid for the SPA DAG panel
+  criteria:
+  - The DAG renders with no network egress (no external URLs in index.html, mermaid
+    served from /web/vendor/)
+  - A failed mermaid load surfaces a visible explicit message instead of a silent
+    blank panel
+  - Served static assets are covered by hermetic tests including path traversal and
+    missing-asset behavior
+  status: complete
+  created_at: '2026-09-20T22:41:50.764353+00:00'
+  completed_at: '2026-09-20T22:48:18.635191+00:00'
