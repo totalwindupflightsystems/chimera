@@ -1306,3 +1306,109 @@ tasks:
   status: complete
   created_at: '2026-09-20T03:40:37.219909+00:00'
   completed_at: '2026-09-20T04:14:21.732394+00:00'
+- id: CH-GAP-055
+  title: /v1/models cost fields must agree with the billed tier rate
+  criteria:
+  - Every model id returned by GET /v1/models whose catalog entry declares a cost_tier
+    reports non-null cost_per_1k_input/output equal to DEFAULT_COST_RATES[tier]
+  - A model with no explicit rates and no tier is unchanged and documented
+  - Existing envelope/selector/provider-discovery tests stay green
+  status: complete
+  created_at: '2026-09-20T08:32:04.985783+00:00'
+  completed_at: '2026-09-20T14:29:58.593189+00:00'
+- id: CH-GAP-056
+  title: trace dispatch span carries route attribution and real timestamps
+  criteria:
+  - The dispatch span's provider/wire_model/api_base equal the gateway metadata stamped
+    on the dispatcher response
+  - The dispatch span's started_at/ended_at are real monotonic values with ended_at
+    >= started_at
+  - 'Attribution is never derived from the model id: a metadata-less dispatcher response
+    keeps empty fields'
+  status: complete
+  created_at: '2026-09-20T08:32:05.366757+00:00'
+  completed_at: '2026-09-20T14:29:41.834188+00:00'
+- id: DEPS-004
+  title: bound test-suite host load (no unbounded subprocess/CPU burn)
+  criteria:
+  - A written audit identifies the worst unbounded-load pattern in this repo's test
+    suite with measured evidence
+  - The worst offender is bounded via an env knob clamped to 2..16 (default <= 8)
+    or an in-process equivalent, with zero tests skipped, weakened or time-boxed
+  - Full suite is green after the change (1547 collected, uv run pytest -q green)
+    and the before/after measurement is recorded
+  status: in_progress
+  created_at: '2026-09-20T07:38:32.523613+00:00'
+- id: DF-CHIMERA-V2-17
+  title: a late cold-start provider probe reports its REAL class instead of a fabricated
+    timeout
+  criteria:
+  - A probe landing inside health_probe_grace_s reports its real error_class + model_tested,
+    never timeout
+  - A probe still outstanding after the grace is still reported timeout with the same
+    error text
+  - health_probe_grace_s=0 reproduces the pre-change verdict exactly and defaults
+    to 1.0
+  - Existing test_health_providers.py tests stay green unchanged
+  status: complete
+  created_at: '2026-09-20T15:54:20.373600+00:00'
+  completed_at: '2026-09-20T16:10:04.645831+00:00'
+- id: DF-CHIMERA-V2-22
+  title: /web chat path takes the same queue + rate limit as /v1
+  criteria:
+  - POST /web/sessions/{id}/chat answers 503 with Retry-After under a saturated queue
+    exactly as /v1/deliberate does
+  - a successful web chat releases its queue slot (try/finally pinned)
+  - _check_rate_limit is on the web path (denied like /v1)
+  - hermetic suite green with the web path under the shared queue
+  status: complete
+  created_at: '2026-09-20T15:54:15.478547+00:00'
+  completed_at: '2026-09-20T16:10:03.603980+00:00'
+- id: DF-CHIMERA-V2-19
+  title: aged SSE sessions replay their stored events and the reconnect loop stops
+  criteria:
+  - An aged session's SSE delivers its stored events plus a terminal marker then closes
+    (no zero-byte close)
+  - A reconnect after replay is idempotent and the stream is terminal, so no 3s reconnect
+    loop
+  - An unknown session closes with terminal semantics instead of a JSON 404 a browser
+    would retry
+  - test_web.py and test_web_sse_replay.py green
+  status: complete
+  created_at: '2026-09-20T15:54:19.863738+00:00'
+  completed_at: '2026-09-20T16:10:05.572432+00:00'
+- id: DF-CHIMERA-V2-20
+  title: web debug reset is dev-gated and SECURITY.md matches observed behaviour
+  criteria:
+  - On a default deployment POST /web/debug/reset does not destroy existing sessions
+    (404) and a concurrent session survives
+  - CHIMERA_WEB_DEBUG_RESET=1/true enables it with a warning log naming the switch
+  - docs/SECURITY.md no longer lists it as an always-required-key path and states
+    the real blast radius
+  status: complete
+  created_at: '2026-09-20T16:10:06.478807+00:00'
+  completed_at: '2026-09-20T16:10:06.950384+00:00'
+- id: DF-CHIMERA-V2-24
+  title: private host leak guard fires at COMMIT time via one shared pattern module
+  criteria:
+  - The private/CGNAT pattern set lives in ONE shared module imported by both the
+    suite guard and the new pre-commit arm
+  - A staged document containing a private-range address BLOCKS the commit before
+    it lands
+  - The same document with the host NAME instead of the address passes
+  status: complete
+  created_at: '2026-09-20T16:18:49.287634+00:00'
+  completed_at: '2026-09-20T16:18:50.103894+00:00'
+- id: df-chimera-v2-25
+  title: SPA listeners for mid-run stage SSE events (DF-CHIMERA-V2-25)
+  criteria:
+  - index.html registers EventSource listeners for both stage_started and stage_completed
+    inside connectSSE
+  - stage_started marks the matching DAG node in-flight and shows the live indicator;
+    stage_completed flips the node complete and updates tokens/cost/time/stages tiles
+    from the payload
+  - A hermetic test asserts the SPA listener wiring and fails when the stage listener
+    registration is removed from index.html
+  status: complete
+  created_at: '2026-09-20T16:54:02.471182+00:00'
+  completed_at: '2026-09-20T17:47:21.728531+00:00'
