@@ -73,9 +73,14 @@ def build_server(
 
         ``stage_models`` forces models per stage (stage_id → model).
         ``dag`` defines a full client DAG (requires ``allow_custom_dag=True``).
-        ``progressive`` / ``wait_messages`` / ``trigger`` enable progressive
-        prompting — wait_messages are sent sequentially to each worker before
-        the real prompt, improving context absorption for large inputs.
+        ``progressive=True`` turns progressive prompting ON for every worker
+        stage of the run (inherited stages included), whether or not
+        ``wait_messages`` is given; it never turns it off. ``wait_messages``
+        feeds those context messages one at a time and is itself sufficient to
+        enable progressive prompting, so ``progressive`` alone adds no extra
+        provider calls: the stage prompt is then sent once, exactly as in a
+        non-progressive run. ``trigger`` overrides the final message that asks
+        for the real output and is only used when ``wait_messages`` is set.
 
         DF-CHIMERA-V2-7: an unknown ``formation`` returns an error payload
         (``unknown_formation`` + the available names) instead of silently

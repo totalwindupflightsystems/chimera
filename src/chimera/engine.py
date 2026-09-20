@@ -230,20 +230,50 @@ def _apply_progressive(
     dispatch: DispatchResult,
     wait_messages: list[str] | None,
     trigger: str | None,
+    *,
+    progressive: bool = False,
 ) -> None:
     """Apply progressive prompting settings to all worker stages.
 
-    When ``wait_messages`` is provided, every worker stage gets
-    ``progressive=True`` with the given messages and trigger.
-    Non-worker stages (aggregator, audit, merge) are left unchanged.
+    ``progressive`` (the caller's explicit flag) and ``wait_messages`` are two
+    independent inputs and BOTH are honored (CH-GAP-058). Before that fix the
+    caller's flag was accepted by the API/MCP surfaces and never read: only a
+    non-empty ``wait_messages`` turned progressive prompting on, so
+    ``progressive=True`` alone was a silent no-op and ``wait_messages`` alone
+    switched a stage on that the caller never asked for.
+
+    Shipped semantics, in full:
+
+    * ``progressive=True`` (with or without ``wait_messages``) turns progressive
+      prompting ON for every worker stage — including stages a preset or a
+      client DAG declared ``progressive=False``. It never turns it OFF, and
+      non-worker stages (aggregator, audit, merge) are never touched.
+    * ``wait_messages`` additionally arms the context-feeding path and implies
+      ``progressive=True``, because feeding discarded context messages only
+      makes sense as progressive prompting (unchanged pre-CH-GAP-058
+      behaviour, so callers that only pass ``wait_messages`` are unaffected).
+      A caller-supplied list REPLACES whatever the DAG declared on that stage.
+    * ``trigger`` overrides the stage's own trigger — the message that requests
+      the real output. It is only consumed when the stage ends up with
+      non-empty ``wait_messages`` (the engine gate); when a caller supplies
+      ``wait_messages`` but no ``trigger``, the stage's own trigger is cleared
+      so the stage prompt is used, which is the pre-CH-GAP-058 rule.
+    * Neither set → the whole function is a no-op and every stage keeps what
+      the config/DAG declared (non-progressive by default).
     """
-    if not wait_messages:
+    if not progressive and not wait_messages:
         return
+    messages = list(wait_messages) if wait_messages else None
     for stage in dispatch.formation.stages:
-        if stage.kind == "worker":
-            stage.progressive = True
-            stage.wait_messages = list(wait_messages)
-            stage.trigger = trigger or ""
+        if stage.kind != "worker":
+            continue
+        stage.progressive = True
+        if messages is not None:
+            stage.wait_messages = list(messages)
+        if trigger:
+            stage.trigger = trigger
+        elif messages is not None:
+            stage.trigger = ""
 
 
 def _apply_allowed_models(
@@ -682,8 +712,14 @@ class Engine:
         _apply_stage_models(outcome.result, stage_models, self.config)
         if overrides:
             _apply_allowed_models(outcome.result, overrides.allowed_models, self.config)
+            # CH-GAP-058: pass the caller's explicit ``progressive`` flag too —
+            # it used to be dropped here (only ``wait_messages`` was read), so
+            # ``progressive=True`` alone was a silent no-op.
             _apply_progressive(
-                outcome.result, overrides.wait_messages, overrides.trigger,
+                outcome.result,
+                overrides.wait_messages,
+                overrides.trigger,
+                progressive=overrides.progressive,
             )
 
         # DF-CHIMERA-V2-6: a model whose provider credential was rejected
@@ -1086,6 +1122,16 @@ class Engine:
             messages = self._worker_messages(stage, dispatch, user_prompt,
                                              iteration_feedback=iteration_feedback)
             # Progressive prompting: feed context piece-by-piece before the real call.
+            # CH-GAP-058: a caller-supplied ``progressive=True`` now reaches these
+            # stages on its own (``_apply_progressive``), so the gate below is the
+            # real contract for BOTH ways the flag can be set:
+            #   * progressive=True + wait_messages -> messages are fed one at a
+            #     time (each response discarded); a non-empty ``trigger`` then
+            #     REPLACES the stage prompt, an empty one leaves it intact.
+            #   * progressive=True with NO wait_messages -> there is nothing to
+            #     feed before the call, so the flag is a documented no-op on the
+            #     wire (``messages`` is already final) — never a second or
+            #     repeated prompt.
             if stage.progressive and stage.wait_messages:
                 for msg in stage.wait_messages:
                     await self.gateway.complete(
