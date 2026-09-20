@@ -64,10 +64,12 @@ class StageSpan(BaseModel):
     provider: str = ""
     """The provider that actually SERVED this stage's call — the gateway's
     resolved ``effective_provider`` after credential fallbacks — or ``""``
-    when no provider route was resolved at all (the internal dispatch span, a
-    degraded stage, a gateway stub that carries no attribution).  Never
-    derived from ``model``: a catalog id's prefix can name a provider other
-    than the one that served the call (QA-CHIMERA-V2-16)."""
+    when no provider route was resolved at all (a degraded stage, a gateway
+    stub that carries no attribution, or a dispatcher call that failed and
+    returned its ``{}`` fallback).  Never derived from ``model``: a catalog
+    id's prefix can name a provider other than the one that served the call
+    (QA-CHIMERA-V2-16).  The dispatch span IS a provider call and carries the
+    route the gateway resolved for it (CH-GAP-056)."""
     wire_model: str = ""
     """The model id actually sent to that provider (the gateway's wire model
     string), or ``""`` when nothing was sent."""
@@ -1499,14 +1501,23 @@ class Engine:
         # request-level dispatcher_model override); fall back to the config
         # default when the response doesn't identify one.
         dispatch_model = resp.model or self.config.defaults.dispatcher
-        # QA-CHIMERA-V2-16: the dispatch span is an INTERNAL pipeline stage, not
-        # a provider route of its own, so it deliberately carries no route
-        # attribution (provider/wire_model/api_base keep their empty defaults).
-        # Attribution is never fabricated here.
+        # CH-GAP-056: the dispatch stage IS a provider route — the dispatcher
+        # model call is a real gateway completion (Dispatcher._call_dispatcher
+        # → Gateway.complete), so its span carries the same resolved-route
+        # attribution a worker span does, read off the response's metadata
+        # side-band. It stays empty exactly when no route was resolved (the
+        # dispatcher's own `{}` fallback response after a GatewayError), never
+        # guessed from the model id. The timestamps are the dispatcher's own
+        # monotonic readings (`DispatchOutcome.started_at` / `ended_at`) — the
+        # call is already over here, so re-timing it would be a fabrication.
+        provider, wire_model, api_base = _route_attribution(resp)
         return StageSpan(
             stage_id="dispatch",
             kind="dispatch",
             model=dispatch_model,
+            provider=provider,
+            wire_model=wire_model,
+            api_base=api_base,
             prompt=prompt_text,
             response=resp.text,
             tokens_input=resp.tokens_input,
@@ -1519,6 +1530,8 @@ class Engine:
                 resp.tokens_output,
             ),
             depends_on=[],
+            started_at=outcome.started_at,
+            ended_at=outcome.ended_at,
         )
 
     def _select_answer(
