@@ -30,3 +30,6 @@ reports/
 .coding-hermes/board/board.db.wal
 .coding-hermes/board/*.parquet
 .coding-hermes/board/*.duckdb
+
+# duckbrain CLI local namespace store (git-backed tool state, created 2026-09-18)
+namespaces/
