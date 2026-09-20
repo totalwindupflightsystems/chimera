@@ -1,4 +1,54 @@
 #!/bin/bash
-# Chimera MCP wrapper — ensures chimera.yaml is found
-cd /home/kara/chimera-v2 || exit 1
-exec /home/kara/.hermes/hermes-agent/venv/bin/chimera-mcp
+# Chimera MCP wrapper — pins the repo's chimera.yaml for MCP clients.
+#
+# Durable wrapper rule (DF-CHIMERA-V2-1, shared with bin/chimera-mcp-hermes):
+# resolve the repo root from THIS script's own location. A hardcoded path into
+# another checkout's venv dies at exec for every other user, box and worktree
+# (CH-GAP-057: this file used to exec a fixed interpreter path outside the
+# repo — rc=127, "No such file or directory"), and a hardcoded `cd` would make
+# the server read a checkout it does not own, which breaks any git worktree.
+# This script never cd's: the caller's cwd is preserved.
+#
+# Venv-agnostic resolution (QA-CHIMERA-V2-12):
+#   1. $ROOT/.venv/bin/chimera-mcp when executable with a live interpreter
+#      ($ROOT/.venv/bin/python3 exists) — a synced-in venv keeps the
+#      executable bit while its shebang points at the build machine's python,
+#      so the binary alone is not proof of a usable venv;
+#   2. otherwise `chimera-mcp` from PATH (whatever the environment installed);
+#   3. otherwise exit 1, naming both attempted paths and the fix.
+#
+# This shim's own job, distinct from the hermes shim: the config is passed
+# EXPLICITLY instead of being discovered by walking up from the cwd, so a
+# stranger's chimera.yaml in a parent directory can never be picked up.
+#   * $CHIMERA_CONFIG wins when set (standard override — the systemd unit and
+#     the smoke test use it);
+#   * otherwise $ROOT/chimera.yaml, the live repo config (untracked and
+#     gitignored by design, DF-CHIMERA-0916B-4).
+# A checkout with no chimera.yaml yet (fresh clone) is not a dead end: the
+# server treats a config path that does not exist as "no config", answers the
+# handshake on empty defaults and every tool call carries the
+# `chimera config init` remedy (CH-GAP-041) — strictly better than silently
+# deliberating against a foreign config.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VENV_BIN="$ROOT/.venv/bin/chimera-mcp"
+VENV_PY="$ROOT/.venv/bin/python3"
+
+venv_bin_live() {
+  [ -x "$VENV_PY" ] && [ -x "$VENV_BIN" ]
+}
+
+if venv_bin_live; then
+  exec "$VENV_BIN" "${CHIMERA_CONFIG:-$ROOT/chimera.yaml}"
+fi
+
+PATH_BIN="$(command -v chimera-mcp 2>/dev/null || true)"
+if [ -n "$PATH_BIN" ] && [ -x "$PATH_BIN" ]; then
+  exec "$PATH_BIN" "${CHIMERA_CONFIG:-$ROOT/chimera.yaml}"
+fi
+
+echo "chimera-mcp-wrapper: no usable chimera-mcp MCP server found. Attempted:" >&2
+echo "  1. $VENV_BIN (missing, or dead: interpreter $VENV_PY does not resolve to an executable)" >&2
+echo "  2. chimera-mcp on PATH (not found via command -v)" >&2
+echo "Fix: create the repo venv and install into it (.venv/bin/pip install -e '.[mcp]')," >&2
+echo "     or pip install chimera-deliberation so chimera-mcp lands on PATH." >&2
+exit 1
