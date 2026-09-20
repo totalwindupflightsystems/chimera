@@ -101,7 +101,7 @@ endpoint's blast radius.
 
 ### 4. Install leg — PASSED on a fresh machine (bunker)
 
-`las-bunker-03` (`bunker3`, tailnet `100.69.3.13`), ephemeral agent
+`las-bunker-03` (`bunker3`), ephemeral agent
 `488a7c16`, destroyed after the run. The documented path, from zero:
 
 | Step | Result |
