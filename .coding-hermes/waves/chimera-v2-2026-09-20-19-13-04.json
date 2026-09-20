@@ -1,0 +1,49 @@
+{
+  "tick_id": "chimera-v2-2026-09-20-19-13-04",
+  "composed_at": "2026-09-20T19:20:00-05:00",
+  "closed_at": "2026-09-20T20:55:00-05:00",
+  "wave_budget": 12,
+  "workers": 3,
+  "base_sha": "fa1dc79",
+  "model": "glm-5.3-flash",
+  "provider": "zai-glm-default",
+  "outcome": "3/3 landed, all pushed to origin + github mirror at parity 472a6dd",
+  "tasks": [
+    {
+      "id": "DF-CHIMERA-V2-29",
+      "priority": "P1",
+      "attempts": 2,
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-29",
+      "branch": "wt/DF-CHIMERA-V2-29",
+      "commit": "24d5cb4",
+      "rework_commit": "9b2bbc0",
+      "merge_commit": "472a6dd",
+      "status": "complete",
+      "note": "Attempt 1 landed the live-mode stream lifecycle + SPA reconnect. The FOREMAN's own live-browser check then FAILED (EventSource OPEN but zero dispatched events) and isolated the real root cause: SSEEvent.format() emitted one trailing newline instead of the blank-line terminator the SSE spec dispatches on (0 occurrences of \\n\\n on the wire). Attempt 2 fixed the framing; the browser criterion then PASSED on :8802 and again on merged main :8803."
+    },
+    {
+      "id": "DF-CHIMERA-V2-26",
+      "priority": "P2",
+      "attempts": 1,
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-26",
+      "branch": "wt/DF-CHIMERA-V2-26",
+      "commit": "8b10854",
+      "merge_commit": "36d351b",
+      "status": "complete",
+      "note": "Reseller watch list + named Blind Spot section + per-run scan-scope statement. stepfun/step-5-preview now surfaces. 10/10 fixture tests."
+    },
+    {
+      "id": "DF-CHIMERA-V2-27",
+      "priority": "P2",
+      "attempts": 1,
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-27",
+      "branch": "wt/DF-CHIMERA-V2-27",
+      "commit": "4d59d6f",
+      "merge_commit": "6ee6444",
+      "status": "complete",
+      "note": "Over-budget providers report error_class 'slow' with measured latency instead of permanently degrading /v1/health; real failures stay distinct. Judge independently RED-proved (9 failures pre-fix)."
+    }
+  ],
+  "filed_residuals": ["DF-CHIMERA-V2-30", "DF-CHIMERA-V2-31"],
+  "verification_note": "Every task gated on the merged tree: suite 1613 passed / 62 skipped, ruff clean. No green build was treated as proof of completion."
+}
