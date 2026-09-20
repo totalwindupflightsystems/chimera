@@ -7,7 +7,9 @@ description: >-
   dogfood run — everything here was executed for real. v1.1.0 adds the
   2026-09-16 run-9 lessons: OpenAI SDK compatibility limits, the MCP
   keep-stdin-open harness rule, fresh-clone config gotcha, bunker install.
-version: 1.1.0
+  v1.2.0 adds the 2026-09-20 run-10 web-UI section (`/web/` recipes, the
+  not-live DAG, the reconnect banner, the destructive debug hook).
+version: 1.2.0
 category: software-development
 ---
 
@@ -358,3 +360,81 @@ healthy; repo HEAD 3b6ae77). The entry-point verdict table as of this run:
     ".[full]"` = 68s, shipped config + one env var → real answer in 11s on
     a bare Debian box (las-bunker-03, agent destroyed after). The 7-run
     bunker SKIPPED streak was infra, not the project.
+
+## Update 2026-09-20 (run 10) — the WEB UI: how to drive `/web/` and what not to trust
+
+Run 10 was the first dogfood of the browser surface. The engine, CLI, REST, MCP
+and the fresh install all still behave as the sections above describe. This
+section adds only what a user of `/web/` needs.
+
+### Driving it
+
+```bash
+chimera serve --host 127.0.0.1 --port 8765     # REST + SPA on one process
+# open http://localhost:8765/web/  (form picker, prompt box, LIVE DAG panel)
+```
+
+The whole SPA is one file (`src/chimera/web/static/index.html`, inline JS) served
+from the same app. If `/web/` answers 404 with "Static files not found", the
+`[web]` extra is not installed — `pip install chimera-deliberation[full]`.
+
+Scripted path (no browser) — session, then chat, both plain JSON:
+
+```bash
+SID=$(curl -s -X POST localhost:8765/web/sessions | sed 's/.*"session_id":"//;s/".*//')
+curl -s -X POST "localhost:8765/web/sessions/$SID/chat" \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Compare React and Vue","formation":"simple"}'
+# -> {answer, trace, turn_number, mermaid}   (the mermaid string IS the DAG)
+curl -s "localhost:8765/web/sessions/$SID"    # turn history + per-turn tokens/cost
+```
+
+Known-good keyboard-free recipe for a multi-turn session: reuse the same `SID`
+for every `POST /chat`; past turns are injected into the dispatcher's prompt as
+history. Verified live: turn 2 answered "distributed monolith" purely from turn
+1's context. Session ids survive a browser reload (stored in `localStorage`).
+
+### What works (verified 2026-09-20)
+
+- Session creation, multi-turn memory, per-turn history with tokens + cost.
+- The DAG **after** a run: correct mermaid with per-node model / tokens / latency.
+- **Clicking a DAG node** opens a detail modal (kind, model, latency, input/output
+  tokens, and the stage's output text). This is the nicest part of the UI.
+- Node-click handlers only bind on nodes of `.mermaid svg` inside the rendered
+  panel; if a click does nothing, the node was from a stale/duplicated SVG — one
+  run leaves **two** SVG copies in the DOM (16 `g.node` for 8 real stages).
+
+### What not to trust
+
+- **The DAG is NOT live** (board `DF-CHIMERA-V2-18`). All three SSE broadcasts
+  fire after `engine.deliberate()` returns, so the panel shows the placeholder
+  for the whole run (measured 53 s of silence, then both trailing frames in the
+  same millisecond as the HTTP response). Nothing is wrong with your prompt or
+  your browser — the UI simply has no mid-run events. Wait for the answer.
+- **`⏳ SSE reconnecting…` is normal on a session with turns**
+  (`DF-CHIMERA-V2-19`). Sessions whose newest turn is older than 30 s get their
+  SSE stream closed instantly with zero bytes, and the SPA retries every 3 s
+  forever. It is a false alarm, not a degraded connection.
+- **`POST /web/debug/reset` is a destructive test hook** (`DF-CHIMERA-V2-20`).
+  Never call it on a server anyone is using: it rebinds the global session
+  manager and wipes every live session. docs/SECURITY.md describes it as
+  requiring the API key; on a default (`auth.enabled: false`) host it needs
+  nothing.
+- **`POST /web/sessions/{id}/chat` skips the REST queue/rate limiter**
+  (`DF-CHIMERA-V2-22`), so browser sessions are not covered by
+  `max_concurrent` / `max_queue_depth`.
+- The DAG renderer is loaded from `cdn.jsdelivr.net` at page load
+  (`DF-CHIMERA-V2-21`) — on a host with no egress the DAG panel stays blank and
+  reports nothing.
+
+### Smoke test for this surface (30 s, no browser)
+
+```bash
+curl -s localhost:8765/health                       # expect {"status":"alive","commit":"<HEAD>"}
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8765/web/     # expect 200
+SID=$(curl -s -X POST localhost:8765/web/sessions | sed 's/.*"session_id":"//;s/".*//')
+curl -s -X POST "localhost:8765/web/sessions/$SID/chat" -H 'Content-Type: application/json' \
+  -d '{"prompt":"Reply with exactly: PONG","formation":"simple"}' | head -c 120
+```
+A 200 with an answer means the surface runs; it does **not** mean the DAG is
+live — that needs the event stream timestamps, which is the run-10 finding.

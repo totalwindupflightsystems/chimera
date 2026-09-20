@@ -423,3 +423,129 @@ names "return 400" (line 183), reality is 404. Filed DF-CHIMERA-0911-3.
 fresh-venv/ (the PyPI 0.2.3 install), fresh-run-stderr.log,
 head-cli-stdout.log / head-cli-stderr.log (HEAD CLI purity proof).
 Re-runnable verbatim.
+
+---
+
+## 2026-09-20 (run 10) — the web UI: how the live-DAG promise is wired, and why it cannot be kept
+
+This section explains the `/web/` surface — how a session, a chat and an SSE
+stream fit together, what the code actually broadcasts, and why a reader
+watching the browser sees a static panel. It is written so the next person can
+reason about the surface without re-deriving it.
+
+### How the web surface is built (and why it exists at all)
+
+`src/chimera/web/` is a thin, deliberately separate layer beside the REST API:
+`routes.py` owns sessions and chat, `session.py` holds turn history,
+`sse.py` is a broadcaster, `trace_viz.py` turns a `DeliberationTrace` into a
+mermaid graph, and `static/index.html` is the whole SPA (one file, inline JS).
+It is mounted on the same FastAPI app as `/v1/*`, and since INT-API-001 its
+router carries the same `require_api_key` dependency — with `auth.enabled:
+false` (the default here) that resolves to "anonymous" before any header is
+read, which is why every probe below works keyless on this host.
+
+The design intent is a **push** architecture: the browser opens
+`EventSource('/web/sse/<sid>')` once, and the server pushes events as the
+deliberation progresses; the SPA's listeners update the DAG, the tiles and the
+chat bubbles in response. `POST /web/sessions/<sid>/chat` returns the same
+answer synchronously as a *fallback* — the frontend even comments it that way
+("Update DAG if SSE didn't (fallback)").
+
+### The three things that must line up — and the one that does not
+
+1. **Events must exist.** ✓ the SPA registers listeners for
+   `deliberation_started`, `dag_designed` and `deliberation_done`.
+2. **Events must be transported.** ✓ curl on a fresh session receives a stream
+   with `text/event-stream`, `X-Accel-Buffering: no`, and real frames.
+3. **Events must be produced DURING the run.** ✗ **this is the gap.**
+
+`grep -c '.broadcast(' src/chimera/web/routes.py` → **3**. The first fires
+before `await engine.deliberate(...)`; the other two fire after it returns, back
+to back. `src/chimera/web/sse.py`'s module docstring advertises two further
+event kinds — `stage_started` ("a worker/aggregator stage began executing") and
+`stage_completed` ("a stage finished (model, tokens, latency, cost)") — and the
+frontend listens for both. They are defined in the format layer
+(`tests/test_web.py` builds a synthetic `stage_completed` frame) and **never
+emitted by any code path in `src/`**. Nothing in `engine.py` or the stage
+runner knows a broadcaster exists.
+
+So the honest reading of the pipeline is:
+
+> a browser-side dashboard with no server-side feed, whose synchronous fallback
+> works so well that the suite never notices the feed is missing.
+
+That is why the timeline measured on this run shows 53 s of silence between the
+first and last event, and why the two trailing frames arrive in the same
+millisecond as the HTTP response.
+
+### Why the suite is green anyway (the generalisable lesson)
+
+Every layer is individually correct and separately tested. `sse.py` correctly
+formats an event, `routes.py` correctly broadcasts the three it has, the SPA
+correctly listens, and `trace_viz.py` correctly renders a mermaid string from a
+real trace. A test that drives the **whole user-visible path** — "start a real
+deliberation, assert a mid-run event arrives before the POST returns" — does
+not exist, so no test can fail. Same shape as the sibling lesson already in this
+file: *a component seam that each side tests separately is where the wiring
+goes missing.*
+
+### The second mechanism: the 30-second replay gate
+
+`sse_stream()` in `routes.py` does something reasonable-sounding that produces a
+user-visible defect:
+
+- if the session's newest turn is **< 30 s old**, it queues
+  `session.last_sse_events` for the late subscriber, then closes the stream;
+- otherwise it just pushes the `None` sentinel — **an instant, zero-byte close**.
+
+Measured: aged session `CLOSED_AFTER=0.0014s bytes=0`; fresh session
+`CLOSED_AFTER=30.00s` (that 30 s is `event_stream`'s idle timeout in `sse.py`).
+The frontend cannot distinguish "stream closed because nothing more is coming"
+from "connection dropped": `onerror` reconnects every 3 s unless
+`deliberationComplete` is set, and only a `deliberation_done` **event** sets it —
+which a replay-suppressed aged session never sends. Result: reload the page on a
+session with history and the UI enters a 3-second reconnect loop that it
+describes, accurately and permanently, as `⏳ SSE reconnecting…` — 138 requests
+in 40 minutes of wall clock, all of them answered `200`.
+
+**The right way to read this pair of defects:** the *capability* is present
+(stored events exist, the replay branch is written, the listeners are
+registered); the *policy* is what makes it useless — a 30 s window that excludes
+exactly the sessions a returning user has.
+
+### The dangerous one: a test hook on the public surface
+
+`POST /web/debug/reset` rebinds the module-global `_session_manager` and
+`_sse_broadcaster` — i.e. it deletes **every** session in flight. It carries no
+guard beyond the router-level auth dependency, which is inert when
+`auth.enabled: false`; the unit binds `0.0.0.0`; and `docs/SECURITY.md:64–66`
+lists it among the paths that "require the key" and asserts an anonymous request
+is refused with 401 "never 404". Observed: anonymous, 200, and a session that
+had been returning real turns minutes earlier then answered
+`404 Session '...' not found`.
+
+**Right way:** a destructive test fixture belongs behind a test/dev flag (or out
+of the shipped app entirely, resetting via a pytest fixture instead), and any
+endpoint that can drop other users' state should be documented with its blast
+radius rather than listed as protected.
+
+### Reproducing all of it
+
+```bash
+# timeline proof (fresh session)
+SID=$(curl -s -X POST localhost:8765/web/sessions | sed 's/.*"session_id":"//;s/".*//')
+curl -sN "localhost:8765/web/sse/$SID" &          # watch frame arrival times
+curl -s -X POST "localhost:8765/web/sessions/$SID/chat" \
+  -H 'Content-Type: application/json' -d '{"prompt":"PONG","formation":"simple"}'
+# -> only deliberation_started early; dag_designed + deliberation_done at the end
+
+# aged-session instant close (needs a session with turns > 30 s old)
+time curl -sN -o /dev/null "localhost:8765/web/sse/$SID"   # ~0.001 s, 0 bytes
+
+# the destructive hook (do this on a host you do not mind resetting)
+curl -s -X POST localhost:8765/web/debug/reset
+```
+
+Working evidence from this run (ephemeral `/tmp`): `sse-time.txt`,
+`chat-time.txt` (the timestamped frame log), `aged2-meta.txt`,
+`sse-compare.txt`, `bunker-install2.log`.
