@@ -12,10 +12,12 @@ fails. This script is that first real call, automated.
 
 The provider-health report is class-aware (DF-CHIMERA-V2-4). Providers with no
 configured API key (``error_class: missing_credentials``) are reported as INFO —
-they are expected on a fresh install — while every other class (``timeout``,
-``auth``, ``quota``, ``api``, ``unknown``) warns with its class and, for a
-quota failure, the provider's own reset-time message.  NEITHER case changes the
-exit code: only the deliberation decides pass/fail.
+they are expected on a fresh install; a provider whose probe never landed inside
+the budget (``slow``, DF-CHIMERA-V2-27) and one whose live probe is disabled
+(``probe_skipped``) are INFO too, since neither measured a failure; while every
+other class (``timeout``, ``auth``, ``quota``, ``api``, ``unknown``) warns with
+its class and, for a quota failure, the provider's own reset-time message.
+NEITHER case changes the exit code: only the deliberation decides pass/fail.
 
 Exit codes:
     0 — merged answer received and non-empty
@@ -49,6 +51,19 @@ SMOKE_FORMATION = "simple"  # deterministic 2-worker + aggregator pipeline, chea
 #: ``error_class`` meaning "no API key resolved for this provider".  A fresh
 #: install legitimately has these, so they are INFORMATION, not a degradation.
 KEYLESS_ERROR_CLASS = "missing_credentials"
+
+#: ``error_class`` meaning "the probe never answered inside the budget"
+#: (DF-CHIMERA-V2-27).  Nothing was measured about the provider beyond its
+#: latency, so — like keyless — this is INFORMATION rather than a degradation:
+#: it is reported on its own line with the measured wait, and it never decides
+#: the exit code.  A provider that failed a DIFFERENT way (connection refused,
+#: 5xx, auth, quota) still warns.
+SLOW_ERROR_CLASS = "slow"
+
+#: ``error_class`` meaning "the live probe is disabled for this provider"
+#: (``providers.<name>.health_probe: false``, DF-CHIMERA-V2-27).  An operator
+#: choice, not a defect — reported as information so the omission is visible.
+PROBE_SKIPPED_ERROR_CLASS = "probe_skipped"
 
 #: The degradation warning's prefix, as one constant: the keyless path must NOT
 #: emit it, and a literal in two places is how the two cases drift back into the
@@ -112,11 +127,18 @@ def _message_without_class_prefix(error: str, error_class: str) -> str:
 def provider_health_lines(details: dict, unhealthy_providers: list[str] | None = None) -> list[str]:
     """The provider-health report for a ``/v1/health`` payload, split by MEANING.
 
-    Two cases that used to print identical wording are different findings:
+    Three cases that used to print identical wording are different findings:
 
     * ``missing_credentials`` — no API key resolved for the provider.  Expected
       on a fresh install, so it is an INFO line: the deliberation that follows is
       the actual proof this deployment works.
+    * ``slow`` (DF-CHIMERA-V2-27) — the server's probe never landed inside the
+      budget, so nothing about the provider was measured except its latency.
+      Also an INFO line naming the measured wait: it is a standing condition to
+      be aware of, not a degradation to act on.
+    * ``probe_skipped`` — the operator disabled the live probe for that
+      provider.  INFO for the same reason: an explicit choice, and the line
+      keeps the omission visible.
     * every other class (``timeout``, ``auth``, ``quota``, ``api``, ``unknown``
       …) — a real degradation, so it is a WARNING naming each provider with its
       class.  A ``quota`` provider also surfaces its own message (reset time)
@@ -175,7 +197,41 @@ def provider_health_lines(details: dict, unhealthy_providers: list[str] | None =
             "deliberation below is the actual proof this deployment works."
         )
 
-    degraded = [issue for issue in issues if issue.error_class != KEYLESS_ERROR_CLASS]
+    # DF-CHIMERA-V2-27: a provider whose probe never landed inside the budget
+    # was reported by the server as `slow`, not as a failure — nothing about
+    # the provider was measured except its latency. Like the keyless case it
+    # is INFORMATION: reported (so the standing condition stays visible) but
+    # never dressed as a degradation the operator must act on.
+    slow = [issue.name for issue in issues if issue.error_class == SLOW_ERROR_CLASS]
+    if slow:
+        names = []
+        for issue in issues:
+            if issue.error_class != SLOW_ERROR_CLASS:
+                continue
+            message = _message_without_class_prefix(issue.error, issue.error_class)
+            names.append(f"{issue.name} [{issue.error_class}]"
+                         + (f": {message}" if message else ""))
+        lines.append(
+            "INFO: providers slower than the probe budget (not a failure — "
+            "the probe never landed; a real call may still work): "
+            + "; ".join(names)
+        )
+
+    skipped = [issue.name for issue in issues
+               if issue.error_class == PROBE_SKIPPED_ERROR_CLASS]
+    if skipped:
+        lines.append(
+            "INFO: providers whose live health probe is disabled "
+            f"(health_probe: false): {', '.join(skipped)} — status and this "
+            "report say nothing about them."
+        )
+
+    degraded = [
+        issue for issue in issues
+        if issue.error_class not in (
+            KEYLESS_ERROR_CLASS, SLOW_ERROR_CLASS, PROBE_SKIPPED_ERROR_CLASS,
+        )
+    ]
     if degraded:
         rendered = []
         for issue in degraded:

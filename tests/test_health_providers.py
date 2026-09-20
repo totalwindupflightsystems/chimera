@@ -137,6 +137,11 @@ class _ProbeGateway:
             raise RuntimeError("AuthenticationError: 401 invalid api key")
         if action == "api":
             raise RuntimeError("upstream 500: provider exploded")
+        if action == "refused":
+            # The transport-level failure that must keep degrading: the
+            # provider is NOT merely slow, it never answered at all
+            # (DF-CHIMERA-V2-27 — the signal this fix must not swallow).
+            raise RuntimeError("APIConnectionError: connection refused")
         if action == "quota":
             raise _StatusError("RateLimitError: rate limited", status_code=429)
         if action == "quota_msg":
@@ -267,7 +272,13 @@ def test_multiple_providers_checked_concurrently() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_slow_provider_timeout_class() -> None:
+def test_slow_provider_class() -> None:
+    """A provider that outlives the budget is ``slow``, with its latency.
+
+    DF-CHIMERA-V2-27: this used to report ``error_class: "timeout"``, which
+    said nothing about how far off the provider was — and made a permanent
+    over-budget provider read exactly like a real outage.
+    """
     cfg = _config(
         models={"p1/slow": "p1"},
         health_timeout_s=0.2,
@@ -278,9 +289,16 @@ def test_slow_provider_timeout_class() -> None:
 
     info = status["p1"]
     assert info["healthy"] is False
-    assert info["error"].startswith("timeout:")
-    # The tiny budget proves the timeout comes from config, not a 3.0 hardcode
+    assert info["error_class"] == "slow"
+    assert info["error"].startswith("slow:")
+    # The tiny budget proves the classification comes from config, not a
+    # 3.0 hardcode.
     assert "0.2s" in info["error"]
+    # The measured wait is what makes the verdict actionable: a bare
+    # "timeout" never said how far past the budget the provider was.
+    assert isinstance(info["latency_s"], float)
+    assert info["latency_s"] >= 0.2
+    assert "probe waited" in info["error"]
 
 
 def test_server_config_health_timeout_default() -> None:
@@ -531,8 +549,8 @@ def test_real_gateway_zai_quota_is_quota_not_timeout_offline() -> None:
     assert len(attempts) == 3
 
 
-def test_timeout_error_does_not_retry_next_model() -> None:
-    """A timeout on the first model is terminal — no retry of other models."""
+def test_over_budget_probe_does_not_retry_next_model() -> None:
+    """A probe that outlives the budget is terminal — no retry of other models."""
     cfg = _config(
         models={"prov/a": "prov", "prov/b": "prov"},
         health_timeout_s=0.2,
@@ -543,7 +561,8 @@ def test_timeout_error_does_not_retry_next_model() -> None:
 
     info = status["prov"]
     assert info["healthy"] is False
-    assert info["error"].startswith("timeout:")
+    assert info["error_class"] == "slow"
+    assert info["error"].startswith("slow:")
     assert [m for m, _ in gw.calls] == ["prov/a"]
 
 
@@ -573,9 +592,15 @@ def test_no_models_for_provider_is_unhealthy_note() -> None:
 
 #: The vocabulary a client may branch on.  ``unknown`` is reserved as the
 #: forward-compatible fallback — this endpoint never emits it today, because a
-#: failure the classifier cannot place lands in ``api``.
+#: failure the classifier cannot place lands in ``api``.  ``slow`` and
+#: ``probe_skipped`` (DF-CHIMERA-V2-27) are the two UNMEASURED classes: the
+#: probe did not produce a verdict about the provider, so neither one degrades
+#: ``status``.
 _ERROR_CLASSES = frozenset(
-    {"missing_credentials", "timeout", "auth", "quota", "api", "unknown"},
+    {
+        "missing_credentials", "timeout", "auth", "quota", "api", "unknown",
+        "slow", "probe_skipped",
+    },
 )
 
 
@@ -594,17 +619,17 @@ def test_error_class_missing_credentials() -> None:
     assert gw.calls == []
 
 
-def test_error_class_timeout() -> None:
-    """A probe timeout is classed ``timeout`` (proven by the 0.2s budget)."""
+def test_error_class_slow() -> None:
+    """An over-budget probe is classed ``slow`` (proven by the 0.2s budget)."""
     cfg = _config(
         models={"p1/slow": "p1"}, health_timeout_s=0.2, api_keys={"p1": "sk-test"},
     )
     gw = _ProbeGateway({"p1/slow": "slow"})
     info = asyncio.run(_check_providers(cfg, gw))["p1"]
 
-    assert info["error_class"] == "timeout"
+    assert info["error_class"] == "slow"
     assert info["healthy"] is False
-    assert info["error"].startswith("timeout:")
+    assert info["error"].startswith("slow:")
     assert "0.2s" in info["error"]
 
 
@@ -697,6 +722,25 @@ def _health_client(cfg: ChimeraConfig) -> TestClient:
     return TestClient(create_app(config=cfg, engine=Engine(cfg, FakeGateway())))
 
 
+def _probe_status_client(
+    monkeypatch: pytest.MonkeyPatch,
+    cfg: ChimeraConfig,
+    probe_status: dict[str, dict[str, Any]],
+) -> TestClient:
+    """TestClient whose ``_check_providers`` returns *probe_status* verbatim.
+
+    The endpoint-level companion to a probe result produced by the REAL
+    ``_check_providers`` (over a scripted gateway, no network): the handler is
+    exercised against exactly what the probe returned, so the wiring between
+    the two is what the assertion pins.  Follows the module's existing
+    ``monkeypatch.setattr`` convention so the stub cannot leak between tests.
+    """
+    monkeypatch.setattr(
+        "chimera.api.server._check_providers", _stub_probe(probe_status),
+    )
+    return _health_client(cfg)
+
+
 def test_health_unhealthy_providers_lists_exactly_the_failing_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -761,7 +805,10 @@ def test_health_response_keeps_every_pre_existing_key(
 
     assert r.status_code == 200
     data = r.json()
-    assert set(data) == {"status", "unhealthy_providers", "details"}
+    assert set(data) == {
+        "status", "unhealthy_providers", "slow_providers",
+        "probe_skipped_providers", "details",
+    }
     details = data["details"]
     assert set(details) == {
         "config_loaded", "models_configured", "providers_configured",
@@ -916,13 +963,14 @@ def test_late_cold_start_probe_reports_real_quota_not_timeout() -> None:
     assert gw.calls == ["z-ai/glm-5"]
 
 
-def test_probe_still_outstanding_after_grace_is_timeout() -> None:
+def test_probe_still_outstanding_after_grace_is_slow() -> None:
     """Criterion 2: the grace must not turn a genuinely hung provider vague.
 
-    The gateway never returns inside the budget plus the grace, so today's
-    verdict stands verbatim: ``error_class: "timeout"``, the same
-    ``timeout: no response within <budget>s`` text (the BUDGET, not the
-    budget+grace), and ``healthy: false``.
+    The gateway never returns inside the budget plus the grace, so the probe
+    is cancelled and reported ``slow`` (DF-CHIMERA-V2-27) — with the BUDGET
+    and the measured wait named in the error, and the latency in its own
+    field. It is deliberately NOT ``timeout``: nothing about the provider's
+    behaviour was measured beyond "slower than the budget".
     """
     cfg = _config(
         models={"p1/slow": "p1"},
@@ -933,19 +981,22 @@ def test_probe_still_outstanding_after_grace_is_timeout() -> None:
     gw = _DelayedProbeGateway(30.0, _LATE_QUOTA_ERROR)
     info = asyncio.run(_check_providers(cfg, gw))["p1"]
 
-    assert info == {
-        "healthy": False,
-        "error": "timeout: no response within 0.2s",
-        "error_class": "timeout",
-    }
+    assert info["healthy"] is False
+    assert info["error_class"] == "slow"
+    assert info["error"].startswith("slow: no response within 0.2s")
+    assert "probe waited" in info["error"]
+    # The wait includes the grace window, since that is what the endpoint
+    # actually spent waiting on this probe.
+    assert info["latency_s"] >= 0.2 + 0.3
+    assert set(info) == {"healthy", "error", "error_class", "latency_s"}
 
 
-def test_zero_grace_reproduces_pre_change_timeout_verdict() -> None:
-    """Criterion 3a: ``health_probe_grace_s=0`` keeps the old answer exactly.
+def test_zero_grace_still_reports_slow_not_a_fabricated_timeout() -> None:
+    """Criterion 3a: ``health_probe_grace_s=0`` cancels at the deadline.
 
-    The same late-but-successful probe that criterion 1 turns into ``quota``
-    is a fabricated ``timeout`` again when the knob is 0 — the new behaviour
-    is configurable and today's behaviour stays reachable.
+    The same late probe that criterion 1 turns into ``quota`` is ``slow``
+    when the knob is 0 — the probe task is cancelled at the deadline rather
+    than allowed to finish, and no verdict about the provider is invented.
     """
     cfg = _config(
         models={"z-ai/glm-5": "zai"},
@@ -956,11 +1007,11 @@ def test_zero_grace_reproduces_pre_change_timeout_verdict() -> None:
     gw = _DelayedProbeGateway(0.6, _LATE_QUOTA_ERROR)
     info = asyncio.run(_check_providers(cfg, gw))["zai"]
 
-    assert info == {
-        "healthy": False,
-        "error": "timeout: no response within 0.3s",
-        "error_class": "timeout",
-    }
+    assert info["healthy"] is False
+    assert info["error_class"] == "slow"
+    assert info["error"].startswith("slow: no response within 0.3s")
+    # No grace was granted, so the measured wait is the budget alone.
+    assert info["latency_s"] < 0.5
     # The probe task was cancelled at the deadline, not allowed to finish.
     assert gw.calls == ["z-ai/glm-5"]
 
@@ -990,7 +1041,7 @@ def test_late_probe_lands_exactly_one_grace_window_late() -> None:
     info = asyncio.run(_check_providers(cfg, gw))["p1"]
 
     elapsed = time.perf_counter() - started
-    assert info["error_class"] == "timeout"
+    assert info["error_class"] == "slow"
     # budget + grace + scheduling slack, far below the 30s hung probe.
     assert elapsed < 0.2 + 0.3 + 1.0, f"endpoint waited {elapsed:.2f}s"
 
@@ -1013,3 +1064,264 @@ def test_grace_completed_healthy_probe_keeps_exact_previous_shape() -> None:
 
     assert info == {"healthy": True, "model_tested": "prov/a"}
 
+
+
+# --------------------------------------------------------------------------- #
+# DF-CHIMERA-V2-27: a provider that cannot answer inside the probe budget is
+# ``slow`` (measured), not a permanently-degraded ``timeout`` — while a real
+# failure of that same provider still surfaces as a distinct signal
+# --------------------------------------------------------------------------- #
+
+#: The measured hermes condition (tick 19-13-04): the gateway injects a
+#: ~43.6k-token system prompt, so a 1-token probe takes ~108s against the 10.0s
+#: budget while the same model called directly upstream answers in ~1.9s.
+#: ``GET /v1/models`` returns 200 in 0.33s — the gateway IS alive; only the
+#: completion is slow.  Reproduced here at compressed timescales (0.5s budget,
+#: 30s "never lands") so the fake gateway needs no network and the test is
+#: fast — the SHAPE is what regresses, not the constant.
+_SLOW_GATEWAY_BUDGET_S = 0.5
+
+
+class _SlowGateway:
+    """A fake gateway whose completion never answers inside the budget.
+
+    Stands in for the hermes gateway: alive and reachable (a discovery call
+    would answer instantly), but any completion outlives the probe budget.
+    No network, no litellm, no real provider.
+    """
+
+    def __init__(self) -> None:
+        self.completion_calls = 0
+
+    async def complete(
+        self, model: str, messages: list[dict[str, str]], **kwargs: object,
+    ) -> GatewayResponse:
+        self.completion_calls += 1
+        await asyncio.sleep(30)  # outlives the budget by orders of magnitude
+        raise AssertionError("unreachable — the probe is cancelled first")
+
+
+def _slow_only_config() -> ChimeraConfig:
+    """The measured shape: one provider whose probe cannot land in budget."""
+    return _config(
+        models={"hermes/glm-5.3-flash": "hermes"},
+        health_timeout_s=_SLOW_GATEWAY_BUDGET_S,
+        api_keys={"hermes": "sk-test"},
+    )
+
+
+def test_slow_provider_reports_error_class_slow_with_measured_latency() -> None:
+    """Acceptance 2: the response NAMES the condition, with the latency.
+
+    ``error_class == "slow"`` plus a numeric ``latency_s`` — not a bare
+    ``timeout`` whose only information is that the budget was missed.  The
+    measured wait is at least the budget, because that is how long the probe
+    actually ran before being cancelled.
+    """
+    cfg = _slow_only_config()
+    gw = _SlowGateway()
+    info = asyncio.run(_check_providers(cfg, gw))["hermes"]
+
+    assert info["healthy"] is False
+    assert info["error_class"] == "slow"
+    assert info["error"].startswith("slow:")
+    assert "no response within 0.5s" in info["error"]
+    assert "probe waited" in info["error"]
+    assert isinstance(info["latency_s"], float)
+    assert info["latency_s"] >= _SLOW_GATEWAY_BUDGET_S
+    # Nothing about the provider's VERDICT was measured — no model was proven
+    # broken, so no model_tested is claimed.
+    assert "model_tested" not in info
+
+
+def test_slow_provider_does_not_degrade_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Acceptance 1 (first half): a slow-only payload is NOT permanently degraded.
+
+    The standing condition must not read as a degradation, or a real outage
+    becomes indistinguishable from it.  The provider is still visibly
+    not-healthy in ``details.providers`` and named in its own top-level
+    array, so the condition is REPORTED, just not as a degradation.
+    """
+    cfg = _slow_only_config()
+    probe_status = asyncio.run(_check_providers(cfg, _SlowGateway()))
+
+    client = _probe_status_client(monkeypatch, cfg, probe_status)
+    r = client.get("/v1/health")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["status"] == "healthy", data
+    assert data["unhealthy_providers"] == []
+    assert data["slow_providers"] == ["hermes"]
+    assert data["details"]["providers"]["hermes"]["error_class"] == "slow"
+
+
+def test_real_failure_of_a_slow_provider_still_degrades(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Acceptance 1 (second half): a REAL failure still surfaces distinctly.
+
+    Same provider, same names — but now it answers with a connection failure.
+    ``status`` degrades, the provider is in ``unhealthy_providers`` (its own
+    signal, distinct from ``slow``), and ``slow_providers`` is empty.  This is
+    the half that must NOT be swallowed by the slow path.
+    """
+    cfg = _slow_only_config()
+    gw = _ProbeGateway({"hermes/glm-5.3-flash": "api"})
+    probe_status = asyncio.run(_check_providers(cfg, gw))
+    assert probe_status["hermes"]["error_class"] == "api"
+
+    client = _probe_status_client(monkeypatch, cfg, probe_status)
+    data = client.get("/v1/health").json()
+
+    assert data["status"] == "degraded", data
+    assert data["unhealthy_providers"] == ["hermes"]
+    assert data["slow_providers"] == []
+    assert data["details"]["providers"]["hermes"]["error_class"] == "api"
+
+
+def test_connection_refused_still_degrades_exactly_as_before() -> None:
+    """A refused connection keeps its previous class and verdict."""
+    cfg = _slow_only_config()
+    gw = _ProbeGateway({"hermes/glm-5.3-flash": "refused"})
+    info = asyncio.run(_check_providers(cfg, gw))["hermes"]
+
+    assert info["healthy"] is False
+    assert info["error_class"] == "api"
+    assert "connection refused" in info["error"]
+    # No latency field on an ANSWERED failure — that field belongs to the
+    # unmeasured (cancelled) path only.
+    assert "latency_s" not in info
+    assert set(info) == {"healthy", "error", "error_class", "model_tested"}
+
+
+def test_slow_and_real_failure_are_distinct_signals_side_by_side(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The two conditions never collapse into one reading.
+
+    One slow provider and one genuinely broken provider in the same payload:
+    ``unhealthy_providers`` names only the broken one, and ``slow_providers``
+    names only the slow one.  A consumer can therefore tell "permanently
+    over-budget" from "this provider is down" without string-matching.
+    """
+    cfg = _config(
+        models={"slow/one": "slowp", "bad/one": "badp"},
+        health_timeout_s=_SLOW_GATEWAY_BUDGET_S,
+        api_keys={"slowp": "sk", "badp": "sk"},
+    )
+
+    class MixedGateway:
+        async def complete(
+            self, model: str, messages: list[dict[str, str]], **kw: object,
+        ) -> GatewayResponse:
+            if model.startswith("slow/"):
+                await asyncio.sleep(30)
+                raise AssertionError("unreachable")
+            raise RuntimeError("connection refused")
+
+    probe_status = asyncio.run(_check_providers(cfg, MixedGateway()))
+
+    assert probe_status["slowp"]["error_class"] == "slow"
+    assert probe_status["badp"]["error_class"] == "api"
+
+    data = _probe_status_client(monkeypatch, cfg, probe_status).get("/v1/health").json()
+
+    assert data["status"] == "degraded"
+    assert data["unhealthy_providers"] == ["badp"]
+    assert data["slow_providers"] == ["slowp"]
+
+
+def test_health_probe_false_skips_the_probe_and_is_named(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The opt-out control: no live probe, and the omission stays visible.
+
+    ``providers.<name>.health_probe: false`` performs no upstream call at all
+    — the last resort for a gateway whose standing latency exceeds any sane
+    budget — and reports ``probe_skipped`` rather than a permanent ``slow``.
+    It does NOT satisfy readiness (nothing was proven reachable).
+    """
+    cfg = _config(
+        models={"hermes/glm-5.3-flash": "hermes"},
+        api_keys={"hermes": "sk-test"},
+    )
+    cfg.providers["hermes"].health_probe = False
+    gw = _SlowGateway()
+    probe_status = asyncio.run(_check_providers(cfg, gw))
+
+    info = probe_status["hermes"]
+    assert gw.completion_calls == 0, "an opted-out provider must not be probed"
+    assert info["healthy"] is False
+    assert info["error_class"] == "probe_skipped"
+    assert "probe_skipped:" in info["note"]
+
+    # /v1/health: named in its own array; still not a degradation, but the
+    # provider is not healthy either.
+    client = _probe_status_client(monkeypatch, cfg, probe_status)
+    data = client.get("/v1/health").json()
+    assert data["status"] == "healthy"
+    assert data["unhealthy_providers"] == []
+    assert data["slow_providers"] == []
+    assert data["probe_skipped_providers"] == ["hermes"]
+
+    # /v1/health/ready: a skipped provider proves nothing, so readiness must
+    # NOT come from it — 503, with the cause named.
+    ready = _probe_status_client(monkeypatch, cfg, probe_status).get("/v1/health/ready")
+    assert ready.status_code == 503
+
+
+def test_health_probe_default_true_probes_normally() -> None:
+    """The opt-out is opt-IN: the default keeps probing exactly as before."""
+    cfg = _config(
+        models={"p/one": "prov"}, api_keys={"prov": "sk-test"},
+    )
+    assert cfg.providers["prov"].health_probe is True
+
+    gw = _ProbeGateway({})
+    info = asyncio.run(_check_providers(cfg, gw))["prov"]
+
+    assert info["healthy"] is True
+    assert info["model_tested"] == "p/one"
+    assert gw.calls != [], "the default must still make a live probe"
+
+
+def test_ready_503_names_the_slow_condition_not_reachability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A slow-only deployment is 503 — and the reason says WHY.
+
+    "no providers reachable" was factually wrong for this case (the gateway
+    answered a discovery call fine; only the probe budget was too small), and
+    pointing an operator at the wrong condition is the confusion this ticket
+    removes. The status stays 503 because a probe that never landed proved
+    nothing about reachability — load balancers must not route on it.
+    """
+    cfg = _slow_only_config()
+    probe_status = asyncio.run(_check_providers(cfg, _SlowGateway()))
+
+    r = _probe_status_client(monkeypatch, cfg, probe_status).get("/v1/health/ready")
+
+    assert r.status_code == 503
+    detail = r.json()["detail"]
+    assert "Not ready" in detail
+    assert "slow: hermes" in detail
+    assert "health_timeout_s" in detail
+    assert "no providers reachable" not in detail
+
+
+def test_ready_503_keeps_the_reachability_wording_for_a_real_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The original 503 wording is preserved for the case it was written for."""
+    cfg = _slow_only_config()
+    probe_status = asyncio.run(
+        _check_providers(cfg, _ProbeGateway({"hermes/glm-5.3-flash": "api"})),
+    )
+
+    r = _probe_status_client(monkeypatch, cfg, probe_status).get("/v1/health/ready")
+
+    assert r.status_code == 503
+    assert "no providers reachable" in r.json()["detail"]

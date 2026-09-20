@@ -63,6 +63,21 @@ class Provider(BaseModel):
     base_url: str
     api_key_env: str | None = None
     api_key: str | None = None
+    health_probe: bool = True
+    """Whether ``/v1/health`` probes this provider live (DF-CHIMERA-V2-27).
+
+    ``False`` skips the connectivity probe for this provider entirely (no
+    upstream call, no tokens): the entry is reported ``probe_skipped`` and it
+    does not degrade ``status``, because nothing was measured either way. Use
+    it for a gateway whose standing latency exceeds any sane probe budget (a
+    large injected system prompt, for example), where probing only produces a
+    permanent ``slow`` line. It is NOT a way to hide a provider: a skipped
+    provider is still ``healthy: false`` in ``details.providers``, is named in
+    the top-level ``probe_skipped_providers``, and therefore does not satisfy
+    ``/v1/health/ready`` (nothing was proven reachable) — keep at least one
+    probed provider. Set it back to ``true`` (or drop the key) to resume live
+    probing.
+    """
 
 
 class ModelEntry(BaseModel):

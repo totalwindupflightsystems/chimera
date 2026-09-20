@@ -494,14 +494,18 @@ class TestCheckProviders:
         assert _unhealthy_provider_names(result) == ["anthropic"]
 
     @pytest.mark.asyncio
-    async def test_provider_timeout_marked_unhealthy(
+    async def test_provider_timeout_marked_slow(
         self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
-        """Providers that time out are marked unhealthy.
+        """Providers that never answer are marked unhealthy AND ``slow``.
 
         Only the model-bearing providers (openrouter, zai) are probed — the
         'anthropic' provider has no models, is never probed, and is reported
         unhealthy with a note (CH-GAP-053), so it is skipped here too.
+
+        DF-CHIMERA-V2-27: the verdict is ``slow`` (with the measured wait),
+        not a bare ``timeout`` — the provider is unmeasured, so a client must
+        be able to tell it apart from one that CONNECTED and failed.
         """
         class TimeoutGateway:
             async def complete(self, model: str, messages: list, **kw: Any):
@@ -510,7 +514,9 @@ class TestCheckProviders:
         result = await _check_providers(config, TimeoutGateway())
         for name in ("openrouter", "zai"):
             assert result[name]["healthy"] is False
-            assert "timeout" in result[name].get("error", "")
+            assert result[name]["error_class"] == "slow"
+            assert "slow" in result[name].get("error", "")
+            assert result[name]["latency_s"] > 0
 
     @pytest.mark.asyncio
     async def test_provider_exception_marked_unhealthy(

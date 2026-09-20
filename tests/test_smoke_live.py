@@ -577,3 +577,87 @@ def test_script_is_stdlib_only_and_never_imports_chimera() -> None:
     non_stdlib = sorted(root for root in roots if root not in sys.stdlib_module_names)
     assert not non_stdlib, f"non-stdlib imports in scripts/smoke_live.py: {non_stdlib}"
     assert "chimera" not in roots, "the smoke test must not import the chimera package at runtime"
+
+
+# --------------------------------------------------------------------------- #
+# DF-CHIMERA-V2-27 — a slow provider is reported, but not as a degradation
+# --------------------------------------------------------------------------- #
+
+
+def test_slow_provider_is_information_not_a_degradation_warning() -> None:
+    """A ``slow`` provider gets its own INFO line and does NOT warn.
+
+    The server no longer calls this condition a degradation; the script must
+    agree, or it would re-print the false alarm the server stopped emitting.
+    The measured wait still surfaces, so the standing condition stays visible.
+    """
+    providers = {
+        "hermes": _issue("slow", "slow: no response within 10.0s (probe waited 11.01s)"),
+        "deepseek": {"healthy": True, "model_tested": "deepseek/deepseek-v4-flash"},
+    }
+
+    lines = smoke_live.provider_health_lines(_details(providers), ["hermes"])
+
+    assert _warning_lines(lines) == [], f"a slow provider must not warn:\n{lines}"
+    infos = [line for line in lines if line.startswith("INFO")]
+    assert len(infos) == 1, lines
+    assert "hermes [slow]" in infos[0]
+    assert "probe waited 11.01s" in infos[0], "the measured wait must surface"
+    assert "providers: 1/2 healthy" in lines
+
+
+def test_slow_provider_never_fails_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """End-to-end: a slow-only provider block still exits 0 on a good call."""
+    providers = {
+        "hermes": _issue("slow", "slow: no response within 10.0s (probe waited 11.01s)"),
+        "deepseek": {"healthy": True, "model_tested": "deepseek/deepseek-v4-flash"},
+    }
+    code = _run_main(
+        monkeypatch,
+        _routes(v1_body=_v1_body(providers, unhealthy=[])),
+    )
+    captured = capsys.readouterr()
+
+    assert code == 0, captured.out + captured.err
+    assert "SMOKE PASS" in captured.out
+    assert smoke_live.UNHEALTHY_WARNING_PREFIX not in captured.out + captured.err
+    assert "hermes" in captured.out
+
+
+def test_slow_and_real_class_still_warn_side_by_side() -> None:
+    """The distinction survives a mixed payload: only the real failure warns."""
+    providers = {
+        "hermes": _issue("slow", "slow: no response within 10.0s (probe waited 11.01s)"),
+        "anthropic": _issue("auth", "auth: invalid API key"),
+        "deepseek": {"healthy": True, "model_tested": "deepseek/deepseek-v4-flash"},
+    }
+
+    lines = smoke_live.provider_health_lines(_details(providers), ["anthropic", "hermes"])
+    warnings = _warning_lines(lines)
+
+    assert len(warnings) == 1, lines
+    assert "anthropic [auth]" in warnings[0]
+    assert "hermes" not in warnings[0], "the slow provider must stay out of the WARNING"
+    assert any("hermes [slow]" in line for line in lines if line.startswith("INFO"))
+
+
+def test_probe_skipped_provider_is_named_as_information() -> None:
+    """``probe_skipped`` is reported (the omission is visible), never a warning."""
+    providers = {
+        "hermes": {
+            "healthy": False,
+            "note": "probe_skipped: live health probe disabled for provider",
+            "error_class": "probe_skipped",
+        },
+        "deepseek": {"healthy": True, "model_tested": "deepseek/deepseek-v4-flash"},
+    }
+
+    lines = smoke_live.provider_health_lines(_details(providers), ["hermes"])
+
+    assert _warning_lines(lines) == [], f"a skipped probe must not warn:\n{lines}"
+    infos = [line for line in lines if line.startswith("INFO")]
+    assert len(infos) == 1 and "hermes" in infos[0]
+    assert "health_probe: false" in infos[0]

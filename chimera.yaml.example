@@ -1580,9 +1580,23 @@ providers:
   # it, so the configured base_url is what routes the call: the catalog id
   # "hermes/<model>" is sent upstream as the BARE model name (<model>), and the
   # key comes from API_SERVER_KEY in ~/.hermes/.env — never inline it here.
+  #
+  # MEASURED CAVEAT (DF-CHIMERA-V2-27): the Hermes gateway injects its own
+  # ~43.6k-token system prompt, so a 1-token health probe takes ~108s against
+  # the 10.0s default probe budget while /v1/models answers in 0.33s and the
+  # same model called directly upstream answers in 1.9s. The probe now reports
+  # that as error_class "slow" (with the measured latency) instead of a bare
+  # "timeout", and a slow provider no longer makes /v1/health read "degraded" —
+  # it is named in the top-level slow_providers array. A REAL outage of this
+  # provider still reads as degraded. If you would rather not spend probe
+  # tokens/latency on it at all, uncomment health_probe: false below; the
+  # provider is then reported "probe_skipped" and named in
+  # probe_skipped_providers, and it does not satisfy /v1/health/ready — so
+  # keep at least one live-probed provider.
   hermes:
     base_url: http://127.0.0.1:8642/v1
     api_key_env: API_SERVER_KEY
+    # health_probe: false
   # 9router fleet gateway (OpenAI-compatible).  One endpoint in front of a
   # large multi-prefix model catalog (~269 models across 15 upstream
   # prefixes), so no LiteLLM-native prefix covers it and the configured
@@ -1628,6 +1642,14 @@ server:
   # health_probe_grace_s extra seconds to land (default 1.0) so a cold-start
   # probe reports the provider's real verdict (quota/auth/api) instead of a
   # fabricated timeout. 0 disables the grace.
+  #
+  # A probe that STILL has not answered at the deadline is reported as
+  # error_class "slow" with the measured latency (DF-CHIMERA-V2-27) and does
+  # NOT make /v1/health read "degraded" — it is named in the top-level
+  # slow_providers array instead, so a permanently over-budget gateway is
+  # distinguishable from a real outage. Raise this budget if you would rather
+  # wait for such a provider than classify it; per-provider opt-out is
+  # `health_probe: false` on the provider entry.
   # health_timeout_s: 10.0
   # health_probe_grace_s: 1.0
 observability:
