@@ -25,7 +25,7 @@ import time
 from typing import Annotated, Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from chimera.api.dependencies import require_api_key
@@ -35,6 +35,13 @@ from chimera.web.sse import TERMINAL_EVENT, TERMINAL_RETRY_MS, SSEBroadcaster, S
 from chimera.web.trace_viz import trace_to_mermaid
 
 router = APIRouter(prefix="/web", tags=["web"])
+
+#: Spellings of ``?live=`` that mean "this client is dialing for the turn that is
+#: about to run" (DF-CHIMERA-V2-29).  Lower-cased before lookup.  Anything else —
+#: including an empty or unparseable value — leaves the caller on the default
+#: replay-then-close path, and never earns a 422 (an ``EventSource`` reports any
+#: non-200 as a retryable drop; see the unknown-session branch).
+_SSE_LIVE_VALUES = frozenset({"1", "true", "yes", "on"})
 
 log = structlog.get_logger("chimera.web")
 
@@ -394,7 +401,19 @@ async def debug_reset():
 
 
 @router.get("/sse/{session_id}")
-async def sse_stream(session_id: str, request: Request):
+async def sse_stream(
+    session_id: str,
+    request: Request,
+    live: Annotated[
+        str | None,
+        Query(
+            description=(
+                "Truthy (1/true/yes/on) means: skip the replay of the previous "
+                "turn and keep the stream open for the next one"
+            )
+        ),
+    ] = None,
+):
     """SSE event stream for a session.
 
     The client opens this as an EventSource and receives real-time updates
@@ -427,6 +446,22 @@ async def sse_stream(session_id: str, request: Request):
       ``X-Chimera-Session-Status: unknown`` lets non-browser callers (and curl)
       see the same distinction the marker carries.
 
+    **Live mode** (``?live=1`` — the flag is truthy-parsed: any of
+    ``1``/``true``/``yes``/``on``, DF-CHIMERA-V2-29). The replay-then-close
+    policy above is the right answer for a page (re)load, but it is poison for
+    the turn a user is about to start: the SPA's ``EventSource`` on a session
+    with history sits in a replay/close/auto-redial cycle and NEVER carries a
+    live turn, so mid-run ``stage_started`` / ``stage_completed`` events never
+    reach the UI (measured live: readyState stuck at 0, zero stage events per
+    run). Live mode means "this client is waiting on an in-flight or imminent
+    turn": skip the replay entirely and keep the stream open until the turn's
+    events have been delivered — the chat handler closes every subscriber of
+    the session right after ``deliberation_done``
+    (:meth:`~chimera.web.sse.SSEBroadcaster.unsubscribe_all`), which ends this
+    stream cleanly; the idle timeout remains the backstop if no turn ever
+    arrives. The default (no flag) behavior — replay, marker, close — is
+    unchanged for page loads and other consumers.
+
     The replay and its marker are queued onto THIS request's subscriber only.
     Fanning the replay out through ``broadcast`` would dump a stranger's stored
     turn into every other open stream of the session — which is what the
@@ -434,6 +469,13 @@ async def sse_stream(session_id: str, request: Request):
     (``test_sse_subscriber_session_isolation``) exists to catch.
     """
     from starlette.responses import StreamingResponse
+
+    # Tolerant truthiness, deliberately NOT a ``bool`` query parameter: a
+    # declared bool 422s every value it cannot parse, and a 422 is exactly the
+    # kind of answer an ``EventSource`` reports as a retryable drop (the reason
+    # the unknown-session case is a stream and not a 404 body). A live dial must
+    # never be answered with one, whatever form the flag takes.
+    live_mode = bool(live and live.strip().lower() in _SSE_LIVE_VALUES)
 
     session = _session_manager.get(session_id)
     if session is None:
@@ -449,7 +491,17 @@ async def sse_stream(session_id: str, request: Request):
     # The one exception is a deliberation that is executing RIGHT NOW: a client
     # that connects inside that window is waiting for the run in flight, so its
     # stream must stay open and carry the live events (step 3 of the brief).
-    if session.turns and session.last_sse_events and not session.deliberation_in_flight:
+    #
+    # A client that asked for live mode (?live=1) is never given the replay:
+    # it is dialing for the turn that is about to run (the SPA re-dials with
+    # the flag at send time), so replaying the PREVIOUS turn and closing would
+    # strand it exactly the way the bug this branch fixes did.
+    if (
+        not live_mode
+        and session.turns
+        and session.last_sse_events
+        and not session.deliberation_in_flight
+    ):
         for event_name, event_data in session.last_sse_events:
             _sse_broadcaster.deliver(
                 sub, SSEEvent(event=event_name, data=event_data)
