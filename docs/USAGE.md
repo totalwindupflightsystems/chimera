@@ -181,8 +181,8 @@ r = client.chat.completions.create(
     model="auto",
     messages=[{"role": "user", "content": "Review this SQL schema for performance"}],
     extra_body={
-        "allowed_models": ["deepseek/deepseek-v4-pro", "z-ai/glm-5.2"],
-        "stage_models": {"aggregator": "openrouter/anthropic/claude-sonnet-4"},
+        "allowed_models": ["deepseek/deepseek-v4-pro", "zai-coding-plan/glm-5.2"],
+        "stage_models": {"aggregator": "anthropic/claude-sonnet-4.6"},
     }
 )
 ```
@@ -234,14 +234,14 @@ Best for: critical decisions, complex analysis, code review
 ```json
 {
   "model": "auto",
-  "dispatcher_model": "z-ai/glm-5.2",
+  "dispatcher_model": "zai-coding-plan/glm-5.2",
   "allowed_models": [
-    "openrouter/anthropic/claude-sonnet-4",
-    "z-ai/glm-5.2",
+    "anthropic/claude-sonnet-4.6",
+    "zai-coding-plan/glm-5.2",
     "deepseek/deepseek-v4-pro"
   ],
   "stage_models": {
-    "aggregator": "openrouter/anthropic/claude-sonnet-4"
+    "aggregator": "anthropic/claude-sonnet-4.6"
   }
 }
 ```
@@ -255,8 +255,8 @@ code-review:
   dag:
     stages:
       - {id: coder, kind: worker, model: deepseek/deepseek-v4-pro}
-      - {id: reviewer, kind: aggregator, model: z-ai/glm-5.2, depends_on: [coder]}
-      - {id: security, kind: audit, model: openrouter/anthropic/claude-haiku-4.5, depends_on: [reviewer]}
+      - {id: reviewer, kind: aggregator, model: zai-coding-plan/glm-5.2, depends_on: [coder]}
+      - {id: security, kind: audit, model: anthropic/claude-haiku-4.5, depends_on: [reviewer]}
     edges:
       - [coder, reviewer]
       - [reviewer, security]
@@ -271,11 +271,11 @@ deep-research:
   dag:
     stages:
       - {id: domain_expert, kind: worker, model: deepseek/deepseek-v4-pro}
-      - {id: skeptic, kind: worker, model: openrouter/anthropic/claude-sonnet-4}
-      - {id: synthesizer, kind: worker, model: z-ai/glm-5.2}
-      - {id: debate_1, kind: aggregator, model: openrouter/anthropic/claude-sonnet-4, depends_on: [domain_expert, skeptic]}
-      - {id: debate_2, kind: aggregator, model: z-ai/glm-5.2, depends_on: [domain_expert, synthesizer]}
-      - {id: judge, kind: merge, model: openrouter/anthropic/claude-sonnet-4, depends_on: [debate_1, debate_2]}
+      - {id: skeptic, kind: worker, model: anthropic/claude-sonnet-4.6}
+      - {id: synthesizer, kind: worker, model: zai-coding-plan/glm-5.2}
+      - {id: debate_1, kind: aggregator, model: anthropic/claude-sonnet-4.6, depends_on: [domain_expert, skeptic]}
+      - {id: debate_2, kind: aggregator, model: zai-coding-plan/glm-5.2, depends_on: [domain_expert, synthesizer]}
+      - {id: judge, kind: merge, model: anthropic/claude-sonnet-4.6, depends_on: [debate_1, debate_2]}
     edges:
       - [domain_expert, debate_1]
       - [skeptic, debate_1]

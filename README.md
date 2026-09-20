@@ -67,7 +67,7 @@ readability — the real trace is the complete `DeliberationTrace` dump):
     "formation": "auto",
     "source": "auto",
     "dispatch": {"stage_id": "dispatch", "kind": "dispatch", "model": "deepseek/deepseek-v4-flash", "latency_ms": 1234},
-    "stages": [{"stage_id": "worker_1", "kind": "worker", "model": "anthropic/claude-sonnet-4", "tokens_input": 300, "tokens_output": 1200}],
+    "stages": [{"stage_id": "worker_1", "kind": "worker", "model": "anthropic/claude-sonnet-4.6", "tokens_input": 300, "tokens_output": 1200}],
     "aggregator": {"stage_id": "aggregator", "kind": "aggregator", "model": "deepseek/deepseek-v4-flash"},
     "answer_stage_id": "aggregator",
     "total_tokens": 12345,
@@ -477,10 +477,10 @@ task domains to model strengths. You can override any model choice per request:
   "model": "auto",
   "messages": [{"role": "user", "content": "..."}],
   "dispatcher_model": "deepseek/deepseek-v4-flash",
-  "aggregator_model": "z-ai/glm-5.2",
+  "aggregator_model": "zai-coding-plan/glm-5.2",
   "worker_model": "deepseek/deepseek-v4-pro",
-  "allowed_models": ["deepseek/deepseek-v4-pro", "z-ai/glm-5.2"],
-  "stage_models": {"worker_1": "openrouter/anthropic/claude-sonnet-4"}
+  "allowed_models": ["deepseek/deepseek-v4-pro", "zai-coding-plan/glm-5.2"],
+  "stage_models": {"worker_1": "anthropic/claude-sonnet-4.6"}
 }
 ```
 
@@ -506,10 +506,10 @@ complete request body for **POST /v1/chat/completions** with
   "allow_custom_dag": true,
   "dag": {
     "stages": [
-      {"id": "researcher", "kind": "worker", "model": "openrouter/anthropic/claude-sonnet-4"},
-      {"id": "critic", "kind": "aggregator", "model": "z-ai/glm-5.2", "depends_on": ["researcher"]},
+      {"id": "researcher", "kind": "worker", "model": "anthropic/claude-sonnet-4.6"},
+      {"id": "critic", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2", "depends_on": ["researcher"]},
       {"id": "polisher", "kind": "worker", "model": "deepseek/deepseek-v4-pro", "depends_on": ["critic"]},
-      {"id": "final", "kind": "aggregator", "model": "openrouter/anthropic/claude-sonnet-4", "depends_on": ["polisher"]}
+      {"id": "final", "kind": "aggregator", "model": "anthropic/claude-sonnet-4.6", "depends_on": ["polisher"]}
     ],
     "edges": [["researcher","critic"], ["critic","polisher"], ["polisher","final"]]
   },

@@ -27,7 +27,7 @@ formations:
     dag:
       stages:
         - {id: analyzer, kind: worker, model: deepseek/deepseek-v4-pro}
-        - {id: reviewer, kind: aggregator, model: z-ai/glm-5.2, depends_on: [analyzer]}
+        - {id: reviewer, kind: aggregator, model: zai-coding-plan/glm-5.2, depends_on: [analyzer]}
         - {id: finalizer, kind: merge, model: deepseek/deepseek-v4-flash, depends_on: [reviewer]}
       edges:
         - [analyzer, reviewer]
@@ -44,7 +44,7 @@ models:
     cost_tier: budget
     provider: deepseek
 
-  z-ai/glm-5.2:
+  zai-coding-plan/glm-5.2:
     categories:
       technology_code/code_generation/python: 0.92
       technology_code/data_science/analysis: 0.90
@@ -174,7 +174,7 @@ debate:
   workers: 3
   aggregators:
     - default
-    - openrouter/anthropic/claude-sonnet-4
+    - anthropic/claude-sonnet-4.6
   merge: best_of_n
 ```
 
@@ -184,7 +184,7 @@ debate:
 audit:
   workers: 2
   aggregator: default
-  audit: openrouter/anthropic/claude-haiku-4.5
+  audit: anthropic/claude-haiku-4.5
 ```
 
 ### Custom DAG (fully defined structure)
@@ -194,8 +194,8 @@ my-chain:
   dag:
     stages:
       - {id: step1, kind: worker, model: deepseek/deepseek-v4-pro}
-      - {id: step2, kind: aggregator, model: z-ai/glm-5.2, depends_on: [step1]}
-      - {id: step3, kind: worker, model: openrouter/anthropic/claude-sonnet-4, depends_on: [step2]}
+      - {id: step2, kind: aggregator, model: zai-coding-plan/glm-5.2, depends_on: [step1]}
+      - {id: step3, kind: worker, model: anthropic/claude-sonnet-4.6, depends_on: [step2]}
       - {id: final, kind: merge, model: deepseek/deepseek-v4-flash, depends_on: [step3]}
     edges:
       - [step1, step2]
@@ -336,8 +336,8 @@ apply the same score to every path under their target subtree.
 config provider or is `openrouter` for OpenRouter-routed models:
 
 - `deepseek/deepseek-v4-flash` → direct DeepSeek API
-- `openrouter/anthropic/claude-sonnet-4` → via OpenRouter
-- `z-ai/glm-5.2` → direct Z.AI API
+- `openrouter/anthropic/claude-fable-5` → via OpenRouter
+- `zai-coding-plan/glm-5.2` → direct Z.AI API
 
 ---
 

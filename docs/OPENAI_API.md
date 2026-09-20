@@ -152,7 +152,7 @@ defaults to budget-friendly auto-deliberation.
 | `worker_model` | `string` | config | Override ALL worker models |
 | `allowed_models` | `string[]` | all | Restrict to these models only |
 | `disallowed_models` | `string[]` | none | Exclude these models |
-| `stage_models` | `object` | — | Per-stage model overrides: `{"worker_1": "z-ai/glm-5.2"}` |
+| `stage_models` | `object` | — | Per-stage model overrides: `{"worker_1": "zai-coding-plan/glm-5.2"}` |
 | `dag` | `object` | — | Client-defined DAG (requires `allow_custom_dag: true`) |
 | `allow_custom_dag` | `bool` | `false` | Must be `true` for `dag` to be accepted |
 | `response_format` | `object` | — | OpenAI-compatible structured output |
@@ -232,10 +232,10 @@ the automatic Anthropic→OpenRouter credential fallback, which logs
   "allow_custom_dag": true,
   "dag": {
     "stages": [
-      {"id": "researcher", "kind": "worker", "model": "openrouter/anthropic/claude-sonnet-4"},
-      {"id": "critic", "kind": "aggregator", "model": "z-ai/glm-5.2", "depends_on": ["researcher"]},
+      {"id": "researcher", "kind": "worker", "model": "anthropic/claude-sonnet-4.6"},
+      {"id": "critic", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2", "depends_on": ["researcher"]},
       {"id": "writer", "kind": "worker", "model": "deepseek/deepseek-v4-pro", "depends_on": ["critic"]},
-      {"id": "editor", "kind": "aggregator", "model": "openrouter/anthropic/claude-sonnet-4", "depends_on": ["writer"]}
+      {"id": "editor", "kind": "aggregator", "model": "anthropic/claude-sonnet-4.6", "depends_on": ["writer"]}
     ],
     "edges": [["researcher","critic"], ["critic","writer"], ["writer","editor"]]
   },
@@ -254,8 +254,8 @@ not the OpenAI-style `error` object).
 {
   "model": "auto",
   "stage_models": {
-    "worker_1": "z-ai/glm-5.2",
-    "aggregator": "openrouter/anthropic/claude-sonnet-4"
+    "worker_1": "zai-coding-plan/glm-5.2",
+    "aggregator": "anthropic/claude-sonnet-4.6"
   },
   "messages": [{"role": "user", "content": "..."}]
 }
@@ -296,8 +296,8 @@ response = client.chat.completions.create(
     messages=[{"role": "user", "content": "Explain quantum computing"}],
     # Chimera extras via extra_body:
     extra_body={
-        "allowed_models": ["deepseek/deepseek-v4-pro", "z-ai/glm-5.2"],
-        "stage_models": {"aggregator": "openrouter/anthropic/claude-sonnet-4"}
+        "allowed_models": ["deepseek/deepseek-v4-pro", "zai-coding-plan/glm-5.2"],
+        "stage_models": {"aggregator": "anthropic/claude-sonnet-4.6"}
     }
 )
 
@@ -458,7 +458,7 @@ served as-is, and a caller should not expect OpenAI semantics from them:
 {
   "auto": {"mode": "auto"},
   "simple": {"workers": 2, "aggregator": "default"},
-  "debate": {"workers": 3, "aggregators": ["default", "openrouter/anthropic/claude-sonnet-4"], "merge": "best_of_n"}
+  "debate": {"workers": 3, "aggregators": ["default", "anthropic/claude-sonnet-4.6"], "merge": "best_of_n"}
 }
 ```
 

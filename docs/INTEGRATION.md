@@ -203,8 +203,8 @@ response = client.chat.completions.create(
     messages=[{"role": "user", "content": "Explain quantum computing simply"}],
     extra_body={
         # Chimera-specific fields (optional):
-        "allowed_models": ["deepseek/deepseek-v4-pro", "z-ai/glm-5.2"],
-        "stage_models": {"aggregator": "openrouter/anthropic/claude-sonnet-4"},
+        "allowed_models": ["deepseek/deepseek-v4-pro", "zai-coding-plan/glm-5.2"],
+        "stage_models": {"aggregator": "anthropic/claude-sonnet-4.6"},
     },
 )
 print(response.choices[0].message.content)
@@ -239,7 +239,7 @@ curl -X POST http://localhost:8765/v1/deliberate \
   -d '{
     "prompt": "Design a rate limiter for a distributed system",
     "formation": "debate",
-    "allowed_models": ["deepseek/deepseek-v4-pro", "z-ai/glm-5.2"]
+    "allowed_models": ["deepseek/deepseek-v4-pro", "zai-coding-plan/glm-5.2"]
   }'
 ```
 
@@ -256,8 +256,8 @@ For full control of the deliberation structure, send your own DAG:
   "allow_custom_dag": true,
   "dag": {
     "stages": [
-      {"id": "researcher", "kind": "worker", "model": "openrouter/anthropic/claude-sonnet-4"},
-      {"id": "critic", "kind": "aggregator", "model": "z-ai/glm-5.2", "depends_on": ["researcher"]},
+      {"id": "researcher", "kind": "worker", "model": "anthropic/claude-sonnet-4.6"},
+      {"id": "critic", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2", "depends_on": ["researcher"]},
       {"id": "writer", "kind": "worker", "model": "deepseek/deepseek-v4-pro", "depends_on": ["critic"]}
     ],
     "edges": [["researcher", "critic"], ["critic", "writer"]]

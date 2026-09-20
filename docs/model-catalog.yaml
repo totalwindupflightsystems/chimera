@@ -306,7 +306,7 @@ models:
   # GLM (Z.AI / Zhipu AI)
   # =========================================================================
 
-  "z-ai/glm-5.2":
+  "zai-coding-plan/glm-5.2":
     categories:
       code: 0.94
       analysis: 0.90
@@ -317,7 +317,7 @@ models:
     provider: zai
     # $1.20/$4.10 per MTok (OpenRouter), $1.40/$4.40 (Artificial Analysis median)
     # 753B params, 1M ctx. SWE-bench Pro 62.1% (beats GPT-5.5 at 58.6%).
-    # #2 on blind Code Arena. Already in chimera as zai-coding-plan/glm-5.2.
+    # #2 on blind Code Arena. Key matches the shipped chimera catalog id.
 
   "z-ai/glm-5-turbo":
     categories:
