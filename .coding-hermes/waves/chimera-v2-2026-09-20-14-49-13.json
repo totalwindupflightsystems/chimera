@@ -18,7 +18,12 @@
       "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-18",
       "branch": "wt/DF-CHIMERA-V2-18",
       "brief": "/tmp/chimera-v2-253-DF-CHIMERA-V2-18.md",
-      "files_in_scope": ["src/chimera/engine.py", "src/chimera/web/routes.py", "src/chimera/web/sse.py", "tests/test_web.py"],
+      "files_in_scope": [
+        "src/chimera/engine.py",
+        "src/chimera/web/routes.py",
+        "src/chimera/web/sse.py",
+        "tests/test_web.py"
+      ],
       "depends_on": null
     },
     {
@@ -28,7 +33,11 @@
       "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-19",
       "branch": "wt/DF-CHIMERA-V2-19",
       "brief": "/tmp/chimera-v2-253-DF-CHIMERA-V2-19.md",
-      "files_in_scope": ["src/chimera/web/routes.py", "src/chimera/web/static/index.html", "tests/test_web.py"],
+      "files_in_scope": [
+        "src/chimera/web/routes.py",
+        "src/chimera/web/static/index.html",
+        "tests/test_web.py"
+      ],
       "depends_on": null
     },
     {
@@ -38,7 +47,12 @@
       "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-20",
       "branch": "wt/DF-CHIMERA-V2-20",
       "brief": "/tmp/chimera-v2-253-DF-CHIMERA-V2-20.md",
-      "files_in_scope": ["src/chimera/web/routes.py", "docs/SECURITY.md", "tests/conftest.py", "tests/test_web.py"],
+      "files_in_scope": [
+        "src/chimera/web/routes.py",
+        "docs/SECURITY.md",
+        "tests/conftest.py",
+        "tests/test_web.py"
+      ],
       "depends_on": null
     },
     {
@@ -48,7 +62,11 @@
       "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-22",
       "branch": "wt/DF-CHIMERA-V2-22",
       "brief": "/tmp/chimera-v2-253-DF-CHIMERA-V2-22.md",
-      "files_in_scope": ["src/chimera/web/routes.py", "tests/test_concurrency.py", "tests/test_web.py"],
+      "files_in_scope": [
+        "src/chimera/web/routes.py",
+        "tests/test_concurrency.py",
+        "tests/test_web.py"
+      ],
       "depends_on": null
     },
     {
@@ -58,14 +76,19 @@
       "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-24",
       "branch": "wt/DF-CHIMERA-V2-24",
       "brief": "/tmp/chimera-v2-253-DF-CHIMERA-V2-24.md",
-      "files_in_scope": ["tests/test_no_private_host_leaks.py", "tests/private_host_scan.py", ".gitreins/pre-commit", "docs/GITREINS.md"],
+      "files_in_scope": [
+        "tests/test_no_private_host_leaks.py",
+        "tests/private_host_scan.py",
+        ".gitreins/pre-commit",
+        "docs/GITREINS.md"
+      ],
       "depends_on": null
     }
   ],
   "independence": {
     "verified": "all five rows carry depends_on: null. 18 owns the engine observer + broadcast-on-stage path; 19 owns the sse_stream replay gate + SPA reconnect logic; 20 owns the debug_reset route + SECURITY.md; 22 owns session_chat backpressure wiring; 24 owns the leak-guard module + .gitreins/pre-commit.",
-    "band_test": "18 vs 19 vs 22 all touch src/chimera/web/routes.py in DIFFERENT functions: 18 = session_chat broadcast attach; 19 = sse_stream(); 22 = session_chat() backpressure acquire. 18 and 22 both modify session_chat — merge-order serial gates + a route-conflict check cover it; hunks are adjacent not overlapping (observer attach vs queue acquire).",
-    "caveat": "19 and 18 both read sse.py but only 18 edits it. 24 touches .gitreins/pre-commit which every merge-time commit executes — merged FIRST to keep later merges guarded by the new arm."
+    "band_test": "18 vs 19 vs 22 all touch src/chimera/web/routes.py in DIFFERENT functions: 18 = session_chat broadcast attach; 19 = sse_stream(); 22 = session_chat() backpressure acquire. 18 and 22 both modify session_chat \u2014 merge-order serial gates + a route-conflict check cover it; hunks are adjacent not overlapping (observer attach vs queue acquire).",
+    "caveat": "19 and 18 both read sse.py but only 18 edits it. 24 touches .gitreins/pre-commit which every merge-time commit executes \u2014 merged FIRST to keep later merges guarded by the new arm."
   },
   "merge_order": [
     "DF-CHIMERA-V2-24",
@@ -75,12 +98,14 @@
     "DF-CHIMERA-V2-22"
   ],
   "excluded_rows": {
-    "DEPS-004": "load-hygiene audit needs a quiet host; loadavg 5-10 with sibling workers running this tick — stays pending per tick 252 decision, worktree kept",
-    "DF-CHIMERA-V2-23": "in-repo half does not exist (no JSONL appender in this repo; line 182 already repaired at 3120 bytes) — fleet-tooling row, not dispatchable here",
+    "DEPS-004": "load-hygiene audit needs a quiet host; loadavg 5-10 with sibling workers running this tick \u2014 stays pending per tick 252 decision, worktree kept",
+    "DF-CHIMERA-V2-23": "in-repo half does not exist (no JSONL appender in this repo; line 182 already repaired at 3120 bytes) \u2014 fleet-tooling row, not dispatchable here",
     "QA-CHIMERA-V2-13/14": "QA-bunker-harness causes, owned by the -qa lane",
     "INT-PUB-001, INT-SEC-001": "policy-gated owner actions (history purge, key rotation)",
     "INT-CI-006": "tracked live-provider flake class, policy says judge by JOB",
     "INT-CI-010": "unreproduced single-run red on a board-only commit; watch class",
     "INT-GATE-001/004/005, INT-PROV-CLIPROXY-001, DF-CHIMERA-V2-13/17, DEPS-003": "docs-of-record / external state / bigger-scope rows for later serial ticks"
-  }
+  },
+  "finished_at": "2026-09-20T16:55:00-05:00",
+  "outcome": "closed by tick 255 (chimera-v2-2026-09-20-16-39-54) wave recovery: all five tasks were already merged by tick 254 \u2014 merge order 24@9be83b7, 18@fce99ae, 20@796d396, 19@ec2ab9e, 22@0744f7a \u2014 every row board-complete, push parity 0, no gate re-run needed (merge-time gates ran on the merged tree per tick 254; all six wt branches verified ancestors of main this tick). Worktrees+branches for 17/18/19/20/22/24 reaped this tick; DEPS-004 reservation worktree kept per tick-252 quiet-host decision. Note: this manifest's task array was EMPTY when tick 255 read it (rows appear to have been stripped post-merge); recovery was proven from git merge-base checks + board rows, and this closure was written without re-adding them."
 }
