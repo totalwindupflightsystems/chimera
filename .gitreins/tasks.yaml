@@ -1285,3 +1285,24 @@ tasks:
   status: complete
   created_at: '2026-09-20T00:05:14.909640+00:00'
   completed_at: '2026-09-20T00:32:17.572822+00:00'
+- id: CH-GAP-057
+  title: Make bin/chimera-mcp-wrapper a live MCP shim and gate bin/ shims with a handshake
+    smoke test
+  criteria:
+  - bin/chimera-mcp-wrapper either completes a JSON-RPC initialize handshake listing
+    the 3 chimera tools, or the file is removed and docs/REPO_LAYOUT.md bin/ row lists
+    only working entry points
+  - a smoke check asserts every file in bin/ starts and answers initialize
+  status: complete
+  created_at: '2026-09-20T03:40:03.795518+00:00'
+  completed_at: '2026-09-20T04:14:21.309853+00:00'
+- id: CH-GAP-058
+  title: Make the MCP chimera_deliberate progressive parameter honest (no silent no-op)
+    and pin it with a regression test
+  criteria:
+  - a tools/call with progressive=true and no wait_messages either returns a documented
+    error or actually sets progressive on the worker stages
+  - the schema description matches whichever behavior ships
+  status: complete
+  created_at: '2026-09-20T03:40:37.219909+00:00'
+  completed_at: '2026-09-20T04:14:21.732394+00:00'
