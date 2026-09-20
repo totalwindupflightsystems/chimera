@@ -1,0 +1,86 @@
+{
+  "tick_id": "chimera-v2-2026-09-20-14-49-13",
+  "project": "chimera-v2",
+  "repo": "/home/kara/chimera-v2",
+  "branch_target": "main",
+  "base_ref": "origin/main",
+  "base_sha": "69acfb4",
+  "composed_at": "2026-09-20T10:15:00-05:00",
+  "wave_budget": 12,
+  "worker_model": "glm-5.3-flash",
+  "worker_provider": "zai-glm (18/20/24) + opencode-go (19/22); serving lane verified per session in agent.log at merge time",
+  "mode": "auto-merge (foreman merges serially, workers never push)",
+  "tasks": [
+    {
+      "id": "DF-CHIMERA-V2-18",
+      "title": "live DAG is not live: engine emits no mid-run SSE events (stage_started/stage_completed never broadcast)",
+      "priority": "P1",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-18",
+      "branch": "wt/DF-CHIMERA-V2-18",
+      "brief": "/tmp/chimera-v2-253-DF-CHIMERA-V2-18.md",
+      "files_in_scope": ["src/chimera/engine.py", "src/chimera/web/routes.py", "src/chimera/web/sse.py", "tests/test_web.py"],
+      "depends_on": null
+    },
+    {
+      "id": "DF-CHIMERA-V2-19",
+      "title": "SSE reconnecting loop on aged sessions: replay gate is 30s, frontend reconnects forever",
+      "priority": "P2",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-19",
+      "branch": "wt/DF-CHIMERA-V2-19",
+      "brief": "/tmp/chimera-v2-253-DF-CHIMERA-V2-19.md",
+      "files_in_scope": ["src/chimera/web/routes.py", "src/chimera/web/static/index.html", "tests/test_web.py"],
+      "depends_on": null
+    },
+    {
+      "id": "DF-CHIMERA-V2-20",
+      "title": "POST /web/debug/reset is unauthenticated + destructive on 0.0.0.0; SECURITY.md documents the opposite",
+      "priority": "P2",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-20",
+      "branch": "wt/DF-CHIMERA-V2-20",
+      "brief": "/tmp/chimera-v2-253-DF-CHIMERA-V2-20.md",
+      "files_in_scope": ["src/chimera/web/routes.py", "docs/SECURITY.md", "tests/conftest.py", "tests/test_web.py"],
+      "depends_on": null
+    },
+    {
+      "id": "DF-CHIMERA-V2-22",
+      "title": "/web chat path bypasses queue backpressure + rate limit that /v1 enforces",
+      "priority": "P3",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-22",
+      "branch": "wt/DF-CHIMERA-V2-22",
+      "brief": "/tmp/chimera-v2-253-DF-CHIMERA-V2-22.md",
+      "files_in_scope": ["src/chimera/web/routes.py", "tests/test_concurrency.py", "tests/test_web.py"],
+      "depends_on": null
+    },
+    {
+      "id": "DF-CHIMERA-V2-24",
+      "title": "private/CGNAT host address leak guard only fires on the next full suite; move it to the commit gate via one shared pattern module",
+      "priority": "P1",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-24",
+      "branch": "wt/DF-CHIMERA-V2-24",
+      "brief": "/tmp/chimera-v2-253-DF-CHIMERA-V2-24.md",
+      "files_in_scope": ["tests/test_no_private_host_leaks.py", "tests/private_host_scan.py", ".gitreins/pre-commit", "docs/GITREINS.md"],
+      "depends_on": null
+    }
+  ],
+  "independence": {
+    "verified": "all five rows carry depends_on: null. 18 owns the engine observer + broadcast-on-stage path; 19 owns the sse_stream replay gate + SPA reconnect logic; 20 owns the debug_reset route + SECURITY.md; 22 owns session_chat backpressure wiring; 24 owns the leak-guard module + .gitreins/pre-commit.",
+    "band_test": "18 vs 19 vs 22 all touch src/chimera/web/routes.py in DIFFERENT functions: 18 = session_chat broadcast attach; 19 = sse_stream(); 22 = session_chat() backpressure acquire. 18 and 22 both modify session_chat — merge-order serial gates + a route-conflict check cover it; hunks are adjacent not overlapping (observer attach vs queue acquire).",
+    "caveat": "19 and 18 both read sse.py but only 18 edits it. 24 touches .gitreins/pre-commit which every merge-time commit executes — merged FIRST to keep later merges guarded by the new arm."
+  },
+  "merge_order": [
+    "DF-CHIMERA-V2-24",
+    "DF-CHIMERA-V2-18",
+    "DF-CHIMERA-V2-20",
+    "DF-CHIMERA-V2-19",
+    "DF-CHIMERA-V2-22"
+  ],
+  "excluded_rows": {
+    "DEPS-004": "load-hygiene audit needs a quiet host; loadavg 5-10 with sibling workers running this tick — stays pending per tick 252 decision, worktree kept",
+    "DF-CHIMERA-V2-23": "in-repo half does not exist (no JSONL appender in this repo; line 182 already repaired at 3120 bytes) — fleet-tooling row, not dispatchable here",
+    "QA-CHIMERA-V2-13/14": "QA-bunker-harness causes, owned by the -qa lane",
+    "INT-PUB-001, INT-SEC-001": "policy-gated owner actions (history purge, key rotation)",
+    "INT-CI-006": "tracked live-provider flake class, policy says judge by JOB",
+    "INT-CI-010": "unreproduced single-run red on a board-only commit; watch class",
+    "INT-GATE-001/004/005, INT-PROV-CLIPROXY-001, DF-CHIMERA-V2-13/17, DEPS-003": "docs-of-record / external state / bigger-scope rows for later serial ticks"
+  }
+}
