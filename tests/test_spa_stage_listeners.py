@@ -31,8 +31,8 @@ def spa_source() -> str:
 
 @pytest.fixture(scope="module")
 def connect_sse_body(spa_source: str) -> str:
-    """The body of ``function connectSSE() { ... }`` — the listener home."""
-    match = re.search(r"function connectSSE\(\) \{", spa_source)
+    """The body of ``function connectSSE(...) { ... }`` — the listener home."""
+    match = re.search(r"function connectSSE\([^)]*\) \{", spa_source)
     assert match, "connectSSE() not found in index.html"
     # Take everything from connectSSE to the next top-level function section
     # header; listener registrations all live inside this window.

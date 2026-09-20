@@ -571,6 +571,7 @@ let dagZoomLevel = 1;
 let dagPanelCollapsed = false;
 let deliberationComplete = false; // True after deliberation_done — prevents SSE reconnect
 let sseTerminalSeen = false; // True after the server's replay_done marker — this stream closed on purpose
+let sseLiveMode = false; // True while the current EventSource was dialed with ?live=1 (in-flight turn)
 let currentMermaid = null; // Saved from dag_designed for use in message bubble
 let retryTimer = null; // Pending "retry after backpressure" timer (cleared on new send)
 // ── Live stage state (DF-CHIMERA-V2-25) ──
@@ -648,6 +649,7 @@ function updateSessionDisplay() {
 // what the status line says.
 function endStream(reason) {
   sseTerminalSeen = true;
+  sseLiveMode = false; // this stream is finished — the next dial chooses its mode
   if (eventSource) {
     eventSource.close();
     eventSource = null;
@@ -664,12 +666,18 @@ function endStream(reason) {
   setStatus('', 'Ready — send a prompt to begin');
 }
 
-function connectSSE() {
+function connectSSE(live = false) {
   if (eventSource) eventSource.close();
   if (!sessionId) return;
 
   sseTerminalSeen = false;
-  eventSource = new EventSource(`/web/sse/${sessionId}`);
+  sseLiveMode = live;
+  // In live mode the client explicitly asks the server NOT to replay the
+  // previous turn and NOT to close after it (DF-CHIMERA-V2-29): the plain
+  // URL answers a session-with-history by replaying then closing, which put
+  // this EventSource into a replay/error/redial cycle that never carried a
+  // live turn — so the stage listeners below never fired in the UI.
+  eventSource = new EventSource(`/web/sse/${sessionId}${live ? '?live=1' : ''}`);
 
   eventSource.addEventListener('deliberation_started', (e) => {
     const data = JSON.parse(e.data);
@@ -745,6 +753,17 @@ function connectSSE() {
   eventSource.addEventListener('deliberation_done', (e) => {
     const data = JSON.parse(e.data);
     deliberationComplete = true;
+    // The turn is over: end the live stream here. The server already closed
+    // its side (unsubscribe_all after deliberation_done), so without close()
+    // the browser retries the ?live=1 URL by itself — an idle loop with no
+    // turn to deliver. The next send re-dials live; a reload replays.
+    if (sseLiveMode) {
+      sseLiveMode = false;
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+    }
     animateValue('stat-tokens', data.total_tokens);
     document.getElementById('stat-cost').textContent = '$' + data.total_cost.toFixed(6);
     document.getElementById('stat-time').textContent = fmtMs(data.elapsed_ms);
@@ -787,7 +806,11 @@ function connectSSE() {
     }
     setStatus('warn', 'SSE reconnecting…');
     setTimeout(() => {
-      if (sessionId && !deliberationComplete && !sseTerminalSeen) connectSSE();
+      // Preserve the mode across a transport blip: a stream dialed live for
+      // an in-flight turn must redial live, otherwise it comes back on the
+      // replay-then-close URL and the turn's events are lost again
+      // (DF-CHIMERA-V2-29).
+      if (sessionId && !deliberationComplete && !sseTerminalSeen) connectSSE(sseLiveMode);
     }, 3000);
   };
 }
@@ -813,6 +836,14 @@ async function sendMessage() {
   if (aggModel) body.aggregator_model = aggModel;
 
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+
+  // Re-dial the stream in LIVE mode for the turn that starts now
+  // (DF-CHIMERA-V2-29). Without this the only EventSource on a session with
+  // history is the page-load one, which the server answers with
+  // replay-then-close: it is stuck in CONNECTING / error-redial and can never
+  // carry the stage_started / stage_completed events of THIS turn. connectSSE
+  // closes the previous EventSource first, so listeners are never duplicated.
+  connectSSE(true);
 
   document.getElementById('send-btn').disabled = true;
   setStatus('live', 'Sending…');
