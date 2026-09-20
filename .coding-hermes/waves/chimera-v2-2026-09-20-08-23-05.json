@@ -1,0 +1,66 @@
+{
+  "tick_id": "chimera-v2-2026-09-20-08-23-05",
+  "project": "chimera-v2",
+  "repo": "/home/kara/chimera-v2",
+  "branch_target": "main",
+  "base_ref": "HEAD",
+  "base_sha": "4b89a9c",
+  "composed_at": "2026-09-20T08:45:00Z",
+  "wave_budget": 12,
+  "worker_model": "k3",
+  "worker_provider": "kimi-for-coding",
+  "mode": "auto-merge (foreman merges serially, workers never push)",
+  "recovered_wave": {
+    "tick_id": "chimera-v2-2026-09-20-03-29-22",
+    "status": "closed this tick — both workers (CH-GAP-057 d300d22, CH-GAP-058 540a492) were already merged (e328d8b, 6b2b817) and closed at tick 250; manifest finished_at was the only missing bookkeeping. Stray worktrees wt/CH-GAP-055, wt/CH-GAP-056, wt/DEPS-004 all at main tip with zero unique commits = never-dispatched reservations, reaped (not evidence: no unmerged work)."
+  },
+  "tasks": [
+    {
+      "id": "CH-GAP-055",
+      "title": "/v1/models advertises cost_per_1k_input/output null for 7 of 42 models that declare a cost_tier while the engine bills those models at the tier default rate",
+      "priority": "P2",
+      "worktree": "/home/kara/worktrees/chimera-v2-CH-GAP-055",
+      "branch": "wt/CH-GAP-055",
+      "brief": "/tmp/chimera-v2-251-CH-GAP-055.md",
+      "files_in_scope": [
+        "src/chimera/api/server.py",
+        "src/chimera/config.py",
+        "tests/test_openai_models_envelope.py",
+        "docs/CONFIG.md"
+      ],
+      "depends_on": null
+    },
+    {
+      "id": "CH-GAP-056",
+      "title": "trace dispatch span (74% of a run's cost) returns empty routing fields and zero timestamps while every worker/aggregator span carries real values",
+      "priority": "P2",
+      "worktree": "/home/kara/worktrees/chimera-v2-CH-GAP-056",
+      "branch": "wt/CH-GAP-056",
+      "brief": "/tmp/chimera-v2-251-CH-GAP-056.md",
+      "files_in_scope": [
+        "src/chimera/engine.py",
+        "src/chimera/dispatcher.py",
+        "tests/test_trace_provider_attribution.py"
+      ],
+      "depends_on": null
+    }
+  ],
+  "independence": {
+    "verified": "both rows carry depends_on: null; declared file sets are disjoint (055 = src/chimera/api/server.py + config.py + tests/test_openai_models_envelope.py + docs/CONFIG.md; 056 = src/chimera/engine.py + dispatcher.py + tests/test_trace_provider_attribution.py). engine.py is NOT in 055's scope.",
+    "band_test": "python: 055 = API/catalog band (serve-side price emission + default-rate source of truth), 056 = engine trace-assembly band (dispatch span construction). Different internal call chains, no shared function edited.",
+    "caveat": "both change price/route semantics but neither imports the other's module: config.py DEFAULT_COST_RATES is read, never edited, by 056."
+  },
+  "merge_order": [
+    "CH-GAP-056",
+    "CH-GAP-055"
+  ],
+  "excluded_rows": {
+    "DEPS-004": "excluded this tick: LOAD-HYGIENE audit needs the host at rest to measure before/after spawn counts, and loadavg is 13-17/16 cores from a sibling project's storm probes; the audit was done read-only and its findings are filed below instead of dispatching a worker against a loaded box.",
+    "INT-CI-010": "excluded: unreproduced single-run red (run 35318063990) on a board-only commit; a documented flake class (INT-CI-006 family), not dispatchable work until it recurs.",
+    "QA-CHIMERA-V2-13/14": "not dispatchable: QA-bunker-harness causes (port pool / launch record), owned by the -qa lane.",
+    "INT-PUB-001, INT-SEC-001": "policy-gated (public-history blob, key rotation) — owner action, not worker work.",
+    "INT-ZAI-002, DF-CHIMERA-0917-6, INT-GATE-004/005": "external state / human-gated / docs-of-record: no repo change available to a worker this tick."
+  },
+  "finished_at": "2026-09-20T09:45:00Z",
+  "outcome": "recovered by tick 252: CH-GAP-056 merged 749ca89 (worker k3 @ kimi-for-coding, commit 02c6c95), CH-GAP-055 merged 6a00b61 (worker died mid-verification; foreman finished the test-layer reconciliation and docs in-tree, commit c2d7ab1); both pushed to origin + github at parity. DEPS-004 explicitly NOT dispatched - the load-hygiene audit needs a quiet host and this tick ran two full suites; row stays pending with its reserved worktree intact."
+}

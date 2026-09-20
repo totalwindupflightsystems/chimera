@@ -1,0 +1,77 @@
+{
+  "tick_id": "chimera-v2-2026-09-20-08-08-07",
+  "project": "chimera-v2",
+  "repo": "/home/kara/chimera-v2",
+  "branch_target": "main",
+  "base_ref": "origin/main",
+  "base_sha": "4b89a9c",
+  "composed_at": "2026-09-20T08:25:00Z",
+  "wave_budget": 12,
+  "worker_model": "k3",
+  "worker_provider": "kimi-for-coding",
+  "mode": "auto-merge (foreman merges serially, workers never push)",
+  "recovery_note": "Recovered first: unfinished wave tick=chimera-v2-2026-09-20-03-29-22 (CH-GAP-057 + CH-GAP-058) was already merged (e328d8b, 6b2b817), board-closed, judged, pushed, parity 0, mirror synced; worktrees/branches already removed; manifest left open by the dead tick — closed by this tick. Chimera service restarted to 4b89a9c (was 6b2b817) before this wave. CI red = tracked INT-CI-006 live-provider class only (integration leg httpx.ReadTimeout, 53 passed / 1 failed; all hermetic jobs green; board row INT-CI-006 verified pending, matching class). gitreins tasks CH-GAP-055/056/DEPS-004 were created+started by the dead tick's compose phase but never dispatched — reused, not duplicated.",
+  "tasks": [
+    {
+      "id": "CH-GAP-055",
+      "title": "/v1/models advertises null cost rates for 7 tier-priced models the engine bills at tier defaults",
+      "priority": "P2",
+      "worktree": "/home/kara/worktrees/chimera-v2-CH-GAP-055",
+      "branch": "wt/CH-GAP-055",
+      "brief": "/tmp/brief-ch-gap-055.txt",
+      "files_in_scope": [
+        "src/chimera/api/server.py",
+        "src/chimera/config.py",
+        "docs/CONFIG.md",
+        "tests/"
+      ],
+      "depends_on": null
+    },
+    {
+      "id": "CH-GAP-056",
+      "title": "trace dispatch span missing route attribution and timestamps",
+      "priority": "P2",
+      "worktree": "/home/kara/worktrees/chimera-v2-CH-GAP-056",
+      "branch": "wt/CH-GAP-056",
+      "brief": "/tmp/brief-ch-gap-056.txt",
+      "files_in_scope": [
+        "src/chimera/engine.py",
+        "docs/CLI_PROXY.md",
+        "tests/"
+      ],
+      "depends_on": null
+    },
+    {
+      "id": "DEPS-004",
+      "title": "bound test-suite host load (audit + fix worst offender, no skips)",
+      "priority": "P2",
+      "worktree": "/home/kara/worktrees/chimera-v2-DEPS-004",
+      "branch": "wt/DEPS-004",
+      "brief": "/tmp/brief-ch-deps-004.txt",
+      "files_in_scope": [
+        "tests/",
+        "conftest.py",
+        "docs/"
+      ],
+      "depends_on": null
+    }
+  ],
+  "independence": {
+    "verified": "declared file sets disjoint: 055 = api/server.py + config docs, 056 = engine.py + CLI_PROXY docs, DEPS-004 = tests/conftest + test files only; no shared import root edits (055 may touch config.py model-entry surface, 056 only engine.py span builder — no overlap); all three base on the same 4b89a9c tree",
+    "band_test": "055 = api/catalog band, 056 = engine/trace band, DEPS-004 = test-harness band",
+    "caveat": "if 055 and 056 both add tests to the SAME new file name, merge is a mechanical rename; DEPS-004 touches tests/ broadly so it merges LAST and its full-suite run doubles as the merged-tree regression for 055+056"
+  },
+  "merge_order": [
+    "CH-GAP-055",
+    "CH-GAP-056",
+    "DEPS-004"
+  ],
+  "judge_caps_note": "gitreins judge context is tight — workers are told to keep the audit/summary inside the commit message and completion report, NOT in extra files that blow the Tier-2 input budget",
+  "excluded_rows": {
+    "QA-CHIMERA-V2-13/14, INT-PUB-001, INT-SEC-001, INT-ZAI-002": "not dispatchable: QA-bunker-harness causes and policy-gated external blockers",
+    "INT-CI-006": "tracked CI flake class (live-provider ReadTimeout on the push-only integration leg) — present on this tick's HEAD run, hermetic jobs green; stays pending by design",
+    "CH-GAP-053/057/058": "complete (recovered + previously closed)"
+  },
+  "finished_at": "2026-09-20T09:45:00Z",
+  "outcome": "closed by tick 252 wave recovery: no worker of this manifest ever ran a turn (all logs carry the provider-chain failure line; branches wt/CH-GAP-055, wt/CH-GAP-056, wt/DEPS-004 held zero unique commits). Its rows were re-dispatched by the next wave manifest and landed under chimera-v2-2026-09-20-08-23-05."
+}

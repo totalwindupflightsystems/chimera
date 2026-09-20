@@ -418,7 +418,7 @@ Field semantics:
 | `cost_tier` | `string` | `budget` / `standard` / `premium` |
 | `provider` | `string` | Provider key from `chimera.yaml` |
 | `enabled` | `bool` | Whether the catalog entry is selectable |
-| `cost_per_1k_*` | `float \| null` | Explicit rate when the entry declares one, else `null` (the tier default is applied at billing time — this route reports the configured value, not the derived one) |
+| `cost_per_1k_*` | `float` | The effective rate the engine bills: the explicit rate when the entry declares one, else the entry's `cost_tier` default (see `docs/CONFIG.md`'s cost-tier section). Never `null` for a catalog entry the engine prices — the served catalog and the billed cost read the same `ModelEntry` methods |
 
 ```python
 from openai import OpenAI
