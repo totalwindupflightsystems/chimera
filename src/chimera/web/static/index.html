@@ -272,6 +272,25 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: .3; }
 }
+/* ── Live DAG node states (DF-CHIMERA-V2-25) ── */
+/* Applied as classes on the mermaid g.node elements by the stage_started /
+   stage_completed SSE listeners; !important wins over mermaid's inline
+   node styles. polygon covers non-rect node shapes (rounded, stadium…). */
+#dag-viz-scroll .node-in-flight rect,
+#dag-viz-scroll .node-in-flight polygon {
+  stroke: var(--yellow) !important;
+  stroke-width: 3px !important;
+  animation: dagNodePulse 1.2s ease-in-out infinite;
+}
+#dag-viz-scroll .node-done rect,
+#dag-viz-scroll .node-done polygon {
+  stroke: var(--green) !important;
+  stroke-width: 2px !important;
+}
+@keyframes dagNodePulse {
+  0%, 100% { stroke-opacity: 1; }
+  50% { stroke-opacity: .3; }
+}
 .dag-controls { display: flex; gap: 4px; }
 .dag-controls button {
   background: var(--bg); border: 1px solid var(--border);
@@ -554,6 +573,14 @@ let deliberationComplete = false; // True after deliberation_done — prevents S
 let sseTerminalSeen = false; // True after the server's replay_done marker — this stream closed on purpose
 let currentMermaid = null; // Saved from dag_designed for use in message bubble
 let retryTimer = null; // Pending "retry after backpressure" timer (cleared on new send)
+// ── Live stage state (DF-CHIMERA-V2-25) ──
+// stage_started / stage_completed arrive BEFORE dag_designed renders the DAG
+// (the mermaid string is only broadcast after the engine returns), so the
+// listeners record state here and applyDagStates() replays it onto the
+// freshly rendered SVG once dag_designed fires.
+let stageRunState = {}; // normalized stage id -> 'in-flight' | 'done'
+let stageCompletedCount = 0; // stages completed so far this run
+let stageRunTotals = { tokens: 0, cost: 0, latency_ms: 0 }; // incremental tile tallies
 
 // ═══════════════════════════════════════════
 // Mermaid Init
@@ -648,6 +675,7 @@ function connectSSE() {
     const data = JSON.parse(e.data);
     deliberationComplete = false;
     currentMermaid = null;
+    resetStageRunState(); // fresh per-run stage bookkeeping (DF-CHIMERA-V2-25)
     setStatus('live', 'Dispatching…');
     document.getElementById('send-btn').disabled = true;
     document.getElementById('dag-live-indicator').style.display = 'flex';
@@ -668,7 +696,50 @@ function connectSSE() {
     mermaid.run({ nodes: [dagEl] }).then(() => {
       dagEl.style.opacity = '1';
       attachDagClickHandlers();
+      // Stage events usually arrived BEFORE this render (the mermaid string
+      // is broadcast only after the engine returns) — replay their states
+      // onto the freshly rendered SVG (DF-CHIMERA-V2-25).
+      applyDagStates();
     });
+  });
+
+  // ── Mid-run stage events (DF-CHIMERA-V2-25) ──
+  // These arrive BEFORE dag_designed renders the DAG on a live run, so each
+  // listener records state for the replay in dag_designed and also styles
+  // the node immediately when it already exists (late subscriber / replay
+  // path). Every body is defensive: a malformed payload must not throw and
+  // must not break the stream.
+  eventSource.addEventListener('stage_started', (e) => {
+    try {
+      const data = parseEventData(e);
+      if (!data) return;
+      const sid = stageEventId(data);
+      recordStageState(sid, 'in-flight');
+      markDagNode(sid, 'in-flight');
+      document.getElementById('dag-live-indicator').style.display = 'flex';
+      const model = (typeof data.model === 'string' && data.model) ? ` — ${data.model}` : '';
+      setStatus('live', `Running ${data.kind || 'stage'}…${model}`);
+    } catch (_) { /* malformed stage_started — never break the stream */ }
+  });
+
+  eventSource.addEventListener('stage_completed', (e) => {
+    try {
+      const data = parseEventData(e);
+      if (!data) return;
+      const sid = stageEventId(data);
+      recordStageState(sid, 'done');
+      markDagNode(sid, 'done');
+      // Incremental dashboard tallies — NaN-safe: a null/absent field is 0.
+      const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
+      stageCompletedCount += 1;
+      stageRunTotals.tokens += num(data.tokens);
+      stageRunTotals.cost += num(data.cost);
+      stageRunTotals.latency_ms += num(data.latency_ms);
+      animateValue('stat-tokens', stageRunTotals.tokens);
+      document.getElementById('stat-cost').textContent = '$' + stageRunTotals.cost.toFixed(6);
+      document.getElementById('stat-time').textContent = fmtMs(stageRunTotals.latency_ms);
+      document.getElementById('stat-stages').textContent = stageCompletedCount;
+    } catch (_) { /* malformed stage_completed — never break the stream */ }
   });
 
   eventSource.addEventListener('deliberation_done', (e) => {
@@ -1138,6 +1209,61 @@ function parseEventData(e) {
   } catch (_) {
     return null;
   }
+}
+
+// ── Live stage-event helpers (DF-CHIMERA-V2-25) ──
+// The SSE payload carries the stage id under `stage` (see web/routes.py),
+// while trace data calls the same field stage_id — accept both defensively.
+function stageEventId(d) {
+  if (!d || typeof d !== 'object') return '';
+  const raw = d.stage || d.stage_id || '';
+  return String(raw).trim().toLowerCase();
+}
+
+// Record a stage's state so applyDagStates() can replay it once the DAG
+// actually renders (stage events precede dag_designed on a live run).
+function recordStageState(stageId, state) {
+  if (!stageId) return;
+  stageRunState[stageId] = state;
+}
+
+// Style the DAG node matching *stageId*. Returns true when a node matched.
+// Primary: mermaid embeds the vertex id in g.node's id attr (e.g.
+// "flowchart-worker_1-0") — match on exact '-'-delimited members so worker_1
+// never prefix-collides with worker_10. Fallback: exact match on the node's
+// label text. No match is a no-op (never throws, never breaks the stream).
+function markDagNode(stageId, state) {
+  if (!stageId) return false;
+  const svg = document.querySelector('#dag-viz-scroll .mermaid svg');
+  if (!svg) return false;
+  const nodes = Array.from(svg.querySelectorAll('g.node'));
+  if (!nodes.length) return false;
+  let target = nodes.find(n => String(n.id || '').toLowerCase().split('-').includes(stageId));
+  if (!target) {
+    target = nodes.find(n => {
+      const labelEl = n.querySelector('.nodeLabel') || n.querySelector('text') || n.querySelector('span');
+      const t = labelEl ? String(labelEl.textContent || '').trim().toLowerCase() : '';
+      return t.split('\n')[0].trim() === stageId;
+    });
+  }
+  if (!target) return false;
+  target.classList.remove('node-in-flight', 'node-done');
+  if (state) target.classList.add(state === 'in-flight' ? 'node-in-flight' : 'node-done');
+  return true;
+}
+
+// Replay every recorded stage state onto the currently rendered DAG.
+function applyDagStates() {
+  for (const sid of Object.keys(stageRunState)) {
+    markDagNode(sid, stageRunState[sid]);
+  }
+}
+
+// Reset per-run stage bookkeeping (new deliberation turn).
+function resetStageRunState() {
+  stageRunState = {};
+  stageCompletedCount = 0;
+  stageRunTotals = { tokens: 0, cost: 0, latency_ms: 0 };
 }
 
 function animateValue(id, target) {
