@@ -1,0 +1,48 @@
+{
+  "tick_id": "chimera-v2-2026-09-20-03-29-22",
+  "project": "chimera-v2",
+  "repo": "/home/kara/chimera-v2",
+  "branch_target": "main",
+  "base_ref": "origin/main",
+  "base_sha": "e49ecab",
+  "composed_at": "2026-09-20T03:45:00Z",
+  "wave_budget": 12,
+  "worker_model": "k3",
+  "worker_provider": "kimi-for-coding",
+  "mode": "auto-merge (foreman merges serially, workers never push)",
+  "tasks": [
+    {
+      "id": "CH-GAP-057",
+      "title": "bin/chimera-mcp-wrapper hardcodes a foreign-venv interpreter path (rc=127) while docs/REPO_LAYOUT.md advertises it as a working MCP shim",
+      "priority": "P2",
+      "worktree": "/home/kara/worktrees/chimera-v2-CH-GAP-057",
+      "branch": "wt/CH-GAP-057",
+      "brief": "/tmp/brief-ch-gap-057.txt",
+      "files_in_scope": ["bin/chimera-mcp-wrapper", "tests/test_bin_shims.py", "docs/REPO_LAYOUT.md", "tests/test_repo_hygiene.py"],
+      "depends_on": null
+    },
+    {
+      "id": "CH-GAP-058",
+      "title": "MCP tool chimera_deliberate advertises a progressive parameter that no code reads",
+      "priority": "P3",
+      "worktree": "/home/kara/worktrees/chimera-v2-CH-GAP-058",
+      "branch": "wt/CH-GAP-058",
+      "brief": "/tmp/brief-ch-gap-058.txt",
+      "files_in_scope": ["src/chimera/engine.py", "src/chimera/mcp/server.py", "tests/"],
+      "depends_on": null
+    }
+  ],
+  "independence": {
+    "verified": "no depends_on edges in either row (both null); declared file sets are disjoint — 057 is bin/ + docs + new test file, 058 is src/chimera/engine.py + mcp/server.py docstring + tests; no shared import root (057 adds no source module)",
+    "band_test": "python: 057 = repo-hygiene/devx band (shell shim + hygiene test), 058 = engine base band (deliberation engine + MCP tool surface). Different bands, no shared internal import chain.",
+    "caveat": "residual overlap risk is low but nonzero: if 058 adds a test file whose name collides with 057's, the merge is mechanical (rename) — flagged for the merge checklist."
+  },
+  "merge_order": ["CH-GAP-057", "CH-GAP-058"],
+  "excluded_rows": {
+    "CH-GAP-053": "work landed at decfe6d/592c3fd with a tier2 PASS verdict (8f6bd6be) but the board row was never closed; SERIAL-BOOKKEEPING lane, not a worker — the running server is stale (ff952d9) so closure needs a deploy restart first. Foreman-direct after the merges.",
+    "CH-GAP-055": "excluded: strongest OVERLAP candidate — its own fix surface (model catalog / cost-rate resolution) is code that the CH-GAP-053 fix touched (src/chimera/config.py) and its live probe needs a restarted server to be honest.",
+    "CH-GAP-056": "excluded: same band as the in-flight work (src/chimera/engine.py trace span building is also CH-GAP-058's file)",
+    "CH-GAP-053/055/056 row-level note": "one worker per band enforced; 053+055+056 all touch the API/catalog band and are serialized by this tick.",
+    "QA-CHIMERA-V2-13/14, INT-PUB-001, INT-SEC-001, INT-ZAI-002": "not dispatchable: QA-bunker-harness causes and policy-gated external blockers (skill §Task rows without acceptance fields item 5)"
+  }
+}
