@@ -12,28 +12,33 @@
   "mode": "auto-merge (foreman merges serially, workers never push)",
   "recovered_wave": {
     "tick_id": "chimera-v2-2026-09-20-14-49-13",
-    "status": "closed this tick — all five tasks (DF-CHIMERA-V2-24/18/20/19/22) were already merged (9be83b7, fce99ae, 796d396, ec2ab9e, 0744f7a) and board-complete via tick 254; only finished_at bookkeeping was missing. The 14-49-13 manifest's task array was empty when this tick read it (merge phase stripped rows after landing them) but branches/board proved the 5-worker wave. Merged worktrees/branches reaped (17/18/19/20/22/24); DEPS-004 reservation worktree kept per tick 252 decision (needs quiet host; loadavg 9.26)."
+    "status": "closed this tick \u2014 all five tasks (DF-CHIMERA-V2-24/18/20/19/22) were already merged (9be83b7, fce99ae, 796d396, ec2ab9e, 0744f7a) and board-complete via tick 254; only finished_at bookkeeping was missing. The 14-49-13 manifest's task array was empty when this tick read it (merge phase stripped rows after landing them) but branches/board proved the 5-worker wave. Merged worktrees/branches reaped (17/18/19/20/22/24); DEPS-004 reservation worktree kept per tick 252 decision (needs quiet host; loadavg 9.26)."
   },
   "tasks": [
     {
       "id": "DF-CHIMERA-V2-25",
-      "title": "SPA has no listeners for the mid-run stage_started/stage_completed SSE events the engine now emits — the live-DAG panel still never updates (server half done in DF-CHIMERA-V2-18)",
+      "title": "SPA has no listeners for the mid-run stage_started/stage_completed SSE events the engine now emits \u2014 the live-DAG panel still never updates (server half done in DF-CHIMERA-V2-18)",
       "priority": "P2",
       "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-25",
       "branch": "wt/DF-CHIMERA-V2-25",
       "brief": "/tmp/brief-DF-CHIMERA-V2-25.md",
-      "files_in_scope": ["src/chimera/web/static/index.html", "tests/test_web.py or new tests/test_spa_stage_listeners.py"],
+      "files_in_scope": [
+        "src/chimera/web/static/index.html",
+        "tests/test_web.py or new tests/test_spa_stage_listeners.py"
+      ],
       "depends_on": null
     }
   ],
   "independence": {
     "verified": "single-task wave (serial dispatch): only one independent dispatchable pending row exists. DF-CHIMERA-V2-25 is the highest-value P2 (completes the user-visible P1 fix from 18); DEPS-004 blocked on quiet-host audit; remaining pendings are policy-gated/docs-of-record/fleet-tooling rows per the 14-49-13 manifest exclusions.",
-    "band_test": "SPA/frontend band — no other row in this band is dispatchable this tick."
+    "band_test": "SPA/frontend band \u2014 no other row in this band is dispatchable this tick."
   },
-  "merge_order": ["DF-CHIMERA-V2-25"],
+  "merge_order": [
+    "DF-CHIMERA-V2-25"
+  ],
   "excluded_rows": {
-    "DEPS-004": "load-hygiene audit needs a quiet host; loadavg 9.26/16 with this tick running — stays pending per tick 252 decision, reservation worktree kept",
-    "DF-CHIMERA-V2-21": "P3 polish, same file (index.html) as the in-flight P2 — serialized behind it",
+    "DEPS-004": "load-hygiene audit needs a quiet host; loadavg 9.26/16 with this tick running \u2014 stays pending per tick 252 decision, reservation worktree kept",
+    "DF-CHIMERA-V2-21": "P3 polish, same file (index.html) as the in-flight P2 \u2014 serialized behind it",
     "DEPS-003": "pip majors (mcp 1.x->2.x, openai 2.x->3.x) are breaking-scope; not a one-tick row, needs its own plan",
     "QA-CHIMERA-V2-13/14": "QA-bunker-harness causes, owned by the -qa lane",
     "INT-PUB-001, INT-SEC-001": "policy-gated owner actions (history purge, key rotation)",
@@ -42,5 +47,7 @@
     "DF-CHIMERA-V2-2, QA-CHIMERA-V2-QA-1": "status duplicate (superseded rows)",
     "DF-CHIMERA-V2-23": "fleet-tooling row, no in-repo work surface",
     "DF-CHIMERA-V2-13, DF-CHIMERA-0917-6, INT-GATE-001/004/005, INT-PROV-CLIPROXY-001, DEPS-003": "docs-of-record / external state / bigger-scope rows for later serial ticks"
-  }
+  },
+  "finished_at": "2026-09-20T18:45:00-05:00",
+  "outcome": "single-task (serial) tick, not a multi-worker wave. DF-CHIMERA-V2-25 landed as 393322b, merged --no-ff as e6e9c3b, pushed to origin+github at parity. Worktree reaped, branch deleted, board row closed complete. However the row's own live-browser PASS criterion FAILED against the deployed :8765 (SPA EventSource stuck in CONNECTING; the listeners never fire in the real UI) even though the server emits the stage events and a raw streaming fetch in the same browser receives them - residual filed as DF-CHIMERA-V2-26 (P1) with full evidence. DEPS-004 stayed excluded (quiet-host audit) and kept its reservation worktree."
 }
