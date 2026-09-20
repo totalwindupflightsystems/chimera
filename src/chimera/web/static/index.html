@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Chimera — Multi-Model Deliberation</title>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script src="vendor/mermaid.min.js" onerror="var f=document.getElementById('dag-renderer-unavailable'); if (f) f.classList.add('visible');"></script>
 <style>
 /* ── Design Tokens ── */
 :root {
@@ -449,6 +449,19 @@ body {
 .msg-dag-container .mermaid svg g.node { cursor: pointer; transition: opacity var(--transition); }
 .msg-dag-container .mermaid svg g.node:hover { opacity: .8; }
 
+/* ── DAG renderer fallback (DF-CHIMERA-V2-21) ── */
+#dag-renderer-unavailable {
+  display: none;
+  margin: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--red);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 12px;
+}
+#dag-renderer-unavailable.visible { display: block; }
+
 /* ── Loading / Skeleton ── */
 .skeleton {
   background: linear-gradient(90deg, var(--border) 25%, var(--bg-elevated) 50%, var(--border) 75%);
@@ -526,6 +539,7 @@ body {
     start["Send a prompt to begin"]
     style start fill:#30363d,stroke:#58a6ff,color:#c9d1d9</pre>
     </div>
+    <div id="dag-renderer-unavailable" role="alert">DAG renderer unavailable — static/vendor/mermaid.min.js failed to load.</div>
   </div>
 
   <!-- Token Dashboard -->
@@ -586,6 +600,16 @@ let stageRunTotals = { tokens: 0, cost: 0, latency_ms: 0 }; // incremental tile 
 // ═══════════════════════════════════════════
 // Mermaid Init
 // ═══════════════════════════════════════════
+// DF-CHIMERA-V2-21: if the vendored bundle failed to load (window.mermaid
+// absent), surface the fallback banner instead of throwing a raw TypeError
+// out of mermaid.initialize below.
+function showDagRendererFallback() {
+  const el = document.getElementById('dag-renderer-unavailable');
+  if (el) el.classList.add('visible');
+}
+if (typeof window.mermaid === 'undefined') {
+  showDagRendererFallback();
+} else {
 mermaid.initialize({
   startOnLoad: false,
   theme: 'dark',
@@ -599,6 +623,7 @@ mermaid.initialize({
     lineColor: '#30363d',
   }
 });
+}
 
 // ═══════════════════════════════════════════
 // Session Management

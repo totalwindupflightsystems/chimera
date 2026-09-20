@@ -10,6 +10,7 @@ Endpoints:
 * ``GET  /web/sessions/{id}`` — get session history
 * ``GET  /web/sse/{session_id}`` — SSE event stream
 * ``GET  /web/`` — serve the SPA
+* ``GET  /web/{path}`` — SPA static assets (vendored JS bundles; catch-all)
 
 ``POST /web/sessions/{id}/chat`` runs the same billed deliberation as
 ``POST /v1/deliberate`` and ``POST /v1/chat/completions``, so it takes the same
@@ -22,10 +23,12 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from chimera.api.dependencies import require_api_key
@@ -52,6 +55,10 @@ log = structlog.get_logger("chimera.web")
 #: SERVER's environment to enable it; anything else (the default) keeps the
 #: route answering 404 without touching any state.
 _DEBUG_RESET_ENV = "CHIMERA_WEB_DEBUG_RESET"
+
+#: Suffixes the static-asset route is allowed to serve (DF-CHIMERA-V2-21).
+#: Everything else in ``static/`` — vendor READMEs, sources — stays private.
+_STATIC_ASSET_SUFFIXES = frozenset({".js", ".css"})
 
 # Single shared instances, initialized when routes are registered.
 _session_manager = SessionManager()
@@ -577,4 +584,37 @@ async def serve_spa():
     return HTMLResponse(
         content=index_path.read_text(),
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
+
+
+@router.get("/{asset_path:path}")
+async def serve_static_asset(asset_path: str) -> FileResponse:
+    """Serve the SPA's static assets (e.g. the vendored mermaid bundle).
+
+    DF-CHIMERA-V2-21: ``index.html`` loads the mermaid DAG renderer from the
+    relative path ``vendor/mermaid.min.js``. Because the SPA is served at
+    ``/web/``, the browser resolves that against ``/web/`` — this route is the
+    resolution target, so ``GET /web/vendor/mermaid.min.js`` answers 200.
+    Without it the vendored file 404s and every DAG panel falls back to the
+    "renderer unavailable" banner.
+
+    Registration order makes the catch-all safe: every real web route above
+    (sessions, chat, SSE, the SPA shell) matches first; this handler only ever
+    sees unknown ``GET /web/*`` paths. Confinement: the resolved file must
+    stay inside the static directory (``..`` traversal is rejected with 404,
+    never 400, so a hostile probe learns nothing about the filesystem), and
+    only ``.js`` / ``.css`` files are served — other payloads in ``static/``
+    (docs, sources) stay private.
+    """
+    static_dir = Path(__file__).parent / "static"
+    candidate = (static_dir / asset_path).resolve()
+    if not candidate.is_relative_to(static_dir.resolve()):
+        raise HTTPException(status_code=404, detail="Not found")
+    if candidate.suffix not in _STATIC_ASSET_SUFFIXES:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(
+        candidate,
+        headers={"Cache-Control": "public, max-age=3600"},
     )
