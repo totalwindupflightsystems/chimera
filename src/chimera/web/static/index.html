@@ -552,6 +552,7 @@ let dagZoomLevel = 1;
 let dagPanelCollapsed = false;
 let deliberationComplete = false; // True after deliberation_done — prevents SSE reconnect
 let currentMermaid = null; // Saved from dag_designed for use in message bubble
+let retryTimer = null; // Pending "retry after backpressure" timer (cleared on new send)
 
 // ═══════════════════════════════════════════
 // Mermaid Init
@@ -697,6 +698,8 @@ async function sendMessage() {
   const body = { prompt, formation };
   if (aggModel) body.aggregator_model = aggModel;
 
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+
   document.getElementById('send-btn').disabled = true;
   setStatus('live', 'Sending…');
 
@@ -707,6 +710,28 @@ async function sendMessage() {
       body: JSON.stringify(body),
     });
     if (!r.ok) {
+      const kind = r.headers.get('content-type') || '';
+      // Backpressure (or a rate-limited refusal): the server owns the wait
+      // time, so surface it with the Retry-After delay and retry once on a
+      // user send. `r.status`/`r.statusText` are the fallback text.
+      if (r.status === 503 || r.status === 429) {
+        const waitS = parseInt(r.headers.get('retry-after') || '', 10) || 5;
+        let serverMsg = '';
+        if (kind.includes('application/json')) {
+          try {
+            const payload = await r.json();
+            const detail = payload && payload.detail;
+            serverMsg = typeof detail === 'string' ? detail : (detail && detail.message) || '';
+          } catch (_) { /* keep the status text */ }
+        }
+        const reason = serverMsg || `${r.status} ${r.statusText}`.trim();
+        const msg = `${reason} Retrying in ${waitS}s — the server is at capacity.`;
+        setStatus('warn', msg);
+        showToast(`${r.status}: ${reason} — retrying in ${waitS}s`, 'error');
+        document.getElementById('dag-live-indicator').style.display = 'none';
+        scheduleBackpressureRetry(prompt, waitS);
+        return;
+      }
       const err = await r.text();
       setStatus('error', `Error: ${r.status} — ${err.slice(0, 200)}`);
       document.getElementById('send-btn').disabled = false;
@@ -747,6 +772,22 @@ async function sendMessage() {
     document.getElementById('dag-live-indicator').style.display = 'none';
     showToast(`Network error: ${err.message}`, 'error');
   }
+}
+
+// Retry a prompt the server refused with 503 + Retry-After (or 429). The user
+// bubble already exists, so the follow-up pops it to avoid duplicating it.
+function scheduleBackpressureRetry(prompt, waitS) {
+  const delayMs = Math.max(1, waitS) * 1000;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    const input = document.getElementById('prompt-input');
+    const bubble = document.querySelector('#chat-area .turn-block:last-of-type .msg-user');
+    if (bubble && bubble.textContent.trim() === prompt.trim()) bubble.remove();
+    document.getElementById('send-btn').disabled = false;
+    input.value = prompt;
+    autoResize(input);
+    sendMessage();
+  }, delayMs);
 }
 
 // ═══════════════════════════════════════════
