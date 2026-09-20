@@ -1275,3 +1275,13 @@ tasks:
   status: complete
   created_at: '2026-09-19T16:31:44.579946+00:00'
   completed_at: '2026-09-19T16:45:42.378714+00:00'
+- id: CH-GAP-054
+  title: Replace stale documented model ids with shipped catalog ids
+  criteria:
+  - Every model id quoted in README.md and docs/*.md resolves against the shipped
+    catalog
+  - Documented model overrides do not raise unknown-model errors
+  - A docs regression test verifies documented ids against the catalog
+  status: complete
+  created_at: '2026-09-20T00:05:14.909640+00:00'
+  completed_at: '2026-09-20T00:32:17.572822+00:00'
