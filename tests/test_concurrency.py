@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import time
 from typing import Any
 
 import pytest
@@ -30,6 +31,40 @@ from chimera.config import ChimeraConfig  # noqa: E402
 from chimera.web.session import SessionManager  # noqa: E402
 from chimera.web.sse import SSEBroadcaster  # noqa: E402
 from tests.conftest import CONFIG_DICT  # noqa: E402
+
+#: How long the "wait until the request has reached the queue" polls below may
+#: take before they fail.  These waits are a *time* budget on purpose: the
+#: request they wait for runs as an independent task, and under CPU contention
+#: (a full-suite run concurrent with anything else on the box) the ASGI request
+#: legitimately needs more event-loop turns to reach ``queue.acquire()`` than
+#: any fixed turn count would allow.  Measured while the whole suite ran under
+#: load: the parked chat always reached the queue within <=51 ms, but the turns
+#: needed ranged from 10 to ~1020 — so a 500-turn poll fails on ~5% of runs
+#: while the behaviour under test is perfectly correct.  Waiting on the clock,
+#: and polling between yields with a small real sleep so the waiting task gets
+#: to run, makes the wait a function of reality instead of of loop-turn
+#: arithmetic.  The timeout is a failure bound, not a wait: the requests reach
+#: the queue in milliseconds, so a healthy run still finishes far below it.
+_WAIT_FOR_QUEUE_TIMEOUT_S = 5.0
+_WAIT_FOR_QUEUE_POLL_S = 0.005
+
+
+async def _wait_for_queued(app: Any, count: int) -> bool:
+    """Yield to the event loop until the queue reports *count* arrivals.
+
+    Returns ``True`` as soon as ``app.state.request_queue.total_queued``
+    reaches *count*, ``False`` if that did not happen inside
+    ``_WAIT_FOR_QUEUE_TIMEOUT_S``.  The caller asserts the outcome with its own
+    message, so a timeout still fails loudly — it just no longer fails because
+    an unrelated task was slow to be scheduled.
+    """
+    deadline = time.monotonic() + _WAIT_FOR_QUEUE_TIMEOUT_S
+    while time.monotonic() < deadline:
+        if app.state.request_queue.total_queued >= count:
+            return True
+        await asyncio.sleep(_WAIT_FOR_QUEUE_POLL_S)
+    return app.state.request_queue.total_queued >= count
+
 
 # --------------------------------------------------------------------------- #
 # Concurrency-safe gateway that tags responses with per-request data
@@ -437,11 +472,7 @@ async def _park_waiters(app: Any, count: int) -> list[asyncio.Task]:
         await asyncio.Event().wait()  # held for the whole test
 
     tasks = [asyncio.create_task(_hold()) for _ in range(count)]
-    for _ in range(500):
-        if app.state.request_queue.total_queued >= count:
-            break
-        await asyncio.sleep(0)
-    assert app.state.request_queue.total_queued == count, "holders did not take the slots"
+    assert await _wait_for_queued(app, count), "holders did not take the slots"
     return tasks
 
 
@@ -475,11 +506,8 @@ async def test_saturated_queue_refuses_web_chat_exactly_like_v1(web_singletons: 
                     json={"prompt": "parked", "formation": "simple"},
                 )
             )
-            for _ in range(500):
-                if app.state.request_queue.total_queued >= 2:
-                    break
-                await asyncio.sleep(0)
-            assert app.state.request_queue.total_queued == 2, "the web chat did not park"
+            assert await _wait_for_queued(app, 2), "the web chat did not park"
+            assert app.state.request_queue.total_queued == 2
             assert gateway.calls == [], "a queued request must not reach the providers"
 
             # Web surface: refused, 503 + Retry-After, no provider call.
