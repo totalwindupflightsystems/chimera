@@ -41,6 +41,8 @@ import httpx
 import pytest
 import yaml
 
+import chimera.web.routes as web_routes
+
 # ── Paths & constants ──────────────────────────────────────────────────────
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -330,9 +332,15 @@ def live_server() -> str:
 
     The config is passed explicitly so a fresh checkout (no live ``chimera.yaml``)
     boots from the materialized example template instead of relying on
-    ``create_app()``'s own lookup finding nothing.
+    ``create_app()``'s own lookup finding nothing.  The dev switch is set so the
+    autouse ``_reset_singletons`` fixture can use ``POST /web/debug/reset``
+    between tests (DF-CHIMERA-V2-20: the route is a 404 no-op without it).
     """
-    proc = _start_server(LIVE_PORT, config_path=str(_resolve_config_path()))
+    proc = _start_server(
+        LIVE_PORT,
+        config_path=str(_resolve_config_path()),
+        extra_env={web_routes._DEBUG_RESET_ENV: "1"},
+    )
     try:
         if not _wait_ready(proc, LIVE_PORT):
             pytest.fail(

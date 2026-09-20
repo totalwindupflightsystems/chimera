@@ -63,7 +63,7 @@ against your own deployment, and see `GET /openapi.json` for the routed surface)
 Everything else requires the key: `POST /v1/deliberate`,
 `POST /v1/chat/completions`, and the **entire** `/web/*` surface —
 `POST /web/sessions`, `POST /web/sessions/{id}/chat`, `GET /web/sessions/{id}`,
-`GET /web/sse/{id}`, `POST /web/debug/reset`, and the SPA shell at `GET /web/`.
+`GET /web/sse/{id}`, and the SPA shell at `GET /web/`.
 The web surface runs deliberations through the same engine as `/v1/deliberate`,
 so leaving it open would be a keyless, billable equivalent of the protected API.
 An anonymous request is refused by the auth layer before any handler, session or
@@ -75,6 +75,26 @@ auth-disabled deployments; with auth enabled the UI's own requests have nowhere
 to put a header, so drive `/web/*` from an API client that sends
 `Authorization: Bearer <key>` or `X-API-Key: <key>` (or keep the UI behind your
 own authenticating reverse proxy).
+
+#### `POST /web/debug/reset` — dev/test only, disabled by default
+
+This one path is **not** part of the keyed surface: it is disabled by default
+and returns **404** (never a session-destroying 200) unless the SERVER process
+was started with the dev switch `CHIMERA_WEB_DEBUG_RESET=1` (also accepts
+`true`). With `auth.enabled: true` the router-level auth layer still answers
+first, so an anonymous caller there sees 401 and learns nothing about the route.
+
+**Blast radius when enabled:** the handler rebinds the process-global session
+manager and SSE broadcaster, so **every** live session — and the conversation
+history of every concurrent user on that server — is destroyed in one request,
+and every open SSE stream loses its subscribers. It is a test hook: enable it
+only on a throwaway local/CI server nobody else is using (the integration suite
+starts its own server with the switch set for exactly this reason). Do not set
+`CHIMERA_WEB_DEBUG_RESET` on a shared or public deployment, and do not put this
+path behind anything that could forward an anonymous request to it.
+
+Enabling it logs a `web_debug_reset_fired` warning (with the session count
+being dropped) each time the reset actually runs.
 
 ### Error Response (401)
 
