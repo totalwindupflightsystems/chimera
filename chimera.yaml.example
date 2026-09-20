@@ -1624,6 +1624,12 @@ providers:
 server:
   host: 0.0.0.0
   port: 8765
+  # /v1/health probe budget. Probes still outstanding at the deadline get
+  # health_probe_grace_s extra seconds to land (default 1.0) so a cold-start
+  # probe reports the provider's real verdict (quota/auth/api) instead of a
+  # fabricated timeout. 0 disables the grace.
+  # health_timeout_s: 10.0
+  # health_probe_grace_s: 1.0
 observability:
   log_level: warning
   use_stdout: false

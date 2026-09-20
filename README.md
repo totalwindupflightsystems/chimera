@@ -402,7 +402,10 @@ poll it in a tight loop:
   a timeout is terminal for that provider after one model;
 - probes run concurrently, bounded by `server.health_timeout_s` (default
   `10.0` s); providers still pending at that bound are reported unhealthy with
-  a `timeout:` error. Slow tail latency is therefore indistinguishable from a
+  a `timeout:` error — after one bounded `server.health_probe_grace_s` window
+  (default `1.0` s, DF-CHIMERA-V2-17) that lets a merely-cold probe land and
+  report its real verdict instead; set it to `0` for cancel-at-deadline.
+  Slow tail latency is therefore indistinguishable from a
   dead provider — raise `server.health_timeout_s` if your provider is merely slow.
 - each of those probes is **one** upstream attempt per model — the retry ladder
   is not used (DF-CHIMERA-V2-16), so a provider that answers with a fast

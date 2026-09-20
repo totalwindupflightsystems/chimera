@@ -921,6 +921,20 @@ async def _check_providers(
     model attempted is reported in ``model_tested``.  A timeout is terminal per
     provider — one model is enough to prove connectivity.
 
+    The shared budget is not a hard verdict boundary (DF-CHIMERA-V2-17): when
+    it expires, probes still outstanding get
+    ``config.server.health_probe_grace_s`` extra seconds to land.  One that
+    finishes inside the grace reports its REAL verdict exactly as if it had
+    finished in time (``quota`` / ``auth`` / ``api`` + ``model_tested``) —
+    this removes the cold-start false ``timeout`` where litellm's one-off
+    client/TLS/provider-discovery warm-up (measured ~10.3s on the first probe
+    of a fresh process vs ~2.8-3.2s warm) briefly exceeds the budget.  A probe
+    still outstanding after the grace is cancelled and reported ``timeout``
+    exactly as before; ``health_probe_grace_s: 0`` disables the grace
+    entirely, and a task that was already done at the deadline keeps its exact
+    previous payload.  The grace only bounds how long the endpoint waits — it
+    never lengthens the blocking path beyond the deadline plus the grace.
+
     The probe ping is sent with ``probe=True`` (INT-ZAI-002): the deliberately
     cheap ``max_tokens=1`` call always ends with ``finish_reason="length"``,
     which the gateway would otherwise report as a token-limit event.  The flag
@@ -995,6 +1009,20 @@ async def _check_providers(
     timeout_error = (
         f"timeout: no response within {config.server.health_timeout_s:.1f}s"
     )
+
+    # DF-CHIMERA-V2-17: a probe still outstanding at the deadline gets a
+    # short, bounded grace window to land.  One that finishes inside it is
+    # resolved from its REAL result below (the ``done``-set handling is
+    # shared), so a cold-start probe that merely needed litellm's one-off
+    # warm-up reports ``quota``/``auth``/``api`` + ``model_tested`` instead of
+    # a fabricated ``timeout``.  ``health_probe_grace_s: 0`` skips the wait
+    # entirely and reproduces the cancel-at-deadline behaviour exactly.
+    if pending and config.server.health_probe_grace_s > 0:
+        late_done, pending = await asyncio.wait(
+            pending, timeout=config.server.health_probe_grace_s,
+        )
+        done |= late_done
+
     status: dict[str, dict[str, Any]] = {}
     for task in done:
         provider_name = tasks[task]

@@ -324,6 +324,15 @@ until the shared `server.health_timeout_s` budget expires and the verdict
 becomes a fabricated `timeout`. Retry policy (`config.retry`) is unchanged for
 real completions.
 
+**A probe landing just past the budget is not a timeout (DF-CHIMERA-V2-17).**
+Probes still outstanding when the `server.health_timeout_s` budget expires get
+`server.health_probe_grace_s` extra seconds (default 1.0) to finish, and one
+that lands inside the grace reports its real verdict (`quota`/`auth`/`api`
+with `model_tested`) instead of a fabricated `timeout` — the measured
+cold-start case, where litellm's one-off client warm-up briefly exceeds the
+budget on the first `/v1/health` call after a restart. Set
+`health_probe_grace_s: 0` to cancel at the deadline exactly as before.
+
 ### Live Smoke Test
 
 Health endpoints do not prove a deliberation works. After a deploy (or whenever
