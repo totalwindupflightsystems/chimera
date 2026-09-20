@@ -551,6 +551,7 @@ let traceData = null; // Full trace for node click lookups
 let dagZoomLevel = 1;
 let dagPanelCollapsed = false;
 let deliberationComplete = false; // True after deliberation_done — prevents SSE reconnect
+let sseTerminalSeen = false; // True after the server's replay_done marker — this stream closed on purpose
 let currentMermaid = null; // Saved from dag_designed for use in message bubble
 
 // ═══════════════════════════════════════════
@@ -612,10 +613,34 @@ function updateSessionDisplay() {
 // ═══════════════════════════════════════════
 // SSE Connection
 // ═══════════════════════════════════════════
+// Terminal handling for one SSE stream, shared by the `error` frame and the
+// `replay_done` marker. Closes the EventSource for real — the browser retries
+// a dropped stream BY ITSELF (the `retry:` field only changes the delay), so
+// without close() the reconnect loop keeps running underneath the UI no matter
+// what the status line says.
+function endStream(reason) {
+  sseTerminalSeen = true;
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  if (reason === 'unknown_session') {
+    // The session id is gone (server restarted, or the session was reset).
+    // Drop it so the next prompt starts a fresh session instead of retrying.
+    localStorage.removeItem('chimera_session_id');
+    sessionId = null;
+    updateSessionDisplay();
+    setStatus('error', 'Session expired — send a prompt to start a new one');
+    return;
+  }
+  setStatus('', 'Ready — send a prompt to begin');
+}
+
 function connectSSE() {
   if (eventSource) eventSource.close();
   if (!sessionId) return;
 
+  sseTerminalSeen = false;
   eventSource = new EventSource(`/web/sse/${sessionId}`);
 
   eventSource.addEventListener('deliberation_started', (e) => {
@@ -664,15 +689,33 @@ function connectSSE() {
     });
   });
 
+  // Terminal marker: the server finished with this stream ON PURPOSE (the
+  // replay of a completed session, or a session id that no longer exists).
+  // There is nothing to reconnect to — retrying here is exactly what produced
+  // the permanent "⏳ SSE reconnecting…" loop on every reload of a session
+  // with history.
+  eventSource.addEventListener('replay_done', (e) => {
+    const data = parseEventData(e) || {};
+    endStream(data.reason);
+  });
+
+  // Server-side error frame. Transport failures arrive on this same event name
+  // as a plain Event with no payload — those fall through to onerror below.
+  eventSource.addEventListener('error', (e) => {
+    const data = parseEventData(e);
+    if (!data || !data.reason) return; // not a server frame — see onerror
+    endStream(data.reason);
+  });
+
   eventSource.onerror = () => {
-    if (deliberationComplete) {
-      // Clean close after deliberation_done — don't reconnect
-      setStatus('', 'Ready — send a prompt to begin');
+    if (sseTerminalSeen || deliberationComplete) {
+      // Deliberate close after deliberation_done / replay_done — don't reconnect
+      setStatus('', deliberationComplete ? 'Ready — send a prompt to begin' : 'Ready');
       return;
     }
     setStatus('warn', 'SSE reconnecting…');
     setTimeout(() => {
-      if (sessionId && !deliberationComplete) connectSSE();
+      if (sessionId && !deliberationComplete && !sseTerminalSeen) connectSSE();
     }, 3000);
   };
 }
@@ -1042,6 +1085,17 @@ function setStatus(cls, msg) {
     el.innerHTML = `⏳ ${msg}`;
   } else {
     el.textContent = msg;
+  }
+}
+
+// Safe JSON parse for an SSE event payload. Transport-level errors are plain
+// Events (no `.data`) and must not throw inside a listener.
+function parseEventData(e) {
+  if (!e || typeof e.data !== 'string' || !e.data) return null;
+  try {
+    return JSON.parse(e.data);
+  } catch (_) {
+    return null;
   }
 }
 

@@ -7,9 +7,18 @@ real-time events as the deliberation progresses:
 * ``stage_started`` — a worker/aggregator stage began executing
 * ``stage_completed`` — a stage finished (model, tokens, latency, cost)
 * ``deliberation_done`` — final answer + full trace summary
+* ``replay_done`` — terminal marker: the server closed this stream on purpose
 
 Each event carries a ``stage_id``, ``kind``, and relevant data so the
 frontend can update the DAG visualization and token dashboard in real time.
+
+``replay_done`` (DF-CHIMERA-V2-19) is the one event a browser can use to tell
+an *intentional* close from a dropped connection. A client that opened the
+stream late receives the stored events of the last turn, then this marker, then
+the close — so it can go idle instead of reconnecting every 3 s forever. It is
+emitted exactly once, and only on the deliberate close path (the ``None``
+sentinel); an idle-timeout close emits nothing, because a client that is
+waiting out a long deliberation must keep its reconnect ability.
 """
 
 from __future__ import annotations
@@ -19,6 +28,16 @@ import contextlib
 import json
 from dataclasses import dataclass, field
 from typing import Any
+
+#: Terminal marker event name — sent right before a deliberate stream close.
+#: The SPA (``static/index.html``) listens for exactly this name to stop its
+#: reconnect loop; keep the two in sync.
+TERMINAL_EVENT = "replay_done"
+
+#: Reconnect delay advertised to clients that do NOT understand the terminal
+#: marker (a stale, proxy-cached copy of the SPA). ``retry:`` is part of the
+#: SSE wire format, so even an old client backs off from 3 s to 60 s.
+TERMINAL_RETRY_MS = 60_000
 
 
 @dataclass(slots=True)
@@ -77,7 +96,12 @@ class SSEBroadcaster:
         return self._ready.setdefault(session_id, asyncio.Event())
 
     def unsubscribe(self, session_id: str, sub: SSESubscriber) -> None:
-        """Remove a subscriber; signal completion by pushing None."""
+        """Remove a subscriber; signal completion by pushing None.
+
+        Non-terminal teardown: a client that disconnected, or a stream that hit
+        its idle timeout. No marker is queued here — see
+        :meth:`close_subscriber` for the deliberate-close path.
+        """
         if session_id in self._subscribers:
             with contextlib.suppress(ValueError):
                 self._subscribers[session_id].remove(sub)
@@ -92,6 +116,12 @@ class SSEBroadcaster:
 
         Called after ``deliberation_done`` so all connected SSE clients
         close their streams cleanly instead of timing out.
+
+        Deliberately NOT routed through :meth:`close_subscriber`: on this path
+        ``deliberation_done`` is the terminal frame and must stay the LAST event
+        on the wire (a documented contract, guarded by
+        ``tests/integration/test_web_sse.py::test_sse_event_ordering_guaranteed``).
+        The frontend's ``deliberationComplete`` guard already covers it.
         """
         subs = self._subscribers.pop(session_id, [])
         for sub in subs:
@@ -99,6 +129,43 @@ class SSEBroadcaster:
                 sub.queue.put_nowait(None)
         # Clean up ready-event so it doesn't leak across tests
         self._ready.pop(session_id, None)
+
+    def deliver(self, sub: SSESubscriber, event: SSEEvent | None) -> None:
+        """Queue *event* (or the ``None`` close sentinel) for ONE subscriber.
+
+        Best effort: a full queue drops the frame. Unlike :meth:`broadcast` this
+        does not fan out to every subscriber of the session — the replay in
+        :func:`chimera.web.routes.sse_stream` speaks only to the client that
+        asked for it.
+        """
+        with contextlib.suppress(asyncio.QueueFull):
+            sub.queue.put_nowait(event)
+
+    def close_subscriber(self, session_id: str, sub: SSESubscriber) -> None:
+        """Deliberate end-of-stream for one subscriber: marker, then sentinel.
+
+        The client's ``EventSource`` reports *any* close as an ``error`` and
+        cannot tell "the server is done with this stream" from "the connection
+        dropped", so it retries every 3 s forever (DF-CHIMERA-V2-19). The
+        :data:`TERMINAL_EVENT` marker is the one frame that carries that
+        distinction, and it must precede the sentinel — which is queued
+        unconditionally, even when the marker was dropped on a full queue, or
+        the generator would never exit.
+
+        ``retry`` rides along for clients that do NOT understand the marker (say,
+        a stale SPA served from a proxy cache): the SSE spec applies ``retry:``
+        to the connection itself, so even those back off from 3 s to a minute.
+        """
+        self.deliver(
+            sub,
+            SSEEvent(event=TERMINAL_EVENT, data={}, retry=TERMINAL_RETRY_MS),
+        )
+        self.deliver(sub, None)  # sentinel: the generator exits cleanly
+        if session_id in self._subscribers:
+            with contextlib.suppress(ValueError):
+                self._subscribers[session_id].remove(sub)
+            if not self._subscribers[session_id]:
+                del self._subscribers[session_id]
 
     def broadcast(self, session_id: str, event: SSEEvent) -> None:
         """Send an event to every subscriber of *session_id*.

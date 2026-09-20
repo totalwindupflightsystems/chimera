@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from chimera.web.session import SessionManager, Turn
-from chimera.web.sse import SSEBroadcaster, SSEEvent
+from chimera.web.sse import TERMINAL_EVENT, TERMINAL_RETRY_MS, SSEBroadcaster, SSEEvent
 from chimera.web.trace_viz import trace_to_mermaid
 
 router = APIRouter(prefix="/web", tags=["web"])
@@ -122,92 +122,104 @@ async def session_chat(session_id: str, body: ChatRequest, request: Request) -> 
     # Prevents race where chat broadcasts before SSE subscriber is listening.
     import asyncio as _asyncio
 
+    # ``deliberation_in_flight`` is what tells a client connecting *now* apart
+    # from one connecting after the turn is over: a live subscriber must keep its
+    # stream open, a late one gets the replay of the finished turn plus the
+    # terminal marker (DF-CHIMERA-V2-19). Set before the first broadcast and
+    # cleared only once the session is quiescent again (after ``unsubscribe_all``)
+    # so the whole window — readiness wait, engine call, trailing events — reads
+    # as live to any client that arrives inside it.
+    session.deliberation_in_flight = True
+
     try:
-        ready = _sse_broadcaster.ensure_ready(session_id)
-        await _asyncio.wait_for(ready.wait(), timeout=2.0)
-    except TimeoutError:
-        pass  # No SSE subscriber within 2s — proceed anyway
+        try:
+            ready = _sse_broadcaster.ensure_ready(session_id)
+            await _asyncio.wait_for(ready.wait(), timeout=2.0)
+        except TimeoutError:
+            pass  # No SSE subscriber within 2s — proceed anyway
 
-    # ── SSE: deliberation started ──
-    _sse_broadcaster.broadcast(
-        session_id,
-        SSEEvent(event="deliberation_started", data={"prompt": body.prompt}),
-    )
+        # ── SSE: deliberation started ──
+        _sse_broadcaster.broadcast(
+            session_id,
+            SSEEvent(event="deliberation_started", data={"prompt": body.prompt}),
+        )
 
-    # Run the deliberation
-    result = await engine.deliberate(
-        augmented,
-        formation=body.formation,
-        overrides=overrides,
-    )
-    trace = result.trace.model_dump(mode="json")
-    answer = result.answer
+        # Run the deliberation
+        result = await engine.deliberate(
+            augmented,
+            formation=body.formation,
+            overrides=overrides,
+        )
+        trace = result.trace.model_dump(mode="json")
+        answer = result.answer
 
-    elapsed_ms = int((time.monotonic() - started) * 1000)
+        elapsed_ms = int((time.monotonic() - started) * 1000)
 
-    # ── SSE: DAG designed ──
-    mermaid_str = trace_to_mermaid(trace)
-    _sse_broadcaster.broadcast(
-        session_id,
-        SSEEvent(event="dag_designed", data={
-            "mermaid": mermaid_str,
-            "formation": body.formation,
-            "source": trace.get("source", ""),
-            "stage_count": len(trace.get("stages", [])),
-        }),
-    )
+        # ── SSE: DAG designed ──
+        mermaid_str = trace_to_mermaid(trace)
+        _sse_broadcaster.broadcast(
+            session_id,
+            SSEEvent(event="dag_designed", data={
+                "mermaid": mermaid_str,
+                "formation": body.formation,
+                "source": trace.get("source", ""),
+                "stage_count": len(trace.get("stages", [])),
+            }),
+        )
 
-    # ── Record the turn ──
-    workers = [
-        s.get("model", "") for s in trace.get("stages", [])
-        if s.get("kind") == "worker"
-    ]
-    aggregator_model = ""
-    for s in trace.get("stages", []):
-        if s.get("kind") in ("aggregator", "judge", "merge", "audit"):
-            aggregator_model = s.get("model", "")
-            break
+        # ── Record the turn ──
+        workers = [
+            s.get("model", "") for s in trace.get("stages", [])
+            if s.get("kind") == "worker"
+        ]
+        aggregator_model = ""
+        for s in trace.get("stages", []):
+            if s.get("kind") in ("aggregator", "judge", "merge", "audit"):
+                aggregator_model = s.get("model", "")
+                break
 
-    turn = Turn(
-        user_prompt=body.prompt,
-        answer=answer,
-        formation=body.formation,
-        dispatch_model=trace.get("dispatch", {}).get("model", ""),
-        worker_models=workers,
-        aggregator_model=aggregator_model,
-        total_tokens=trace.get("total_tokens", 0),
-        total_cost=trace.get("total_cost", 0.0),
-        timestamp=time.time(),
-    )
-    session.add_turn(turn)
+        turn = Turn(
+            user_prompt=body.prompt,
+            answer=answer,
+            formation=body.formation,
+            dispatch_model=trace.get("dispatch", {}).get("model", ""),
+            worker_models=workers,
+            aggregator_model=aggregator_model,
+            total_tokens=trace.get("total_tokens", 0),
+            total_cost=trace.get("total_cost", 0.0),
+            timestamp=time.time(),
+        )
+        session.add_turn(turn)
 
-    # ── SSE: deliberation done ──
-    done_event_data = {
-        "answer": answer,
-        "total_tokens": trace.get("total_tokens", 0),
-        "total_cost": trace.get("total_cost", 0.0),
-        "elapsed_ms": elapsed_ms,
-        "turn_number": session.turn_count,
-    }
-    _sse_broadcaster.broadcast(
-        session_id,
-        SSEEvent(event="deliberation_done", data=done_event_data),
-    )
+        # ── SSE: deliberation done ──
+        done_event_data = {
+            "answer": answer,
+            "total_tokens": trace.get("total_tokens", 0),
+            "total_cost": trace.get("total_cost", 0.0),
+            "elapsed_ms": elapsed_ms,
+            "turn_number": session.turn_count,
+        }
+        _sse_broadcaster.broadcast(
+            session_id,
+            SSEEvent(event="deliberation_done", data=done_event_data),
+        )
 
-    # ── Store events in session for late-connecting SSE subscribers ──
-    session.last_sse_events = [
-        ("deliberation_started", {"prompt": body.prompt}),
-        ("dag_designed", {
-            "mermaid": mermaid_str,
-            "formation": body.formation,
-            "source": trace.get("source", ""),
-            "stage_count": len(trace.get("stages", [])),
-        }),
-        ("deliberation_done", done_event_data),
-    ]
+        # ── Store events in session for late-connecting SSE subscribers ──
+        session.last_sse_events = [
+            ("deliberation_started", {"prompt": body.prompt}),
+            ("dag_designed", {
+                "mermaid": mermaid_str,
+                "formation": body.formation,
+                "source": trace.get("source", ""),
+                "stage_count": len(trace.get("stages", [])),
+            }),
+            ("deliberation_done", done_event_data),
+        ]
 
-    # ── Close all SSE streams for this session ──
-    _sse_broadcaster.unsubscribe_all(session_id)
+        # ── Close all SSE streams for this session ──
+        _sse_broadcaster.unsubscribe_all(session_id)
+    finally:
+        session.deliberation_in_flight = False
 
     return ChatResponse(
         answer=answer,
@@ -266,38 +278,62 @@ async def sse_stream(session_id: str, request: Request):
 
     The client opens this as an EventSource and receives real-time updates
     as the deliberation progresses.
-    """
-    import asyncio as _asyncio
-    import contextlib as _contextlib
 
+    Closing policy (DF-CHIMERA-V2-19). A browser cannot distinguish "the server
+    closed this stream on purpose" from "the connection dropped", so every
+    deliberate close here is announced with the :data:`~chimera.web.sse.
+    TERMINAL_EVENT` marker:
+
+    * **session with recorded turns** — its stored events (``deliberation_started``
+      → ``dag_designed`` → ``deliberation_done``) are replayed, then the marker,
+      then the close. The replay is idempotent: a reload, or a retry by a client
+      that missed the marker, sees the same frames in milliseconds. This used to
+      be gated on the newest turn being younger than 30 s, which meant a session
+      a *returning* user reloads — i.e. every session with history — closed with
+      zero bytes and no marker, and the SPA (whose only reconnection guard is the
+      ``deliberation_done`` event) retried every 3 s forever behind a permanent
+      "SSE reconnecting…" banner.
+    * **session with no turns yet** — unchanged: the stream stays open and is
+      closed either by the live events of the deliberation that follows or by the
+      idle timeout, because there is nothing to replay and the client must keep
+      its reconnect ability while it waits.
+    * **unknown session** — also answered as an event stream (200) that closes
+      after the marker, instead of a JSON 404 body: the browser's EventSource
+      surfaces any non-200 as an ``error`` indistinguishable from a drop, so the
+      404 body was itself a reconnect trigger. The marker is preceded by
+      ``event: error``, which IS in the retryable set, so the frontend knows to
+      drop the dead session id rather than treat it as a finished replay.
+      ``X-Chimera-Session-Status: unknown`` lets non-browser callers (and curl)
+      see the same distinction the marker carries.
+
+    The replay and its marker are queued onto THIS request's subscriber only.
+    Fanning the replay out through ``broadcast`` would dump a stranger's stored
+    turn into every other open stream of the session — which is what the
+    per-session isolation guard
+    (``test_sse_subscriber_session_isolation``) exists to catch.
+    """
     from starlette.responses import StreamingResponse
 
     session = _session_manager.get(session_id)
     if session is None:
-        raise HTTPException(status_code=404, detail=f"Session {session_id!r} not found")
+        return _unknown_session_stream(session_id)
 
     sub = _sse_broadcaster.subscribe(session_id)
 
-    # Replay stored events for late-connecting clients that missed the
-    # live broadcast, then push sentinel to close the stream cleanly.
-    # Only replay if the last turn was recent (<30s) — stale sessions
-    # get a clean close with no events.
-    import time as _time
-
-    has_stored = bool(session.last_sse_events)
-    is_recent = False
-    if has_stored and session.turns:
-        age = _time.time() - session.turns[-1].timestamp
-        is_recent = age < 30.0
-    if has_stored and is_recent:
+    # A session that has finished at least one turn is not "live": nothing more
+    # will be broadcast for it until a new chat request arrives. Replay the
+    # stored events of the last turn and close deliberately — with the terminal
+    # marker, which is the frame that tells the SPA not to retry.
+    #
+    # The one exception is a deliberation that is executing RIGHT NOW: a client
+    # that connects inside that window is waiting for the run in flight, so its
+    # stream must stay open and carry the live events (step 3 of the brief).
+    if session.turns and session.last_sse_events and not session.deliberation_in_flight:
         for event_name, event_data in session.last_sse_events:
-            sub.queue.put_nowait(SSEEvent(event=event_name, data=event_data))
-        with _contextlib.suppress(_asyncio.QueueFull):
-            sub.queue.put_nowait(None)
-    elif has_stored:
-        # Stale session — close cleanly with no events.
-        with _contextlib.suppress(_asyncio.QueueFull):
-            sub.queue.put_nowait(None)
+            _sse_broadcaster.deliver(
+                sub, SSEEvent(event=event_name, data=event_data)
+            )
+        _sse_broadcaster.close_subscriber(session_id, sub)
 
     async def generate():
         async for event_str in _sse_broadcaster.event_stream(session_id, sub):
@@ -310,6 +346,39 @@ async def sse_stream(session_id: str, request: Request):
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def _unknown_session_stream(session_id: str):
+    """A terminal SSE stream for a session id that no longer exists.
+
+    Sends the ``error`` frame (reason ``unknown_session``) followed by the
+    terminal marker, then closes — so a browser gets a 200 stream it can read
+    instead of a JSON 404 body it can only report as a retryable drop. No
+    subscriber is ever registered, so nothing leaks into the broadcaster.
+    """
+    from starlette.responses import StreamingResponse
+
+    def generate():
+        yield SSEEvent(
+            event="error",
+            data={"reason": "unknown_session", "session_id": session_id},
+        ).format()
+        yield SSEEvent(
+            event=TERMINAL_EVENT,
+            data={"reason": "unknown_session"},
+            retry=TERMINAL_RETRY_MS,
+        ).format()
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Chimera-Session-Status": "unknown",
         },
     )
 
