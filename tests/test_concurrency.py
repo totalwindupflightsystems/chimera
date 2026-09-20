@@ -11,6 +11,7 @@ Tests verify:
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 from typing import Any
 
@@ -19,6 +20,16 @@ import pytest
 from chimera.engine import Engine
 from chimera.gateway import GatewayError, GatewayResponse
 from tests.conftest import FakeGateway, dispatch_json, resp
+
+pytest.importorskip("fastapi")
+from fastapi.testclient import TestClient  # noqa: E402
+
+import chimera.web.routes as web_routes  # noqa: E402
+from chimera.api.server import create_app  # noqa: E402
+from chimera.config import ChimeraConfig  # noqa: E402
+from chimera.web.session import SessionManager  # noqa: E402
+from chimera.web.sse import SSEBroadcaster  # noqa: E402
+from tests.conftest import CONFIG_DICT  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # Concurrency-safe gateway that tags responses with per-request data
@@ -352,3 +363,293 @@ async def test_config_mutation_logs_warning(config, capsys) -> None:  # type: ig
     assert "config_mutated_after_snapshot" in captured, (
         f"Expected config_mutated_after_snapshot in stdout, got: {captured}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Web chat path shares the /v1 queue + rate limit (DF-CHIMERA-V2-22)
+# --------------------------------------------------------------------------- #
+#
+# ``POST /web/sessions/{id}/chat`` runs the same billed deliberation as
+# ``POST /v1/chat/completions`` but used to bypass BOTH guards, so N concurrent
+# web-UI deliberations launched N unrestrained provider fan-outs.  These tests
+# pin the shared-queue behaviour: a genuinely saturated queue answers
+# 503 + ``Retry-After`` exactly like /v1 in the same state, a completed chat
+# releases its slot, and the shared rate limiter actually runs on this path.
+#
+# Saturation is set up with the queue's OWN public contract — max_concurrent
+# in-flight slots plus max_queue_depth parked waiters — and everything runs in
+# ONE event loop (httpx ASGITransport), because the endpoint and the holders
+# must contend for the same ``asyncio.Semaphore``.  No private attribute is
+# touched and no provider is reachable.
+
+
+def _web_responder(model, messages, response_format=None, **kw):  # type: ignore[no-untyped-def]
+    """Canned responder — zero network, mirrors tests/test_web.py::_client."""
+    if response_format is not None:
+        return resp(dispatch_json(), model, 100, 200)
+    joined = json.dumps(messages)
+    if "Upstream outputs" in joined:
+        return resp("FINAL ANSWER", model, 60, 90)
+    return resp(f"worker {model}", model, 20, 40)
+
+
+def _web_config(**overrides: Any) -> ChimeraConfig:
+    """A deep copy of CONFIG_DICT with queue/auth/rate-limit overrides applied."""
+    cfg_dict = copy.deepcopy(CONFIG_DICT)
+    cfg_dict.update(overrides)
+    return ChimeraConfig.model_validate(cfg_dict)
+
+
+def _build_web(config: ChimeraConfig) -> tuple[TestClient, Any, Any]:
+    """Return ``(client, app, gateway)`` built on a stubbed gateway."""
+    gateway = FakeGateway(_web_responder)
+    app = create_app(config=config, engine=Engine(config, gateway))
+    return TestClient(app), app, gateway
+
+
+@pytest.fixture
+def web_singletons():  # type: ignore[no-untyped-def]
+    """Isolate the module-level web state (same fixture as tests/test_web.py)."""
+    web_routes._session_manager = SessionManager()
+    web_routes._sse_broadcaster = SSEBroadcaster()
+    yield
+    web_routes._session_manager = SessionManager()
+    web_routes._sse_broadcaster = SSEBroadcaster()
+
+
+def _new_session(app: Any, client: TestClient) -> str:  # type: ignore[no-untyped-def]
+    """Create a session and pre-arm its SSE readiness signal (no 2s wait)."""
+    session_id = client.post("/web/sessions").json()["session_id"]
+    web_routes._sse_broadcaster.ensure_ready(session_id).set()
+    return session_id
+
+
+async def _park_waiters(app: Any, count: int) -> list[asyncio.Task]:
+    """Hold *count* queue slots with in-flight acquisitions that never release.
+
+    ``RequestQueue.acquire()`` counts a request as *in flight* the moment the
+    semaphore is handed over, so these tasks reproduce "the slots are busy"
+    without touching any private attribute.
+    """
+
+    async def _hold() -> None:
+        assert await app.state.request_queue.acquire() is True
+        await asyncio.Event().wait()  # held for the whole test
+
+    tasks = [asyncio.create_task(_hold()) for _ in range(count)]
+    for _ in range(500):
+        if app.state.request_queue.total_queued >= count:
+            break
+        await asyncio.sleep(0)
+    assert app.state.request_queue.total_queued == count, "holders did not take the slots"
+    return tasks
+
+
+async def test_saturated_queue_refuses_web_chat_exactly_like_v1(web_singletons: None) -> None:  # type: ignore[no-untyped-def]
+    """Acceptance 1: saturated queue -> 503 + Retry-After on the web path.
+
+    Three requests over one slot (``max_concurrent=1``) with one waiter allowed
+    (``max_queue_depth=1``): the holder occupies the slot, the first web chat
+    parks as the waiter, and every request after that is refused — the web chat
+    and ``/v1/deliberate`` alike, with the same status and the same
+    ``Retry-After``.  Releasing the holder then lets the parked web chat finish,
+    which is what proves both surfaces contend for one and the same semaphore.
+    """
+    import httpx
+
+    config = _web_config(queue={"max_concurrent": 1, "max_queue_depth": 1})
+    gateway = FakeGateway(_web_responder)
+    app = create_app(config=config, engine=Engine(config, gateway))
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://chimera.test") as client:
+        session_id = (await client.post("/web/sessions")).json()["session_id"]
+        web_routes._sse_broadcaster.ensure_ready(session_id).set()
+
+        holders = await _park_waiters(app, 1)
+        try:
+            # The waiter is the first web chat: it takes the one queue-depth
+            # allowance (no semaphore yet), so nothing reaches the engine.
+            parked = asyncio.create_task(
+                client.post(
+                    f"/web/sessions/{session_id}/chat",
+                    json={"prompt": "parked", "formation": "simple"},
+                )
+            )
+            for _ in range(500):
+                if app.state.request_queue.total_queued >= 2:
+                    break
+                await asyncio.sleep(0)
+            assert app.state.request_queue.total_queued == 2, "the web chat did not park"
+            assert gateway.calls == [], "a queued request must not reach the providers"
+
+            # Web surface: refused, 503 + Retry-After, no provider call.
+            refused = await client.post(
+                f"/web/sessions/{session_id}/chat",
+                json={"prompt": "refused", "formation": "simple"},
+            )
+            assert refused.status_code == 503, refused.text
+            assert refused.headers["retry-after"] == "5"
+            assert "Server busy — queue full. Retry later." in refused.text
+            assert gateway.calls == []
+
+            # /v1 reference surface, in the very same state.
+            v1 = await client.post("/v1/deliberate", json={"prompt": "hi", "formation": "simple"})
+            assert v1.status_code == 503, v1.text
+            assert v1.headers["retry-after"] == refused.headers["retry-after"]
+            assert v1.json()["detail"] == "Server busy — queue full. Retry later."
+            assert app.state.request_queue.total_rejected == 2
+
+            # A refusal records no turn and broadcasts no SSE event.
+            assert session_id not in web_routes._sse_broadcaster._subscribers
+            history = (await client.get(f"/web/sessions/{session_id}")).json()
+            assert history["turn_count"] == 0
+
+            # Hand the slot back the way a real request's ``finally`` does —
+            # cancelling a task does NOT release an asyncio semaphore — then
+            # let go of the holder task.  The parked web chat, which was
+            # waiting on the SAME semaphore, now runs to completion.
+            app.state.request_queue.release()
+            holders[0].cancel()
+            completed = await asyncio.wait_for(parked, timeout=5.0)
+            assert completed.status_code == 200, completed.text
+            assert completed.json()["answer"] == "FINAL ANSWER"
+            assert gateway.calls, "the parked chat must reach the engine once released"
+            # One release for the simulated holder, one for the real web chat.
+            assert app.state.request_queue.total_completed == 2
+            assert app.state.request_queue.current_waiting == 0
+        finally:
+            for holder in holders:
+                holder.cancel()
+
+
+def test_successful_web_chat_releases_its_queue_slot(web_singletons: None) -> None:  # type: ignore[no-untyped-def]
+    """Acceptance 2: a completed chat frees its slot — pins the try/finally."""
+    config = _web_config(queue={"max_concurrent": 1, "max_queue_depth": 100})
+    client, app, gateway = _build_web(config)
+    session_id = _new_session(app, client)
+
+    first = client.post(
+        f"/web/sessions/{session_id}/chat", json={"prompt": "one", "formation": "simple"}
+    )
+    assert first.status_code == 200, first.text
+    # max_concurrent == 1: a leaked slot would block the second call on the
+    # semaphore instead of answering, so both assertions below are load-bearing.
+    assert app.state.request_queue.total_completed == 1
+    assert app.state.request_queue.current_waiting == 0
+
+    web_routes._sse_broadcaster.ensure_ready(session_id).set()
+    second = client.post(
+        f"/web/sessions/{session_id}/chat", json={"prompt": "two", "formation": "simple"}
+    )
+
+    assert second.status_code == 200, second.text
+    assert second.json()["turn_number"] == 2
+    assert app.state.request_queue.total_completed == 2
+    assert gateway.calls
+
+
+def test_web_chat_releases_its_slot_after_a_failed_deliberation(web_singletons: None) -> None:  # type: ignore[no-untyped-def]
+    """The release is in ``finally``: a raising engine still frees the slot."""
+    config = _web_config(queue={"max_concurrent": 1, "max_queue_depth": 100})
+    client, app, _ = _build_web(config)
+    session_id = _new_session(app, client)
+
+    async def boom(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("provider exploded")
+
+    app.state.engine.deliberate = boom  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError):
+        client.post(f"/web/sessions/{session_id}/chat", json={"prompt": "x", "formation": "simple"})
+
+    assert app.state.request_queue.total_completed == 1
+    assert app.state.request_queue.current_waiting == 0
+    # The slot is genuinely usable again: a fresh chat (with the real engine
+    # restored) is not blocked by the leaked slot.
+    app.state.engine.deliberate = _deliberate_op(app)  # type: ignore[assignment]
+    web_routes._sse_broadcaster.ensure_ready(session_id).set()
+    again = client.post(
+        f"/web/sessions/{session_id}/chat", json={"prompt": "y", "formation": "simple"}
+    )
+    assert again.status_code == 200, again.text
+
+
+def _deliberate_op(app: Any):  # type: ignore[no-untyped-def]
+    """Rebuild a working ``deliberate`` for the app's engine (test-local)."""
+    return Engine(app.state.config, FakeGateway(_web_responder)).deliberate
+
+
+def test_web_chat_is_rate_limited_like_the_v1_surface(web_singletons: None) -> None:  # type: ignore[no-untyped-def]
+    """Acceptance 3: the shared ``_check_rate_limit`` runs on the web path."""
+    config = _web_config()
+    client, app, gateway = _build_web(config)
+    # Deliberately NOT pre-armed with the broadcaster: if the guard ever ran
+    # after the SSE readiness/broadcast block, this session id would appear in
+    # _ready (same technique as tests/test_web_formation_validation.py).
+    session_id = client.post("/web/sessions").json()["session_id"]
+
+    def always_deny(key: str) -> tuple[bool, float]:  # noqa: ARG001
+        return (False, 30.0)
+
+    app.state.rate_limiter.allow = always_deny  # type: ignore[method-assign]
+    gateway.calls.clear()
+
+    response = client.post(
+        f"/web/sessions/{session_id}/chat",
+        json={"prompt": "hi", "formation": "simple"},
+    )
+    v1 = client.post("/v1/deliberate", json={"prompt": "hi", "formation": "simple"})
+
+    # Same status, same header and same body the /v1 surface returns for the
+    # same limiter state.
+    assert response.status_code == 429, response.text
+    assert v1.status_code == 429
+    assert response.headers["retry-after"] == v1.headers["retry-after"] == "31"
+    assert response.json()["detail"] == v1.json()["detail"] == {
+        "error": "rate_limited",
+        "message": "Too many requests. Please wait before retrying.",
+    }
+
+    # Refused at the edge: no provider call, no turn, no queue slot taken.
+    assert gateway.calls == []
+    history = client.get(f"/web/sessions/{session_id}").json()
+    assert history["turn_count"] == 0
+    assert session_id not in web_routes._sse_broadcaster._ready
+    assert app.state.request_queue.total_queued == 0
+    assert app.state.request_queue.total_rejected == 0
+
+
+def test_web_chat_rate_limit_uses_the_configured_limiter(web_singletons: None) -> None:  # type: ignore[no-untyped-def]
+    """A real configured limiter (burst 1) refuses the SECOND web chat."""
+    config = _web_config(rate_limit={"enabled": True, "requests_per_minute": 1, "burst_size": 1})
+    client, app, _ = _build_web(config)
+    session_id = _new_session(app, client)
+
+    first = client.post(
+        f"/web/sessions/{session_id}/chat", json={"prompt": "one", "formation": "simple"}
+    )
+    assert first.status_code == 200, first.text
+
+    web_routes._sse_broadcaster.ensure_ready(session_id).set()
+    second = client.post(
+        f"/web/sessions/{session_id}/chat", json={"prompt": "two", "formation": "simple"}
+    )
+
+    assert second.status_code == 429, second.text
+    assert "Retry-After" in second.headers
+    assert second.json()["detail"]["error"] == "rate_limited"
+    # Same shared bucket key ("anonymous" keyless) as the /v1 surface: the
+    # refusal is not a web-only counter.
+    assert app.state.rate_limiter.bucket_count() == 1
+
+
+def test_v1_endpoints_still_take_the_queue_unaffected(web_singletons: None) -> None:  # type: ignore[no-untyped-def]
+    """Control: the reference endpoints keep their own guard behaviour."""
+    config = _web_config(queue={"max_concurrent": 1, "max_queue_depth": 100})
+    client, app, gateway = _build_web(config)
+
+    response = client.post("/v1/deliberate", json={"prompt": "hi", "formation": "simple"})
+
+    assert response.status_code == 200, response.text
+    assert app.state.request_queue.total_completed == 1
+    assert gateway.calls

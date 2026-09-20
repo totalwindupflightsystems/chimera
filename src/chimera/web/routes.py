@@ -10,16 +10,24 @@ Endpoints:
 * ``GET  /web/sessions/{id}`` — get session history
 * ``GET  /web/sse/{session_id}`` — SSE event stream
 * ``GET  /web/`` — serve the SPA
+
+``POST /web/sessions/{id}/chat`` runs the same billed deliberation as
+``POST /v1/deliberate`` and ``POST /v1/chat/completions``, so it takes the same
+two guards through the same implementations (DF-CHIMERA-V2-22): the shared
+``RateLimiter`` and the shared ``RequestQueue``.  Neither helper is copied —
+both are imported from the API module, which is the reference implementation.
 """
 
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from chimera.api.dependencies import require_api_key
+from chimera.api.server import RequestQueue, _check_rate_limit
 from chimera.web.session import SessionManager, Turn
 from chimera.web.sse import SSEBroadcaster, SSEEvent
 from chimera.web.trace_viz import trace_to_mermaid
@@ -71,11 +79,29 @@ async def create_session() -> CreateSessionResponse:
 
 
 @router.post("/sessions/{session_id}/chat", response_model=ChatResponse)
-async def session_chat(session_id: str, body: ChatRequest, request: Request) -> ChatResponse:
+async def session_chat(
+    session_id: str,
+    body: ChatRequest,
+    request: Request,
+    api_key: Annotated[str, Depends(require_api_key)],
+) -> ChatResponse:
     """Run a deliberation in the context of *session_id*.
 
     Past turns are injected into the dispatcher's prompt as conversation
     history.  SSE events are broadcast as the deliberation progresses.
+
+    DF-CHIMERA-V2-22: this path bills the same providers as
+    ``POST /v1/chat/completions`` and ``POST /v1/deliberate``, so it takes the
+    same two guards — the shared rate limiter and the shared request queue —
+    through the very same implementations (imported, never copied).  Without
+    them N concurrent web-UI deliberations launched N unrestrained provider
+    fan-outs and neither ``max_concurrent``/``max_queue_depth`` nor a
+    configured rate limit applied.
+
+    Both guards run BEFORE the SSE readiness/broadcast block and before any
+    turn is recorded, and the slot is released in ``finally`` — so a
+    saturation refusal never leaves a half-started turn that would suppress
+    the events of an already in-flight deliberation on this session.
     """
     session = _session_manager.get(session_id)
     if session is None:
@@ -102,119 +128,142 @@ async def session_chat(session_id: str, body: ChatRequest, request: Request) -> 
             ),
         )
 
-    engine = request.app.state.engine
+    # F2: rate limiting — same helper object and same status/body/header shape
+    # as the /v1 endpoints (SDK callers can reuse their 429 handling verbatim).
+    # The refusal is text/plain: BaseHTTPMiddleware drops custom headers from a
+    # JSONResponse's ``detail``, so the Retry-After would be lost otherwise.
+    _check_rate_limit(request, api_key)
 
-    # Build context-augmented prompt
-    augmented = session.augmented_prompt(body.prompt)
+    # F5: queue/backpressure check — the SAME RequestQueue instance the /v1
+    # endpoints acquire, so the web surface competes for the same slots.
+    queue: RequestQueue = request.app.state.request_queue
+    acquired = await queue.acquire()
+    if not acquired:
+        from starlette.responses import PlainTextResponse
 
-    # Build overrides for the engine
-    from chimera.config import DeliberationOverrides
-
-    overrides = DeliberationOverrides(
-        allowed_models=body.allowed_models,
-        dispatcher_model=body.dispatcher_model,
-        aggregator_model=body.aggregator_model,
-    )
-
-    started = time.monotonic()
-
-    # ── Wait for SSE subscriber readiness (if any) ──
-    # Prevents race where chat broadcasts before SSE subscriber is listening.
-    import asyncio as _asyncio
+        return PlainTextResponse(  # type: ignore[return-value]
+            content="Server busy — queue full. Retry later.",
+            status_code=503,
+            headers={"Retry-After": "5"},
+            media_type="text/plain",
+        )
 
     try:
-        ready = _sse_broadcaster.ensure_ready(session_id)
-        await _asyncio.wait_for(ready.wait(), timeout=2.0)
-    except TimeoutError:
-        pass  # No SSE subscriber within 2s — proceed anyway
+        engine = request.app.state.engine
 
-    # ── SSE: deliberation started ──
-    _sse_broadcaster.broadcast(
-        session_id,
-        SSEEvent(event="deliberation_started", data={"prompt": body.prompt}),
-    )
+        # Build context-augmented prompt
+        augmented = session.augmented_prompt(body.prompt)
 
-    # Run the deliberation
-    result = await engine.deliberate(
-        augmented,
-        formation=body.formation,
-        overrides=overrides,
-    )
-    trace = result.trace.model_dump(mode="json")
-    answer = result.answer
+        # Build overrides for the engine
+        from chimera.config import DeliberationOverrides
 
-    elapsed_ms = int((time.monotonic() - started) * 1000)
+        overrides = DeliberationOverrides(
+            allowed_models=body.allowed_models,
+            dispatcher_model=body.dispatcher_model,
+            aggregator_model=body.aggregator_model,
+        )
 
-    # ── SSE: DAG designed ──
-    mermaid_str = trace_to_mermaid(trace)
-    _sse_broadcaster.broadcast(
-        session_id,
-        SSEEvent(event="dag_designed", data={
-            "mermaid": mermaid_str,
-            "formation": body.formation,
-            "source": trace.get("source", ""),
-            "stage_count": len(trace.get("stages", [])),
-        }),
-    )
+        started = time.monotonic()
 
-    # ── Record the turn ──
-    workers = [
-        s.get("model", "") for s in trace.get("stages", [])
-        if s.get("kind") == "worker"
-    ]
-    aggregator_model = ""
-    for s in trace.get("stages", []):
-        if s.get("kind") in ("aggregator", "judge", "merge", "audit"):
-            aggregator_model = s.get("model", "")
-            break
+        # ── Wait for SSE subscriber readiness (if any) ──
+        # Prevents race where chat broadcasts before SSE subscriber is listening.
+        import asyncio as _asyncio
 
-    turn = Turn(
-        user_prompt=body.prompt,
-        answer=answer,
-        formation=body.formation,
-        dispatch_model=trace.get("dispatch", {}).get("model", ""),
-        worker_models=workers,
-        aggregator_model=aggregator_model,
-        total_tokens=trace.get("total_tokens", 0),
-        total_cost=trace.get("total_cost", 0.0),
-        timestamp=time.time(),
-    )
-    session.add_turn(turn)
+        try:
+            ready = _sse_broadcaster.ensure_ready(session_id)
+            await _asyncio.wait_for(ready.wait(), timeout=2.0)
+        except TimeoutError:
+            pass  # No SSE subscriber within 2s — proceed anyway
 
-    # ── SSE: deliberation done ──
-    done_event_data = {
-        "answer": answer,
-        "total_tokens": trace.get("total_tokens", 0),
-        "total_cost": trace.get("total_cost", 0.0),
-        "elapsed_ms": elapsed_ms,
-        "turn_number": session.turn_count,
-    }
-    _sse_broadcaster.broadcast(
-        session_id,
-        SSEEvent(event="deliberation_done", data=done_event_data),
-    )
+        # ── SSE: deliberation started ──
+        _sse_broadcaster.broadcast(
+            session_id,
+            SSEEvent(event="deliberation_started", data={"prompt": body.prompt}),
+        )
 
-    # ── Store events in session for late-connecting SSE subscribers ──
-    session.last_sse_events = [
-        ("deliberation_started", {"prompt": body.prompt}),
-        ("dag_designed", {
-            "mermaid": mermaid_str,
-            "formation": body.formation,
-            "source": trace.get("source", ""),
-            "stage_count": len(trace.get("stages", [])),
-        }),
-        ("deliberation_done", done_event_data),
-    ]
+        # Run the deliberation
+        result = await engine.deliberate(
+            augmented,
+            formation=body.formation,
+            overrides=overrides,
+        )
+        trace = result.trace.model_dump(mode="json")
+        answer = result.answer
 
-    # ── Close all SSE streams for this session ──
-    _sse_broadcaster.unsubscribe_all(session_id)
+        elapsed_ms = int((time.monotonic() - started) * 1000)
 
-    return ChatResponse(
-        answer=answer,
-        trace={**trace, "elapsed_ms": elapsed_ms},
-        turn_number=session.turn_count,
-        mermaid=mermaid_str,
-    )
+        # ── SSE: DAG designed ──
+        mermaid_str = trace_to_mermaid(trace)
+        _sse_broadcaster.broadcast(
+            session_id,
+            SSEEvent(event="dag_designed", data={
+                "mermaid": mermaid_str,
+                "formation": body.formation,
+                "source": trace.get("source", ""),
+                "stage_count": len(trace.get("stages", [])),
+            }),
+        )
+
+        # ── Record the turn ──
+        workers = [
+            s.get("model", "") for s in trace.get("stages", [])
+            if s.get("kind") == "worker"
+        ]
+        aggregator_model = ""
+        for s in trace.get("stages", []):
+            if s.get("kind") in ("aggregator", "judge", "merge", "audit"):
+                aggregator_model = s.get("model", "")
+                break
+
+        turn = Turn(
+            user_prompt=body.prompt,
+            answer=answer,
+            formation=body.formation,
+            dispatch_model=trace.get("dispatch", {}).get("model", ""),
+            worker_models=workers,
+            aggregator_model=aggregator_model,
+            total_tokens=trace.get("total_tokens", 0),
+            total_cost=trace.get("total_cost", 0.0),
+            timestamp=time.time(),
+        )
+        session.add_turn(turn)
+
+        # ── SSE: deliberation done ──
+        done_event_data = {
+            "answer": answer,
+            "total_tokens": trace.get("total_tokens", 0),
+            "total_cost": trace.get("total_cost", 0.0),
+            "elapsed_ms": elapsed_ms,
+            "turn_number": session.turn_count,
+        }
+        _sse_broadcaster.broadcast(
+            session_id,
+            SSEEvent(event="deliberation_done", data=done_event_data),
+        )
+
+        # ── Store events in session for late-connecting SSE subscribers ──
+        session.last_sse_events = [
+            ("deliberation_started", {"prompt": body.prompt}),
+            ("dag_designed", {
+                "mermaid": mermaid_str,
+                "formation": body.formation,
+                "source": trace.get("source", ""),
+                "stage_count": len(trace.get("stages", [])),
+            }),
+            ("deliberation_done", done_event_data),
+        ]
+
+        # ── Close all SSE streams for this session ──
+        _sse_broadcaster.unsubscribe_all(session_id)
+
+        return ChatResponse(
+            answer=answer,
+            trace={**trace, "elapsed_ms": elapsed_ms},
+            turn_number=session.turn_count,
+            mermaid=mermaid_str,
+        )
+    finally:
+        queue.release()
 
 
 @router.get("/sessions/{session_id}", response_model=SessionInfo)
