@@ -61,13 +61,21 @@ then prints `full suite — safety trigger`), and the `guard --full` flag.
 ## The pre-commit hook
 
 Every commit runs `.gitreins/pre-commit` (installed into `.git/hooks/`). It has
-two arms, and only the second is the harness this page describes:
+three arms, and only the last is the harness this page describes:
 
 1. **The built-in secrets scan** — self-contained, always runs, and BLOCKS the
    commit (exit 1) on a match, honouring `.gitreins/secrets-ignore`. It is
    deliberately independent of the engine: it is the only gate still available
    where `gitreins` is not installed.
-2. **`gitreins guard`** — run with the repo venv first on PATH (see "Running
+2. **The private-host leak scan** (DF-CHIMERA-V2-24) — every staged text file
+   is scanned with the SAME pattern set the INT-CI-005 suite guard uses
+   (`tests/private_host_scan.py`), skipping the same files the secrets scan
+   skips plus binary-looking files. Any private-range / CGNAT address or
+   `*.ts.net` tailnet hostname BLOCKS the commit (exit 1) with the fix:
+   publish the host NAME, never its address. Where the scanner or a python
+   interpreter is missing it prints a loud SKIP and lets the commit proceed —
+   the suite guard still covers the whole tree on the next run.
+3. **`gitreins guard`** — run with the repo venv first on PATH (see "Running
    it"), its output teed to the console rather than swallowed.
 
 The guard's exit code is a **verdict**, not just an error level, and the hook

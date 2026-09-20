@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
 # GitReins Tier 1 — the pre-commit gate for this repo.
 #
-# Two arms, in this order:
+# Three arms, in this order:
 #
 #   1. the built-in secrets scan. It always runs, and it BLOCKS (exit 1). It is
 #      deliberately self-contained: it is the only gate still available on a box
 #      where the `gitreins` engine is not installed.
 #
-#   2. the real quality harness — `gitreins guard` (docs/GITREINS.md). Its exit
+#   2. the private-host leak scan (DF-CHIMERA-V2-24). Every staged text file is
+#      scanned with the SAME pattern set the INT-CI-005 suite guard uses
+#      (tests/private_host_scan.py) and any private/CGNAT address or tailnet
+#      hostname BLOCKS (exit 1): a bunker address must be caught at commit
+#      time, not on the next full-suite run after the mirror already has it.
+#      It skips the same files the secrets scan skips (gitignored +
+#      .gitreins/secrets-ignore) and binary-looking files, and it is a loud
+#      SKIP — never a block — where no Python can be resolved or the scanner
+#      is missing from the repo layout (the suite guard still covers that tree).
+#
+#   3. the real quality harness — `gitreins guard` (docs/GITREINS.md). Its exit
 #      code is a VERDICT, not just an error level, so the hook maps it:
 #
 #        0  every substantive lane did work and passed           -> PASS, commit
@@ -70,7 +80,56 @@ if [ $FAILED -eq 1 ]; then
 fi
 echo "✓ GitReins Tier 1: Secrets scan — PASS"
 
-# ── 2. The quality harness (gitreins guard) ──────────────
+# ── 2. Private-host leak scan (DF-CHIMERA-V2-24) ─────────
+# The INT-CI-005 suite guard catches these only on the next full pytest run;
+# by then the public mirror already has the address. Scan every staged text
+# file with the SAME pattern set the guard uses and BLOCK on any hit.
+LEAK_SCANNER="tests/private_host_scan.py"
+LEAK_PY=""
+for candidate in "$ROOT/.venv/bin/python" "$(command -v python3 || true)"; do
+  if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+    LEAK_PY="$candidate"
+    break
+  fi
+done
+
+if [ ! -f "$LEAK_SCANNER" ] || [ -z "$LEAK_PY" ]; then
+  REASON=""
+  [ ! -f "$LEAK_SCANNER" ] && REASON="$LEAK_SCANNER is missing"
+  [ -z "$LEAK_PY" ] && REASON="${REASON:+$REASON; }no python interpreter found"
+  echo "⚠ GitReins Tier 1: leak scan SKIPPED — $REASON (the suite guard still covers this tree)" >&2
+else
+  LEAK_FAILED=0
+  while IFS= read -r file; do
+    [ ! -f "$file" ] && continue
+    git check-ignore -q "$file" 2>/dev/null && continue
+    if is_ignored "$file"; then
+      echo "  (skipped by .gitreins/secrets-ignore: $file)"
+      continue
+    fi
+    set +e
+    HITS=$("$LEAK_PY" "$LEAK_SCANNER" --scan "$file" 2>/dev/null)
+    LEAK_RC=$?
+    set -e
+    if [ -n "$HITS" ]; then
+      echo "$HITS"
+      echo "⚠ PRIVATE HOST ADDRESS in $file" >&2
+      LEAK_FAILED=1
+    elif [ $LEAK_RC -ne 0 ]; then
+      echo "⚠ leak scan could not read $file (skipped)" >&2
+    fi
+  done <<< "$STAGED"
+
+  if [ $LEAK_FAILED -eq 1 ]; then
+    echo "" >&2
+    echo "COMMIT BLOCKED: private host address found in staged files" >&2
+    echo "  Publish the host NAME, never its address (e.g. 'bunker-las-03')." >&2
+    exit 1
+  fi
+  echo "✓ GitReins Tier 1: Private-host leak scan — PASS"
+fi
+
+# ── 3. The quality harness (gitreins guard) ──────────────
 # The verdict must be VISIBLE — the engine's own output is teed, never
 # swallowed — and the rc is handled explicitly, because `set -e` above would
 # otherwise turn every non-zero verdict into an indistinguishable abort.
