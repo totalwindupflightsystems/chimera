@@ -226,6 +226,21 @@ class DispatchOutcome:
     messages: list[dict[str, str]]
     response: GatewayResponse
     latency_ms: int
+    started_at: float
+    """``time.monotonic()`` when the dispatcher gateway call began.
+
+    The dispatcher model is a real provider call (CH-GAP-056), so the trace
+    span built from this outcome needs a real position on the run's timeline.
+    It is measured HERE, at the call site — the engine must never re-time a
+    call that has already returned.
+    """
+    ended_at: float
+    """``time.monotonic()`` when the dispatcher gateway call returned.
+
+    Taken from the same pair of readings ``latency_ms`` is derived from, so
+    ``ended_at - started_at`` and the reported elapsed milliseconds cannot
+    disagree.
+    """
 
 
 # --------------------------------------------------------------------------- #
@@ -962,9 +977,19 @@ class Dispatcher:
                     )
                 else:
                     messages, response, result = await self._dispatch_auto(user_prompt)
-            latency_ms = int((time.monotonic() - start) * 1000)
+            # One reading pair serves both the elapsed milliseconds and the
+            # span's timeline position (CH-GAP-056) — the wall-clock bracket
+            # covers the fallback path too: a dispatcher whose gateway call
+            # failed still spent real time before returning `{}`.
+            ended = time.monotonic()
+            latency_ms = int((ended - start) * 1000)
             return DispatchOutcome(
-                result=result, messages=messages, response=response, latency_ms=latency_ms
+                result=result,
+                messages=messages,
+                response=response,
+                latency_ms=latency_ms,
+                started_at=start,
+                ended_at=ended,
             )
         finally:
             self._model_override = None

@@ -11,11 +11,18 @@ The attribution flows one way only:
 
 ``LiteLLMGateway.complete`` → ``resolve_litellm_model`` / ``effective_provider``
 → ``metadata["provider"|"wire_model"|"api_base"]`` on the ``GatewayResponse``
-→ ``Engine._build_stage_result`` → ``StageSpan`` fields → the API trace payload.
+→ ``Engine._build_stage_result`` (worker/aggregator stages) and
+``Engine._build_dispatch_span`` (the dispatcher's own call, CH-GAP-056)
+→ ``StageSpan`` fields → the API trace payload.
 
 Nothing derives a provider from the model id, and nothing invents one for a
-stage with no resolved route (the internal dispatch span, a degraded stage, or
-a gateway stub that carries no metadata).
+stage with no resolved route (a degraded stage, or a gateway stub that carries
+no metadata).  CH-GAP-056 added the dispatch span to the attributed set: the
+dispatcher model call is a real gateway completion, so it carries the route the
+gateway resolved for it — and stays empty exactly when no route was resolved
+(the dispatcher's own ``{}`` fallback after a ``GatewayError``).  It also
+carries the dispatcher's real ``time.monotonic()`` bracket, so the most
+expensive stage of a run can be placed on the timeline.
 """
 
 from __future__ import annotations
@@ -288,9 +295,19 @@ async def test_successful_stage_spans_carry_the_resolved_route() -> None:
     assert aggregator.wire_model == OPENROUTER_MODEL
     assert aggregator.api_base == ""
 
-    # The internal dispatch stage is not a provider route of its own.
+    # CH-GAP-056: the dispatch stage runs the dispatcher model through the very
+    # same gateway, so it carries the resolved route too — here the default
+    # dispatcher model, natively routed by OpenRouter (no api_base).
     dispatch = result.trace.dispatch
-    assert (dispatch.provider, dispatch.wire_model, dispatch.api_base) == ("", "", "")
+    assert (dispatch.provider, dispatch.wire_model, dispatch.api_base) == (
+        "openrouter",
+        OPENROUTER_MODEL,
+        "",
+    )
+
+    # AC2 / CH-GAP-056: real monotonic timestamps on the dispatch span, ordered.
+    assert dispatch.started_at > 0
+    assert dispatch.ended_at >= dispatch.started_at > 0
 
     # Acceptance 4: the fields survive into the serialized API payload.
     payload = result.trace.model_dump(mode="json")
@@ -300,7 +317,9 @@ async def test_successful_stage_spans_carry_the_resolved_route() -> None:
     assert serialized["researcher"]["api_base"] == ROUTER9_BASE_URL
     assert serialized["finalizer"]["provider"] == "openrouter"
     assert serialized["finalizer"]["api_base"] == ""
-    assert payload["dispatch"]["provider"] == ""
+    assert payload["dispatch"]["provider"] == "openrouter"
+    assert payload["dispatch"]["started_at"] > 0
+    assert payload["dispatch"]["ended_at"] >= payload["dispatch"]["started_at"] > 0
 
 
 async def test_fallback_route_reports_the_serving_provider_in_the_trace() -> None:
@@ -317,6 +336,98 @@ async def test_fallback_route_reports_the_serving_provider_in_the_trace() -> Non
         s["stage_id"]: s for s in result.trace.model_dump(mode="json")["stages"]
     }
     assert serialized["researcher"]["provider"] != "anthropic"
+
+
+async def test_dispatch_span_carries_the_dispatcher_routes_own_attribution() -> None:
+    """CH-GAP-056 / AC1: the dispatch span reports the route the gateway
+    resolved for the DISPATCHER call — read off the dispatcher response's
+    metadata, never inferred from the dispatcher model id.
+
+    The discriminator is a generic ``base_url`` route (``router9``): its model
+    id prefix says ``router9`` but the WIRE model is a different string
+    (``openai/ds/deepseek-v4-flash``) and it is the only route in this catalog
+    that carries an ``api_base``.  A span built by prefix-guessing cannot
+    produce that triple.
+    """
+    from chimera.config import DeliberationOverrides  # noqa: PLC0415
+
+    config = _config()
+    gateway = LiteLLMGateway(config)
+    payload = _payload(OPENROUTER_MODEL, aggregator_model=OPENROUTER_MODEL)
+
+    with patch("litellm.acompletion", new=_scripted_acompletion(payload)):
+        result = await Engine(config, gateway).deliberate(
+            "task",
+            "auto",
+            overrides=DeliberationOverrides(dispatcher_model=ROUTER9_MODEL),
+            dag=_dag(OPENROUTER_MODEL),
+            allow_custom_dag=True,
+        )
+
+    dispatch = result.trace.dispatch
+    assert dispatch.model == ROUTER9_MODEL          # the catalog id the caller forced
+    assert dispatch.provider == ROUTER9_PROVIDER    # the provider that served it
+    assert dispatch.wire_model == ROUTER9_WIRE_MODEL
+    assert dispatch.api_base == ROUTER9_BASE_URL
+
+    # The dispatcher route is genuinely one of the attributed routes: the same
+    # triple the gateway stamps on a direct call for this model (Layer 1).
+    with patch("litellm.acompletion", new=_scripted_acompletion("x")):
+        direct = await LiteLLMGateway(config).complete(
+            ROUTER9_MODEL, [{"role": "user", "content": "hi"}]
+        )
+    assert (dispatch.provider, dispatch.wire_model, dispatch.api_base) == _route_attribution(
+        direct
+    )
+
+    # ...and it is not what the model-id prefix alone would have produced.
+    assert dispatch.api_base != ""
+
+
+async def test_dispatch_span_timestamps_are_real_and_differ_per_run() -> None:
+    """CH-GAP-056 / AC2: the dispatch span's timestamps are real monotonic
+    readings — ordered, non-zero, and different for two separate runs.  A
+    constant (or a re-timed "now" captured after the fact) cannot satisfy the
+    bracket/ordering relation against the call it measured.
+    """
+    first = await _deliberate(_config(), _dag(ROUTER9_MODEL), _payload(ROUTER9_MODEL))
+    second = await _deliberate(_config(), _dag(ROUTER9_MODEL), _payload(ROUTER9_MODEL))
+
+    s1, s2 = first.trace.dispatch, second.trace.dispatch
+    for span in (s1, s2):
+        assert span.started_at > 0
+        assert span.ended_at >= span.started_at
+        # The bracket is the same reading pair latency_ms comes from: they
+        # cannot contradict each other by more than the ms truncation.
+        assert (span.ended_at - span.started_at) * 1000 >= span.latency_ms - 1
+
+    assert (s1.started_at, s1.ended_at) != (s2.started_at, s2.ended_at)
+    assert s2.started_at >= s1.ended_at
+
+    # The dispatch call really is the FIRST thing the run does: its bracket
+    # starts before every worker/aggregator span in the trace.
+    worker = _spans(first)["researcher"]
+    assert s1.started_at <= worker.started_at
+    assert s1.ended_at <= worker.ended_at
+
+
+async def test_dispatch_latency_ms_is_unchanged_by_the_timestamps() -> None:
+    """AC4: adding the bracket does not change ``latency_ms`` — it stays the
+    integer elapsed milliseconds of the dispatcher call, on the same reading
+    pair as before.
+    """
+    from chimera.dispatcher import Dispatcher  # noqa: PLC0415
+
+    config = _config()
+    gateway = FakeGateway(lambda model, messages, **kw: resp(
+        _payload(ROUTER9_MODEL), model, 100, 200
+    ))
+    outcome = await Dispatcher(config, gateway).dispatch("design a system", "auto")
+
+    assert isinstance(config, ChimeraConfig)
+    assert outcome.latency_ms == int((outcome.ended_at - outcome.started_at) * 1000)
+    assert outcome.latency_ms >= 0
+    assert outcome.ended_at >= outcome.started_at > 0
 
 
 async def test_degraded_and_unattributed_spans_report_empty_provider() -> None:
@@ -348,7 +459,43 @@ async def test_degraded_and_unattributed_spans_report_empty_provider() -> None:
         assert span.model == OPENROUTER_MODEL
         assert (span.provider, span.wire_model, span.api_base) == ("", "", "")
 
-    assert result.trace.dispatch.provider == ""
+    # AC3: this fake dispatcher stamps NO route metadata, so the dispatch span
+    # reports "no route resolved" rather than a fabricated attribution — the
+    # load-bearing guard against guessing from the model id.  Its timestamps
+    # are still real: the dispatcher call happened, it just had no resolved
+    # route to report.
+    dispatch = result.trace.dispatch
+    assert (dispatch.provider, dispatch.wire_model, dispatch.api_base) == ("", "", "")
+    assert dispatch.started_at > 0
+    assert dispatch.ended_at >= dispatch.started_at > 0
+
+
+async def test_failed_dispatcher_call_keeps_empty_attribution() -> None:
+    """AC3 (real path): when ``Dispatcher._call_dispatcher`` swallows a
+    ``GatewayError`` and returns its ``{}`` fallback response, no route was
+    resolved — the dispatch span stays ``("", "", "")`` while still carrying
+    the real bracket of the failed call.  Attribution is read from the
+    response metadata, never reconstructed.
+    """
+    def responder(model, messages, response_format=None, **kw):  # type: ignore[no-untyped-def]
+        if response_format is not None:  # the dispatcher call — upstream is down
+            raise GatewayError("dispatcher provider down")
+        if "Upstream outputs" in json.dumps(messages):  # aggregator
+            return resp("MERGED ANSWER", model, 10, 10)
+        return resp("WORKER OUTPUT", model, 10, 10)
+
+    result = await Engine(_config(), FakeGateway(responder)).deliberate(
+        "task", "auto", dag=_dag(ROUTER9_MODEL), allow_custom_dag=True
+    )
+
+    dispatch = result.trace.dispatch
+    assert dispatch.response == "{}"
+    assert (dispatch.provider, dispatch.wire_model, dispatch.api_base) == ("", "", "")
+    assert dispatch.started_at > 0
+    assert dispatch.ended_at >= dispatch.started_at > 0
+    # A fallback dispatch still resolves zero tokens and reports its own model.
+    assert dispatch.tokens_input == 0
+    assert dispatch.tokens_output == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -386,7 +533,14 @@ async def test_api_trace_payload_exposes_the_resolved_route() -> None:
     assert stages["researcher"]["wire_model"] == ROUTER9_WIRE_MODEL
     assert stages["researcher"]["api_base"] == ROUTER9_BASE_URL
     assert stages["finalizer"]["provider"] == "openrouter"
-    assert trace["dispatch"]["provider"] == ""
+    # CH-GAP-056: the dispatch span reaches the API consumer attributed too.
+    assert trace["dispatch"]["provider"] == "openrouter"
+    assert trace["dispatch"]["wire_model"] == OPENROUTER_MODEL
+    assert trace["dispatch"]["api_base"] == ""
+    assert trace["dispatch"]["started_at"] > 0
+    assert (
+        trace["dispatch"]["ended_at"] >= trace["dispatch"]["started_at"] > 0
+    )
 
     # Additive only: every pre-existing key survives, with its old meaning.
     assert stages["researcher"]["model"] == ROUTER9_MODEL
