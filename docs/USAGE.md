@@ -291,23 +291,31 @@ deep-research:
 
 `GET /v1/health` reports `healthy` when every configured provider's live probe
 succeeded, and `degraded` when **at least one provider probe failed** (missing
-credentials, auth error, API error, probe timeout, or an internal error in the
-check). It always answers HTTP 200 — read the `status` field, not the HTTP
-code — and `details.providers` carries per-provider `healthy` / `error` /
-`model_tested`. `GET /v1/health/ready` reuses the same probe and returns 503
-when no provider is reachable. The probe is a real (tiny) completion per
-provider (`max_tokens=1`), so polling costs a small number of tokens and is
-bounded by `server.health_timeout_s` (default 10 s).
+credentials, auth error, API error, or an internal error in the check). A probe
+that never answered inside the budget is a third case: it is reported `slow` and
+does NOT degrade `status` (see below). It always answers HTTP 200 — read the
+`status` field, not the HTTP code — and `details.providers` carries
+per-provider `healthy` / `error` / `model_tested`. `GET /v1/health/ready`
+reuses the same probe and returns 503 when no provider is reachable. The probe
+is a real (tiny) completion per provider (`max_tokens=1`), so polling costs a
+small number of tokens and is bounded by `server.health_timeout_s`
+(default 10 s).
 
 **Why it is degraded, without string-matching (DF-CHIMERA-V2-14).** The
 response carries the reason twice, both additive:
 
 * top-level `unhealthy_providers` — the sorted names of the providers whose
-  probe did not succeed, present in every response and `[]` exactly when
-  `status` is `healthy`;
+  probe failed for a reason that says something about the provider (a
+  connection failure, an HTTP 5xx, an auth rejection, an exhausted quota),
+  present in every response and `[]` exactly when `status` is `healthy`;
+* top-level `slow_providers` — the sorted names of the providers whose probe
+  never answered inside the budget. These do NOT make `status` degraded (see
+  below), so the two arrays partition the not-healthy providers by meaning;
 * `details.providers.<name>.error_class` on every failed provider —
-  `missing_credentials` (no resolvable key, no live call), `timeout`, `auth`,
-  `quota`, or `api` (unclassified; treat an unknown value as opaque).
+  `missing_credentials` (no resolvable key, no live call), `slow` (the probe
+  never answered inside `server.health_timeout_s` — see below), `timeout` (a
+  probe-side timeout: the call itself failed with a timeout), `auth`, `quota`,
+  or `api` (unclassified; treat an unknown value as opaque).
 
 So `curl -s localhost:8765/v1/health | jq -r '.unhealthy_providers[]'` lists
 the offenders and `jq '.details.providers | to_entries[] | "\(.key): \(.value.error_class)"'`
@@ -315,6 +323,44 @@ names the class per provider. `GET /v1/health/ready` carries the same
 `unhealthy_providers` list in its 200 body. A healthy provider has no
 `error_class`; when the probe itself raises, every configured provider is named
 (none was proven healthy) and `details.error` holds the real reason.
+
+**A provider that outlives the probe budget is `slow`, not `degraded`
+(DF-CHIMERA-V2-27).** A probe that never answers inside
+`server.health_timeout_s` reports `error_class: "slow"` with the measured wait
+in its `error` text and in a numeric `latency_s` — and, because nothing was
+measured about that provider beyond "slower than the budget", it does **not**
+make `/v1/health` degraded. The response names it separately in the top-level
+`slow_providers` array (parallel to `unhealthy_providers`, which keeps its
+meaning: providers whose probe failed for a reason that says something about
+the provider — connection refused, HTTP 5xx, auth, quota).
+
+That distinction is the point. Measured live: the `hermes` gateway injects a
+~43.6k-token system prompt, so a 1-token probe takes ~108 s against the 10 s
+budget while the gateway itself answers `/v1/models` in 0.33 s and the same
+model called directly upstream answers in 1.9 s. Classifying that as a bare
+`timeout` made `/v1/health` read `degraded` permanently — so a REAL hermes
+outage was indistinguishable from the standing condition. Now:
+
+```bash
+curl -s localhost:8765/v1/health | jq '{status, unhealthy_providers, slow_providers}'
+# {"status":"healthy","unhealthy_providers":[],"slow_providers":["hermes"]}
+```
+
+A slow provider is still `healthy: false` in `details.providers` (the condition
+is reported, just not as a degradation), and `/v1/health/ready` still answers
+503 when it is the only provider — a probe that never landed proved nothing
+about reachability, so it must not satisfy a load balancer.
+
+Two knobs follow the existing `providers.<name>.{base_url, api_key_env}` shape
+when a provider's standing latency is simply outside any sane budget:
+
+* `providers.<name>.health_probe: false` — skip the live probe for that
+  provider entirely (no upstream call, no tokens). It is reported
+  `probe_skipped`, named in the top-level `probe_skipped_providers`, and does
+  NOT satisfy `/v1/health/ready`. It is not a way to hide a provider: the
+  omission is visible in the response. Keep at least one probed provider.
+* `server.health_timeout_s` — the shared budget. Raise it only if you want
+  every provider's probe to be allowed to take that long.
 
 **A probe is one attempt per model (DF-CHIMERA-V2-16).** The health probe does
 not use the completion retry ladder: it makes exactly one upstream call per
@@ -365,9 +411,18 @@ words:
 * `WARNING: providers reported unhealthy by /v1/health: <name> [<class>] …` — any
   other class (`timeout`, `auth`, `quota`, `api`, `unknown`), each provider named
   with its class, plus the provider's own message when it sends one (e.g. a quota
-  reset time).
+  reset time). A `slow` provider (DF-CHIMERA-V2-27) is NOT in this list — see the
+  INFO line below;
+* `INFO: providers slower than the probe budget (not a failure — the probe never
+  landed; a real call may still work): <name> [slow]: …` — providers the server
+  classified `slow` (never answered inside `server.health_timeout_s`), with the
+  measured wait. Information rather than a warning, because nothing about the
+  provider was measured beyond its latency;
+* `INFO: providers whose live health probe is disabled (health_probe: false): …`
+  — providers explicitly opted out of probing. Nothing was measured, so the line
+  keeps the omission visible.
 
-Neither line changes the exit code: the provider block never fails the run, so a
+None of these lines changes the exit code: the provider block never fails the run, so a
 degraded provider list still exits 0 when the deliberation succeeds.
 
 ### Blocked models (a present-but-invalid provider key)

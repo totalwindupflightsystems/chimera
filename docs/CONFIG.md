@@ -460,10 +460,19 @@ Notes for this shape of provider:
 - **`/v1/health` runs a real completion** against a model of every configured
   provider, bounded by `server.health_timeout_s` (default `10.0` s). A gateway
   that takes longer than that to answer a 1-token probe is reported
-  `degraded`; keep `health_timeout_s` above the gateway's own latency. A probe
-  still outstanding at the deadline gets `server.health_probe_grace_s` extra
-  seconds (default `1.0`) to land before it is reported `timeout`
-  (DF-CHIMERA-V2-17).
+  `error_class: "slow"` with the measured latency and named in the top-level
+  `slow_providers` array — NOT as a degradation, because nothing about that
+  provider was measured beyond its latency (DF-CHIMERA-V2-27: the `hermes`
+  gateway injects a ~43.6k-token system prompt and needs ~108 s for a 1-token
+  probe, which used to make `/v1/health` read `degraded` permanently and hid a
+  real outage). Keep `health_timeout_s` above the gateway's own latency if you
+  want the probe to actually wait for it. A probe still outstanding at the
+  deadline gets `server.health_probe_grace_s` extra seconds (default `1.0`) to
+  land before it is classified `slow` (DF-CHIMERA-V2-17). To stop probing such
+  a provider entirely, set `health_probe: false` on its `providers.<name>`
+  entry: it is then reported `probe_skipped`, named in
+  `probe_skipped_providers`, and does not satisfy `/v1/health/ready` — keep at
+  least one live-probed provider.
 - **A lane behind a routing gateway can be out of quota.** 9router serves each
   upstream prefix from its own account, so one exhausted lane answers
   `429`/`403` for every model behind it while the gateway itself is healthy and

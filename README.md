@@ -352,10 +352,18 @@ you *that* something is wrong, not *what*:
   walking `details.providers` and string-matching `error`.
 - every failed entry under `details.providers.<name>` carries an
   `error_class`: `missing_credentials` (no resolvable key — no live call was
-  made), `timeout` (no response within `server.health_timeout_s`), `auth`
-  (`401`/`403` or auth prose), `quota` (`429`, insufficient balance, "no
-  resource package"), or `api` (anything else). A healthy provider has no
-  `error_class`; treat an unrecognized value as opaque.
+  made), `slow` (the probe never answered inside `server.health_timeout_s` —
+  see below), `timeout` (a probe-side timeout: the call itself failed with a
+  timeout), `auth` (`401`/`403` or auth prose), `quota` (`429`, insufficient
+  balance, "no resource package"), or `api` (anything else). A healthy
+  provider has no `error_class`; treat an unrecognized value as opaque.
+- top-level `slow_providers` names the providers whose probe never answered
+  inside the budget. Such a provider is UNMEASURED, not proven broken, so it
+  does NOT make `status` `degraded` and is NOT in `unhealthy_providers` —
+  `slow_providers: ["hermes"]` with `status: "healthy"` is the honest reading
+  for a gateway that is alive but slower than the probe budget
+  (DF-CHIMERA-V2-27). A provider that fails a different way (connection
+  refused, 5xx, auth, quota) still degrades `status` exactly as before.
 - if the probe itself raises, the response is still `degraded` with every
   configured provider named in `unhealthy_providers` — none of them was
   *proven* healthy — and the underlying reason in `details.error`.
@@ -451,9 +459,18 @@ install and a real degradation used to print the same words:
 * `WARNING: providers reported unhealthy by /v1/health: <name> [<class>] …` —
   every other class (`timeout`, `auth`, `quota`, `api`, `unknown`), naming each
   provider with its class and surfacing the provider's own message (a quota
-  reset time, for example).
+  reset time, for example);
+* `INFO: providers slower than the probe budget (not a failure — the probe
+  never landed; a real call may still work): <name> [slow]: …` — the providers
+  the server classified `slow` (DF-CHIMERA-V2-27), with the measured wait.
+  Information, not a warning: catching a standing slow condition is useful, but
+  it is not a degradation the operator must act on, and the server does not
+  report it as one either;
+* `INFO: providers whose live health probe is disabled (health_probe: false):
+  …` — the providers explicitly opted out of probing. Nothing was measured, so
+  the line exists to keep the omission visible.
 
-Neither line changes the exit code: the provider block never fails the run —
+None of these lines changes the exit code: the provider block never fails the run —
 only the deliberation decides pass/fail.
 
 ## Model Selection

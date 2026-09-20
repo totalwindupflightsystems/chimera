@@ -2,6 +2,36 @@
 
 All notable changes to Chimera will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **A provider that cannot answer inside the probe budget is reported `slow`
+  instead of permanently degrading `/v1/health`** (DF-CHIMERA-V2-27). Measured
+  live: the `hermes` gateway injects a ~43.6k-token system prompt, so a
+  `max_tokens=1` probe took 108.3s against the 10.0s budget while the gateway
+  answered `/v1/models` in 0.33s and the same model called directly upstream
+  answered in 1.9s — a bare `timeout` verdict made `status` read `degraded`
+  forever, which made a REAL hermes outage indistinguishable from the standing
+  condition. A probe that never lands now reports `error_class: "slow"` with
+  the measured wait (`latency_s`, plus the wait in the `error` text) and is
+  named in the new top-level `slow_providers` array; it does NOT degrade
+  `status` and is NOT in `unhealthy_providers`, because nothing about that
+  provider was measured beyond its latency. Every other failure — connection
+  refused, HTTP 5xx, auth, quota — keeps its class and still reads
+  `healthy: false` / `degraded` exactly as before. `slow_providers` and
+  `probe_skipped_providers` are additive fields, so existing consumers are
+  unaffected; the class-aware smoke report prints `slow` and `probe_skipped`
+  providers as INFO rather than as a degradation warning.
+
+### Added
+
+- **`providers.<name>.health_probe: false`** (DF-CHIMERA-V2-27) skips the live
+  connectivity probe for that provider entirely (no upstream call, no tokens);
+  it is reported `probe_skipped`, named in the top-level
+  `probe_skipped_providers`, and does not satisfy `/v1/health/ready` — the
+  omission stays visible rather than reading as healthy.
+
 ## [0.2.6] — 2026-09-17
 
 ### Added

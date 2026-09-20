@@ -384,9 +384,23 @@ def _register_routes(app: FastAPI) -> None:
 
         ``unhealthy_providers`` (DF-CHIMERA-V2-14) is the machine-readable
         companion to ``status``: the sorted names of the providers whose
-        probe did not succeed, so a client does not have to walk
-        ``details.providers`` and string-match ``error``.  It is present in
-        every response — ``[]`` exactly when ``status == "healthy"``.
+        probe failed for a reason that says something about the provider,
+        so a client does not have to walk ``details.providers`` and
+        string-match ``error``.
+
+        ``slow_providers`` (DF-CHIMERA-V2-27) is the second, additive list:
+        the providers that never answered inside ``server.health_timeout_s``.
+        Such a provider is UNMEASURED, not proven broken — a gateway that
+        injects a large system prompt can answer a 1-token probe in ~108 s
+        against a 10 s budget while every real call works. Counting it as a
+        degradation made ``status`` read ``degraded`` permanently, so a REAL
+        outage of that provider was indistinguishable from the standing
+        condition. Slow providers therefore do NOT degrade ``status`` and are
+        NOT in ``unhealthy_providers``; they are named here with their
+        measured ``latency_s`` in ``details.providers``. Any other failure
+        (connection refused, HTTP 5xx, auth, quota) still reads exactly as
+        before: ``healthy: false``, named in ``unhealthy_providers``, and
+        ``status: "degraded"``.
         """
         cfg: ChimeraConfig = request.app.state.config
         # CH-GAP-053: count only the providers the config declared — the
@@ -409,18 +423,23 @@ def _register_routes(app: FastAPI) -> None:
             provider_status = await _check_providers(cfg, gw)
             details["providers"] = provider_status
 
-            unhealthy = _unhealthy_provider_names(provider_status)
+            slow = _slow_provider_names(provider_status)
+            # DF-CHIMERA-V2-27: the degradation list excludes the ``slow``
+            # class, and ``status`` is derived from that same list — so the
+            # two fields cannot drift and a slow-only payload reads
+            # ``healthy`` / ``[]`` with the slow names in their own array.
+            unhealthy = _degraded_provider_names(provider_status)
             # "healthy" is equivalent to "no provider failed"; the previous
             # two identical `degraded` branches are collapsed into this one
             # without changing the status value or the body shape.
-            status = (
-                "healthy"
-                if all(p["healthy"] for p in provider_status.values())
-                else "degraded"
-            )
+            status_value = "healthy" if not unhealthy else "degraded"
             return {
-                "status": status,
+                "status": status_value,
                 "unhealthy_providers": unhealthy,
+                "slow_providers": slow,
+                "probe_skipped_providers": _probe_skipped_provider_names(
+                    provider_status,
+                ),
                 "details": details,
             }
         except Exception as exc:
@@ -429,10 +448,14 @@ def _register_routes(app: FastAPI) -> None:
             # result exists here, so every configured provider is named:
             # none of them was PROVEN healthy, and the field must not read
             # as "degraded with nothing wrong" (`details.error` carries the
-            # real reason).
+            # real reason).  No slow classification is possible either —
+            # nothing was measured — so `slow_providers` is empty and the
+            # pre-existing fields keep their exact values.
             return {
                 "status": "degraded",
                 "unhealthy_providers": sorted(cfg.providers),
+                "slow_providers": [],
+                "probe_skipped_providers": [],
                 "details": {**details, "error": str(exc)[:200]},
             }
 
@@ -443,6 +466,15 @@ def _register_routes(app: FastAPI) -> None:
         Returns 200 if at least one provider is reachable, 503 otherwise.
         The 200 body carries `unhealthy_providers` alongside `providers`
         (DF-CHIMERA-V2-14) with the same meaning as on `/v1/health`.
+
+        ``slow_providers`` (DF-CHIMERA-V2-27) is exposed here too, but
+        deliberately does NOT make readiness succeed: this verdict is what a
+        load balancer uses to decide whether to send traffic, and a probe
+        that never answered inside the budget proved nothing about
+        reachability. A slow-only deployment therefore still answers 503 —
+        but the body now names the cause (``slow_providers`` with their
+        latency) instead of leaving it implicit in the per-provider detail,
+        so it is distinguishable from every real failure.
         """
         cfg: ChimeraConfig = request.app.state.config
         try:
@@ -452,13 +484,37 @@ def _register_routes(app: FastAPI) -> None:
             if ready:
                 return {
                     "status": "ready",
-                    "unhealthy_providers": _unhealthy_provider_names(provider_status),
+                    "unhealthy_providers": _degraded_provider_names(provider_status),
+                    "slow_providers": _slow_provider_names(provider_status),
+                    "probe_skipped_providers": _probe_skipped_provider_names(
+                        provider_status,
+                    ),
                     "providers": provider_status,
                 }
-            raise HTTPException(
-                status_code=503,
-                detail="Not ready — no providers reachable",
-            )
+            # DF-CHIMERA-V2-27: name WHICH condition made this unready. A
+            # probe that never landed is a different finding from one that
+            # connected and failed — "no providers reachable" was wrong for
+            # the slow case (the gateway answered /v1/models fine; only the
+            # probe budget was too small), and an operator chasing the wrong
+            # condition is exactly the confusion this ticket exists to remove.
+            slow = _slow_provider_names(provider_status)
+            skipped = _probe_skipped_provider_names(provider_status)
+            reasons = []
+            if slow:
+                reasons.append(
+                    "no probe answered inside server.health_timeout_s "
+                    f"(slow: {', '.join(slow)})"
+                )
+            if skipped:
+                reasons.append(
+                    f"live health probe disabled (health_probe: false: "
+                    f"{', '.join(skipped)})"
+                )
+            if len(reasons) == len(provider_status):
+                detail = "Not ready — " + "; ".join(reasons)
+            else:
+                detail = "Not ready — no providers reachable"
+            raise HTTPException(status_code=503, detail=detail)
         except HTTPException:
             raise
         except Exception as exc:
@@ -795,6 +851,14 @@ _PROVIDER_ENV_KEYS: dict[str, tuple[str, ...]] = {
 #: privacy guardrail / quota while the provider itself works).
 _MAX_PROBE_MODELS = 3
 
+#: The error class for a provider that never answered inside the probe budget
+#: (DF-CHIMERA-V2-27).  Distinct from ``timeout`` — which this module reserves
+#: for a *probe-side* timeout, i.e. a failure whose own exception says the call
+#: timed out — and distinct from every answered failure (``auth`` / ``quota`` /
+#: ``api``): nothing was measured about this provider's behaviour except that
+#: it is slower than the budget.
+_SLOW_ERROR_CLASS = "slow"
+
 
 def _provider_has_credentials(config: ChimeraConfig, provider_name: str) -> bool:
     """True when the gateway can resolve an API key for *provider_name*.
@@ -863,12 +927,117 @@ def _unhealthy_provider_names(
     ``healthy``, so a client can branch on the list instead of walking
     ``details.providers`` and string-matching ``error``.  A provider entry
     with no ``healthy`` key counts as unhealthy (nothing was proven).
+
+    "Did not succeed" is the widest reading of a failed probe — it INCLUDES
+    the ``slow`` class (DF-CHIMERA-V2-27), which is a provider that never
+    answered inside the budget rather than one that answered with a failure.
+    The endpoint's top-level ``unhealthy_providers`` field deliberately uses
+    :func:`_degraded_provider_names` instead, so the field keeps meaning
+    "proven bad"; this primitive stays the honest "not proven healthy".
+
+    Callers that want the top-level ``/v1/health`` field semantics must use
+    :func:`_degraded_provider_names`; the two differ exactly on ``slow``.
     """
     return sorted(
         name
         for name, info in provider_status.items()
         if not info.get("healthy", False)
     )
+
+
+def _unhealthy_entries(
+    provider_status: dict[str, dict[str, Any]],
+) -> list[tuple[str, dict[str, Any]]]:
+    """``(name, entry)`` pairs for every provider not proven healthy.
+
+    Sorted by name, the entry-shaped companion to
+    :func:`_unhealthy_provider_names`.  ``info`` is normalized so a
+    malformed (non-dict) entry reads as ``{}`` — i.e. unhealthy with no
+    class — rather than raising inside a health check.
+    """
+    return sorted(
+        (name, info if isinstance(info, dict) else {})
+        for name, info in provider_status.items()
+        if not (isinstance(info, dict) and info.get("healthy", False))
+    )
+
+
+def _slow_provider_names(
+    provider_status: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Sorted names of the providers classified ``slow`` (DF-CHIMERA-V2-27).
+
+    A ``slow`` provider was reachable in the transport sense and never
+    answered inside the shared probe budget: it is UNMEASURED, not proven
+    broken.  The measured wait lives in each entry's ``latency_s``.
+    """
+    return sorted(
+        name
+        for name, info in provider_status.items()
+        if info.get("error_class") == _SLOW_ERROR_CLASS
+    )
+
+
+def _provider_probe_enabled(config: ChimeraConfig, provider_name: str) -> bool:
+    """True when ``/v1/health`` may probe *provider_name* live.
+
+    The per-provider escape hatch (DF-CHIMERA-V2-27):
+    ``providers.<name>.health_probe: false`` skips the connectivity probe.
+    An unknown provider name reads as enabled — the map lookup is the only
+    source of truth and a missing entry must not silently disable probing.
+    """
+    entry = config.providers.get(provider_name)
+    return entry is None or entry.health_probe
+
+
+#: ``error_class`` meaning "this provider is not probed at all" — the operator
+#: opted out with ``health_probe: false`` (DF-CHIMERA-V2-27).
+_PROBE_SKIPPED_ERROR_CLASS = "probe_skipped"
+
+
+def _probe_skipped_provider_names(
+    provider_status: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Sorted names of the providers whose live probe is disabled."""
+    return sorted(
+        name
+        for name, info in provider_status.items()
+        if info.get("error_class") == _PROBE_SKIPPED_ERROR_CLASS
+    )
+
+
+def _degraded_provider_names(
+    provider_status: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Not-proven-healthy providers MINUS the unmeasured ones.
+
+    The value of the top-level ``unhealthy_providers`` field on
+    ``/v1/health`` and ``/v1/health/ready`` (DF-CHIMERA-V2-27): every
+    provider whose probe failed for a reason that says something about the
+    provider — a connection failure, an HTTP 5xx, an auth rejection, an
+    exhausted quota — with the two UNMEASURED classes filtered out:
+
+    * ``slow`` — the probe never answered inside the budget;
+    * ``probe_skipped`` — the operator disabled the live probe.
+
+    This is what keeps the signals distinct instead of collapsing them:
+    ``status`` stays ``healthy`` and ``unhealthy_providers`` stays ``[]``
+    when the only non-healthy providers are unmeasured (they are named in
+    ``slow_providers`` / ``probe_skipped_providers``, with the measured
+    ``latency_s`` for the slow ones), while a provider that fails a
+    different way still reads exactly as before. A class this module does
+    not classify — including a legacy ``timeout`` emitted by an older
+    producer, whose task was cancelled at the deadline — counts as a
+    degradation: an unexplained class is never silently promoted to healthy.
+    """
+    unmeasured = {
+        _SLOW_ERROR_CLASS, _PROBE_SKIPPED_ERROR_CLASS,
+    }
+    return [
+        name
+        for name, info in _unhealthy_entries(provider_status)
+        if info.get("error_class") not in unmeasured
+    ]
 
 
 def _split_configured_and_discovered_providers(
@@ -904,10 +1073,16 @@ async def _check_providers(
     Returns a dict mapping provider name → {healthy: bool, error?: str, ...}.
 
     Every FAILED provider also carries ``error_class`` (DF-CHIMERA-V2-14): a
-    machine-readable reason, one of ``missing_credentials`` | ``timeout`` |
-    ``auth`` | ``quota`` | ``api``.  It is ADDITIVE — the ``error`` text,
-    ``healthy``, ``model_tested`` and ``note`` fields are unchanged, and a
-    healthy provider keeps its exact previous shape (no ``error_class``).
+    machine-readable reason, one of ``missing_credentials`` | ``slow`` |
+    ``timeout`` | ``auth`` | ``quota`` | ``api`` | ``probe_skipped``.  It is
+    ADDITIVE — the ``error`` text, ``healthy``, ``model_tested`` and ``note``
+    fields are unchanged, and a healthy provider keeps its exact previous
+    shape (no ``error_class``).  A provider that never answered inside the
+    budget is ``slow`` (DF-CHIMERA-V2-27) and additionally carries the
+    measured ``latency_s``; a provider whose live probe is disabled by
+    ``providers.<name>.health_probe: false`` is ``probe_skipped`` and is not
+    called at all.  Neither of those two UNMEASURED classes degrades
+    ``/v1/health`` — see :func:`_degraded_provider_names`.
 
     Provider checks run concurrently under ``config.server.health_timeout_s``
     (default 10.0 s).  Providers without resolvable credentials are reported
@@ -942,6 +1117,16 @@ async def _check_providers(
     stream, so a healthy provider no longer looks like it is out of quota.
     """
     async def check_one(provider_name: str) -> tuple[str, dict[str, Any]]:
+        # DF-CHIMERA-V2-27: an opt-out provider is not probed at all. The
+        # entry is honest about WHY (``probe_skipped``) instead of being
+        # either a permanent ``slow`` line or a silent healthy — and it is
+        # never merely healthy, so it cannot satisfy /v1/health/ready.
+        if not _provider_probe_enabled(config, provider_name):
+            return provider_name, {
+                "healthy": False,
+                "note": "probe_skipped: live health probe disabled for provider",
+                "error_class": "probe_skipped",
+            }
         model_names = [
             name for name, entry in config.models.items()
             if entry.provider == provider_name
@@ -998,6 +1183,12 @@ async def _check_providers(
     if not config.providers:
         return {"_none": {"healthy": True, "note": "no providers configured"}}
 
+    # DF-CHIMERA-V2-27: the probe clock.  Every task starts together, so the
+    # elapsed wall time at the deadline IS the measured wait for a probe that
+    # never landed — the number the ``slow`` verdict reports instead of an
+    # unquantified "timeout".
+    started = time.perf_counter()
+
     tasks = {
         asyncio.create_task(check_one(provider_name)): provider_name
         for provider_name in config.providers
@@ -1006,8 +1197,20 @@ async def _check_providers(
         tasks, timeout=config.server.health_timeout_s,
     )
 
-    timeout_error = (
-        f"timeout: no response within {config.server.health_timeout_s:.1f}s"
+    # DF-CHIMERA-V2-27: a probe that never answers inside the budget is
+    # ``slow``, NOT a bare ``timeout``.  Measured live: the ``hermes`` gateway
+    # injects a ~43.6k-token system prompt, so a 1-token probe takes ~108s
+    # against a 10.0s budget while the same model called directly answers in
+    # ~1.9s.  Reporting the standing condition as ``timeout`` made /v1/health
+    # read ``degraded`` forever, so a REAL hermes outage was indistinguishable
+    # from it.  ``slow`` says what was actually measured (the provider is
+    # slower than the budget) and carries ``latency_s``; the transport-level
+    # failures (connection refused, 5xx, auth) keep their own classes and
+    # still degrade the status.
+    waited_s = round(time.perf_counter() - started, 3)
+    slow_error = (
+        f"slow: no response within {config.server.health_timeout_s:.1f}s "
+        f"(probe waited {waited_s:.2f}s)"
     )
 
     # DF-CHIMERA-V2-17: a probe still outstanding at the deadline gets a
@@ -1023,14 +1226,24 @@ async def _check_providers(
         )
         done |= late_done
 
+    # The probes cancelled below are cancelled AFTER the grace window closed,
+    # so their measured wait includes it (the DF-CHIMERA-V2-27 latency is the
+    # whole time the endpoint actually spent waiting on them).
+    final_wait_s = round(time.perf_counter() - started, 3)
+    slow_error_final = (
+        f"slow: no response within {config.server.health_timeout_s:.1f}s "
+        f"(probe waited {final_wait_s:.2f}s)"
+    )
+
     status: dict[str, dict[str, Any]] = {}
     for task in done:
         provider_name = tasks[task]
         if task.cancelled():
             status[provider_name] = {
                 "healthy": False,
-                "error": timeout_error,
-                "error_class": "timeout",
+                "error": slow_error,
+                "error_class": _SLOW_ERROR_CLASS,
+                "latency_s": waited_s,
             }
             continue
         try:
@@ -1046,8 +1259,9 @@ async def _check_providers(
         task.cancel()
         status[tasks[task]] = {
             "healthy": False,
-            "error": timeout_error,
-            "error_class": "timeout",
+            "error": slow_error_final,
+            "error_class": _SLOW_ERROR_CLASS,
+            "latency_s": final_wait_s,
         }
 
     if pending:
