@@ -8,10 +8,12 @@ concurrently via :func:`asyncio.gather`. Every call is traced into a
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import re
 import time
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 import jsonschema
@@ -574,7 +576,7 @@ class Engine:
     warnings so operators know when a change they made won't take effect.
     """
 
-    # Fast checksum of struct fields to detect external mutations.
+    #: Fast checksum of struct fields to detect external mutations.
     _CONFIG_CHECK_FIELDS = (
         "defaults.dispatcher",
         "defaults.default_worker",
@@ -594,6 +596,10 @@ class Engine:
         self.gateway = gateway
         self.dispatcher = Dispatcher(self._config, gateway)
         self.aggregator = Aggregator(self._config, gateway)
+        # Awaitable tasks spawned by the stage observer; drained at the end of
+        # each deliberate() so a fire-and-forget observer can never outlive the
+        # request or leak an un-retrieved exception into the task machinery.
+        self._observer_tasks: list[asyncio.Task[None]] = []
 
     @property
     def config(self) -> ChimeraConfig:
@@ -628,6 +634,45 @@ class Engine:
                 ),
             )
 
+    # ------------------------------------------------------------------ #
+    # Stage observer plumbing (DF-CHIMERA-V2-18)
+    # ------------------------------------------------------------------ #
+
+    def _notify_stage(
+        self,
+        observer: Callable[[dict[str, Any]], Any] | None,
+        payload: dict[str, Any],
+    ) -> None:
+        """Deliver a stage event to *observer* without ever breaking the run.
+
+        The observer is a best-effort debug/observability hook: any exception
+        it raises is logged and swallowed, and the deliberation continues.
+        A sync callable runs inline; an awaitable return is scheduled on the
+        running loop as a task (so a slow observer never blocks a stage) and
+        recorded for the ``deliberate`` epilogue to drain.
+        """
+        if observer is None:
+            return
+        try:
+            outcome = observer(payload)
+        except Exception:  # noqa: BLE001 — the hook must never break the run
+            log.warning("stage_observer_error", stage=payload.get("stage"), phase=payload.get("phase"))
+            return
+        if inspect.isawaitable(outcome):
+            task = asyncio.ensure_future(outcome)
+            self._observer_tasks.append(task)
+
+    async def _drain_observer_tasks(self) -> None:
+        """Await and clear observer tasks spawned during this deliberation."""
+        tasks, self._observer_tasks = self._observer_tasks, []
+        for task in tasks:
+            try:
+                await task
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 — observer failures never break the run
+                log.warning("stage_observer_task_error")
+
     async def deliberate(
         self,
         user_prompt: str,
@@ -637,6 +682,7 @@ class Engine:
         output_schema: dict[str, Any] | None = None,
         dag: dict[str, Any] | None = None,
         allow_custom_dag: bool = False,
+        stage_observer: Callable[[dict[str, Any]], Any] | None = None,
     ) -> DeliberationResult:
         """Run the full deliberation pipeline and return the merged answer + trace.
 
@@ -653,6 +699,16 @@ class Engine:
                 ``ValueError`` is raised. When enabled, the dispatcher skips the
                 DESIGN pass and only fills in per-stage prompts/instructions.
             allow_custom_dag: Must be True for ``dag`` to be accepted.
+            stage_observer: Optional per-call callback invoked as
+                ``observer(payload_dict)`` when a worker/aggregator/merge/audit
+                stage starts and finishes, so callers (e.g. the web SSE layer)
+                can stream live progress. Payloads carry ``phase``
+                (``started``/``completed``), ``stage``, ``kind``, and — on
+                completion — ``model``, ``tokens_input``/``tokens_output``,
+                ``latency_ms``, ``cost``, ``degraded``, and ``iteration``.
+                May be sync or async; any exception it raises is logged and
+                swallowed. Defaults to None (zero behaviour change for the
+                REST/CLI/MCP callers).
         """
         request_id = uuid.uuid4().hex[:16]
         structlog.contextvars.bind_contextvars(request_id=request_id, formation=formation)
@@ -749,12 +805,16 @@ class Engine:
             timeout_total_s=overrides.timeout_total_s if overrides else None,
             timeout_per_stage_s=overrides.timeout_per_stage_s if overrides else None,
             max_tokens=overrides.max_tokens if overrides else None,
+            stage_observer=stage_observer,
         )
 
         # Extract iteration count from the results sentinel (stored by _run_dag).
         iteration_count: int = stage_results.pop("_iteration_count", 1)  # type: ignore[misc]
 
         answer, answer_stage_id = self._select_answer(outcome.result.formation, stage_results)
+        # Drain any tasks spawned by an async stage observer before returning,
+        # so none of them outlive the request or leak an unretrieved exception.
+        await self._drain_observer_tasks()
         # Strip a wrapping markdown code fence BEFORE envelope unwrap so a
         # fenced {"answer": ...} envelope still unwraps correctly.
         answer = self._strip_final_answer_fences(answer)
@@ -817,6 +877,7 @@ class Engine:
         timeout_total_s: float | None = None,
         timeout_per_stage_s: float | None = None,
         max_tokens: int | None = None,
+        stage_observer: Callable[[dict[str, Any]], Any] | None = None,
     ) -> tuple[dict[str, StageSpan], dict[str, StageResult]]:
         dag = dispatch.formation
         topo = dag.topo_order()
@@ -856,6 +917,7 @@ class Engine:
                         timeout_per_stage_s=timeout_per_stage_s,
                         max_tokens=max_tokens,
                         iteration_feedback=feedback_map.get(s.id),
+                        stage_observer=stage_observer,
                     )
                 )
                 for s in ready
@@ -865,6 +927,22 @@ class Engine:
                 span.iteration = iteration_counts.get(stage.id, 0) + 1
                 results[stage.id] = result
                 spans[stage.id] = span
+
+                self._notify_stage(
+                    stage_observer,
+                    {
+                        "phase": "completed",
+                        "stage": stage.id,
+                        "kind": stage.kind,
+                        "model": span.model,
+                        "tokens_input": span.tokens_input,
+                        "tokens_output": span.tokens_output,
+                        "latency_ms": span.latency_ms,
+                        "cost": span.cost,
+                        "degraded": result.degraded,
+                        "iteration": span.iteration,
+                    },
+                )
 
                 # ── Schema extraction from STRUCTURE stages ──────────
                 if not output_schema and stage.kind == "worker":
@@ -966,6 +1044,7 @@ class Engine:
         timeout_per_stage_s: float | None = None,
         max_tokens: int | None = None,
         iteration_feedback: str | None = None,
+        stage_observer: Callable[[dict[str, Any]], Any] | None = None,
     ) -> tuple[StageResult, StageSpan]:
         dep_results = [results[d] for d in stage.depends_on if d in results]
 
@@ -982,6 +1061,14 @@ class Engine:
         if per_stage <= 0:
             per_stage = None  # unlimited
 
+        # DF-CHIMERA-V2-18: the web layer's live DAG needs stage progress DURING
+        # the run, so this fires before the model call is awaited. Best-effort:
+        # _notify_stage swallows observer failures, and no observer is attached
+        # on the REST/CLI/MCP paths (the default), so this is a no-op there.
+        self._notify_stage(
+            stage_observer,
+            {"phase": "started", "stage": stage.id, "kind": stage.kind, "model": stage.model},
+        )
         start = time.monotonic()
         messages: list[dict[str, str]] = []
         try:

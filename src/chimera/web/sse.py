@@ -3,13 +3,23 @@
 The web UI opens an SSE connection to ``/web/sse/{session_id}`` and receives
 real-time events as the deliberation progresses:
 
-* ``dag_designed`` — dispatcher finished, DAG is ready (includes mermaid string)
+* ``deliberation_started`` — session_chat accepted the prompt
 * ``stage_started`` — a worker/aggregator stage began executing
 * ``stage_completed`` — a stage finished (model, tokens, latency, cost)
+* ``dag_designed`` — dispatcher finished, DAG is ready (includes mermaid string)
 * ``deliberation_done`` — final answer + full trace summary
+
+The two stage events are emitted mid-run (DF-CHIMERA-V2-18): session_chat
+attaches a ``stage_observer`` to ``engine.deliberate`` and fans each stage
+payload out through the broadcaster while the deliberation is still executing.
 
 Each event carries a ``stage_id``, ``kind``, and relevant data so the
 frontend can update the DAG visualization and token dashboard in real time.
+Note: as of DF-CHIMERA-V2-18 the shipped SPA (static/index.html) implements
+listeners for ``deliberation_started`` / ``dag_designed`` /
+``deliberation_done`` only; ``stage_started`` / ``stage_completed`` are
+emitted and documented here so any client (including a future SPA update)
+can consume them without another protocol change.
 """
 
 from __future__ import annotations

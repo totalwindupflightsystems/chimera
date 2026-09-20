@@ -134,11 +134,55 @@ async def session_chat(session_id: str, body: ChatRequest, request: Request) -> 
         SSEEvent(event="deliberation_started", data={"prompt": body.prompt}),
     )
 
+    # ── SSE: live stage progress (DF-CHIMERA-V2-18) ──
+    # The engine invokes this observer while deliberate() is still executing,
+    # so the DAG panel can show per-stage progress DURING the run instead of
+    # only before/after it. The observer is sync and the engine calls it from
+    # coroutines already running on this loop, so the put_nowait inside
+    # broadcast() is loop-safe and the event reaches the SSE stream mid-run.
+    # The closure is per-request (bound to this session_id), so concurrent
+    # chats on the shared Engine cannot cross-deliver their stage events.
+    def stage_observer(payload: dict[str, Any]) -> None:
+        phase = payload.get("phase")
+        if phase == "started":
+            _sse_broadcaster.broadcast(
+                session_id,
+                SSEEvent(
+                    event="stage_started",
+                    data={
+                        "stage": payload.get("stage", ""),
+                        "kind": payload.get("kind", ""),
+                        "model": payload.get("model", ""),
+                    },
+                ),
+            )
+        elif phase == "completed":
+            _sse_broadcaster.broadcast(
+                session_id,
+                SSEEvent(
+                    event="stage_completed",
+                    data={
+                        "stage": payload.get("stage", ""),
+                        "kind": payload.get("kind", ""),
+                        "model": payload.get("model", ""),
+                        "tokens": (
+                            (payload.get("tokens_input") or 0)
+                            + (payload.get("tokens_output") or 0)
+                        ),
+                        "latency_ms": payload.get("latency_ms", 0),
+                        "cost": payload.get("cost", 0.0),
+                        "degraded": payload.get("degraded", False),
+                        "iteration": payload.get("iteration", 1),
+                    },
+                ),
+            )
+
     # Run the deliberation
     result = await engine.deliberate(
         augmented,
         formation=body.formation,
         overrides=overrides,
+        stage_observer=stage_observer,
     )
     trace = result.trace.model_dump(mode="json")
     answer = result.answer
