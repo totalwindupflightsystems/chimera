@@ -332,6 +332,20 @@ apply the same score to every path under their target subtree.
 | `standard` | $0.0005 | $0.0015 |
 | `premium` | $0.003 | $0.015 |
 
+**`GET /v1/models` serves the EFFECTIVE rate — the same number the engine
+bills.** For each model the `cost_per_1k_input` / `cost_per_1k_output` fields of
+both the `data[]` entries and the `catalog` map carry the resolved rate an
+explicit `cost_per_1k_*` declaration wins over, otherwise the `cost_tier`
+default from the table above (an unrecognised or absent tier resolves to
+`standard`, the same fallback the biller uses). These are the values returned by
+`ModelEntry.cost_rate_input()` / `ModelEntry.cost_rate_output()`, which is the
+code path `engine._stage_cost` charges through, so the served catalog and the
+billed cost cannot drift. A model the engine genuinely cannot price has no
+catalog entry to serve, so the fields are never `null` for an entry the engine
+bills. The field names, JSON types and the rest of the envelope are unchanged —
+a client that read the raw declared rates sees the effective rate instead of
+`null` for tier-priced ids.
+
 **Model ID format:** `<provider-type>/<model-name>` where `provider-type` matches a
 config provider or is `openrouter` for OpenRouter-routed models:
 

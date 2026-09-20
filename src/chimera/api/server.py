@@ -337,17 +337,34 @@ def _catalog_entry_payload(entry: Any) -> dict[str, Any]:
 
     Single source of truth for BOTH the OpenAI ``data[]`` entries and the
     chimera ``catalog`` map, so the two field sets cannot drift apart.
-    The field set and every value's meaning are unchanged from the
-    pre-envelope route: ``cost_per_1k_*`` stays ``None``/``null`` when the
-    catalog entry declares no explicit rate.
+
+    ``cost_per_1k_input`` / ``cost_per_1k_output`` are the EFFECTIVE rates the
+    engine bills, not the raw catalog fields (CH-GAP-055). A catalog entry
+    that declares no explicit rate used to be served as ``null`` while the
+    biller charged the entry's cost-tier default — the served catalog said
+    "unpriceable/free" for exactly the ids that spend real money. The values
+    now come from ``ModelEntry.cost_rate_input()`` / ``cost_rate_output()``,
+    the SAME methods ``engine._stage_cost`` bills through, so the served
+    price and the billed price cannot drift again.
+
+    Explicit per-model rates still win — the methods read them first and only
+    fall back to ``DEFAULT_COST_RATES[cost_tier]`` when the field is ``None``.
+    An unrecognised tier resolves the same way the biller resolves it
+    (``DEFAULT_COST_RATES["standard"]``), so a catalog entry the engine
+    prices is never served as ``null``. A model the engine genuinely cannot
+    price (no reservation at all — see ``engine._stage_cost``'s ``KeyError``
+    path, which bills ``0.0``) has no catalog entry to serve.
+
+    Field names, JSON types and the envelope are unchanged; only the null
+    placeholder becomes the billed number.
     """
     return {
         "categories": entry.categories,
         "cost_tier": entry.cost_tier,
         "provider": entry.provider,
         "enabled": entry.enabled,
-        "cost_per_1k_input": entry.cost_per_1k_input,
-        "cost_per_1k_output": entry.cost_per_1k_output,
+        "cost_per_1k_input": entry.cost_rate_input(),
+        "cost_per_1k_output": entry.cost_rate_output(),
     }
 
 
