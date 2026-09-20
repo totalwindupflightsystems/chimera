@@ -155,15 +155,17 @@ def test_sse_event_format_includes_all_protocol_fields() -> None:
         retry=5000,
     )
 
+    # DF-CHIMERA-V2-29 rework: the frame ends with the blank line the SSE spec
+    # dispatches on (a single trailing newline left every frame unterminated).
     assert event.format() == (
-        'id: event-7\nevent: stage_completed\ndata: {"stage": "worker_1", "tokens": 17}\nretry: 5000\n'
+        'id: event-7\nevent: stage_completed\ndata: {"stage": "worker_1", "tokens": 17}\nretry: 5000\n\n'
     )
 
 
 def test_sse_event_format_omits_optional_fields() -> None:
     formatted = SSEEvent(event="", data={"ok": True}).format()
 
-    assert formatted == 'data: {"ok": true}\n'
+    assert formatted == 'data: {"ok": true}\n\n'
     assert "id:" not in formatted
     assert "event:" not in formatted
     assert "retry:" not in formatted
@@ -238,7 +240,10 @@ async def test_event_stream_signals_ready_formats_events_and_stops_on_sentinel()
     output = [item async for item in broadcaster.event_stream("session", sub)]
 
     assert ready.is_set() is True
-    assert output == ['event: message\ndata: {"text": "hello"}\n']
+    # Framing is spec-correct now: the frame ends with the blank line the SSE
+    # spec dispatches on (the rework of DF-CHIMERA-V2-29 — the old expected
+    # string here encoded the unterminated-frame bug).
+    assert output == ['event: message\ndata: {"text": "hello"}\n\n']
     assert "session" not in broadcaster._subscribers
     assert sub.queue.get_nowait() is None
 
@@ -257,7 +262,8 @@ async def test_event_stream_skips_malformed_events() -> None:
 
     output = [item async for item in broadcaster.event_stream("session", sub)]
 
-    assert output == ['event: valid\ndata: {"ok": true}\n']
+    # Same framing update as the sibling test above: terminated frame.
+    assert output == ['event: valid\ndata: {"ok": true}\n\n']
 
 
 @pytest.mark.asyncio

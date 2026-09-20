@@ -52,7 +52,7 @@ from chimera.api.server import create_app  # noqa: E402
 from chimera.engine import Engine  # noqa: E402
 from chimera.gateway import GatewayResponse  # noqa: E402
 from chimera.web.session import SessionManager, Turn  # noqa: E402
-from chimera.web.sse import SSEBroadcaster, SSEEvent  # noqa: E402
+from chimera.web.sse import TERMINAL_RETRY_MS, SSEBroadcaster, SSEEvent  # noqa: E402
 from tests.conftest import FakeGateway, dispatch_json  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -721,6 +721,259 @@ def test_live_stream_carries_a_real_turn_mid_post(config) -> None:  # type: igno
             f"no stage event arrived mid-POST (first at {min(stage_ts) - chat_started:.2f}s "
             f"of a {chat_done - chat_started:.2f}s run)"
         )
+
+        # DF-CHIMERA-V2-29 rework: a browser DISPATCHES events, it does not grep
+        # lines. The same bytes this reader saw must yield the same event
+        # sequence through a spec parser — pre-rework this assertion failed with
+        # zero dispatched frames while `names` above showed every event.
+        dispatched = _dispatch_sse(body)
+        assert [e["event"] for e in dispatched] == names, (
+            f"line-grep saw {names} but a spec parser dispatches "
+            f"{[e['event'] for e in dispatched]} — the wire framing is broken"
+        )
     finally:
         server.should_exit = True
         thread.join(timeout=10.0)
+
+
+# ═══════════════════════════════════════════════════════════
+#  5. DF-CHIMERA-V2-29 rework — the WIRE FORMAT, judged by a real parser
+#
+#  The first pass fixed the stream lifecycle; the browser check that exposed the
+#  residual defect drove an instrumented EventSource: readyState went 0 → 1 (the
+#  stream held) and the POST returned 200 — yet the EventSource received ZERO
+#  events. A raw fetch().body.getReader() loop on the SAME url at the SAME moment
+#  received every frame. Root cause (proven on the wire, 2415 captured bytes,
+#  b"\n\n" occurrences: 0): ``SSEEvent.format()`` built its "blank line
+#  terminator" with ``lines.append(""); return "\n".join(lines)``, which yields
+#  ONE trailing newline — an unterminated frame. Per the SSE spec an event is
+#  dispatched only when a blank line ends it, so a spec-compliant EventSource
+#  buffers forever. Every prior test grepped ``event:``/``data:`` lines, so the
+#  bug shipped through the suite: line-greps dispatch nothing.
+# ═══════════════════════════════════════════════════════════
+
+
+def _dispatch_sse(raw: str) -> list[dict]:
+    """The WHATWG dispatch rule, literally: buffer fields, dispatch on a blank line.
+
+    (https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation)
+    Field lines feed the dispatch buffer; the buffer is fired and EMPTIED only
+    on an empty line; a buffer still pending when the stream ends dispatches
+    nothing. Deliberately independent of ``_parse_sse_events`` (the integration
+    helper splits on ``event:`` occurrences and would accept broken framing).
+    """
+    events: list[dict] = []
+    buffer: dict[str, list[str]] = {}
+
+    def _dispatch() -> None:
+        if not buffer:
+            return
+        data = "\n".join(buffer.get("data", []))
+        if data == "" and "data" not in buffer:
+            buffer.clear()  # spec: no data field → fire no event
+            return
+        events.append(
+            {
+                "event": "\n".join(buffer.get("event", [])),
+                "data": data,
+                "id": buffer.get("id"),
+            }
+        )
+        buffer.clear()
+
+    for line in raw.split("\n"):
+        if line.endswith("\r"):
+            line = line[:-1]
+        if line == "":
+            _dispatch()  # the blank line dispatches the buffered event
+        elif line.startswith("data:"):
+            buffer.setdefault("data", []).append(line[5:].lstrip(" "))
+        elif line.startswith("event:"):
+            buffer.setdefault("event", []).append(line[6:].lstrip(" "))
+        elif line.startswith("id:"):
+            buffer.setdefault("id", []).append(line[3:].lstrip(" "))
+        # retry:, comments, and unknown fields: ignored by dispatch
+    return events
+
+
+async def test_every_frame_carries_the_blank_line_the_spec_dispatches_on() -> None:
+    """The unit half: EVERY SSEEvent.format() output is a terminated frame.
+
+    Pre-rework: repr == ``'event: stage_started\\ndata: {"stage": "worker_1"}\\n'``
+    — one trailing newline, ``endswith("\\n\\n")`` False. The whole 9-frame live
+    wire contained ZERO ``b"\\n\\n"``: all frames glued into one unterminated
+    buffer that a real EventSource never dispatches.
+    """
+    plain = SSEEvent(event="stage_started", data={"stage": "worker_1"}).format()
+    assert plain.endswith("\n\n")
+    assert plain == 'event: stage_started\ndata: {"stage": "worker_1"}\n\n'
+
+    # Every field permutation terminates: id/event/data/retry in any combination.
+    full = SSEEvent(
+        id="event-7",
+        event="stage_completed",
+        data={"stage": "worker_1", "tokens": 17},
+        retry=5000,
+    ).format()
+    assert full.endswith("\n\n")
+
+    empty = SSEEvent(event="", data={"ok": True}).format()
+    assert empty.endswith("\n\n")
+
+    terminal = SSEEvent(event="replay_done", data={}, retry=TERMINAL_RETRY_MS).format()
+    assert terminal.endswith("\n\n")
+
+    # Consecutive frames are SEPARABLE — the delimiter a browser splits on.
+    wire = "".join(SSEEvent(event=f"e{i}", data={"n": i}).format() for i in range(9))
+    assert wire.count("\n\n") == 9
+
+    # And the frames are dispatch-shaped: one buffered event per terminator.
+    dispatched = _dispatch_sse(wire)
+    assert [e["event"] for e in dispatched] == [f"e{i}" for i in range(9)]
+    assert json.loads(dispatched[3]["data"]) == {"n": 3}
+
+
+async def test_live_stream_dispatches_every_event_a_turn_broadcasts(config) -> None:  # type: ignore[no-untyped-def]
+    """Criterion 5, hermetic: open the live stream, fire the run's broadcast
+    sequence exactly as the chat handler does, and count what a REAL SSE parser
+    DISPATCHES — not what the bytes contain.
+
+    Pre-rework this count is 0: every frame sat unterminated in one buffer the
+    spec never dispatches. The browser saw nothing while line-greps saw all 9
+    events — that gap is the bug.
+    """
+    app = create_app(config=config, engine=_engine_with_slow_stages(config, 0.05))
+    session_id = _aged_session(TestClient(app))
+
+    stream = await _LiveStream(app, session_id, LIVE_QUERY_STRING).opened()
+    assert stream.text == ""  # live mode: no replay frames
+
+    # The exact sequence a simple-formation turn broadcasts (routes.py):
+    # deliberation_started → 3x (stage_started, stage_completed) → dag_designed
+    # → deliberation_done.
+    web_routes._sse_broadcaster.broadcast(
+        session_id, SSEEvent(event="deliberation_started", data={"prompt": LIVE_PROMPT})
+    )
+    for i in range(1, 4):
+        web_routes._sse_broadcaster.broadcast(
+            session_id,
+            SSEEvent(
+                event="stage_started",
+                data={"stage": f"worker_{i}", "kind": "worker", "model": "m"},
+            ),
+        )
+        web_routes._sse_broadcaster.broadcast(
+            session_id,
+            SSEEvent(
+                event="stage_completed",
+                data={"stage": f"worker_{i}", "kind": "worker", "model": "m",
+                      "tokens": 30, "latency_ms": 12.0, "cost": 0.0001},
+            ),
+        )
+    web_routes._sse_broadcaster.broadcast(
+        session_id,
+        SSEEvent(event="dag_designed",
+                 data={"mermaid": "flowchart TB\n  a-->b", "stage_count": 3}),
+    )
+    web_routes._sse_broadcaster.broadcast(
+        session_id,
+        SSEEvent(event="deliberation_done",
+                 data={"answer": "x", "turn_number": 2}),
+    )
+    web_routes._sse_broadcaster.unsubscribe_all(session_id)
+    await asyncio.wait_for(stream.task, timeout=5.0)  # NOT the idle timeout
+
+    # The old assertion — line-grep — would pass here EVEN WITH broken framing.
+    # The assertion that matters: what a spec-compliant parser DISPATCHES.
+    dispatched = _dispatch_sse(stream.text)
+    assert len(dispatched) == 9, (
+        f"9 events were broadcast, a real SSE parser dispatched {len(dispatched)}: "
+        f"{[e['event'] for e in dispatched]} — unterminated frames on the wire"
+    )
+    assert [e["event"] for e in dispatched] == [
+        "deliberation_started",
+        "stage_started", "stage_completed",
+        "stage_started", "stage_completed",
+        "stage_started", "stage_completed",
+        "dag_designed",
+        "deliberation_done",
+    ]
+    # Data survives the framing: parsed payloads, not glued fragments.
+    assert json.loads(dispatched[0]["data"])["prompt"] == LIVE_PROMPT
+    assert json.loads(dispatched[7]["data"])["stage_count"] == 3
+    assert json.loads(dispatched[8]["data"])["turn_number"] == 2
+
+
+async def test_unknown_session_stream_dispatches_both_frames(config) -> None:  # type: ignore[no-untyped-def]
+    """The retry/terminal path frames are terminated too (criterion 3).
+
+    ``_unknown_session_stream`` hand-yields two ``format()`` strings — with a
+    broken ``format()`` a browser dispatches neither the ``error`` frame nor
+    the terminal marker that tells it to stop retrying.
+    """
+    client = _client(config)
+    response = client.get("/web/sse/never-existed?live=1")
+    assert response.status_code == 200
+
+    dispatched = _dispatch_sse(response.text)
+    assert [e["event"] for e in dispatched] == ["error", "replay_done"], dispatched
+    error_data = json.loads(dispatched[0]["data"])
+    assert error_data["reason"] == "unknown_session"
+    # The terminal marker still advertises its retry to legacy clients.
+    full_frame = response.text
+    assert f"retry: {TERMINAL_RETRY_MS}\n\n" in full_frame
+
+
+async def test_httpx_sse_client_stack_dispatches_the_live_stream(config) -> None:  # type: ignore[no-untyped-def]
+    """Same gate through the real client stack, when httpx-sse is importable.
+
+    A third-party spec parser — the one httpx users run in production — reads
+    the live stream while the turn's frames are broadcast. Skipped honestly
+    where the extra is not a declared dependency: the hand-rolled dispatch
+    parser above is the authoritative gate, so the suite never depends on an
+    undeclared package.
+    """
+    httpx_sse = pytest.importorskip("httpx_sse")
+    import httpx
+
+    app = create_app(config=config, engine=_engine_with_slow_stages(config, 0.05))
+    session_id = _aged_session(TestClient(app))
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", timeout=10.0
+    ) as client:
+        async def fire_broadcasts() -> None:
+            # Give the request a beat to reach the handler and subscribe.
+            for _ in range(200):
+                if web_routes._sse_broadcaster._ready.get(session_id) is not None:
+                    break
+                await asyncio.sleep(0.01)
+            for i in range(1, 4):
+                web_routes._sse_broadcaster.broadcast(
+                    session_id,
+                    SSEEvent(event="stage_started",
+                             data={"stage": f"worker_{i}", "kind": "worker"}),
+                )
+                web_routes._sse_broadcaster.broadcast(
+                    session_id,
+                    SSEEvent(event="stage_completed",
+                             data={"stage": f"worker_{i}", "kind": "worker", "tokens": i}),
+                )
+            web_routes._sse_broadcaster.unsubscribe_all(session_id)
+
+        asyncio.get_running_loop().create_task(fire_broadcasts())
+        received: list[str] = []
+        async with httpx_sse.aconnect_sse(
+            client, "GET", f"/web/sse/{session_id}{LIVE_QUERY}"
+        ) as event_source:
+            async for sse in event_source.aiter_sse():
+                received.append(sse.event)
+                if sse.event == "deliberation_done":
+                    break
+
+    assert len(received) == 6, (
+        f"6 events were broadcast, the httpx-sse parser dispatched {len(received)}: "
+        f"{received} — unterminated frames on the wire"
+    )
+    assert received == ["stage_started", "stage_completed"] * 3, received

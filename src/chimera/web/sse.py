@@ -62,7 +62,14 @@ class SSEEvent:
     retry: int | None = None
 
     def format(self) -> str:
-        """Format as an SSE message (lines + blank line terminator)."""
+        """Format as one SSE frame: field lines, then the blank-line terminator.
+
+        Per the SSE spec an event is dispatched only when a BLANK LINE ends it
+        (https://html.spec.whatwg.org/multipage/server-sent-events.html#dispatchMessage),
+        so the frame must end with ``\\n\\n``. A single trailing newline glues
+        every frame to the next and a compliant ``EventSource`` buffers forever,
+        dispatching nothing — the deployed defect of DF-CHIMERA-V2-29.
+        """
         lines: list[str] = []
         if self.id is not None:
             lines.append(f"id: {self.id}")
@@ -72,8 +79,7 @@ class SSEEvent:
             lines.append(f"data: {line}")
         if self.retry is not None:
             lines.append(f"retry: {self.retry}")
-        lines.append("")  # blank line terminates the event
-        return "\n".join(lines)
+        return "\n".join(lines) + "\n\n"
 
 
 @dataclass(slots=True)
