@@ -613,14 +613,29 @@ async def test_chat_invalid_session_returns_404(live_server: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sse_invalid_session_returns_404(live_server: str) -> None:
-    """``GET /web/sse/nonexistent`` returns 404."""
+async def test_sse_invalid_session_returns_terminal_stream(live_server: str) -> None:
+    """``GET /web/sse/nonexistent`` returns a TERMINAL event stream, not a 404.
+
+    DF-CHIMERA-V2-19: a browser's ``EventSource`` reports any non-200 — the old
+    JSON 404 included — as an ``error`` it retries every 3 s, so the 404 body
+    was itself a reconnect trigger. The dead id now gets a 200 stream that ends
+    with the ``replay_done`` marker, and the header carries the reason for
+    non-browser callers.
+    """
     async with httpx.AsyncClient() as client:
         r = await client.get(
             f"{live_server}/web/sse/deadbeef1234",
             timeout=httpx.Timeout(10.0),
         )
-        assert r.status_code == 404
+        assert r.status_code == 200
+        assert "text/event-stream" in r.headers.get("content-type", "")
+        assert r.headers.get("x-chimera-session-status") == "unknown"
+
+    events = _parse_sse_events(r.text)
+    assert [e.get("event") for e in events] == ["error", "replay_done"], (
+        f"unknown session must end terminally, got: {events}"
+    )
+    assert json.loads(events[0]["data"])["reason"] == "unknown_session"
 
 
 @pytest.mark.asyncio

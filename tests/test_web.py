@@ -542,34 +542,78 @@ def test_sse_route_replays_recent_events_and_closes(config) -> None:  # type: ig
     assert response.headers["content-type"].startswith("text/event-stream")
     assert response.headers["cache-control"] == "no-cache"
     assert response.headers["x-accel-buffering"] == "no"
-    assert response.text.count("event: ") == 3
+    # 3 replayed events + the DF-CHIMERA-V2-19 terminal marker that tells the
+    # SPA this close is deliberate (see tests/test_web_sse_replay.py).
+    assert response.text.count("event: ") == 4
     assert "event: deliberation_started" in response.text
     assert "event: dag_designed" in response.text
     assert "event: deliberation_done" in response.text
+    assert "event: replay_done" in response.text
     assert 'data: {"answer": "answer", "turn_number": 1}' in response.text
     assert session_id not in web_routes._sse_broadcaster._subscribers
 
 
-def test_sse_route_closes_stale_session_without_replay(config) -> None:  # type: ignore[no-untyped-def]
+def test_sse_route_replays_aged_session_rather_than_closing_empty(config) -> None:  # type: ignore[no-untyped-def]
+    """DF-CHIMERA-V2-19: a >30 s old turn replays too, and closes terminally.
+
+    The old 30 s gate made exactly the sessions a returning user reloads close
+    with zero bytes and no terminal signal — which the SPA read as a dropped
+    connection and retried every 3 s forever.
+    """
     client = _client(config)
     session_id = client.post("/web/sessions").json()["session_id"]
     session = web_routes._session_manager.get(session_id)
     assert session is not None
     session.add_turn(_turn("old", "answer", timestamp=time.time() - 31.0))
-    session.last_sse_events = [("deliberation_done", {"answer": "must not replay"})]
+    session.last_sse_events = [("deliberation_done", {"answer": "replayed"})]
 
     response = client.get(f"/web/sse/{session_id}")
+
+    assert response.status_code == 200
+    assert "event: deliberation_done" in response.text
+    assert "replayed" in response.text
+    assert "event: replay_done" in response.text
+    assert session_id not in web_routes._sse_broadcaster._subscribers
+
+
+def test_sse_route_keeps_a_turnless_session_stream_open(config) -> None:  # type: ignore[no-untyped-def]
+    """A session with no turns has nothing to replay — its stream stays open."""
+    client = _client(config)
+    session_id = client.post("/web/sessions").json()["session_id"]
+
+    async def immediate_timeout(awaitable, *, timeout):  # type: ignore[no-untyped-def]
+        del timeout
+        awaitable.close()
+        raise TimeoutError
+
+    original = sse_module.asyncio.wait_for
+    sse_module.asyncio.wait_for = immediate_timeout  # type: ignore[assignment]
+    try:
+        response = client.get(f"/web/sse/{session_id}")
+    finally:
+        sse_module.asyncio.wait_for = original  # type: ignore[assignment]
 
     assert response.status_code == 200
     assert response.text == ""
     assert session_id not in web_routes._sse_broadcaster._subscribers
 
 
-def test_sse_route_rejects_missing_session(config) -> None:  # type: ignore[no-untyped-def]
+def test_sse_route_answers_unknown_session_with_a_terminal_stream(config) -> None:  # type: ignore[no-untyped-def]
+    """A missing session must not answer with a body a browser reads as a drop.
+
+    ``EventSource`` surfaces any non-200 — including the old JSON 404 — as a
+    retryable ``error``, so the 404 body was itself a reconnect trigger. The
+    dead id is now answered as a terminal event stream instead.
+    """
     response = _client(config).get("/web/sse/missing")
 
-    assert response.status_code == 404
-    assert "not found" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["x-chimera-session-status"] == "unknown"
+    assert "event: error" in response.text
+    assert 'data: {"reason": "unknown_session", "session_id": "missing"}' in response.text
+    assert "event: replay_done" in response.text
+    assert "not found" not in response.text
 
 
 def test_spa_route_serves_index_without_caching(config) -> None:  # type: ignore[no-untyped-def]

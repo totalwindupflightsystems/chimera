@@ -51,6 +51,14 @@ class Session:
     #: SSE events from the most recent deliberation, stored for replay
     #: to late-connecting subscribers (race-condition guard).
     last_sse_events: list[tuple[str, dict]] = field(default_factory=list)
+    #: True while a chat request for this session is executing in the engine.
+    #: ``sse_stream`` uses it to decide whether a connecting client is a *late*
+    #: subscriber (nothing more is coming → replay the last turn and close with
+    #: the terminal marker) or a *live* one that must keep its stream open
+    #: (DF-CHIMERA-V2-19). Without it, a client that connects mid-deliberation
+    #: would be handed the previous turn's replay and a close, and would miss
+    #: every event of the run it is actually waiting for.
+    deliberation_in_flight: bool = False
 
     @property
     def turn_count(self) -> int:
