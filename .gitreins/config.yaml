@@ -3,7 +3,16 @@ guards:
   lint: true
   tests: true
   test_mode: diff
-  test_command: uv run pytest -x --tb=short
+  # Worktree-safe test lane: a fresh worktree has no .venv (gitignored), and a
+  # venv-less pytest resolves OFF PATH to a foreign interpreter whose
+  # `import chimera` fails in tests/conftest.py (ModuleNotFoundError). Seed the
+  # venv (dev extra = pytest) when it is missing, then run. NOTE: because the
+  # command does not START with `pytest`, gitreins diff mode cannot narrow it —
+  # a triggered tests lane runs the full suite (the previous `uv run pytest …`
+  # form did not start with pytest either, so narrowing never applied here).
+  test_command: >-
+    test -x .venv/bin/pytest || uv sync --extra dev;
+    pytest -x --tb=short
   dead_code: false
   skylos: false
   lsp: true

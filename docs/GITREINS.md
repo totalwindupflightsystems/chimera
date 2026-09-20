@@ -13,6 +13,23 @@ pip install -e ".[dev]"                                              # ruff, pyt
 PATH="$(git rev-parse --show-toplevel)/.venv/bin:$PATH" gitreins guard
 ```
 
+### A fresh worktree has no `.venv` — seed it once
+
+`git worktree add` produces a tree with no virtualenv (`.venv/` is gitignored),
+so the first guard there otherwise runs a venv-less `pytest` resolved off PATH:
+`tests/conftest.py` dies with `ModuleNotFoundError: No module named 'chimera'`
+— an infrastructure failure that reads like a broken build. Seed once, then
+guard as usual:
+
+```bash
+./scripts/seed_worktree_venv.sh        # python 3.11 + dev extras; idempotent
+PATH="$(git rev-parse --show-toplevel)/.venv/bin:$PATH" gitreins guard
+```
+
+The `tests` lane also self-seeds (its command runs `uv sync --extra dev` when
+`.venv/bin/pytest` is missing), so a missed bootstrap costs a slow first guard,
+not a red one.
+
 The repo venv **first on PATH** is load-bearing, not cosmetic. GitReins resolves
 each entry of `guards.lsp_tools` with `shutil.which()`, i.e. from PATH alone, and
 the `dev` extra is what provides that binary — so `pip install -e ".[dev]"` plus
