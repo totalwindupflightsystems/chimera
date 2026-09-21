@@ -1527,3 +1527,17 @@ tasks:
   status: complete
   created_at: '2026-09-21T06:59:12.773917+00:00'
   completed_at: '2026-09-21T06:59:49.938935+00:00'
+- id: release-027-cut
+  title: Release 0.2.7 cut (RELEASE-DECISION-001)
+  criteria:
+  - tag v0.2.7 points at commit d861f8d and exists on both remotes (github + origin)
+  - pyproject.toml version, src/chimera/__init__.py _FALLBACK_VERSION, and .venv/bin/chimera
+    --version all read 0.2.7
+  - the tag-push CI run shows publish job success and release-verify job success including
+    the MCP stdio purity probe step (CONFIG_SOURCE=generated and NON_JSON_RPC_STDOUT_LINES=0
+    in the step log)
+  - https://pypi.org/pypi/chimera-deliberation/0.2.7/json returns HTTP 200
+  - a GitHub Release object for tag v0.2.7 exists with non-empty release notes
+  status: complete
+  created_at: '2026-09-21T07:43:57.444810+00:00'
+  completed_at: '2026-09-21T07:50:25.704210+00:00'
