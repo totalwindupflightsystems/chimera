@@ -1,0 +1,32 @@
+{
+  "tick": "chimera-v2-2026-09-21-22-10-59",
+  "created_at": "2026-09-21T22:30:00-05:00",
+  "budget": 9,
+  "workers": 2,
+  "tasks": [
+    {
+      "id": "DEPS-005",
+      "mode": "main-tree",
+      "worktree": null,
+      "branch": "main",
+      "scope": ["uv.lock"],
+      "worker_model": "deepseek-v4-flash",
+      "worker_provider": "deepseek-foreman",
+      "brief": "/tmp/brief-tick267-deps005.txt",
+      "log": "/tmp/tick267-worker-deps005.log"
+    },
+    {
+      "id": "CH-GAP-059",
+      "mode": "worktree",
+      "worktree": "/home/kara/worktrees/chimera-v2-CH-GAP-059",
+      "branch": "wt/CH-GAP-059",
+      "base_sha": "c9791a6",
+      "scope": ["src/chimera health status aggregation", "tests for health endpoint"],
+      "worker_model": "glm-5.3-flash",
+      "worker_provider": "zai-glm-default",
+      "brief": "/tmp/brief-tick267-chimgap059.txt",
+      "log": "/tmp/tick267-worker-chimgap059.log"
+    }
+  ],
+  "disjointness": "DEPS-005 edits ONLY uv.lock in the main tree (repo root); CH-GAP-059 edits src/chimera + tests inside an isolated git worktree on branch wt/CH-GAP-059. Zero shared paths. Merges are serial with a full guard after each."
+}
