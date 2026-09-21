@@ -37,11 +37,19 @@ services:
       - CHIMERA_AUTH_ENABLED=${CHIMERA_AUTH_ENABLED:-false}
       - CHIMERA_RATE_LIMIT_ENABLED=${CHIMERA_RATE_LIMIT_ENABLED:-false}
 
-    volumes:
-      # Mount your chimera.yaml for the full model catalog.
-      # If you skip this, Chimera falls back to its built-in defaults
-      # (just the budget models above + whatever providers have keys).
-      - ./chimera.yaml:/etc/chimera/chimera.yaml:ro
+    # ── Optional live-config mount ──
+    # A fresh checkout has NO chimera.yaml (it is untracked by design), and a
+    # bind-mount source that does not exist makes docker create a DIRECTORY
+    # in its place — which then fails to mount onto the file inside the image
+    # ("not a directory: Are you trying to mount a directory onto a file?")
+    # and the container never starts. The image already ships a working
+    # default config (COPY chimera.yaml.docker /etc/chimera/chimera.yaml),
+    # and every setting is overridable via CHIMERA_* env vars — so the mount
+    # is opt-in: uncomment the line below AFTER `cp chimera.yaml.example
+    # chimera.yaml` (compose rejects a comment-only `volumes:`, hence the
+    # explicit empty list).
+    # - ./chimera.yaml:/etc/chimera/chimera.yaml:ro
+    volumes: []
 
     restart: unless-stopped
     healthcheck:
