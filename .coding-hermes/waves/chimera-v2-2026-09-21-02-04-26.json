@@ -1,0 +1,45 @@
+{
+ "tick_id": "chimera-v2-2026-09-21-02-04-26",
+ "round": 1,
+ "composed_at": "2026-09-21T02:20:00-05:00",
+ "wave_budget": 5,
+ "workers": 3,
+ "base_sha": "123ba6d",
+ "model": "glm-5.3-flash",
+ "provider": "zai-glm-default",
+ "status": "DISPATCHED",
+ "tasks": [
+  {
+   "id": "DF-CHIMERA-V2-23",
+   "priority": "P2",
+   "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-23",
+   "branch": "wt/DF-CHIMERA-V2-23",
+   "base_sha": "123ba6d",
+   "status": "in_progress",
+   "scope": "tests/test_board_jsonl_integrity.py (new) — glued-line tripwire over tracked board JSONL",
+   "middle_out_band": "test-only, zero src import chain"
+  },
+  {
+   "id": "DF-CHIMERA-V2-13",
+   "priority": "P2",
+   "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-13",
+   "branch": "wt/DF-CHIMERA-V2-13",
+   "base_sha": "123ba6d",
+   "status": "in_progress",
+   "scope": "AGENTS.md only (protected-file toggle authorized) — model-sync auto-score key chain reword",
+   "middle_out_band": "repo doc, no code"
+  },
+  {
+   "id": "DEPS-004",
+   "priority": "P2",
+   "worktree": "/home/kara/worktrees/chimera-v2-DEPS-004",
+   "branch": "wt/DEPS-004",
+   "base_sha": "123ba6d",
+   "status": "in_progress",
+   "scope": "tests/ load-hygiene audit + worst-offender fix + before/after measurement",
+   "middle_out_band": "test harness only, no src/"
+  }
+ ],
+ "middle_out_check": "23 = new test file over .coding-hermes data files; 13 = AGENTS.md prose; DEPS-004 = tests/-conftest harness code. No shared import chain: a data-file tripwire test, a markdown doc, and test-harness python touch disjoint bands. No depends_on edges on any row (verified from the JSONL rows).",
+ "parallel_foreman_lane": "QA-CHIMERA-V2-13 + QA-CHIMERA-V2-14 relaunch via ~/.hermes/scripts/bunker-qa.sh launch/run (evidence for the two dead docker-cell rows; harness-side, no repo commit expected)"
+}
