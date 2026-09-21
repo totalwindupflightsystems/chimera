@@ -1491,3 +1491,16 @@ tasks:
     parent; no skip/pytest.mark/xfail added in the changed file'
   status: in_progress
   created_at: '2026-09-21T03:33:02.750880+00:00'
+- id: rb-002-version-prep
+  title: Version-prep 0.2.7 before next tag (RELEASE-BLOCKER-002)
+  criteria:
+  - pyproject.toml version is 0.2.7 AND src/chimera/__init__.py _FALLBACK_VERSION
+    is 0.2.7 AND .venv/bin/chimera --version prints 0.2.7
+  - uv.lock editable chimera-deliberation version equals 0.2.7 with exactly one changed
+    line in git diff
+  - "CHANGELOG.md promotes the Unreleased section to [0.2.7] \u2014 2026-09-21 and\
+    \ reopens an empty [Unreleased]"
+  - full pytest suite reports 0 failed
+  status: complete
+  created_at: '2026-09-21T04:32:52.522224+00:00'
+  completed_at: '2026-09-21T05:13:32.698533+00:00'
