@@ -6,6 +6,7 @@ aggregator to produce JSON matching a provided schema.
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -18,6 +19,35 @@ pytestmark = [pytest.mark.integration, pytest.mark.slow]
 TIMEOUT = 300.0  # json_schema deliberations on budget models can exceed 120s
 # under live-provider latency (CI run 35564186242 read-timed out at 120s while
 # the plain-chat sibling passed).
+RETRY_ATTEMPTS = 2  # one retry: a second full deliberation on a fresh provider read
+
+
+async def _post_json_schema(
+    live_server: str,
+    payload: dict,
+) -> httpx.Response:
+    """POST the *payload* with one retry on transient read timeouts.
+
+    A single httpx.ReadTimeout against a live LLM provider is a transient
+    condition (CI run 35575823072: the json_schema test died at 300s while
+    every sibling passed), so one full-deliberation retry with a short pause
+    absorbs it instead of failing the whole push-only integration leg.  Any
+    non-timeout outcome — including 4xx/5xx — is returned to the caller for
+    its own assertions.
+    """
+    async with httpx.AsyncClient() as client:
+        for attempt in range(1, RETRY_ATTEMPTS + 1):
+            try:
+                return await client.post(
+                    f"{live_server}/v1/chat/completions",
+                    json=payload,
+                    timeout=TIMEOUT,
+                )
+            except httpx.TimeoutException:
+                if attempt == RETRY_ATTEMPTS:
+                    raise
+                await asyncio.sleep(5.0 * attempt)  # backoff before the retry
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 @pytest.mark.asyncio
@@ -46,8 +76,7 @@ async def test_json_schema_chat_completions(live_server: str) -> None:
             {
                 "role": "user",
                 "content": (
-                    "Return a JSON object with a 'name' field set to 'chimera' "
-                    "and a 'value' field set to 42."
+                    "Return a JSON object with a 'name' field set to 'chimera' and a 'value' field set to 42."
                 ),
             },
         ],
@@ -62,12 +91,7 @@ async def test_json_schema_chat_completions(live_server: str) -> None:
         "allowed_models": BUDGET_MODELS,
     }
 
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            f"{live_server}/v1/chat/completions",
-            json=payload,
-            timeout=TIMEOUT,
-        )
+    r = await _post_json_schema(live_server, payload)
 
     assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text[:500]}"
     body = r.json()
