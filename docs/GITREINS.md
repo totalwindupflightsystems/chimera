@@ -44,19 +44,19 @@ Measured on this host, same staged file, only PATH changed:
 
 ## Which engine you are running (`gitreins --version`)
 
-Skip reporting is a **0.13.0** feature. The pipx-installed engine is 0.12.1 on
-some hosts and has no skip vocabulary at all, so the same absent tool reads
+Skip reporting is a **0.13.0** feature. Older pipx installs (0.12.x in the
+measurement below) have no skip vocabulary at all, so the same absent tool reads
 differently:
 
 | Engine | pylsp absent, files staged | Tells |
 | --- | --- | --- |
 | 0.13.0+ | `~ lsp — skipped (no LSP tool on PATH (pylsp not installed))`, run is DEGRADED | the `~` summary line |
-| 0.12.1 | `✓ lsp`, run is PASS (exit 0) — a vacuous green | stderr line `gitreins.lsp: WARNING: LSP tool 'pylsp' not found on PATH — skipping` |
+| 0.12.x | `✓ lsp`, run is PASS (exit 0) — a vacuous green | stderr line `gitreins.lsp: WARNING: LSP tool 'pylsp' not found on PATH — skipping` |
 
-On 0.12.1 that warning is the *only* signal: it is printed during the run and is
-not written to any persisted log (0.12.1 writes no run log into `.gitreins/logs/`
+On 0.12.x that warning is the *only* signal: it is printed during the run and is
+not written to any persisted log (0.12.x writes no run log into `.gitreins/logs/`
 at all). Either way the remedy is identical — the dev extra plus the repo-venv
-PATH above — and `guards.allow_skips` does not exist in 0.12.1, so the policy
+PATH above — and `guards.allow_skips` does not exist in 0.12.x, so the policy
 below applies to 0.13.0+.
 
 ## The lanes
@@ -184,7 +184,7 @@ proof:
 ~ lsp — skipped (no LSP tool ran (install pylsp?))         # started, published nothing
 ```
 
-On 0.12.1 `✓ lsp` is printed whether or not the tool exists, so read the stderr
+On 0.12.x `✓ lsp` is printed whether or not the tool exists, so read the stderr
 warning quoted above instead — and treat `~` as unavailable on that engine.
 
 `✓ lsp` means the server started and published over the staged files — not that
