@@ -401,6 +401,22 @@ def _register_routes(app: FastAPI) -> None:
         (connection refused, HTTP 5xx, auth, quota) still reads exactly as
         before: ``healthy: false``, named in ``unhealthy_providers``, and
         ``status: "degraded"``.
+
+        ``discovered_not_configured`` (CH-GAP-059) is the third list, and the
+        one that keeps ``status`` meaningful: it names the model-less
+        auto-discovered creds excluded from the status math. Provider
+        discovery registers every models.dev provider whose API key resolved,
+        so ``providers`` accumulates credentials the config never asked for
+        (``openai``, ``xai`` measured live at 497af58) — and with no model in
+        the catalog such a cred can never be probed, so its CH-GAP-053
+        note-only entry says nothing about provider health. Counting it as
+        provider state demoted the whole report to ``degraded`` while all
+        seven configured providers probed healthy. Those names are reported
+        here instead, keeping their honest ``healthy: false`` + note in
+        ``details.providers``; ``status`` therefore reads ``degraded`` exactly
+        when a CONFIGURED provider (or one that owns a model) is unhealthy. A
+        declared provider with no models is NOT in this list: CH-GAP-053's
+        verdict for it is unchanged, and it still degrades the report.
         """
         cfg: ChimeraConfig = request.app.state.config
         # CH-GAP-053: count only the providers the config declared — the
@@ -428,7 +444,11 @@ def _register_routes(app: FastAPI) -> None:
             # class, and ``status`` is derived from that same list — so the
             # two fields cannot drift and a slow-only payload reads
             # ``healthy`` / ``[]`` with the slow names in their own array.
-            unhealthy = _degraded_provider_names(provider_status)
+            # CH-GAP-059: it also excludes the model-less discovery additions,
+            # which are returned alongside it for their own top-level key.
+            unhealthy, discovered_not_configured = _health_degraded_provider_names(
+                cfg, provider_status,
+            )
             # "healthy" is equivalent to "no provider failed"; the previous
             # two identical `degraded` branches are collapsed into this one
             # without changing the status value or the body shape.
@@ -436,6 +456,7 @@ def _register_routes(app: FastAPI) -> None:
             return {
                 "status": status_value,
                 "unhealthy_providers": unhealthy,
+                "discovered_not_configured": discovered_not_configured,
                 "slow_providers": slow,
                 "probe_skipped_providers": _probe_skipped_provider_names(
                     provider_status,
@@ -450,10 +471,19 @@ def _register_routes(app: FastAPI) -> None:
             # as "degraded with nothing wrong" (`details.error` carries the
             # real reason).  No slow classification is possible either —
             # nothing was measured — so `slow_providers` is empty and the
-            # pre-existing fields keep their exact values.
+            # pre-existing fields keep their exact values. The model-less
+            # discovery additions (CH-GAP-059) are named in their own key here
+            # too instead of being counted as configured providers.
+            discovered_not_configured = _discovered_not_configured_provider_names(
+                cfg,
+            )
+            excluded = set(discovered_not_configured)
             return {
                 "status": "degraded",
-                "unhealthy_providers": sorted(cfg.providers),
+                "unhealthy_providers": [
+                    name for name in sorted(cfg.providers) if name not in excluded
+                ],
+                "discovered_not_configured": discovered_not_configured,
                 "slow_providers": [],
                 "probe_skipped_providers": [],
                 "details": {**details, "error": str(exc)[:200]},
@@ -482,9 +512,16 @@ def _register_routes(app: FastAPI) -> None:
             provider_status = await _check_providers(cfg, gw)
             ready = any(p["healthy"] for p in provider_status.values())
             if ready:
+                # CH-GAP-059: the same aggregation as /v1/health — this field
+                # documents "the same meaning", so a model-less discovery
+                # addition cannot be named here and excluded there.
+                unhealthy, discovered_not_configured = (
+                    _health_degraded_provider_names(cfg, provider_status)
+                )
                 return {
                     "status": "ready",
-                    "unhealthy_providers": _degraded_provider_names(provider_status),
+                    "unhealthy_providers": unhealthy,
+                    "discovered_not_configured": discovered_not_configured,
                     "slow_providers": _slow_provider_names(provider_status),
                     "probe_skipped_providers": _probe_skipped_provider_names(
                         provider_status,
@@ -1063,6 +1100,63 @@ def _split_configured_and_discovered_providers(
     declared = config.declared_provider_names
     discovered = sorted(set(config.providers) - declared)
     return len(declared), discovered
+
+
+def _status_participant_provider_names(config: ChimeraConfig) -> set[str]:
+    """Providers whose probe result the status aggregate may reflect.
+
+    A provider participates when the config *declared* it, or when at least
+    one model in the catalog names it — the same lookup ``_check_providers``
+    uses to decide whether a provider can be probed at all.  ``config.providers``
+    is NOT that set (CH-GAP-059): auto-discovery merges the models.dev
+    providers whose API key resolved (``openai``, ``xai`` measured live), and
+    no model in the catalog references them, so the only entry they can ever
+    produce is the note-only one CH-GAP-053 introduced.
+    """
+    declared = set(config.declared_provider_names)
+    model_bearing = {entry.provider for entry in config.models.values()}
+    return declared | model_bearing
+
+
+def _discovered_not_configured_provider_names(config: ChimeraConfig) -> list[str]:
+    """Sorted discovery-added providers with no model to probe (CH-GAP-059).
+
+    The value of the top-level ``discovered_not_configured`` field: names in
+    ``config.providers`` that the config did not declare AND that no model in
+    the catalog references.  Derived from the CONFIG only, so it names the same
+    set whether or not the live probe succeeded, and it can never name a
+    declared provider — it cannot hide a real one.
+
+    These entries stay in ``details.providers`` (honest: ``healthy: false``
+    with the "no models configured" note); they are simply not counted as
+    provider state, because a cred with no models has no provider verdict to
+    contribute to ``status``.
+    """
+    participants = _status_participant_provider_names(config)
+    return sorted(name for name in config.providers if name not in participants)
+
+
+def _health_degraded_provider_names(
+    config: ChimeraConfig,
+    provider_status: dict[str, dict[str, Any]],
+) -> tuple[list[str], list[str]]:
+    """``(degraded, discovered_not_configured)`` for the status math.
+
+    CH-GAP-059: the aggregation shared by ``/v1/health`` and
+    ``/v1/health/ready`` so the two cannot drift — ``degraded`` is the
+    DF-CHIMERA-V2-27 list minus the model-less discovery additions, which are
+    returned separately for their own top-level key.  Only names in that
+    config-derived exclusion set are dropped: anything else the probe reported
+    keeps its previous treatment, so a real failure cannot be filtered away.
+    """
+    discovered_not_configured = _discovered_not_configured_provider_names(config)
+    excluded = set(discovered_not_configured)
+    degraded = [
+        name
+        for name in _degraded_provider_names(provider_status)
+        if name not in excluded
+    ]
+    return degraded, discovered_not_configured
 
 
 async def _check_providers(

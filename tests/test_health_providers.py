@@ -806,9 +806,12 @@ def test_health_response_keeps_every_pre_existing_key(
     assert r.status_code == 200
     data = r.json()
     assert set(data) == {
-        "status", "unhealthy_providers", "slow_providers",
-        "probe_skipped_providers", "details",
+        "status", "unhealthy_providers", "discovered_not_configured",
+        "slow_providers", "probe_skipped_providers", "details",
     }
+    # Additive key (CH-GAP-059): absent from the math, never omitted, and
+    # empty when the config declared everything it carries.
+    assert data["discovered_not_configured"] == []
     details = data["details"]
     assert set(details) == {
         "config_loaded", "models_configured", "providers_configured",
@@ -1325,3 +1328,207 @@ def test_ready_503_keeps_the_reachability_wording_for_a_real_failure(
 
     assert r.status_code == 503
     assert "no providers reachable" in r.json()["detail"]
+
+
+# --------------------------------------------------------------------------- #
+# CH-GAP-059: a zero-model auto-discovered cred is not provider state
+# --------------------------------------------------------------------------- #
+
+#: The discovery-added credential entries measured live at 497af58
+#: (CH-GAP-059): models.dev auto-discovery merged them into ``providers``
+#: carrying credentials, while no model in the catalog names them — so the
+#: probe can only ever return the CH-GAP-053 note-only entry for them.
+_DISCOVERED_CREDS = ("openai", "xai")
+
+
+def _config_with_discovered_creds() -> tuple[ChimeraConfig, set[str]]:
+    """The live :8765 shape: declared providers + discovery-added creds.
+
+    ``model_validate`` records no load-time metadata, so
+    ``declared_provider_names`` would fall back to the whole ``providers`` map
+    — the exact conflation CH-GAP-053 removed.  This rebuilds what
+    ``load_config`` produces instead: the declared names recorded FIRST, then
+    the discovery additions merged into the map.
+    """
+    models = {
+        "google/gemini-3-pro": "google",
+        "anthropic/claude-4": "anthropic",
+        "hermes/glm-5.3-flash": "hermes",
+        "zai/glm-5.3": "zai",
+        "openrouter/kimi-k3": "openrouter",
+        "deepseek/deepseek-v4-flash": "deepseek",
+        "router9/glm-5.3-flash": "router9",
+    }
+    cfg = _config(
+        models=models,
+        api_keys=dict.fromkeys(models.values(), "sk-test"),
+    )
+    declared = set(cfg.providers)
+    cfg.configured_provider_names = declared
+    template = cfg.providers["google"]
+    for name in _DISCOVERED_CREDS:
+        cfg.providers[name] = template.model_copy(
+            update={"base_url": f"https://{name}.example/v1"},
+        )
+        # Discovery only registers a provider whose key RESOLVED
+        # (``provider_discovery.discover_providers``), so a discovered entry
+        # is by construction a *cred*: usable the moment a model names it.
+        cfg.api_keys[name] = "sk-test"
+    return cfg, declared
+
+
+def test_discovered_zero_model_creds_do_not_degrade_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Acceptance 1: model-less discovered creds are not provider state.
+
+    Every configured provider probes healthy; ``openai`` / ``xai`` are
+    discovery additions with zero models, so nothing about them can be
+    measured.  The report must stay ``healthy`` — and must still SAY they were
+    left out of the math, so the exclusion is visible instead of silent.
+    """
+    cfg, declared = _config_with_discovered_creds()
+    probe_status = asyncio.run(_check_providers(cfg, _ProbeGateway({})))
+
+    for name in _DISCOVERED_CREDS:
+        assert probe_status[name] == {
+            "healthy": False, "note": "no models configured for provider",
+        }
+    assert {name for name, info in probe_status.items() if info["healthy"]} == set(declared)
+
+    data = _probe_status_client(monkeypatch, cfg, probe_status).get("/v1/health").json()
+
+    assert data["status"] == "healthy", data
+    assert data["unhealthy_providers"] == []
+    assert data["discovered_not_configured"] == sorted(_DISCOVERED_CREDS)
+    # Nothing is hidden: the per-provider detail keeps the honest note.
+    assert data["details"]["providers"]["openai"]["healthy"] is False
+
+
+def test_configured_provider_unhealthy_is_still_degraded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Acceptance 2: the configured half of the math is untouched.
+
+    Same config, same discovery additions — one DECLARED provider now fails a
+    real probe, so ``status`` must read ``degraded`` and name exactly that
+    provider.  This is the half the CH-GAP-053 fix was written for.
+    """
+    cfg, _ = _config_with_discovered_creds()
+    probe_status = asyncio.run(
+        _check_providers(cfg, _ProbeGateway({"zai/glm-5.3": "api"})),
+    )
+    assert probe_status["zai"]["error_class"] == "api"
+
+    data = _probe_status_client(monkeypatch, cfg, probe_status).get("/v1/health").json()
+
+    assert data["status"] == "degraded", data
+    assert data["unhealthy_providers"] == ["zai"]
+    assert data["discovered_not_configured"] == sorted(_DISCOVERED_CREDS)
+
+
+def test_declared_zero_model_provider_still_degrades_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A CONFIGURED provider with no models keeps CH-GAP-053's verdict.
+
+    The exclusion is about discovery, not about the note: a provider the
+    config declared and left without models is named unhealthy and still
+    degrades the report.
+    """
+    cfg = _config(models={"only/one": "only"}, api_keys={"only": "sk"})
+    cfg.providers["anthropic"] = cfg.providers["only"].model_copy(
+        update={"base_url": "https://anthropic.example/v1"},
+    )
+    # Declared in the YAML, exactly like CH-GAP-053's measured fixture — the
+    # discovery exclusion below is about what load-time metadata did NOT name.
+    cfg.configured_provider_names = set(cfg.providers)
+    probe_status = asyncio.run(_check_providers(cfg, _ProbeGateway({})))
+    assert probe_status["anthropic"] == {
+        "healthy": False, "note": "no models configured for provider",
+    }
+
+    data = _probe_status_client(monkeypatch, cfg, probe_status).get("/v1/health").json()
+
+    assert data["status"] == "degraded", data
+    assert data["unhealthy_providers"] == ["anthropic"]
+    assert data["discovered_not_configured"] == []
+
+
+def test_adding_a_model_to_a_discovered_cred_makes_its_health_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Acceptance 2 (the flip): a real model makes the cred a participant.
+
+    Once ``openai`` owns a model it IS provider state: a healthy probe keeps
+    the report healthy and drops it from the separate key, while a failing
+    probe of that same model degrades the report and names the provider.
+    """
+    healthy_cfg, _ = _config_with_discovered_creds()
+    healthy_cfg.models["openai/gpt-5"] = healthy_cfg.models[
+        "google/gemini-3-pro"
+    ].model_copy(update={"provider": "openai"})
+    healthy_status = asyncio.run(_check_providers(healthy_cfg, _ProbeGateway({})))
+    assert healthy_status["openai"]["healthy"] is True
+
+    healthy = _probe_status_client(
+        monkeypatch, healthy_cfg, healthy_status,
+    ).get("/v1/health").json()
+    assert healthy["status"] == "healthy", healthy
+    assert healthy["unhealthy_providers"] == []
+    assert healthy["discovered_not_configured"] == ["xai"]
+
+    failing_cfg, _ = _config_with_discovered_creds()
+    failing_cfg.models["openai/gpt-5"] = failing_cfg.models[
+        "google/gemini-3-pro"
+    ].model_copy(update={"provider": "openai"})
+    failing_status = asyncio.run(
+        _check_providers(failing_cfg, _ProbeGateway({"openai/gpt-5": "api"})),
+    )
+    assert failing_status["openai"]["error_class"] == "api"
+
+    failing = _probe_status_client(
+        monkeypatch, failing_cfg, failing_status,
+    ).get("/v1/health").json()
+    assert failing["status"] == "degraded", failing
+    assert failing["unhealthy_providers"] == ["openai"]
+    assert failing["discovered_not_configured"] == ["xai"]
+
+
+def test_discovered_not_configured_names_exactly_the_model_less_creds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Acceptance 3: the separate key is exact, sorted, and never a real provider.
+
+    It is the set ``details.providers_discovered`` names, narrowed to the
+    entries with no models to probe — so a client can tell "discovered and
+    usable" from "discovered, nothing to probe".
+    """
+    cfg, declared = _config_with_discovered_creds()
+    probe_status = asyncio.run(_check_providers(cfg, _ProbeGateway({})))
+
+    data = _probe_status_client(monkeypatch, cfg, probe_status).get("/v1/health").json()
+
+    assert data["discovered_not_configured"] == sorted(_DISCOVERED_CREDS)
+    assert not set(data["discovered_not_configured"]) & declared
+    assert data["details"]["providers_discovered"] == sorted(_DISCOVERED_CREDS)
+    assert data["details"]["providers_configured"] == len(declared)
+
+
+def test_ready_unhealthy_providers_uses_the_same_aggregation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``/v1/health/ready`` documents "same meaning" for the field — keep it true.
+
+    A client comparing the two endpoints must not see readiness name a cred
+    the health endpoint deliberately left out of provider state.
+    """
+    cfg, _ = _config_with_discovered_creds()
+    probe_status = asyncio.run(_check_providers(cfg, _ProbeGateway({})))
+
+    r = _probe_status_client(monkeypatch, cfg, probe_status).get("/v1/health/ready")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["unhealthy_providers"] == []
+    assert data["discovered_not_configured"] == sorted(_DISCOVERED_CREDS)
