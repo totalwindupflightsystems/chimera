@@ -1504,3 +1504,17 @@ tasks:
   status: complete
   created_at: '2026-09-21T04:32:52.522224+00:00'
   completed_at: '2026-09-21T05:13:32.698533+00:00'
+- id: qa-chimera-v2-32
+  title: 'Fresh-agent docker deploy path: buildx gap + unconditional chimera.yaml
+    bind-mount'
+  criteria:
+  - docker-compose.yml no longer bind-mounts ./chimera.yaml unconditionally; the mount
+    is documented as opt-in with re-enable instructions and the volumes key stays
+    schema-valid
+  - On a fresh JIT agent with only the static docker toolchain bootstrapped, docker
+    compose up -d --build exits rc=0, the container reaches healthy, and GET :8765/v1/health/live
+    returns HTTP 200 (verified on bunker agent qa32-debug, 2026-09-21)
+  - Full pytest suite reports 0 failed (gitreins guard --full PASS 5/5 at 2bba510)
+  status: complete
+  created_at: '2026-09-21T06:14:14.214906+00:00'
+  completed_at: '2026-09-21T06:21:28.621619+00:00'
