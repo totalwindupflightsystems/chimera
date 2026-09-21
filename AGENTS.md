@@ -244,8 +244,9 @@ seen candidates in `.seen_models.json` (`--diff` shows only new finds,
 reports/latest.md` writes a markdown report).
 
 `scripts/model_sync_cron.py` is the scheduled wrapper around it: it runs
-`model_sync.py --diff --output reports/latest.md` (and auto-scores when
-`DEEPSEEK_API_KEY` is set), using the repo venv interpreter
+`model_sync.py --diff --output reports/latest.md` (auto-scoring resolves `DEEPSEEK_API_KEY` from the process env, then the
+repo `.env`, then `~/.hermes/.env` — redirectable via
+`CHIMERA_HERMES_DOTENV`), using the repo venv interpreter
 (`.venv/bin/python` — the cron runner's own interpreter lacks the chimera
 deps; see the `_sync_python()` fallback in the script).
 
