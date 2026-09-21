@@ -1328,17 +1328,6 @@ tasks:
   status: complete
   created_at: '2026-09-20T08:32:05.366757+00:00'
   completed_at: '2026-09-20T14:29:41.834188+00:00'
-- id: DEPS-004
-  title: bound test-suite host load (no unbounded subprocess/CPU burn)
-  criteria:
-  - A written audit identifies the worst unbounded-load pattern in this repo's test
-    suite with measured evidence
-  - The worst offender is bounded via an env knob clamped to 2..16 (default <= 8)
-    or an in-process equivalent, with zero tests skipped, weakened or time-boxed
-  - Full suite is green after the change (1547 collected, uv run pytest -q green)
-    and the before/after measurement is recorded
-  status: in_progress
-  created_at: '2026-09-20T07:38:32.523613+00:00'
 - id: DF-CHIMERA-V2-17
   title: a late cold-start provider probe reports its REAL class instead of a fabricated
     timeout
@@ -1490,3 +1479,15 @@ tasks:
   status: complete
   created_at: '2026-09-21T02:52:25.738850+00:00'
   completed_at: '2026-09-21T03:02:26.553699+00:00'
+- id: DEPS-004
+  title: 'Bound test-suite host load: worst-offender probe-budget fix'
+  criteria:
+  - 'In the single commit whose subject starts ''test: bound test-suite host load
+    (Addresses DEPS-004)'' (tests/test_server_coverage.py only, trailer Co-authored-by
+    exactly once): a module helper exists that returns a config copy with server.health_timeout_s
+    overridable; TestCheckProviders''s never-answer test passes an explicit 0.2 health_timeout_s
+    at the _check_providers call site; that test''s assertion block asserting healthy
+    False and error_class slow for openrouter and zai is unchanged versus the commit''s
+    parent; no skip/pytest.mark/xfail added in the changed file'
+  status: in_progress
+  created_at: '2026-09-21T03:33:02.750880+00:00'
