@@ -54,6 +54,22 @@ def _client_with_engine(config: ChimeraConfig, engine: Engine) -> TestClient:
     return TestClient(app)
 
 
+def _config_with_health_timeout(config: ChimeraConfig, health_timeout_s: float) -> ChimeraConfig:
+    """A copy of *config* with ``server.health_timeout_s`` set for probe tests.
+
+    The shared ``config`` fixture inherits ``ServerConfig``'s 10.0s default.
+    That budget is right for a live server waiting on real providers, but in
+    these tests the gateway is a stub: the ``slow`` classification (DF-
+    CHIMERA-V2-27) is driven by whatever timeout the stub outlives, so a
+    0.2s budget — the same one ``tests/test_health_providers.py`` uses to pin
+    the identical contract — produces byte-identical assertions while cutting
+    each ``slow``-path probe from ~11s to ~0.3s of host time (DEPS-004).
+    """
+    return config.model_copy(
+        update={"server": config.server.model_copy(update={"health_timeout_s": health_timeout_s})}
+    )
+
+
 # =========================================================================== #
 # RequestQueue — properties and edge cases
 # =========================================================================== #
@@ -509,9 +525,14 @@ class TestCheckProviders:
         """
         class TimeoutGateway:
             async def complete(self, model: str, messages: list, **kw: Any):
-                await asyncio.sleep(100)  # will be cut by wait_for(timeout=5)
+                await asyncio.sleep(100)  # will be cut by wait_for(health_timeout_s)
 
-        result = await _check_providers(config, TimeoutGateway())
+        # DEPS-004: drive the probe budget down from the fixture's 10s
+        # default to 0.2s — the gateway is a stub, so the classification this
+        # test pins (never-answer -> unhealthy + ``slow`` with the measured
+        # wait) is identical, and the test stops burning ~11s of host time.
+        probe_cfg = _config_with_health_timeout(config, 0.2)
+        result = await _check_providers(probe_cfg, TimeoutGateway())
         for name in ("openrouter", "zai"):
             assert result[name]["healthy"] is False
             assert result[name]["error_class"] == "slow"
