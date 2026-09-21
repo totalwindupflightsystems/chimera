@@ -1518,3 +1518,12 @@ tasks:
   status: complete
   created_at: '2026-09-21T06:14:14.214906+00:00'
   completed_at: '2026-09-21T06:21:28.621619+00:00'
+- id: int-ci-011
+  title: Integration client timeout 120s read-times-out on slow live json_schema deliberations
+  criteria:
+  - 'tests/integration/test_structured_output.py::test_json_schema_chat_completions
+    no longer fails on httpx.ReadTimeout when the live deliberation exceeds 120s:
+    the client timeout for the structured-output integration tests is raised to 300s'
+  status: complete
+  created_at: '2026-09-21T06:59:12.773917+00:00'
+  completed_at: '2026-09-21T06:59:49.938935+00:00'
