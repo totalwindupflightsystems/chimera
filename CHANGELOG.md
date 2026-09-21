@@ -4,6 +4,8 @@ All notable changes to Chimera will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.7] — 2026-09-21
+
 ### Fixed
 
 - **A provider that cannot answer inside the probe budget is reported `slow`
