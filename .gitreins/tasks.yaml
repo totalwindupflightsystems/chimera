@@ -1541,3 +1541,13 @@ tasks:
   status: complete
   created_at: '2026-09-21T07:43:57.444810+00:00'
   completed_at: '2026-09-21T07:50:25.704210+00:00'
+- id: INT-CI-012
+  title: Push-only integration leg red on tests/integration/test_structured_output.py::test_json_schema_chat_completions
+    (httpx.ReadTimeout at 300s)
+  criteria:
+  - The test retries transient httpx timeouts instead of failing the whole CI leg
+    on one slow provider read; no lint/secrets regressions; integration suite structurally
+    unchanged for non-timeout paths
+  status: complete
+  created_at: '2026-09-21T10:17:29.389792+00:00'
+  completed_at: '2026-09-21T10:21:53.939920+00:00'
