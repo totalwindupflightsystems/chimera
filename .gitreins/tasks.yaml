@@ -1551,3 +1551,13 @@ tasks:
   status: complete
   created_at: '2026-09-21T10:17:29.389792+00:00'
   completed_at: '2026-09-21T10:21:53.939920+00:00'
+- id: INT-GATE-004
+  title: GitReins engineskew docs are pinned to a dead 0.12.1 hostname state
+  criteria:
+  - gitreins --version on PATH reports >= 0.13.0 (0.13.0+ skip/allow_skips vocabulary
+    present)
+  - docs/GITREINS.md no longer asserts the fleet pipx engine is 0.12.1; the engine
+    comparison reads 0.12.x generically and points at 0.13.0+ behavior
+  status: complete
+  created_at: '2026-09-21T11:18:18.517143+00:00'
+  completed_at: '2026-09-21T11:18:24.928214+00:00'
