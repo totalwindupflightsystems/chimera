@@ -15,7 +15,9 @@ from tests.integration.conftest import BUDGET_MODELS
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
-TIMEOUT = 120.0
+TIMEOUT = 300.0  # json_schema deliberations on budget models can exceed 120s
+# under live-provider latency (CI run 35564186242 read-timed out at 120s while
+# the plain-chat sibling passed).
 
 
 @pytest.mark.asyncio
