@@ -1,216 +1,176 @@
 # Chimera Model Sync — Weekly Report
 
-**Date:** 2026-09-20 (cron run 17:00 UTC / 12:00 local −05)
-**Run:** `scripts/model_sync_cron.py` → `model_sync.py --diff --output reports/latest.md`. Auto-score step **not reached** (diff = 0, wrapper short-circuits).
-**Diff result:** **0 new candidates** across 13 core providers — `reports/latest.md` reads "Candidates: 0 new models across 13 providers".
-**Cache:** hit, age ~496 s, `stale=False` — 222 provider blocks / 7,085 discovery models across 12 recognised providers.
-**`.seen_models.json`:** **217 entries**, unchanged from the 09-19 run.
+**Date:** 2026-09-22 (cron run 17:00 UTC / 12:00 local −05)
+**Run:** `scripts/model_sync_cron.py` → `model_sync.py --diff --output reports/latest.md` (5 finds) → auto-score step reached (`DEEPSEEK_API_KEY` resolved from `~/.hermes/.env`).
+**Diff result:** **5 new candidates** across 13 core providers — `reports/latest.md` line 4 reads `**Candidates:** 5 new models across 13 providers`.
+**Cache:** hit, age ~1 088 s, `stale=False` — 223 provider blocks / 7 204 discovery models across 12 recognised providers.
+**`.seen_models.json`:** **222 entries**, rewritten at 12:00 by this run (the finds were recorded).
 **Catalog:** **42 models**, all `enabled: true`; `chimera.yaml` **untouched** by this run (recommend-only mandate).
-**Archive:** the pre-run file was byte-identical to `model_sync_weekly_20260919_archive.md`; a copy was verified with `diff -q` before overwrite, so no text is lost. (Last week's 09-18 report had already been lost by the pre-overwrite path; this run checked first.)
+**Archive:** the pre-run weekly file was byte-identical (`diff -q`) to `model_sync_weekly_20260920_archive.md`, so no new dated archive copy was written — that content is already preserved. (No weekly file was written on 09-21; the 09-20 report stood for two days.)
+**Artifacts:** `reports/model_scores_20260922_1201.yaml` (auto-score, 5 entries), `reports/model_scores_20260922_1204.yaml` (targeted score, 1 entry — see §3).
 
 ---
 
-## 1. Diff honesty check (seen-file trap) — honest, 0 is real
+## 1. Diff honesty check — the 5 are real, and one headline number in the tick stdout is not
 
-The scan + seen/catalog loaders were re-run **without** `--diff` (`/tmp/_diag_scan.py`):
-
-| Check | Result |
-|---|---|
-| Core providers scanned | 13 |
-| In-scope candidates (full scan, no `--diff`) | **172** (171 on 09-19) |
-| Candidates **not** in `.seen_models.json` | **0** |
-| Seen-file size | 217 entries (was 217) → no writes |
-| Catalog models filtered before the seen filter | 42 |
-
-**Conclusion:** the 0-candidate diff is real and complete *for the scan's own scope*.
-Nothing new landed in `openai / anthropic / deepseek / google / xai / mistral / moonshotai /
-minimax / alibaba / zhipuai / meta / stepfun / xiaomi` since 09-19.
-
-**⚠️ But "0 new models" is NOT the honest headline this week — the scope is the problem.**
-A genuine frontier release shipped today and the scan is structurally unable to see it (§2).
-
----
-
-## 2. The real finding: StepFun **Step-5 Preview** shipped 2026-09-20 and the sync cannot see it
-
-| Field | Value |
-|---|---|
-| What it is | StepFun's new flagship: **600B/27B sparse MoE** (27B active), 92-layer narrow-deep stack, **1M-token context**, native text+image+video input, reasoning + tool use. Aimed at coding, long-document work and long-horizon agents |
-| Announced / released | **2026-09-18** (StepFun announcement) / cache + press **2026-09-20**; open weights promised **Oct 15** |
-| Pricing | **$1.00 / $2.70 per MTok**, cache read $0.05 (Artificial Analysis, myclaw, StepFun rate card) |
-| Benchmark | **AA Intelligence Index 44** — press positions it "global top 25" at ~1/5 the price of comparable frontiers |
-| Native API | **LIVE** — `GET https://api.stepfun.ai/v1/models` (with `STEPFUN_API_KEY`) → **HTTP 200**, 16 models, `step-5-preview` present: `enable_vision_input: true`, `enable_reason: true`, `max_input_tokens: 1024000`, protocols `chat, messages, responses` |
-| Provider announcement | **Yes** — StepFun's own platform docs + Pandaily, Intelligent Living, runtimewire, myclaw, Artificial Analysis |
-| OpenRouter page | **NO** — `GET /api/v1/models` (446 models) lists only `stepfun/step-3.7-flash` and `stepfun/step-3.5-flash`; `…/models/stepfun/step-5-preview/endpoints` → **HTTP 404**. Not on OR yet |
-| models.dev **core** `stepfun` row | **ABSENT** — still only `step-1-32k, step-2-16k, step-3.5-flash, step-3.5-flash-2603, step-3.7-flash, step-tts-2, stepaudio-2.5-*`. Verified in the on-disk cache **and** on a fresh `urllib` fetch of `models.dev/api.json` (222 providers) |
-| Where it IS in models.dev | Only `nano-gpt/stepfun/step-5-preview` and `vercel/stepfun/step-5-preview` — **both outside `CORE_PROVIDERS`** |
-
-**Why the sync reports 0:** `scripts/model_sync.py` iterates exactly `CORE_PROVIDERS`
-(13 ids) and resolves each row to a chimera id. A release whose only models.dev rows sit
-under a **reseller/aggregator** id is never a candidate — the model is not filtered out, it
-is never *seen*. Resolution check: `nano-gpt + step-5-preview → "nano-gpt/step-5-preview"`,
-which is neither a catalog key nor a native lab id, so widening `CORE_PROVIDERS` naively
-would produce junk ids rather than the model.
-
-**Blind-spot scale (measured, not estimated):** **39 model ids** with `release_date ≥ 2026-09-10`
-exist *only* in non-core rows — `step-5-preview`, `ternary-bonsai-2-27b`, `pareto`,
-`qwen3.8-omni-flash`, `fugu-max`, `fugu-ultra-v2`, `gpt-{astra,sol,luna,terra}-latest`,
-`schematron-v2-small/-turbo`, `arrow-2`, `arrow-2-telos`, `qwen3.8-27b-cybersecurity`, ….
-The 09-17 report already recorded the sibling case (`sakana/fugu-max`, 09-11, verified live on
-OpenRouter) as *"a sync-scope decision is needed to ever see it."* **That decision is now overdue.**
-
-**Verdict: DO NOT ADD yet — the account cannot serve it.**
-The deployment holds `STEPFUN_API_KEY` and `GET /v1/models` succeeds, but **every chat call
-returns HTTP 402** `{"type":"quota_exceeded","message":"You exceeded your current quota,
-please check your plan and billing details"}`, reproduced on **three** models
-(`step-3.5-flash`, `step-3.7-flash`, `step-5-preview`) — so it is **account-wide, not
-model-specific**, and not an invalid key. Endpoint gotcha recorded: the same key against
-`https://api.stepfun.com/v1` (China) returns **HTTP 401 `Incorrect API key provided`** — the
-China and Global endpoints are **not interchangeable**.
-
-→ Filed as **DF-CHIMERA-V2-26** (scan blind spot) and **DF-CHIMERA-V2-28** (route + quota).
-
----
-
-## 3. Carried candidate from 09-19: `z-ai/glm-5.3-flashx` — now BLOCKED for a new reason
-
-The 09-19 report recommended adding this and named its only caveat as the zai weekly quota
-(reset 2026-09-20 04:07 UTC). **Measured today, after the reset:**
+The wrapper's own stdout reads, under `=== Auto-scoring new candidates ===`:
 
 ```
-zai glm-5.3-flashx → HTTP 429 {"error":{"code":"1311",
-   "message":"Your current subscription plan does not yet include access to GLM-5.3-FlashX"}}
-zai glm-5.3-flash  → HTTP 200 in 4.1 s   (control: provider is healthy, key is valid)
+Chimera Model Sync — 2026-09-22 17:00 UTC
+Candidates: 0 new models across 13 providers
 ```
 
-The quota reset; the entitlement did not arrive. **The recommendation is downgraded to
-"hold"** — it is not addable on this subscription, regardless of the YAML patch. It remains
-"recommended when/if the plan gains the model". (The unit is otherwise healthy: the deployed
-service is at HEAD and `/v1/health` shows zai healthy on `zai-coding-plan/glm-5.2`.)
+That contradicts the report it had just written (`5 new models`). **It is a wrapper artifact, not a second scan result.** `scripts/model_sync_cron.py:122-128` writes the report *and* records the finds in `.seen_models.json`; step 3 (`:155-165`) then re-invokes `model_sync.py --diff --score`, whose `--diff` is now empty by construction, so its summary prints `0`. The scorer is **not** diff-scoped: it scores `select_top_candidates(candidates, limit=5)` by recency over **all** in-scope candidates (`model_sync.py:884`, `:378-398`). Consequences and the fix are filed as **DF-CHIMERA-V2-37** (§10).
+
+Independently re-measured this tick (same cache, no `--diff`): **177 in-scope candidates**; **5** not previously in `.seen_models.json`.
+
+Of the 5, **four are genuine 09-21/09-22 releases**; the fifth (`glm-4.6v-flash`, released **2025-12-08**) is a long-standing **catalog gap** that only now appeared in zhipuai's models.dev row — it is not a new model.
 
 ---
 
-## 4. Deployment drift found and FIXED this tick
+## 2. The five candidates — verification (all figures measured this tick)
 
-The tick opened with the supervised service **stale**: `/health` reported `commit 69acfb4`
-while local HEAD was `6fcfbb1` — **15 commits behind**, i.e. `Restart=always` had not
-recovered the drift. Two of those commits are security-relevant, so this was not cosmetic:
+Every candidate was probed live, not judged from the report table.
 
-- **Verified live pre-restart:** `POST /web/debug/reset` → **HTTP 200 `{"status":"ok"}`** on a
-  **`0.0.0.0`-bound** server. That endpoint rebinds the global session manager and SSE
-  broadcaster — **one anonymous request wipes every live session**. The fix (`796d396`, now
-  deployed) gates it on `CHIMERA_WEB_DEBUG_RESET`.
-- The same window carried the private-host leak gate, the stage-observer SSE fix and the
-  `/web` queue/rate-limit parity fix.
+| Candidate | Route that can serve it | Release | Context | $/1M in / out | Live probe |
+|---|---|---|---|---|---|
+| `grok-4.7` | **`openrouter/x-ai/grok-4.7`** | 2026-09-21 | 500 K | **1.60 / 4.80** (OR) | **HTTP 200 in 2.2 s**, `content='ok'` |
+| `mimo-v2.6-flash` | **`xiaomi/mimo-v2.6-flash`** (provider `openrouter`) | 2026-09-22 | 1 048 576 | **0.14 / 0.28** | **HTTP 200 in 2.1 s**, `content='ok'` |
+| `mimo-v2.6-pro` | **`xiaomi/mimo-v2.6-pro`** (provider `openrouter`) | 2026-09-22 | 1 048 576 | **0.435 / 0.87** | **HTTP 200 in 1.7 s**, `content='ok'` |
+| `mimo-v2.6-pro-ultraspeed` | `xiaomi/mimo-v2.6-pro-ultraspeed` (provider `openrouter`) | 2026-09-21 | 1 048 576 | **4.35 / 8.70** | **HTTP 200 in 2.8 s**, `content='ok'` |
+| `glm-4.6v-flash` | **native `zai/` only** — **NOT on OpenRouter** | 2025-12-08 | 128 K / 32 K out | **0 / 0 (free)** | native **HTTP 200 in 1.1 s**, `content='\nok'` |
 
-**After restart:** `/health` → `commit 6fcfbb1` == `git rev-parse --short HEAD`.
-**Re-verified:** `POST /web/debug/reset` → **HTTP 404 `{"detail":"Not found"}`** ✅.
-**Smoke:** `scripts/smoke_live.py --formation simple` → **SMOKE PASS**, merged answer returned
-(request `fb43b06cd08e4d25`), exit 0, `providers: 6/9 healthy`.
+Route notes, each with its evidence:
 
----
-
-## 5. Second finding: the `hermes` provider can never pass the health probe
-
-`/v1/health` reports `status: degraded` with `hermes: {healthy: false, error: "timeout: no
-response within 10.0s"}` on every probe. The gateway is demonstrably alive — but the gate is
-**structural**, not load:
-
-| Probe | Result |
-|---|---|
-| `GET 127.0.0.1:8642/v1/models` (same key) | **HTTP 200 in 0.33 s** — alive |
-| `POST :8642/v1/chat/completions` `{max_tokens: 1}` | **HTTP 200 after 108.3 s**, `prompt_tokens=43599` |
-| Same call, second attempt | still running at **300 s** |
-| **Control**: same model direct against `api.z.ai` | **HTTP 200 in 1.9 s**, `prompt_tokens=13` |
-| `server.health_timeout_s` (live config) | **10.0 s** |
-
-The gateway **injects its own ~43.6k-token agent system prompt**, so the provider's floor
-latency is ~100 s+ against a 10 s budget — no realistic `health_timeout_s` fixes it without
-turning the probe into a hanging request for every other provider. DF-CHIMERA-V2-17's
-cold-start grace (default 1.0 s) cannot cover a 100 s floor. Effect: the documented health
-contract can never be satisfied while `hermes` is configured, and a **real** hermes outage is
-indistinguishable from the standing condition.
-
-→ Filed as **DF-CHIMERA-V2-27**.
+- **The sync's suggested ids are not usable as printed.** It proposes `xai/grok-4.7` and `zai/glm-4.6v-flash`. The deployment has **no `xai` provider block** (only `api_keys.xai` — the discovery-only phantom already noted in CH-GAP-053), so grok must ride the existing grok convention: `openrouter/x-ai/grok-4.5` / `…/grok-4.20` are already catalog entries, so the correct key is **`openrouter/x-ai/grok-4.7`**.
+- **grok-4.7 is 20 % cheaper through OpenRouter than the native figure the sync prints** — models.dev's `xai` row carries `$2 / $6` per MTok (xAI's own list price, i.e. grok-4.6 pricing), OpenRouter's live catalog carries `$1.60 / $4.80`. Adopting the OR route means the OR number is the one that bills.
+- **The MiMo family mirrors the existing `xiaomi/mimo-v2.5` shape exactly** (`provider: openrouter`, id = the OR slug), so the YAML shape is already proven in-tree — no new provider, no adapter.
+- **`glm-4.6v-flash` exists on no OpenRouter row** (`GET /api/v1/models`, 444 entries → absent; `z-ai/glm-5.3-flashx` *is* present). It is reachable only through the configured `zai` provider (`https://api.z.ai/api/coding/paas/v4`), which **serves it on the current plan** — `POST /chat/completions {model: glm-4.6v-flash, max_tokens: 64}` → HTTP 200, `content='\nok'`.
+- **9router is not a route for any of these yet:** the fleet gateway (`master001:20128`, 271 lanes) has **no** `grok-4.7` and **no** `mimo-v2.6` lane (its newest MiMo is v2.5; its grok lane stops at `openrouter/x-ai/grok-4.6`). It *does* already carry `glm/glm-4.6v` and a local `lmstudio/zai-org/glm-4.6v-flash` lane — noted, not proposed, since `router9` is Bane's local-only fleet surface.
 
 ---
 
-## 6. `--score` top-5 (carried queue — none new this week)
+## 3. Scoring (shipped scorer, 32-path list)
 
-The `--score` path pulls its top-5 from **all** candidates, so previously-seen gaps stay
-reachable; the wrapper skipped it this run because the diff was empty. Queue unchanged:
+**Auto-scored** (`model_scores_20260922_1201.yaml`) — top-5 by recency over all candidates:
 
-| Model | Released | $/MTok in/out | Status |
+| Model | cost_tier emitted | Scored paths | Notable top scores |
 |---|---|---|---|
-| `zhipuai/glm-5.3-flashx` | 09-18 | $0.37 / $1.25 | **BLOCKED** — plan entitlement missing (§3) |
-| `openai/gpt-6-astra` | 09-04 | $10 / $50 | Verified live on OR (earlier runs); premium flagship — user decision pending |
-| `google/gemini-3.8-flash` | 09-02 | $0.75 / $3.75 | OR + google rows; standing pitfall: gemini-3.x are Vertex/OR-only, direct `v1beta` 404s |
-| `meta/muse-spark-1.3` | 09-02 | $1.25 / $4.25 | OR + native meta rows; no mistral/meta credential in this deployment |
-| `deepseek/deepseek-flash` | 09-10 | $0.15 / $0.60 | **Not a new model** — same flash product under current DeepSeek naming; already represented |
+| `xai/grok-4.7` | premium | 24 | python 90, task_decomposition 90, explanation 90, debugging 88, tool_use 88, logic_puzzle 88 |
+| `xiaomi/mimo-v2.6-pro` | premium | 16 | python 88, tool_use 86, image/analysis 84, error_analysis 84 |
+| `xiaomi/mimo-v2.6-pro-ultraspeed` | premium | 19 | python 88, tool_use 88, image/analysis 88, task_decomposition 86 |
+| `xiaomi/mimo-v2.6-flash` | budget | 12 | python 82, tool_use 80, image/analysis 78 |
+| `zai/glm-5.3-flashx` (carried) | standard | 14 | python 82, tool_use 82, debugging 80 |
+
+**Not auto-scored, scored on demand** (`model_scores_20260922_1204.yaml`, produced this tick by re-using the shipped `_llm_score_candidates` on that single candidate): `zai/glm-4.6v-flash` → `cost_tier: budget`, **one** path: `multimedia_processing/image/analysis: 82`. It is below the scorer's top-5 cut precisely because its recency bucket is the oldest (release 2025-12-08) — the same blind spot DF-CHIMERA-V2-37 describes.
+
+**Two scoring artifacts to correct if these are ever added:** (a) `mimo-v2.6-pro` at `$0.435 / $0.87` per MTok is labelled `premium` by the scorer although it sits between `budget` and `standard` on price — add explicit `cost_per_1k_*` and pick `standard`; (b) `glm-4.6v-flash` has **one** scored path, which makes it effectively invisible to the selector — that is only correct if image analysis is the intended lane, and §4 shows it is not reachable.
 
 ---
 
-## 7. Carried minor findings (status re-measured, not assumed)
+## 4. NEW FINDING — the deliberation request path has no image input, so a vision-scored entry is unroutable
 
-1. **Three-YAML drift — now measured by parse, not grep.** Line counts 1580 / 1649 / 1376
-   (`chimera.yaml` / `.example` / `.docker`); model keys **42 / 43 / 36**.
-   - `.example` has 1 extra: `cliproxy/deepseek,deepseek-v4-flash` (documented example entry) — **intentional**.
-   - `.docker` is missing **6** catalog entries: `hermes/glm-5.3-flash`, `router9/ds/deepseek-v4-flash`,
-     `router9/ds/deepseek-v4-pro`, `router9/mmx/MiniMax-M3`, `router9/openrouter/x-ai/grok-4.6`,
-     `router9/xai/grok-4` — **real drift** (the `router9` + `hermes` provider families never propagated).
-   - `server.health_timeout_s` is in the live file (10.0) and **absent from both** derived configs.
-   - *Correction to prior reports:* the 09-17 archive claimed `health_timeout_s` present in `.example` — a
-     grep count of 1 there is a **comment/other match**; a real YAML parse reads `None`. Grep counts on
-     these files are not evidence; parse them.
-2. **Stale cron docstring** — `scripts/model_sync_cron.py:1` still says *"Mondays 12:00 CT"*; observed
-   cadence is **daily 12:00 local**. Two-line fix, unfixed since 09-14.
-3. **`DF-CHIMERA-V2-13`** (AGENTS.md describes model-sync auto-scoring as "when `DEEPSEEK_API_KEY` is
-   set") — still `pending`; the dotenv fallback has been live since 09-17. One-line docs fix.
+`glm-4.6v-flash` (and every omni input advertised for `mimo-v2.6-*`) is only reachable **as text** in this deployment:
+
+```
+$ grep -rn "image_url\|inline_data\|content_parts\|multimodal\|base64" src/chimera --include="*.py"
+(no matches)
+$ grep -rn "image" src/chimera/api/server.py src/chimera/engine.py src/chimera/gateway.py
+(no matches)
+```
+
+- `DeliberateRequest` (`src/chimera/api/server.py:223-236`) exposes `prompt: str` and overrides only — no attachment, image or multipart field.
+- `ChatMessage.content` is `str`, not a parts list.
+- Consequently the selector can route an `image/analysis`-keyword task to a model whose **only** scored strength is image analysis, and the model will receive text with no image — the exact task class where it is weakest relative to a text model.
+
+**Verdict: hold `glm-4.6v-flash`.** Adding it today buys a free lane that can only be mis-routed; if a cheap vision lane is wanted, the input path is the work item, not the catalog row. The same caveat applies to MiMo's omni modalities — the MiMo rows are still worth considering *as text* models, which is how the scores in §3 were assigned.
 
 ---
 
-## 8. Deployment state (measured this tick, post-restart)
+## 5. Recommendations (approval required — **nothing was applied**; `chimera.yaml` is untouched)
 
-- `/v1/health` → `status: degraded`, `commit 6fcfbb1` == local HEAD ✅
-  `providers_configured: 7`, `providers_discovered: [openai, xai]` (discovery-only phantoms, correctly
-  reported as `healthy: false` + note after CH-GAP-053).
-- Healthy and probed: `anthropic` (claude-opus-4.8), `google` (gemini-3.1-pro-preview), `openrouter`
-  (qwen/qwen3.7-max), `router9` (ds/deepseek-v4-flash), `deepseek` (deepseek-v4-flash), `zai`
-  (zai-coding-plan/glm-5.2). Unhealthy: `hermes` (timeout, §5), `openai`/`xai` (no models configured).
-  `smoke_live.py` renders **6/9** counting only model-tested entries.
-- `GET /v1/models` == **42** == `load_config().models`; all `enabled: true`.
-- **zai weekly quota: recovered** (429 code 1310 gone; 1311 entitlement error is model-specific, §3).
-- `chimera.yaml` mtime unchanged by this run.
+**ADD — 3 entries, all verified live this tick**
+
+```yaml
+  openrouter/x-ai/grok-4.7:            # template grok-4.5/4.6 scores + family bump (+2)
+    categories: { ... from openrouter/x-ai/grok-4.6, +2 across the board ... }
+    cost_tier: premium
+    cost_per_1k_input: 0.0016          # OR live price ($1.60/MTok), not models.dev's $2
+    cost_per_1k_output: 0.0048
+    provider: openrouter
+    enabled: true
+
+  xiaomi/mimo-v2.6-flash:              # mirrors xiaomi/mimo-v2.5 shape
+    categories: { ... scored paths from model_scores_20260922_1201.yaml ... }
+    cost_tier: budget
+    cost_per_1k_input: 0.00014
+    cost_per_1k_output: 0.00028
+    provider: openrouter
+    enabled: true
+
+  xiaomi/mimo-v2.6-pro:
+    categories: { ... }
+    cost_tier: standard                # scorer said premium; price says standard
+    cost_per_1k_input: 0.000435
+    cost_per_1k_output: 0.00087
+    provider: openrouter
+    enabled: true
+```
+
+**SKIP — `xiaomi/mimo-v2.6-pro-ultraspeed`:** 10× the pro price ($4.35 / $8.70 per MTok) for latency only, identical weights, no benchmark evidence, and it would compete with grok-4.7 spend while adding nothing the pro row doesn't already cover. (It is verified working, so it stays a one-line add if Bane wants the speed lane.)
+
+**HOLD — `zai/glm-4.6v-flash`:** free and serving, but vision-only-scored and unroutable (§4).
+
+**UPDATE to the carried item — `z-ai/glm-5.3-flashx`:** the 09-20 report set this to HOLD because the zai plan returns `1311` (*"plan does not yet include access"*). **Native is still 1311 today, but OpenRouter now serves it** — `POST` → HTTP 200 in 2.2 s, `$0.37 / $1.25` per MTok, 1 048 576 ctx. So the recommendation becomes: **addable via `openrouter/z-ai/glm-5.3-flashx` at OR list price**, or keep holding for the cheaper plan lane whenever the entitlement lands.
+
+---
+
+## 6. zai native plan — probe matrix this run
+
+| Probe (against the configured coding endpoint) | Result |
+|---|---|
+| `glm-4.6v-flash` | **200** in 1.1 s, visible content |
+| `glm-5.3-flash` | **200** in 5.6 s … then **429 `1302` rate limit reached** seconds later |
+| `glm-5.2` (the catalog's `zai-coding-plan/glm-5.2`) | **429 `1302` rate limit reached** |
+| `glm-5.3-flashx` | **429 `1311`** — plan entitlement still missing |
+| `glm-4.7` | 200, but `content` empty at `max_tokens=64` (reasoning ate the budget — known pitfall) |
+
+Reading: the plan is **intermittently** request-rate-limited (`1302`) rather than weekly-exhausted (`1310` as on 09-20) — the same model alternated between 200 and 429 within one tick, in both directions. Any zai-side flake seen by users right now is most likely this, not a gateway fault.
+
+---
+
+## 7. Deployment state (measured this tick)
+
+- `/health` and `/v1/health/live` → `{"status":"alive","uptime_models":42,"commit":"faf78b4"}`.
+- Local `HEAD` = **43665b2**; the running commit is **2 commits behind**, both **non-code** (`43665b2` board cleanup, `151d455` dogfood notes) — `git diff --stat faf78b4..HEAD -- src/ scripts/ tests/ pyproject.toml` is **empty**, so the running code *is* HEAD's code. **No restart needed** (last week's 15-commit real drift did not recur).
+- CI on HEAD is **red** (`test 3.11/3.12/3.13` fail: `docs/dogfood/2026-09-22-integration.md` not indexed; `lint` green). Owned by the releng satellite row `RELEASE-READINESS-2026-09-22` (RELEASE-FINDING-001), noted here only so the sync report isn't read as "all green".
+- Providers configured: 7 (`deepseek`, `openrouter`, `zai`, `anthropic`, `google`, `hermes`, `router9`); `xai` has a key but **no provider block** — that is why grok must ride OpenRouter (§2).
+
+---
+
+## 8. Carried board rows — status re-read from the board, not from memory
+
+| Row | Status now | Note |
+|---|---|---|
+| DF-CHIMERA-V2-26 (sync blind spot) | **complete** | The scan now emits the Reseller Watch / Blind Spot sections this report carries — the 09-20 decision landed. |
+| DF-CHIMERA-V2-27 (`hermes` health probe) | **complete** | — |
+| DF-CHIMERA-V2-28 (StepFun native key vs 402) | **pending (P3)** | Still open; unchanged this tick. |
+| DF-CHIMERA-V2-32 … 35 (dogfood: `--stage-models` silent no-op, `auto` not implicit, degraded-DAG RC=0, CONFIG.md scale) | **pending** | From `151d455`; not sync-owned. |
 
 ---
 
 ## 9. Action items
 
-1. **Bane decision — the sync-scope question is now blocking real value.** Approve one of:
-   (a) reseller/aggregator watch list + native cross-check, (b) native lab API scanning, or
-   (c) a mandatory named "blind spot" section in every weekly report. **DF-CHIMERA-V2-26.**
-2. **Bane decision — StepFun billing.** The native account is quota-exhausted (402) while a
-   600B frontier model ships on it. Top up → then route natively; or leave it unused. **DF-CHIMERA-V2-28.**
-3. **`z-ai/glm-5.3-flashx`: HOLD** (§3) — the 09-19 recommendation is not actionable on this plan.
-4. **`hermes` provider health** — approve per-provider probe control or a liveness-only probe. **DF-CHIMERA-V2-27.**
-5. **Deploy drift** — done this tick; the running service now matches HEAD. The pattern (15 commits of
-   drift, including an open destructive endpoint) argues for the foreman's existing `/health`-vs-HEAD
-   audit to *restart*, not just report.
-6. Carried docs fixes: cron docstring (§7.2), `DF-CHIMERA-V2-13` (§7.3), `.docker` model drift (§7.1).
+1. **Approve or reject the 3 adds in §5** (`openrouter/x-ai/grok-4.7`, `xiaomi/mimo-v2.6-flash`, `xiaomi/mimo-v2.6-pro`). No catalog edit has been made.
+2. **Decide the vision question** (§4): either wire an image input into the request path, or stop scoring image-only lanes. Until then `glm-4.6v-flash` stays out.
+3. **Decide `openrouter/z-ai/glm-5.3-flashx`** — native is entitlement-blocked, OR works at list price (§5).
+4. **DF-CHIMERA-V2-37** (filed this run): fix the wrapper so its printed candidate count cannot contradict the report it just wrote, and so a new low-recency find gets auto-scored instead of silently skipped.
+5. Unrelated but open from the same tick: **DF-CHIMERA-V2-28** (StepFun) and the CI-red docs-index item (releng-owned).
 
 ---
 
-## 10. Findings filed as board rows this run
-
-Per Bane's ops doctrine (findings become rows on the owning project, not report prose only):
+## 10. Finding filed as a board row this run
 
 | Row | Priority | Finding |
 |---|---|---|
-| **DF-CHIMERA-V2-26** | P2 | Sync blind spot: a release whose only models.dev rows are reseller/aggregator ids is invisible — `step-5-preview` is the proof; 39 such ids measured since 09-10 |
-| **DF-CHIMERA-V2-27** | P2 | `hermes` can never pass the `/v1/health` probe — 43.6k-token injected prompt, 108 s measured floor vs 10 s budget |
-| **DF-CHIMERA-V2-28** | P3 | StepFun routed via OpenRouter while a native `STEPFUN_API_KEY` exists — and the native account 402s account-wide (policy-gated on billing) |
-
-Board delta: **194 → 197 rows**, appended via `~/.hermes/scripts/board_append.py`
-(`APPENDED=3 PRIOR=194 TOTAL=197`), one object per physical line, file ends with exactly one
-newline. `DF-CHIMERA-V2-25` was not modified by this run (its `pending → in_progress` flip in
-the working tree is the live foreman's 11:54 dispatch).
+| **DF-CHIMERA-V2-37** | P3 | `model_sync_cron.py` step 3 re-runs `--diff --score` after step 1 already wrote `.seen_models.json`, so the tick prints `Candidates: 0 new models` directly under a report that says `5 new models`; and `--score`'s top-5-by-recency selection means a new find with an old release date is never auto-scored (proof: `zai/glm-4.6v-flash`, scored only by a manual targeted run). |
