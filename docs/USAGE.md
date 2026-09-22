@@ -74,8 +74,9 @@ chimera --json run "Compare React and Vue"
 The `trace` value is the complete trace serialization
 (`DeliberationTrace.model_dump(mode="json")`) — every field the REST API
 returns, including `dispatch`, `stages`, `worker_failures`, `dispatch_note`,
-`dispatch_repairs`, token and cost totals. Unicode is preserved
-(`ensure_ascii=False`), so `café` is written as `café`, never `caf\u00e9`.
+`dispatch_fallback_reason`, `dispatch_repairs`, token and cost totals. Unicode
+is preserved (`ensure_ascii=False`), so `café` is written as `café`, never
+`caf\u00e9`.
 
 Streams and exit codes:
 
@@ -94,8 +95,33 @@ Notes:
 - Operational truth is never hidden: the dropped-worker and
   dispatch-degradation/repair warnings that human mode prints beside the
   panel are written to **stderr** in the machine modes (the JSON's
-  `trace.worker_failures` / `trace.dispatch_note` / `trace.dispatch_repairs`
-  carry the same facts machine-readably).
+  `trace.worker_failures` / `trace.dispatch_note` /
+  `trace.dispatch_fallback_reason` / `trace.dispatch_repairs` carry the same
+  facts machine-readably).
+- A **dropped worker** is any stage — worker, aggregator, merge or audit — that
+  ended degraded (a per-stage timeout, a gateway/connection error, an exhausted
+  budget) while the deliberation still produced an answer. The line names the
+  stage and its model: `warning: worker '<stage-id>' (<model>) failed:
+  <error>`, with the complete upstream message in the trace when the rendering
+  is elided.
+- A **degraded dispatch** is one of two things, and both are warned about:
+
+  - the dispatcher plan was discarded and the run collapsed to a generic
+    single-worker formation — `warning: dispatch degraded — source=fallback
+    (<reason>); the deliberation collapsed to a generic single-worker
+    formation` (that is `trace.source == "fallback"`); or
+  - the dispatcher's own design was discarded — its answer was unparseable, or
+    the dispatcher call failed — while a preset or custom DAG kept its
+    structure — `warning: dispatch degraded — the dispatcher's design was
+    discarded (<reason>); stage prompts and merge instructions fell back to
+    templates`.
+
+  The second shape is why this warning cannot be derived from `trace.source`
+  alone: on a preset or a custom DAG `source` names the FORMATION
+  (`preset`/`custom`), not the dispatch outcome, so the discard is carried by
+  `trace.dispatch_fallback_reason` (and `trace.dispatch_note`). A run whose
+  answer came from a partially designed DAG is never silent, in any mode.
+
 - `--verbose` is ignored under `--quiet` / `--json` — the trace is already in
   the JSON, and `--quiet` stays a single line.
 - The flags govern DELIBERATION output (the `run` path). `chimera models` and
@@ -445,8 +471,10 @@ but three things now happen:
   catalog *and* from worker stages, including a worker that names it
   explicitly (`--stage-models`), which is replaced by a credentialed
   fallback model instead of burning another doomed call;
-* the CLI prints an actionable warning on stderr naming the stage, model,
-  provider and the env var to fix:
+* the CLI prints an actionable warning naming the stage, model, provider and
+  the env var to fix — on **stderr** under `--quiet`/`--json`, beside the panel
+  on stdout in human mode (the same stream split the "Streams and exit codes"
+  table above documents for every other warning):
 
 ```
 warning: worker 'worker_1' (openrouter/openai/gpt-5.6-sol) failed: litellm.AuthenticationError: ...

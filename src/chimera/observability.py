@@ -35,9 +35,7 @@ def _log_stream(obs: Observability) -> TextIO:
     return sys.stdout if obs.use_stdout else sys.stderr
 
 
-def configure_logging(
-    obs: Observability, *, force_stderr: bool = False
-) -> structlog.stdlib.BoundLogger:
+def configure_logging(obs: Observability, *, force_stderr: bool = False) -> structlog.stdlib.BoundLogger:
     """Configure structlog (once per stream/level) and return a bound logger.
 
     ``force_stderr`` pins every log sink (structlog and stdlib ``logging``)
@@ -57,9 +55,7 @@ def configure_logging(
     level = getattr(logging, obs.log_level.upper(), logging.INFO)
     stream: TextIO = sys.stderr if force_stderr else _log_stream(obs)
 
-    if not (
-        _LOGGER_CONFIGURED and _CONFIGURED_STREAM is stream and level == _CONFIGURED_LEVEL
-    ):
+    if not (_LOGGER_CONFIGURED and _CONFIGURED_STREAM is stream and level == _CONFIGURED_LEVEL):
         logging.basicConfig(
             format="%(message)s",
             stream=stream,
@@ -76,7 +72,20 @@ def configure_logging(
             ],
             wrapper_class=structlog.make_filtering_bound_logger(level),
             logger_factory=structlog.PrintLoggerFactory(file=stream),
-            cache_logger_on_first_use=True,
+            # DF-CHIMERA-V2-34: NOT cached on first use. The docstring above
+            # promises that "earlier-created module loggers rebind to the new
+            # stream on their next use" — with caching ON they only bind ONCE,
+            # so a module-level proxy materialised while another in-process
+            # caller had logging on stdout (``api.server.create_app`` calls
+            # ``configure_logging(cfg.observability)`` with the default
+            # ``use_stdout: true``) keeps that sink forever and its records land
+            # on the machine-mode stdout contract after the CLI's
+            # ``force_stderr=True`` re-pin — corrupting ``--json`` (a structlog
+            # line ahead of the JSON document) in exactly the degraded paths
+            # this repo warns about. Resolving per emission costs one factory
+            # call per log record and makes the pin authoritative; the same
+            # remedy is applied per-emission in ``config._log_warning``.
+            cache_logger_on_first_use=False,
         )
         _LOGGER_CONFIGURED = True
         _CONFIGURED_STREAM = stream
@@ -110,9 +119,7 @@ def _configure_langfuse(obs: Observability) -> None:
     try:
         from langfuse import Langfuse  # type: ignore[import-not-found]
     except ImportError:
-        get_logger().warning(
-            "langfuse.enabled=true but 'langfuse' package is not installed; skipping"
-        )
+        get_logger().warning("langfuse.enabled=true but 'langfuse' package is not installed; skipping")
         return
     _LANGFUSE_CLIENT = Langfuse(
         host=obs.langfuse.host,

@@ -99,8 +99,9 @@ class ConcurrentFakeGateway(FakeGateway):
         response_format: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> GatewayResponse:
-        self.calls.append((model, messages, {"temperature": temperature,
-                                             "response_format": response_format, **kwargs}))
+        self.calls.append(
+            (model, messages, {"temperature": temperature, "response_format": response_format, **kwargs})
+        )
 
         # Introduce deterministic interleaving by releasing the event loop
         # after each call so concurrent tasks can swap in.
@@ -108,20 +109,23 @@ class ConcurrentFakeGateway(FakeGateway):
             await asyncio.sleep(self.extra_latency)
 
         if self.responder is not None:
-            result = self.responder(model, messages, response_format=response_format,
-                                    temperature=temperature, **kwargs)
+            result = self.responder(
+                model, messages, response_format=response_format, temperature=temperature, **kwargs
+            )
             if asyncio.iscoroutine(result):
                 return await result
             return result
-        return GatewayResponse(text=f"[fake response from {model}]",
-                               model=model, tokens_input=10, tokens_output=20)
+        return GatewayResponse(
+            text=f"[fake response from {model}]", model=model, tokens_input=10, tokens_output=20
+        )
 
 
 def _tagged_responder(config: Any, request_id_parts: list[str]) -> Any:
     """Responder that includes the calling coroutine's task name in every response."""
 
-    async def _responder(model: str, messages: list[dict[str, str]],
-                         response_format: Any = None, **kw: Any) -> GatewayResponse:
+    async def _responder(
+        model: str, messages: list[dict[str, str]], response_format: Any = None, **kw: Any
+    ) -> GatewayResponse:
         # Yield control so other coroutines can interleave
         await asyncio.sleep(0)
         if response_format is not None:  # dispatcher
@@ -384,7 +388,18 @@ async def test_config_snapshot_models_isolated(config) -> None:  # type: ignore[
 
 @pytest.mark.asyncio
 async def test_config_mutation_logs_warning(config, capsys) -> None:  # type: ignore[no-untyped-def]
-    """Mutating the config after snapshot triggers a warning log."""
+    """Mutating the config after snapshot triggers a warning log.
+
+    The record follows the LIVE structlog pin (DF-CHIMERA-V2-34): module loggers
+    resolve per emission, so the stream is whichever entry point configured
+    logging last — stdout by config default, stderr after any CLI/API/MCP pin.
+    This test pins the stdout sink it asserts on instead of depending on the
+    session's order.
+    """
+    from chimera.config import Observability
+    from chimera.observability import configure_logging
+
+    configure_logging(Observability(use_stdout=True, langfuse={"enabled": False}))
 
     engine = Engine(config, ConcurrentFakeGateway(_tagged_responder(config, [])))
 
@@ -393,7 +408,7 @@ async def test_config_mutation_logs_warning(config, capsys) -> None:  # type: ig
 
     await engine.deliberate("test mutation warning", "auto")
 
-    # structlog writes to stdout — check captured output
+    # structlog writes to the stdout sink configured above — check captured output
     captured = capsys.readouterr().out
     assert "config_mutated_after_snapshot" in captured, (
         f"Expected config_mutated_after_snapshot in stdout, got: {captured}"
@@ -556,9 +571,7 @@ def test_successful_web_chat_releases_its_queue_slot(web_singletons: None) -> No
     client, app, gateway = _build_web(config)
     session_id = _new_session(app, client)
 
-    first = client.post(
-        f"/web/sessions/{session_id}/chat", json={"prompt": "one", "formation": "simple"}
-    )
+    first = client.post(f"/web/sessions/{session_id}/chat", json={"prompt": "one", "formation": "simple"})
     assert first.status_code == 200, first.text
     # max_concurrent == 1: a leaked slot would block the second call on the
     # semaphore instead of answering, so both assertions below are load-bearing.
@@ -566,9 +579,7 @@ def test_successful_web_chat_releases_its_queue_slot(web_singletons: None) -> No
     assert app.state.request_queue.current_waiting == 0
 
     web_routes._sse_broadcaster.ensure_ready(session_id).set()
-    second = client.post(
-        f"/web/sessions/{session_id}/chat", json={"prompt": "two", "formation": "simple"}
-    )
+    second = client.post(f"/web/sessions/{session_id}/chat", json={"prompt": "two", "formation": "simple"})
 
     assert second.status_code == 200, second.text
     assert second.json()["turn_number"] == 2
@@ -596,9 +607,7 @@ def test_web_chat_releases_its_slot_after_a_failed_deliberation(web_singletons: 
     # restored) is not blocked by the leaked slot.
     app.state.engine.deliberate = _deliberate_op(app)  # type: ignore[assignment]
     web_routes._sse_broadcaster.ensure_ready(session_id).set()
-    again = client.post(
-        f"/web/sessions/{session_id}/chat", json={"prompt": "y", "formation": "simple"}
-    )
+    again = client.post(f"/web/sessions/{session_id}/chat", json={"prompt": "y", "formation": "simple"})
     assert again.status_code == 200, again.text
 
 
@@ -633,10 +642,14 @@ def test_web_chat_is_rate_limited_like_the_v1_surface(web_singletons: None) -> N
     assert response.status_code == 429, response.text
     assert v1.status_code == 429
     assert response.headers["retry-after"] == v1.headers["retry-after"] == "31"
-    assert response.json()["detail"] == v1.json()["detail"] == {
-        "error": "rate_limited",
-        "message": "Too many requests. Please wait before retrying.",
-    }
+    assert (
+        response.json()["detail"]
+        == v1.json()["detail"]
+        == {
+            "error": "rate_limited",
+            "message": "Too many requests. Please wait before retrying.",
+        }
+    )
 
     # Refused at the edge: no provider call, no turn, no queue slot taken.
     assert gateway.calls == []
@@ -653,15 +666,11 @@ def test_web_chat_rate_limit_uses_the_configured_limiter(web_singletons: None) -
     client, app, _ = _build_web(config)
     session_id = _new_session(app, client)
 
-    first = client.post(
-        f"/web/sessions/{session_id}/chat", json={"prompt": "one", "formation": "simple"}
-    )
+    first = client.post(f"/web/sessions/{session_id}/chat", json={"prompt": "one", "formation": "simple"})
     assert first.status_code == 200, first.text
 
     web_routes._sse_broadcaster.ensure_ready(session_id).set()
-    second = client.post(
-        f"/web/sessions/{session_id}/chat", json={"prompt": "two", "formation": "simple"}
-    )
+    second = client.post(f"/web/sessions/{session_id}/chat", json={"prompt": "two", "formation": "simple"})
 
     assert second.status_code == 429, second.text
     assert "Retry-After" in second.headers

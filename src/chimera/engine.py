@@ -148,6 +148,18 @@ class DeliberationTrace(BaseModel):
     """Dispatch fallback reason or repair note (e.g. ``"malformed_json"``,
     ``"repaired: added aggregator stage for 2 worker terminals"``). ``None``
     for a clean auto/preset/custom dispatch."""
+    dispatch_fallback_reason: str | None = None
+    """Why the dispatcher's DESIGN was discarded — ``"malformed_json"`` or
+    ``"invalid_dag: <error>"`` — with the stage prompts/instructions falling
+    back to templates. ``None`` for a clean or merely repaired dispatch.
+
+    ``source`` names the FORMATION the run used (``auto`` / ``preset`` /
+    ``custom`` / ``fallback``), so on a preset or custom DAG the dispatcher's
+    own collapse used to be masked by the formation type: the run answered
+    normally with no warning in any CLI mode (DF-CHIMERA-V2-34). This field is
+    the unambiguous marker, set whenever the dispatcher built its plan through
+    ``_fallback_result`` regardless of which formation ran.
+    """
     dispatch_repairs: list[DispatchRepair] = Field(default_factory=list)
     """Machine-readable form of the repairs summarised by ``dispatch_note``:
     one :class:`~chimera.dispatcher.DispatchRepair` per structural repair the
@@ -1768,6 +1780,10 @@ class Engine:
             total_tokens=total_tokens,
             iteration_count=iteration_count,
             dispatch_note=dispatch.fallback_reason or dispatch.dispatch_note,
+            # DF-CHIMERA-V2-34: the structured form of the discard. On a preset
+            # or custom DAG `source` is the formation type, not the dispatch
+            # outcome, so the collapse needs its own field to stay visible.
+            dispatch_fallback_reason=dispatch.fallback_reason,
             dispatch_repairs=list(dispatch.dispatch_repairs),
             worker_failures=list(worker_failures or []),
         )

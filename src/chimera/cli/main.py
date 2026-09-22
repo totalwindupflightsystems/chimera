@@ -325,7 +325,10 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
     # Operational truth is never suppressed (DF-CHIMERA-0906-5): in human mode
     # the dropped-worker / degraded-dispatch warnings stay on stdout beside the
     # panel, but in --quiet/--json they move to stderr so stdout carries ONLY
-    # the machine-readable payload.
+    # the machine-readable payload. Both classes are computed from the trace
+    # (worker_failures + the dispatch outcome), so a degraded run is announced
+    # the same way whatever the formation — including a preset/custom DAG whose
+    # dispatcher design was discarded (DF-CHIMERA-V2-34).
     warn_console = err_console if machine_mode else console
     _print_worker_failures(result, warn_console, config)
     _print_dispatch_degradation(result, warn_console)
@@ -530,11 +533,21 @@ def _repair_note_detail(note: str) -> str:
 def _print_dispatch_degradation(result: Any, out: Console = console) -> None:
     """Warn (always, not just --verbose) when the dispatch degraded.
 
-    Two degradation classes surface here:
+    Three degradation classes surface here:
 
     * ``trace.source == "fallback"`` — the dispatcher plan was discarded
       and the deliberation collapsed to a generic single-worker formation.
       The answer may look fine; this is the ONLY signal (CH-GAP-044).
+    * ``trace.dispatch_fallback_reason`` set while ``source`` names a
+      formation (``preset`` / ``custom``) — DF-CHIMERA-V2-34. The dispatcher's
+      DESIGN was discarded exactly as above (its answer was unparseable, or
+      the dispatcher call itself failed), but ``_dispatch_preset`` /
+      ``_dispatch_custom`` overwrite ``source`` with the formation type, so the
+      collapse used to be invisible: the run answered normally and NOTHING was
+      printed in any mode. The formation structure is honored (only the
+      per-stage prompts and merge instructions fall back to templates), so this
+      gets its own wording rather than the "collapsed to a generic formation"
+      text above.
     * a repair note (``dispatch_note`` containing "repaired"/"injected") —
       the dispatcher's DAG was structurally repaired (e.g. an aggregator
       stage referenced by edges but missing from stages was injected), so
@@ -547,12 +560,19 @@ def _print_dispatch_degradation(result: Any, out: Console = console) -> None:
         return
     source = getattr(trace, "source", None)
     note = getattr(trace, "dispatch_note", None)
+    fallback_reason = getattr(trace, "dispatch_fallback_reason", None)
     if source == "fallback":
         reason = note or "unknown reason"
         out.print(
             f"[yellow]warning:[/yellow] dispatch degraded — source=fallback "
             f"({reason}); the deliberation collapsed to a generic "
             f"single-worker formation"
+        )
+    elif fallback_reason:
+        out.print(
+            f"[yellow]warning:[/yellow] dispatch degraded — the dispatcher's "
+            f"design was discarded ({fallback_reason}); stage prompts and "
+            f"merge instructions fell back to templates"
         )
     elif note and ("repaired" in note or "injected" in note):
         # De-duplicate the label: the note already starts with "repaired: " on

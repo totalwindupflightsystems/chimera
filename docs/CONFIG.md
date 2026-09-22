@@ -265,6 +265,36 @@ state file (or remove the entry from it).
 
 ---
 
+## `timeout`
+
+Wall-clock budgets, in seconds — the first thing to look at when a run reports a
+dropped stage. A stage that exceeds its budget is **not** fatal: the deliberation
+continues without it (the resilience contract), the trace records it in
+`worker_failures`, and the CLI prints a `warning:` line naming the dropped stage
+(see [USAGE.md](USAGE.md)).
+
+```yaml
+timeout:
+  per_stage_s: 120        # one worker/aggregator/merge/audit stage
+  total_s: 300            # the whole deliberation
+  idle_s: 30              # inter-token stall, only with min_tokens_per_second
+  min_tokens_per_second: 0    # >0 lets a productive stage run past per_stage_s
+  connect_s: 10           # TCP/HTTP connect
+  read_s: 30              # socket read
+  retry_s: 60             # retry budget inside one stage
+```
+
+- `per_stage_s` — **the knob to raise first.** The default is 120 s, which is
+  what a slow reasoning model on a large prompt hits first; a run that answers
+  "from 1 of 2 reviewers" was almost always this budget. `0` (or a negative
+  value) disables the per-stage budget entirely.
+- `total_s` — end-to-end cap for one deliberation; a per-stage budget is clamped
+  to it.
+- The same budget is available per request on the REST surface
+  (`X-Chimera-Timeout`), and a request can only *lower* the configured ceiling.
+
+---
+
 ## `models`
 
 Each model entry:

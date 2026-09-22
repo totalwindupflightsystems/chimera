@@ -71,14 +71,10 @@ def cli_env(tmp_path: Path) -> dict[str, str]:
         "_fetched_at": time.time(),
         "deepseek": {
             "env": ["DEEPSEEK_API_KEY"],
-            "models": {
-                "deepseek-chat": {"cost": {"input": 1.0, "output": 1.0}}
-            },
+            "models": {"deepseek-chat": {"cost": {"input": 1.0, "output": 1.0}}},
         },
     }
-    (home / ".chimera" / "models-dev-cache.json").write_text(
-        json.dumps(cache), encoding="utf-8"
-    )
+    (home / ".chimera" / "models-dev-cache.json").write_text(json.dumps(cache), encoding="utf-8")
 
     cfg_dict = copy.deepcopy(CONFIG_DICT)
     cfg_dict["observability"] = {
@@ -99,9 +95,7 @@ def cli_env(tmp_path: Path) -> dict[str, str]:
     return env
 
 
-def _run_cli(
-    args: list[str], env: dict[str, str], timeout: int = 60
-) -> subprocess.CompletedProcess[str]:
+def _run_cli(args: list[str], env: dict[str, str], timeout: int = 60) -> subprocess.CompletedProcess[str]:
     """Run ``python -m chimera`` with split stdout/stderr capture."""
     return subprocess.run(
         [sys.executable, "-m", "chimera", *args],
@@ -136,9 +130,7 @@ def _assert_logs_on_stderr(proc: subprocess.CompletedProcess[str]) -> None:
 
 
 @pytest.mark.parametrize("command", [["models"], ["formations"]])
-def test_cli_stdout_pure_table_commands(
-    command: list[str], cli_env: dict[str, str]
-) -> None:
+def test_cli_stdout_pure_table_commands(command: list[str], cli_env: dict[str, str]) -> None:
     """`chimera models` / `formations`: stdout = table only, logs on stderr."""
     proc = _run_cli(["-c", cli_env["CHIMERA_CONFIG"], *command], cli_env)
     assert proc.returncode == 0, (
@@ -204,3 +196,60 @@ def test_cli_stdout_pure_models_with_real_repo_config() -> None:
     _assert_stdout_pure(proc)
     assert "Models" in proc.stdout
     assert "deepseek" in proc.stdout.lower()
+
+
+def test_module_logger_follows_a_stdout_to_stderr_repin() -> None:
+    """A module logger bound while logging was on stdout must follow the CLI pin.
+
+    The subprocess tests above prove stdout purity for a FRESH process. The same
+    contract has an in-process hole (DF-CHIMERA-V2-34): a module-level
+    ``structlog.get_logger()`` proxy (``chimera.dispatcher`` / ``.engine`` /
+    ``.aggregator``) binds against whichever configuration is live at its first
+    emission, and ``api.server.create_app`` calls ``configure_logging`` with the
+    config default ``use_stdout: true``. With ``cache_logger_on_first_use=True``
+    that binding survives every later re-pin, so a degraded deliberation run
+    dispatched in-process (an embedding app, a test session) wrote its structlog
+    records onto the machine-mode stdout contract — a structlog line ahead of the
+    ``--json`` document, which is exactly what the documented streams table
+    forbids. Resolving the logger per emission (``cache_logger_on_first_use``
+    off) makes the pin authoritative.
+
+    Captured streams make the assertion about the SINK, not about ordering: the
+    logger is first bound while ``sys.stdout`` is a captured StringIO, so a
+    stale binding is visible as a record landing there after the re-pin.
+    """
+    import contextlib
+    import io
+
+    import chimera.dispatcher as dispatcher_mod
+    from chimera.config import Observability
+    from chimera.observability import configure_logging
+
+    stdout_a, stderr_a = io.StringIO(), io.StringIO()
+    try:
+        # An in-process caller (create_app) configures logging with the default
+        # use_stdout=True, and a module logger emits through that pipeline.
+        with contextlib.redirect_stdout(stdout_a), contextlib.redirect_stderr(stderr_a):
+            configure_logging(Observability(use_stdout=True, langfuse={"enabled": False}))
+            dispatcher_mod.log.warning("purity_probe_bound_on_stdout")
+        assert "purity_probe_bound_on_stdout" in stdout_a.getvalue()
+
+        stdout_b, stderr_b = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout_b), contextlib.redirect_stderr(stderr_b):
+            # The CLI's phase-1/2 pin (cli.main._load_cfg).
+            configure_logging(
+                Observability(use_stdout=False, langfuse={"enabled": False}),
+                force_stderr=True,
+            )
+            dispatcher_mod.log.warning("purity_probe_after_repin")
+
+        assert "purity_probe_after_repin" not in (stdout_a.getvalue() + stdout_b.getvalue()), (
+            "a module logger kept writing to the stdout sink it bound before the "
+            "force_stderr pin (DF-CHIMERA-V2-34): the machine-mode stdout contract "
+            "is broken"
+        )
+        assert "purity_probe_after_repin" in stderr_b.getvalue()
+    finally:
+        # Leave the session pinned to the real stderr, the state every later
+        # test expects from a CLI / API / MCP entry point.
+        configure_logging(Observability(use_stdout=False, langfuse={"enabled": False}), force_stderr=True)
