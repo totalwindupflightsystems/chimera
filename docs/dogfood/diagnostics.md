@@ -549,3 +549,50 @@ curl -s -X POST localhost:8765/web/debug/reset
 Working evidence from this run (ephemeral `/tmp`): `sse-time.txt`,
 `chat-time.txt` (the timestamped frame log), `aged2-meta.txt`,
 `sse-compare.txt`, `bunker-install2.log`.
+
+## 2026-09-22 (run 11) — the custom-formation surface: how stages resolve, and what degrades silently
+
+**Why this run exists.** Runs 1–10 always consumed shipped formations. A user
+who writes their own is the deepest test of the DAG machinery, because nothing
+pre-validates their config: the dispatcher never intervenes (the formation is
+static), so every assumption the engine makes about stages/edges/models is
+exercised with user-shaped input.
+
+**How the pieces actually fit (learned by driving them, not reading):**
+
+1. `config.py` loads formations as plain data — a `dag:` block with
+   `stages[]`/`edges[]` goes in verbatim. There is no schema validation step a
+   user sees; bad references surface later at execution, not at load
+   (`chimera formations` listing proves only that YAML parsed).
+2. At run time the engine topologically executes stages by `depends_on`;
+   `--stage-models` overrides are a dict keyed by stage id applied after
+   dispatch resolution. The matching is by exact id with no unmatched-key
+   check — that is why a typo is invisible (DF-CHIMERA-V2-32). The override
+   path itself is correct and user-shaped: custom ids resolve as well as
+   shipped ones.
+3. Degradation is per-stage and cooperative: a stage that exceeds
+   `timeout.per_stage_s` (request header → config → 120.0 code default in
+   engine.py `DEFAULT_STAGE_TIMEOUT_S`) is cancelled, recorded via
+   `_degraded_stage`, and downstream merge/aggregator stages run with a
+   "partial inputs" note in the log stream. The design intent (one slow model
+   cannot block the deliberation) is sound; the gap is that on the CLI the
+   degradation note is a structlog JSON line, not the human `warning:` line
+   USAGE.md's contract table promises (DF-CHIMERA-V2-34).
+4. The default-formation resolution is "formation named `auto` must exist in
+   config" — it is not a built-in singleton. Minimal configs therefore exit 2
+   on the bare `run` form (DF-CHIMERA-V2-33). This is the one place where the
+   docs example and the engine disagree, and the error message papers over it
+   well enough that recovery is fast.
+
+**Port discipline note for future probes:** :8765 is the live systemd unit
+(dogfood never touches it), :8766 is the off-by-one pre-solve lab (NOT
+chimera — its /health says so), so scratch chimera servers should pick an
+empty port like :8777 and be killed after. A scratch-server /health carrying
+`commit` equal to checkout HEAD is the fastest deploy-parity probe.
+
+**Evidence (ephemeral /tmp/dogfood-chimera/, not committed):** user config,
+answer1.txt (the 87s review), sm.json (override + timeout run), dag.json
+(inline --dag), rest.json (REST run), serve8777.log. Bunker install leg:
+agent 4dfc08f3, venv+pip install 54s, config init from packaged example ok,
+first answer 30s; agent destroyed, 0 remaining. No credentials in any
+artifact; scratch config uses ${DEEPSEEK_API_KEY} indirection only.

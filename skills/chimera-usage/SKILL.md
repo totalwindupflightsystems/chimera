@@ -9,7 +9,10 @@ description: >-
   keep-stdin-open harness rule, fresh-clone config gotcha, bunker install.
   v1.2.0 adds the 2026-09-20 run-10 web-UI section (`/web/` recipes, the
   not-live DAG, the reconnect banner, the destructive debug hook).
-version: 1.2.0
+  v1.3.0 adds the 2026-09-22 run-11 custom-formation section: authoring a
+  user formation, `--stage-models` on custom stage ids, the degraded-merge
+  observability gap, and the fresh-install quickstart proof on 0.2.7.
+version: 1.3.0
 category: software-development
 ---
 
@@ -438,3 +441,82 @@ curl -s -X POST "localhost:8765/web/sessions/$SID/chat" -H 'Content-Type: applic
 ```
 A 200 with an answer means the surface runs; it does **not** mean the DAG is
 live — that needs the event stream timestamps, which is the run-10 finding.
+
+## Update 2026-09-22 (run 11) — custom formations: author your own multi-stage DAG
+
+The surface runs 1–10 never touched: a user-defined formation. Everything below
+was executed for real against 0.2.7 @ faf78b4 (CLI, REST on a scratch port, and
+a fresh bunker install).
+
+### The recipe that works (custom formation)
+
+```yaml
+# chimera-user.yaml (scratch; point at it with --config or CHIMERA_CONFIG)
+defaults:
+  dispatcher: deepseek/deepseek-v4-flash
+  default_worker: deepseek/deepseek-v4-pro
+  default_aggregator: deepseek/deepseek-v4-flash
+  lock_aggregator: true          # stops the dispatcher from re-picking your models
+formations:
+  code-review:
+    dag:
+      stages:
+        - {id: security,    kind: worker, model: deepseek/deepseek-v4-flash, depends_on: []}
+        - {id: performance, kind: worker, model: deepseek/deepseek-v4-flash, depends_on: []}
+        - {id: verdict,     kind: merge,  model: deepseek/deepseek-v4-flash, depends_on: [security, performance]}
+      edges: [[security, verdict], [performance, verdict]]
+```
+
+```bash
+chimera --config chimera-user.yaml formations          # verify it loads (0.25s)
+chimera --config chimera-user.yaml --formation code-review --json run "Review: ..."
+# verify which stage ran on which model:
+chimera --config ... --formation code-review --json run "..." | jq '.trace.stages'
+```
+
+Measured: 2 reviewers + merge = 86.9s cold / 31.9s warm (deepseek flash);
+REST `POST /v1/deliberate {formation:"code-review"}` = 18.4s, 0 failures.
+Output quality on a seeded-bug snippet was genuinely good (11 graded findings,
+prioritized, plus a rewritten fixed function; the merge synthesized rather
+than concatenated).
+
+### New pitfalls (2026-09-22, all hit for real)
+
+- **The default run path wants an `auto` formation your config may not define.**
+  A minimal config with only your own formation: `chimera run "..."` →
+  `error: Unknown formation: auto` exit 2. Always pass `--formation <name>` in
+  scratch configs (or add `auto: {mode: auto}`). CONFIG.md's custom-formation
+  example omits `auto` — copying it verbatim reproduces the exit 2.
+  [DF-CHIMERA-V2-33]
+- **`--stage-models` keys are matched against stage ids silently.** A typo'd
+  id (`nosuchstage`) is dropped without warning, error, or exit-code change —
+  the override just does not apply. After any override, check
+  `.trace.stages[].model` to confirm it landed. [DF-CHIMERA-V2-32]
+- **Degraded merges look like healthy answers.** If a worker stage times out
+  (default 120s per stage), the merge proceeds on partial inputs, RC=0, and
+  the only signals are JSON structlog lines on stderr (`engine_stage_timeout`,
+  `aggregator_partial_inputs`) plus `worker_failures` in the `--json` trace —
+  NOT the plain `warning:` lines USAGE.md's table promises. For pipelines
+  where a half-reviewed answer is dangerous, parse `worker_failures` or gate
+  on it. [DF-CHIMERA-V2-34]
+- **Per-stage timeout knob:** `timeout.per_stage_s` in chimera.yaml (request
+  header `X-Chimera-Timeout` overrides; engine falls back to 120.0). Not
+  mentioned in CONFIG.md's formation/model sections — if your fan-out models
+  are slow, raise it there. [DF-CHIMERA-V2-34 detail]
+- **Category weights are percent (0–100), not fractions.** The CONFIG.md
+  example itself writes 0.90 and triggers `category_scale_normalized`
+  (×100 rescale) warnings on every load. Write 90. [DF-CHIMERA-V2-35]
+
+### Verified-still-true (2026-09-22)
+
+- Fresh-install quickstart on a bare Debian bunker: venv +
+  `pip install chimera-deliberation[full]` = 54s → `config init` works from
+  the PACKAGED example (run-9's already-exists trap is gone on 0.2.7) →
+  first answer with only DEEPSEEK_API_KEY in 30s. [DF-CHIMERA-V2-36]
+- PyPI 0.2.7 == repo version == live :8765 server commit (`/health` carries
+  the running git commit; it matched checkout HEAD faf78b4).
+- Custom formations serve over REST unchanged (`/v1/formations`,
+  `/v1/deliberate`) when the server is started with the same scratch config.
+- Inline `--dag '{"stages":[...],"edges":[...]}' --allow-custom-dag` works
+  exactly as USAGE.md documents (40.2s, 2 stages, $0.005). Trace labels the
+  formation `auto` — cosmetic.
