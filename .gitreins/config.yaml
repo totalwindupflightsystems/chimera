@@ -37,7 +37,7 @@ pipeline:
     true:
     - pre-eval
     condition: 'true'
-    max_iterations: 100
+    max_iterations: 200
     tools:
     - read_file
     - run_command

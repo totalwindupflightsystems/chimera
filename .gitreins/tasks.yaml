@@ -1586,7 +1586,6 @@ tasks:
   status: complete
   created_at: '2026-09-21T22:27:21.634084+00:00'
   completed_at: '2026-09-22T15:04:30.028892+00:00'
-
 - id: CH-GAP-059
   title: Exclude zero-model discovered creds from /v1/health status aggregation
   criteria:
@@ -1598,3 +1597,29 @@ tasks:
   status: complete
   created_at: '2026-09-21T22:27:21.783653+00:00'
   completed_at: '2026-09-22T15:04:30.028892+00:00'
+- id: INT-CI-013
+  title: Index the 2026-09-22 dogfood run log in docs/README.md
+  criteria:
+  - docs/dogfood/2026-09-22-integration.md is listed under '## Dogfood run logs' in
+    docs/README.md; tests/test_docs_index.py passes; full suite green; CI unblocked
+    on the fix commit
+  status: complete
+  created_at: '2026-09-22T17:24:27.313527+00:00'
+  completed_at: '2026-09-22T17:24:46.009577+00:00'
+- id: DF-CHIMERA-V2-32
+  title: --stage-models unknown stage id must fail loud, not silently no-op
+  criteria:
+  - 'Engine-level: a stage_models key whose stage id is not in the concrete dispatch
+    plan raises ValueError naming the stage id and the valid stage ids (unknown MODEL
+    keys keep raising ValueError as today)'
+  - 'CLI: chimera run --stage-models with an unknown stage id prints ''error: ...''
+    naming the stage and exits 2; no answer is printed (regression: previously exit
+    0 with the override silently dropped)'
+  - 'Known-stage override path unchanged: existing worker/aggregator override tests
+    pass'
+  - 'REST: unknown stage id surfaces as the same 4xx error class as an unknown model
+    (not 200-with-silent-drop); tests updated'
+  - 'Full suite green: .venv/bin/python -m pytest -x -q --tb=short'
+  status: complete
+  created_at: '2026-09-22T17:54:32.194325+00:00'
+  completed_at: '2026-09-22T18:40:01.647531+00:00'
