@@ -1574,3 +1574,27 @@ tasks:
   status: complete
   created_at: '2026-09-21T13:09:28.565529+00:00'
   completed_at: '2026-09-21T13:22:13.605094+00:00'
+- id: DEPS-005
+  title: 'In-bounds dependency refresh: boto3/botocore/multidict'
+  criteria:
+  - boto3, botocore and multidict upgraded to latest in uv.lock and .venv via targeted
+    uv lock --upgrade-package; pip list --outdated afterwards shows exactly the 7
+    known bound-blocked entries and none of the three; uv lock --check exit 0; pip
+    check clean; full pytest suite passes; pyproject.toml byte-identical (only uv.lock
+    changes); the 7 bound-blocked packages (litellm, mcp, openai, importlib-metadata,
+    pycodestyle, pyflakes, pydantic-core) untouched
+  status: complete
+  created_at: '2026-09-21T22:27:21.634084+00:00'
+  completed_at: '2026-09-22T15:04:30.028892+00:00'
+
+- id: CH-GAP-059
+  title: Exclude zero-model discovered creds from /v1/health status aggregation
+  criteria:
+  - With openai/xai auto-discovered and model-less, /v1/health status is NOT degraded
+    while all configured providers probe healthy; removing or degrading a real configured
+    provider still flips status per configured-provider health; the zero-model creds
+    are listed under a separate key (discovered_not_configured) and tests cover both
+    directions
+  status: complete
+  created_at: '2026-09-21T22:27:21.783653+00:00'
+  completed_at: '2026-09-22T15:04:30.028892+00:00'
