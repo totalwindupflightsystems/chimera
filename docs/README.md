@@ -38,4 +38,5 @@ against the live deployment, **not** a description of current behavior.
 - [dogfood/2026-09-11-integration.md](dogfood/2026-09-11-integration.md) — run 7 integration report (2026-09-11)
 - [dogfood/2026-09-16-runB-integration.md](dogfood/2026-09-16-runB-integration.md) — run 9B, real-SDK + bunker-install focus (2026-09-16)
 - [dogfood/2026-09-20-runB-integration.md](dogfood/2026-09-20-runB-integration.md) — run 10, web-UI (`/web/`) live-DAG focus (2026-09-20)
+- [dogfood/2026-09-22-integration.md](dogfood/2026-09-22-integration.md) — run 11, custom-formation authoring focus (2026-09-22)
 - [dogfood/diagnostics.md](dogfood/diagnostics.md) — build/diagnostic trail behind the 2026-08-03 run
