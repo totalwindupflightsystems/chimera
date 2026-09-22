@@ -18,8 +18,7 @@ def _engine_responder(config, payload: str | None = None):  # type: ignore[no-un
     "Upstream outputs"; everything else is a worker.
     """
     _payload = payload or dispatch_json(
-        workers=[("worker_1", "deepseek/deepseek-chat"),
-                 ("worker_2", "openrouter/google/gemini-2.5-flash")],
+        workers=[("worker_1", "deepseek/deepseek-chat"), ("worker_2", "openrouter/google/gemini-2.5-flash")],
         aggregator_instructions="Merge code (worker_1) and design (worker_2).",
     )
 
@@ -81,8 +80,7 @@ async def test_workers_get_custom_prompts_and_dispatcher_called_once(config) -> 
     dispatcher_calls = [c for c in gw.calls if c[2].get("response_format")]
     assert len(dispatcher_calls) == 1
     worker_calls = [
-        c for c in gw.calls
-        if not c[2].get("response_format") and "Your assigned task" in c[1][0]["content"]
+        c for c in gw.calls if not c[2].get("response_format") and "Your assigned task" in c[1][0]["content"]
     ]
     assert len(worker_calls) == 2
 
@@ -119,6 +117,7 @@ async def test_dispatcher_failure_still_produces_answer(config) -> None:  # type
         def __init__(self):
             super().__init__()
             self._dispatch_calls = 0
+
         async def complete(self, model, messages, response_format=None, **kw):
             if response_format is not None:
                 self._dispatch_calls += 1
@@ -127,6 +126,7 @@ async def test_dispatcher_failure_still_produces_answer(config) -> None:  # type
                 # Subsequent structured calls (aggregator) produce a normal answer
                 return resp(f"output from {model}", model, 10, 10)
             return resp(f"output from {model}", model)
+
     gw = FlakyGateway()
     result = await Engine(config, gw).deliberate("task", "auto")
     assert result.trace.source == "fallback"
@@ -199,6 +199,7 @@ async def test_cost_reflects_tiers(config) -> None:  # type: ignore[no-untyped-d
 async def test_multi_level_aggregation_dag(config) -> None:  # type: ignore[no-untyped-def]
     """The dispatcher can design worker→aggregator→worker→aggregator chains."""
     from chimera.dispatcher import build_preset_dag
+
     # Use the debate preset which has 3 workers + 2 aggregators + merge
     dag = build_preset_dag(config.formations["debate"], config)
     kinds = {s.kind for s in dag.stages}
@@ -263,9 +264,7 @@ async def test_stage_models_override_applied_correctly(config) -> None:  # type:
     from chimera.config import DeliberationOverrides
 
     gw = FakeGateway(_engine_responder(config))
-    overrides = DeliberationOverrides(
-        stage_models={"worker_1": "zai-coding-plan/glm-5.2"}
-    )
+    overrides = DeliberationOverrides(stage_models={"worker_1": "zai-coding-plan/glm-5.2"})
     result = await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
     worker_models = {w.stage_id: w.model for w in result.trace.workers}
     # worker_1 forced to glm-5.2; worker_2 untouched (gemini-flash from dispatcher)
@@ -274,8 +273,13 @@ async def test_stage_models_override_applied_correctly(config) -> None:  # type:
 
 
 @pytest.mark.asyncio
-async def test_stage_models_unknown_stage_warns_not_crash(config) -> None:  # type: ignore[no-untyped-def]
-    """An unknown stage id in stage_models is warned and skipped, not fatal."""
+async def test_stage_models_unknown_stage_rejected(config) -> None:  # type: ignore[no-untyped-def]
+    """An unknown stage id in stage_models raises ValueError (DF-CHIMERA-V2-32).
+
+    Silent-drop regression: unknown ids used to log a warning and complete
+    the run as if nothing happened. They are now rejected like unknown
+    model names, naming the offending id AND the valid stage ids.
+    """
     from chimera.config import DeliberationOverrides
 
     gw = FakeGateway(_engine_responder(config))
@@ -285,10 +289,12 @@ async def test_stage_models_unknown_stage_warns_not_crash(config) -> None:  # ty
             "does_not_exist": "deepseek/deepseek-chat",
         }
     )
-    result = await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
-    # Still completes; the known override was applied, the unknown ignored.
-    worker_models = {w.stage_id: w.model for w in result.trace.workers}
-    assert worker_models["worker_1"] == "zai-coding-plan/glm-5.2"
+    with pytest.raises(ValueError) as excinfo:
+        await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
+    msg = str(excinfo.value)
+    assert "does_not_exist" in msg  # names the offending stage id
+    assert "worker_1" in msg  # lists the valid stage ids
+    assert "aggregator" in msg
 
 
 @pytest.mark.asyncio
@@ -297,9 +303,7 @@ async def test_stage_models_unknown_model_rejected(config) -> None:  # type: ign
     from chimera.config import DeliberationOverrides
 
     gw = FakeGateway(_engine_responder(config))
-    overrides = DeliberationOverrides(
-        stage_models={"worker_1": "no/such/model"}
-    )
+    overrides = DeliberationOverrides(stage_models={"worker_1": "no/such/model"})
     with pytest.raises(ValueError, match="unknown model"):
         await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
 
@@ -310,9 +314,7 @@ async def test_stage_models_overrides_aggregator_too(config) -> None:  # type: i
     from chimera.config import DeliberationOverrides
 
     gw = FakeGateway(_engine_responder(config))
-    overrides = DeliberationOverrides(
-        stage_models={"aggregator": "deepseek/deepseek-chat"}
-    )
+    overrides = DeliberationOverrides(stage_models={"aggregator": "deepseek/deepseek-chat"})
     result = await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
     assert result.trace.aggregator is not None
     assert result.trace.aggregator.model == "deepseek/deepseek-chat"
@@ -326,10 +328,13 @@ async def test_stage_models_overrides_aggregator_too(config) -> None:  # type: i
 def _client_dag_dict() -> dict[str, object]:
     return {
         "stages": [
-            {"id": "researcher", "kind": "worker",
-             "model": "deepseek/deepseek-chat"},
-            {"id": "finalizer", "kind": "aggregator",
-             "model": "zai-coding-plan/glm-5.2", "depends_on": ["researcher"]},
+            {"id": "researcher", "kind": "worker", "model": "deepseek/deepseek-chat"},
+            {
+                "id": "finalizer",
+                "kind": "aggregator",
+                "model": "zai-coding-plan/glm-5.2",
+                "depends_on": ["researcher"],
+            },
         ],
         "edges": [["researcher", "finalizer"]],
     }
@@ -355,9 +360,7 @@ async def test_client_dag_rejected_without_allow_custom_dag(config) -> None:  # 
     """allow_custom_dag=False (default): supplying a dag raises ValueError."""
     gw = FakeGateway(_engine_responder(config))
     with pytest.raises(ValueError, match="allow_custom_dag=True"):
-        await Engine(config, gw).deliberate(
-            "task", "auto", dag=_client_dag_dict(), allow_custom_dag=False
-        )
+        await Engine(config, gw).deliberate("task", "auto", dag=_client_dag_dict(), allow_custom_dag=False)
 
 
 @pytest.mark.asyncio
@@ -366,16 +369,13 @@ async def test_client_dag_invalid_model_rejected_at_engine(config) -> None:  # t
     bad_dag = {
         "stages": [
             {"id": "w", "kind": "worker", "model": "no/such/model"},
-            {"id": "a", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2",
-             "depends_on": ["w"]},
+            {"id": "a", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2", "depends_on": ["w"]},
         ],
         "edges": [["w", "a"]],
     }
     gw = FakeGateway(_engine_responder(config))
     with pytest.raises(ValueError, match="unknown model"):
-        await Engine(config, gw).deliberate(
-            "task", "auto", dag=bad_dag, allow_custom_dag=True
-        )
+        await Engine(config, gw).deliberate("task", "auto", dag=bad_dag, allow_custom_dag=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -388,7 +388,6 @@ async def test_stage_timeout_produces_degraded_result(config, monkeypatch: pytes
     """A worker exceeding the stage timeout is cancelled and degraded; the
     deliberation still completes via the aggregator."""
     import asyncio
-
 
     # Shrink the timeout so the test is fast; workers sleep past it.
     monkeypatch.setattr(config.timeout, "per_stage_s", 0.05)
@@ -455,8 +454,13 @@ class _PartialFailureGateway(FakeGateway):
         self._dispatch_sent = False
 
     async def complete(self, model, messages, response_format=None, **kw):
-        self.calls.append((model, messages, {"temperature": kw.get("temperature", 0.2),
-                                              "response_format": response_format, **kw}))
+        self.calls.append(
+            (
+                model,
+                messages,
+                {"temperature": kw.get("temperature", 0.2), "response_format": response_format, **kw},
+            )
+        )
         if response_format is not None:  # dispatcher
             self._dispatch_sent = True
             return resp(_THREE_WORKER_DISPATCH, model, tok_in=120, tok_out=200)
@@ -547,7 +551,10 @@ async def test_progressive_worker_sends_wait_messages_then_trigger(config) -> No
     }
 
     result = await Engine(config, gw).deliberate(
-        "a test task", "auto", dag=dag, allow_custom_dag=True,
+        "a test task",
+        "auto",
+        dag=dag,
+        allow_custom_dag=True,
     )
 
     assert result.answer is not None
@@ -558,16 +565,14 @@ async def test_progressive_worker_sends_wait_messages_then_trigger(config) -> No
     assert len(all_calls) >= 5, f"Expected 5+ calls (dispatch + 2 wait + trigger + agg), got {len(all_calls)}"
 
     # Find all progressive/worker calls with temperature=0.3 (wait + trigger)
-    temp03_calls = [
-        c for c in all_calls
-        if c[2].get("temperature") == 0.3
-    ]
+    temp03_calls = [c for c in all_calls if c[2].get("temperature") == 0.3]
     # 2 wait calls + 1 trigger call = 3
     assert len(temp03_calls) == 3, f"Expected 3 temp=0.3 calls (2 wait + 1 trigger), got {len(temp03_calls)}"
 
     # Distinguish: wait-message calls have content matching wait_messages
     wait_calls = [
-        c for c in temp03_calls
+        c
+        for c in temp03_calls
         if c[1] == [{"role": "user", "content": "MSG-A: study this context"}]
         or c[1] == [{"role": "user", "content": "MSG-B: absorb rules"}]
     ]
@@ -575,8 +580,7 @@ async def test_progressive_worker_sends_wait_messages_then_trigger(config) -> No
 
     # The trigger call has the SIMON SAYS content
     trigger_calls = [
-        c for c in temp03_calls
-        if c[1] == [{"role": "user", "content": "SIMON SAYS: now produce output"}]
+        c for c in temp03_calls if c[1] == [{"role": "user", "content": "SIMON SAYS: now produce output"}]
     ]
     assert len(trigger_calls) == 1, "Expected exactly 1 trigger call with SIMON SAYS message"
 
@@ -608,7 +612,10 @@ async def test_progressive_without_trigger_keeps_original_prompt(config) -> None
     }
 
     result = await Engine(config, gw).deliberate(
-        "test task", "auto", dag=dag, allow_custom_dag=True,
+        "test task",
+        "auto",
+        dag=dag,
+        allow_custom_dag=True,
     )
 
     assert result.answer is not None
@@ -659,7 +666,10 @@ async def test_non_progressive_worker_skips_wait_messages(config) -> None:
     }
 
     result = await Engine(config, gw).deliberate(
-        "test", "auto", dag=dag, allow_custom_dag=True,
+        "test",
+        "auto",
+        dag=dag,
+        allow_custom_dag=True,
     )
 
     assert result.answer is not None
@@ -714,7 +724,11 @@ async def test_progressive_via_overrides_applies_to_workers(config) -> None:
     }
 
     result = await Engine(config, gw).deliberate(
-        "test", "auto", dag=dag, allow_custom_dag=True, overrides=overrides,
+        "test",
+        "auto",
+        dag=dag,
+        allow_custom_dag=True,
+        overrides=overrides,
     )
 
     assert result.answer is not None
@@ -728,7 +742,8 @@ async def test_progressive_via_overrides_applies_to_workers(config) -> None:
 
     # Check the two wait message calls
     wait_calls = [
-        c for c in temp03_calls
+        c
+        for c in temp03_calls
         if c[1] == [{"role": "user", "content": "OVERRIDE MSG 1"}]
         or c[1] == [{"role": "user", "content": "OVERRIDE MSG 2"}]
     ]
@@ -736,8 +751,7 @@ async def test_progressive_via_overrides_applies_to_workers(config) -> None:
 
     # Check the trigger call
     trigger_calls = [
-        c for c in temp03_calls
-        if c[1] == [{"role": "user", "content": "OVERRIDE TRIGGER: answer now"}]
+        c for c in temp03_calls if c[1] == [{"role": "user", "content": "OVERRIDE TRIGGER: answer now"}]
     ]
     assert len(trigger_calls) == 1, "Expected exactly 1 trigger call with override trigger"
 
@@ -753,17 +767,19 @@ class TestSchemaExtraction:
     def test_extracts_schema_field(self):
         from chimera.engine import Engine
 
-        response = json.dumps({
-            "strategy": "generate a user profile",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "age": {"type": "integer"},
+        response = json.dumps(
+            {
+                "strategy": "generate a user profile",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "age": {"type": "integer"},
+                    },
+                    "required": ["name", "age"],
                 },
-                "required": ["name", "age"],
-            },
-        })
+            }
+        )
         result = Engine._extract_output_schema(response)
         assert result is not None
         assert result["type"] == "object"
@@ -772,10 +788,12 @@ class TestSchemaExtraction:
     def test_extracts_whole_schema_if_no_field(self):
         from chimera.engine import Engine
 
-        response = json.dumps({
-            "type": "object",
-            "properties": {"x": {"type": "number"}},
-        })
+        response = json.dumps(
+            {
+                "type": "object",
+                "properties": {"x": {"type": "number"}},
+            }
+        )
         result = Engine._extract_output_schema(response)
         assert result is not None
         assert result["type"] == "object"
@@ -796,11 +814,13 @@ class TestSchemaExtraction:
         from chimera.engine import Engine
 
         # Response has BOTH a top-level type=object AND a nested schema field
-        response = json.dumps({
-            "type": "object",
-            "properties": {"outer": {"type": "string"}},
-            "schema": {"type": "object", "properties": {"inner": {"type": "integer"}}},
-        })
+        response = json.dumps(
+            {
+                "type": "object",
+                "properties": {"outer": {"type": "string"}},
+                "schema": {"type": "object", "properties": {"inner": {"type": "integer"}}},
+            }
+        )
         result = Engine._extract_output_schema(response)
         assert result is not None
         # The explicit schema field should win
@@ -882,11 +902,11 @@ class TestSchemaValidationWrappedJson:
         "output",
         [
             pytest.param(
-                "```json\n" '{"passed": true, "score": 0.9}\n' "```",
+                '```json\n{"passed": true, "score": 0.9}\n```',
                 id="fenced-json",
             ),
             pytest.param(
-                "```\n" '{"passed": true, "score": 0.9}\n' "```",
+                '```\n{"passed": true, "score": 0.9}\n```',
                 id="fenced-no-language-tag",
             ),
             pytest.param(
@@ -918,11 +938,11 @@ class TestSchemaValidationWrappedJson:
         "output",
         [
             pytest.param(
-                "```json\n" '{"passed": true, "score": "high"}\n' "```",
+                '```json\n{"passed": true, "score": "high"}\n```',
                 id="fenced-wrong-type",
             ),
             pytest.param(
-                "Prose first.\n" '{"passed": true}\n' "Trailing prose.",
+                'Prose first.\n{"passed": true}\nTrailing prose.',
                 id="prose-missing-required",
             ),
         ],
@@ -941,9 +961,7 @@ class TestSchemaValidationWrappedJson:
     def test_prose_number_is_not_mined(self):
         from chimera.engine import Engine
 
-        result = Engine._validate_against_schema(
-            self.AUDIT_SCHEMA, "I found 5 issues in the diff."
-        )
+        result = Engine._validate_against_schema(self.AUDIT_SCHEMA, "I found 5 issues in the diff.")
         assert result is not None
         assert result["passed"] is False
         assert "not valid JSON" in result["errors"][0]
@@ -978,6 +996,7 @@ class TestMaybeUnwrapEnvelope:
     )
     def test_non_string_coercion(self, text, expected):
         from chimera.engine import Engine
+
         result = Engine._maybe_unwrap_envelope(text)
         assert isinstance(result, str), f"Expected str, got {type(result)}: {result!r}"
         assert result == expected, f"Expected {expected!r}, got {result!r}"
@@ -1010,19 +1029,21 @@ class TestStripFinalAnswerFences:
             # Text starting with ``` but not a wrapping fence: single line
             ("```json no newline here", "```json no newline here"),
             # Opening fence but no closing fence → unchanged
-            ("```json\n{\"a\": 1}", '```json\n{"a": 1}'),
+            ('```json\n{"a": 1}', '```json\n{"a": 1}'),
             # Empty body inside a fence → empty string
             ("```json\n```", ""),
         ],
     )
     def test_strip_semantics(self, text, expected):
         from chimera.engine import Engine
+
         result = Engine._strip_final_answer_fences(text)
         assert result == expected, f"Expected {expected!r}, got {result!r}"
 
     def test_fenced_envelope_still_unwraps(self):
         """Fence-strip THEN envelope-unwrap: a fenced {"answer": ...} unwraps."""
         from chimera.engine import Engine
+
         fenced = '```json\n{"answer": "the real answer"}\n```'
         stripped = Engine._strip_final_answer_fences(fenced)
         assert Engine._maybe_unwrap_envelope(stripped) == "the real answer"
@@ -1030,6 +1051,7 @@ class TestStripFinalAnswerFences:
     def test_interior_fences_preserved(self):
         """A fence-wrapped answer keeps its INTERIOR fences intact."""
         from chimera.engine import Engine
+
         inner = "Here is code:\n```python\nx = 1\n```\nDone."
         wrapped = f"```\n{inner}\n```"
         result = Engine._strip_final_answer_fences(wrapped)
@@ -1056,7 +1078,10 @@ async def test_custom_dag_fenced_final_answer_is_stripped(config) -> None:  # ty
 
     gw = FakeGateway(_responder)
     result = await Engine(config, gw).deliberate(
-        "task", "auto", dag=_client_dag_dict(), allow_custom_dag=True,
+        "task",
+        "auto",
+        dag=_client_dag_dict(),
+        allow_custom_dag=True,
     )
     assert result.trace.source == "custom"
     assert result.answer == '{"summary": "the final answer"}'
@@ -1097,25 +1122,38 @@ async def test_auto_path_fenced_envelope_answer_unwrapped(config) -> None:  # ty
 @pytest.mark.asyncio
 async def test_trace_surfaces_dispatch_note_on_repair(config) -> None:  # type: ignore[no-untyped-def]
     """A repaired auto dispatch (missing aggregator) is visible in the trace."""
-    payload = json.dumps({
-        "formation": {
-            "stages": [
-                {"id": "worker_1", "kind": "worker",
-                 "model": "deepseek/deepseek-chat", "depends_on": []},
-                {"id": "worker_2", "kind": "worker",
-                 "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+    payload = json.dumps(
+        {
+            "formation": {
+                "stages": [
+                    {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat", "depends_on": []},
+                    {
+                        "id": "worker_2",
+                        "kind": "worker",
+                        "model": "openrouter/google/gemini-2.5-flash",
+                        "depends_on": [],
+                    },
+                ],
+                "edges": [],
+            },
+            "worker_prompts": [
+                {
+                    "stage_id": "worker_1",
+                    "model": "deepseek/deepseek-chat",
+                    "prompt": "Custom subtask for worker_1",
+                    "expected_output_schema": None,
+                },
+                {
+                    "stage_id": "worker_2",
+                    "model": "openrouter/google/gemini-2.5-flash",
+                    "prompt": "Custom subtask for worker_2",
+                    "expected_output_schema": None,
+                },
             ],
-            "edges": [],
-        },
-        "worker_prompts": [
-            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
-             "prompt": "Custom subtask for worker_1", "expected_output_schema": None},
-            {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
-             "prompt": "Custom subtask for worker_2", "expected_output_schema": None},
-        ],
-        "aggregator_instructions": "Merge code and design.",
-        "stage_instructions": {},
-    })
+            "aggregator_instructions": "Merge code and design.",
+            "stage_instructions": {},
+        }
+    )
     gw = FakeGateway(_engine_responder(config, payload=payload))
     result = await Engine(config, gw).deliberate("Design + build a service", "auto")
 
@@ -1141,25 +1179,38 @@ async def test_phantom_edge_aggregator_repaired_not_fallback(config) -> None:  #
     This test drives the exact malformed payload through the full engine
     (offline, scripted gateway) and asserts the 2-worker design survives.
     """
-    payload = json.dumps({
-        "formation": {
-            "stages": [
-                {"id": "worker_1", "kind": "worker",
-                 "model": "deepseek/deepseek-chat", "depends_on": []},
-                {"id": "worker_2", "kind": "worker",
-                 "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+    payload = json.dumps(
+        {
+            "formation": {
+                "stages": [
+                    {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat", "depends_on": []},
+                    {
+                        "id": "worker_2",
+                        "kind": "worker",
+                        "model": "openrouter/google/gemini-2.5-flash",
+                        "depends_on": [],
+                    },
+                ],
+                "edges": [["worker_1", "aggregator"], ["worker_2", "aggregator"]],
+            },
+            "worker_prompts": [
+                {
+                    "stage_id": "worker_1",
+                    "model": "deepseek/deepseek-chat",
+                    "prompt": "Custom subtask for worker_1",
+                    "expected_output_schema": None,
+                },
+                {
+                    "stage_id": "worker_2",
+                    "model": "openrouter/google/gemini-2.5-flash",
+                    "prompt": "Custom subtask for worker_2",
+                    "expected_output_schema": None,
+                },
             ],
-            "edges": [["worker_1", "aggregator"], ["worker_2", "aggregator"]],
-        },
-        "worker_prompts": [
-            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
-             "prompt": "Custom subtask for worker_1", "expected_output_schema": None},
-            {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
-             "prompt": "Custom subtask for worker_2", "expected_output_schema": None},
-        ],
-        "aggregator_instructions": "",
-        "stage_instructions": {},
-    })
+            "aggregator_instructions": "",
+            "stage_instructions": {},
+        }
+    )
     gw = FakeGateway(_engine_responder(config, payload=payload))
     result = await Engine(config, gw).deliberate("Design + build a service", "auto")
 
@@ -1194,25 +1245,38 @@ async def test_trace_carries_structured_dispatch_repairs(config) -> None:  # typ
     action / stage_ids / depends_on / reason), so "what was patched" is
     readable without parsing a free-form string.
     """
-    payload = json.dumps({
-        "formation": {
-            "stages": [
-                {"id": "worker_1", "kind": "worker",
-                 "model": "deepseek/deepseek-chat", "depends_on": []},
-                {"id": "worker_2", "kind": "worker",
-                 "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+    payload = json.dumps(
+        {
+            "formation": {
+                "stages": [
+                    {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat", "depends_on": []},
+                    {
+                        "id": "worker_2",
+                        "kind": "worker",
+                        "model": "openrouter/google/gemini-2.5-flash",
+                        "depends_on": [],
+                    },
+                ],
+                "edges": [["worker_1", "aggregator"], ["worker_2", "aggregator"]],
+            },
+            "worker_prompts": [
+                {
+                    "stage_id": "worker_1",
+                    "model": "deepseek/deepseek-chat",
+                    "prompt": "Custom subtask for worker_1",
+                    "expected_output_schema": None,
+                },
+                {
+                    "stage_id": "worker_2",
+                    "model": "openrouter/google/gemini-2.5-flash",
+                    "prompt": "Custom subtask for worker_2",
+                    "expected_output_schema": None,
+                },
             ],
-            "edges": [["worker_1", "aggregator"], ["worker_2", "aggregator"]],
-        },
-        "worker_prompts": [
-            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
-             "prompt": "Custom subtask for worker_1", "expected_output_schema": None},
-            {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
-             "prompt": "Custom subtask for worker_2", "expected_output_schema": None},
-        ],
-        "aggregator_instructions": "",
-        "stage_instructions": {},
-    })
+            "aggregator_instructions": "",
+            "stage_instructions": {},
+        }
+    )
     gw = FakeGateway(_engine_responder(config, payload=payload))
     result = await Engine(config, gw).deliberate("Design + build a service", "auto")
 
@@ -1276,9 +1340,7 @@ async def test_global_aggregator_model_override_applied(config) -> None:  # type
     from chimera.config import DeliberationOverrides
 
     gw = FakeGateway(_engine_responder(config))
-    overrides = DeliberationOverrides(
-        aggregator_model="openrouter/anthropic/claude-sonnet-4"
-    )
+    overrides = DeliberationOverrides(aggregator_model="openrouter/anthropic/claude-sonnet-4")
     result = await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
     trace = result.trace
     assert trace.aggregator is not None
@@ -1302,8 +1364,7 @@ async def test_global_worker_model_override_applied(config) -> None:  # type: ig
     assert all(w.model == "zai-coding-plan/glm-5.2" for w in trace.workers)
     # worker calls actually went out on the override model (WorkerPrompt sync)
     worker_calls = [
-        c for c in gw.calls
-        if not c[2].get("response_format") and "Your assigned task" in c[1][0]["content"]
+        c for c in gw.calls if not c[2].get("response_format") and "Your assigned task" in c[1][0]["content"]
     ]
     assert worker_calls
     assert all(c[0] == "zai-coding-plan/glm-5.2" for c in worker_calls)
@@ -1316,13 +1377,13 @@ async def test_lock_aggregator_discards_override_with_trace_note(config) -> None
     """lock_aggregator=true keeps the configured default and records the discard."""
     from chimera.config import DeliberationOverrides
 
-    cfg = config.model_copy(update={
-        "defaults": config.defaults.model_copy(update={"lock_aggregator": True}),
-    })
-    gw = FakeGateway(_engine_responder(cfg))
-    overrides = DeliberationOverrides(
-        aggregator_model="openrouter/anthropic/claude-sonnet-4"
+    cfg = config.model_copy(
+        update={
+            "defaults": config.defaults.model_copy(update={"lock_aggregator": True}),
+        }
     )
+    gw = FakeGateway(_engine_responder(cfg))
+    overrides = DeliberationOverrides(aggregator_model="openrouter/anthropic/claude-sonnet-4")
     result = await Engine(cfg, gw).deliberate("task", "auto", overrides=overrides)
     trace = result.trace
     assert trace.aggregator is not None
@@ -1338,13 +1399,13 @@ async def test_lock_dispatcher_discards_override_with_trace_note(config) -> None
     """lock_dispatcher=true keeps the configured dispatcher and records the discard."""
     from chimera.config import DeliberationOverrides
 
-    cfg = config.model_copy(update={
-        "defaults": config.defaults.model_copy(update={"lock_dispatcher": True}),
-    })
-    gw = FakeGateway(_engine_responder(cfg))
-    overrides = DeliberationOverrides(
-        dispatcher_model="openrouter/anthropic/claude-sonnet-4"
+    cfg = config.model_copy(
+        update={
+            "defaults": config.defaults.model_copy(update={"lock_dispatcher": True}),
+        }
     )
+    gw = FakeGateway(_engine_responder(cfg))
+    overrides = DeliberationOverrides(dispatcher_model="openrouter/anthropic/claude-sonnet-4")
     result = await Engine(cfg, gw).deliberate("task", "auto", overrides=overrides)
     trace = result.trace
     # dispatcher call stayed on the configured default
@@ -1363,9 +1424,7 @@ async def test_global_dispatcher_model_override_applied(config) -> None:  # type
     from chimera.config import DeliberationOverrides
 
     gw = FakeGateway(_engine_responder(config))
-    overrides = DeliberationOverrides(
-        dispatcher_model="openrouter/anthropic/claude-sonnet-4"
-    )
+    overrides = DeliberationOverrides(dispatcher_model="openrouter/anthropic/claude-sonnet-4")
     result = await Engine(config, gw).deliberate("task", "auto", overrides=overrides)
     dispatcher_calls = [c for c in gw.calls if c[2].get("response_format")]
     assert len(dispatcher_calls) == 1
@@ -1410,15 +1469,14 @@ async def test_no_overrides_no_note(config) -> None:  # type: ignore[no-untyped-
     assert result.trace.dispatch_note is None
 
     gw2 = FakeGateway(_engine_responder(config))
-    result2 = await Engine(config, gw2).deliberate(
-        "task", "auto", overrides=DeliberationOverrides()
-    )
+    result2 = await Engine(config, gw2).deliberate("task", "auto", overrides=DeliberationOverrides())
     assert result2.trace.dispatch_note is None
 
 
 # --------------------------------------------------------------------------- #
 # Dropped-worker surfacing (C1/C2) + guardrail block recording (C3)
 # --------------------------------------------------------------------------- #
+
 
 @pytest.mark.asyncio
 async def test_worker_failures_populated_on_degraded_worker(config) -> None:  # type: ignore[no-untyped-def]
@@ -1499,9 +1557,7 @@ async def test_guardrail_failure_records_model_block(config) -> None:  # type: i
         assert result.trace.worker_failures
         assert blocked_models.shared_registry.is_blocked(failing_model)
         # The other (healthy) worker model is NOT blocked.
-        assert not blocked_models.shared_registry.is_blocked(
-            "deepseek/deepseek-chat"
-        )
+        assert not blocked_models.shared_registry.is_blocked("deepseek/deepseek-chat")
     finally:
         set_shared_registry(original)
 

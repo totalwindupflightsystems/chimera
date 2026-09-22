@@ -20,6 +20,7 @@ from chimera.config import load_config  # noqa: E402
 # Existing tests (unchanged)
 # ---------------------------------------------------------------------------
 
+
 def test_cli_formations(config_file) -> None:  # type: ignore[no-untyped-def]
     runner = CliRunner()
     result = runner.invoke(main, ["-c", str(config_file), "formations"])
@@ -48,12 +49,26 @@ def test_cli_bare_prompt_routes_to_run(config_file, monkeypatch) -> None:  # typ
         async def deliberate(self, prompt, formation):  # noqa: ANN001
             captured["prompt"] = prompt
             captured["formation"] = formation
-            span = SimpleNamespace(stage_id="dispatch", kind="dispatch", model="m",
-                                   tokens_input=1, tokens_output=2, latency_ms=5, cost=0.0)
-            trace = SimpleNamespace(request_id="r1", dispatch=span, stages=[],
-                                    total_tokens=3, total_duration_ms=9, total_cost=0.0,
-                                    source="auto", answer_stage_id="aggregator",
-                                    worker_failures=[])
+            span = SimpleNamespace(
+                stage_id="dispatch",
+                kind="dispatch",
+                model="m",
+                tokens_input=1,
+                tokens_output=2,
+                latency_ms=5,
+                cost=0.0,
+            )
+            trace = SimpleNamespace(
+                request_id="r1",
+                dispatch=span,
+                stages=[],
+                total_tokens=3,
+                total_duration_ms=9,
+                total_cost=0.0,
+                source="auto",
+                answer_stage_id="aggregator",
+                worker_failures=[],
+            )
             return SimpleNamespace(answer="42", trace=trace)
 
     monkeypatch.setattr("chimera.cli.main.Engine", StubEngine)
@@ -105,6 +120,7 @@ def test_cli_missing_config_errors(config_file, monkeypatch) -> None:  # type: i
 
 # === 1. _parse_json_opt error path (lines 100-103) ===
 
+
 def test_cli_invalid_dag_json(config_file) -> None:
     """--dag with invalid JSON raises click.BadParameter (exit code 2)."""
     runner = CliRunner()
@@ -123,6 +139,7 @@ def test_cli_invalid_stage_models_json(config_file) -> None:
 
 # === 2. _deliberate empty prompt path (lines 113-115) ===
 
+
 def test_cli_empty_prompt_shows_help(config_file) -> None:
     """Empty prompt (no args to run subcommand) shows help text."""
     runner = CliRunner()
@@ -132,6 +149,7 @@ def test_cli_empty_prompt_shows_help(config_file) -> None:
 
 
 # === 3. _deliberate stage_models override path (lines 128-131) ===
+
 
 def test_cli_stage_models_forwarded(config_file, monkeypatch) -> None:
     """--stage-models is forwarded as DeliberationOverrides to engine.deliberate."""
@@ -145,21 +163,40 @@ def test_cli_stage_models_forwarded(config_file, monkeypatch) -> None:
 
         async def deliberate(self, prompt, formation, **kwargs):  # noqa: ANN001
             captured["kwargs"] = kwargs
-            span = SimpleNamespace(stage_id="dispatch", kind="dispatch", model="m",
-                                   tokens_input=1, tokens_output=2, latency_ms=5, cost=0.0)
-            trace = SimpleNamespace(request_id="r1", dispatch=span, stages=[],
-                                    total_tokens=3, total_duration_ms=9, total_cost=0.0,
-                                    source="auto", answer_stage_id="aggregator")
+            span = SimpleNamespace(
+                stage_id="dispatch",
+                kind="dispatch",
+                model="m",
+                tokens_input=1,
+                tokens_output=2,
+                latency_ms=5,
+                cost=0.0,
+            )
+            trace = SimpleNamespace(
+                request_id="r1",
+                dispatch=span,
+                stages=[],
+                total_tokens=3,
+                total_duration_ms=9,
+                total_cost=0.0,
+                source="auto",
+                answer_stage_id="aggregator",
+            )
             return SimpleNamespace(answer="ok", trace=trace)
 
     monkeypatch.setattr("chimera.cli.main.Engine", StubEngine)
     monkeypatch.setattr("chimera.cli.main.LiteLLMGateway", lambda *a, **k: None)
     runner = CliRunner()
-    result = runner.invoke(main, [
-        "-c", str(config_file),
-        "--stage-models", '{"stage1":"model1"}',
-        "prompt",
-    ])
+    result = runner.invoke(
+        main,
+        [
+            "-c",
+            str(config_file),
+            "--stage-models",
+            '{"stage1":"model1"}',
+            "prompt",
+        ],
+    )
     assert result.exit_code == 0, result.output
     overrides = captured["kwargs"]["overrides"]
     assert isinstance(overrides, DeliberationOverrides)
@@ -167,6 +204,7 @@ def test_cli_stage_models_forwarded(config_file, monkeypatch) -> None:
 
 
 # === 4. _deliberate dag override path (lines 132-134) ===
+
 
 def test_cli_dag_forwarded(config_file, monkeypatch) -> None:
     """--dag and --allow-custom-dag are forwarded to engine.deliberate."""
@@ -179,28 +217,48 @@ def test_cli_dag_forwarded(config_file, monkeypatch) -> None:
 
         async def deliberate(self, prompt, formation, **kwargs):  # noqa: ANN001
             captured["kwargs"] = kwargs
-            span = SimpleNamespace(stage_id="dispatch", kind="dispatch", model="m",
-                                   tokens_input=1, tokens_output=2, latency_ms=5, cost=0.0)
-            trace = SimpleNamespace(request_id="r1", dispatch=span, stages=[],
-                                    total_tokens=3, total_duration_ms=9, total_cost=0.0,
-                                    source="auto", answer_stage_id="aggregator")
+            span = SimpleNamespace(
+                stage_id="dispatch",
+                kind="dispatch",
+                model="m",
+                tokens_input=1,
+                tokens_output=2,
+                latency_ms=5,
+                cost=0.0,
+            )
+            trace = SimpleNamespace(
+                request_id="r1",
+                dispatch=span,
+                stages=[],
+                total_tokens=3,
+                total_duration_ms=9,
+                total_cost=0.0,
+                source="auto",
+                answer_stage_id="aggregator",
+            )
             return SimpleNamespace(answer="ok", trace=trace)
 
     monkeypatch.setattr("chimera.cli.main.Engine", StubEngine)
     monkeypatch.setattr("chimera.cli.main.LiteLLMGateway", lambda *a, **k: None)
     runner = CliRunner()
-    result = runner.invoke(main, [
-        "-c", str(config_file),
-        "--dag", json.dumps(dag_dict),
-        "--allow-custom-dag",
-        "prompt",
-    ])
+    result = runner.invoke(
+        main,
+        [
+            "-c",
+            str(config_file),
+            "--dag",
+            json.dumps(dag_dict),
+            "--allow-custom-dag",
+            "prompt",
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert captured["kwargs"]["dag"] == dag_dict
     assert captured["kwargs"]["allow_custom_dag"] is True
 
 
 # === 5. _deliberate ValueError handler (lines 139-141) ===
+
 
 def test_cli_value_error_handled(config_file, monkeypatch) -> None:
     """Engine.deliberate raising ValueError prints error and exits with code 2."""
@@ -221,17 +279,57 @@ def test_cli_value_error_handled(config_file, monkeypatch) -> None:
     assert "something went wrong in deliberation" in result.output
 
 
+def test_cli_unknown_stage_model_exits_2(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """--stage-models with an unknown stage id fails fast (DF-CHIMERA-V2-32).
+
+    Real engine + stubbed gateway: the engine's ValueError surfaces through
+    the CLI's existing handler as `error: ...` + exit 2 — never a normal
+    answer with the override silently dropped.
+    """
+    from tests.conftest import FakeGateway
+
+    monkeypatch.setattr(
+        "chimera.cli.main.LiteLLMGateway",
+        lambda *a, **k: FakeGateway(None),
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "-c",
+            str(config_file),
+            "--stage-models",
+            '{"no_such_stage":"deepseek/deepseek-chat"}',
+            "prompt",
+        ],
+    )
+    assert result.exit_code == 2, result.output
+    assert "error:" in result.output
+    assert "no_such_stage" in result.output
+
+
 # === 6 + 7. _deliberate verbose trace + _print_trace (lines 143-175) ===
+
 
 def test_cli_verbose_trace(config_file, monkeypatch) -> None:
     """--verbose flag prints the deliberation trace with all expected fields."""
     span = SimpleNamespace(
-        stage_id="dispatch", kind="dispatch", model="deepseek/deepseek-chat",
-        tokens_input=50, tokens_output=100, latency_ms=500, cost=0.002,
+        stage_id="dispatch",
+        kind="dispatch",
+        model="deepseek/deepseek-chat",
+        tokens_input=50,
+        tokens_output=100,
+        latency_ms=500,
+        cost=0.002,
     )
     stage1 = SimpleNamespace(
-        stage_id="worker_1", kind="worker", model="claude-3",
-        tokens_input=100, tokens_output=200, latency_ms=1000, cost=0.005,
+        stage_id="worker_1",
+        kind="worker",
+        model="claude-3",
+        tokens_input=100,
+        tokens_output=200,
+        latency_ms=1000,
+        cost=0.005,
     )
     trace = SimpleNamespace(
         request_id="trace-abc-123",
@@ -279,8 +377,13 @@ def test_cli_verbose_trace(config_file, monkeypatch) -> None:
 def test_cli_verbose_no_stages(config_file, monkeypatch) -> None:
     """--verbose with zero stages still prints trace (covers empty stages loop)."""
     span = SimpleNamespace(
-        stage_id="dispatch", kind="dispatch", model="gpt-4",
-        tokens_input=10, tokens_output=20, latency_ms=100, cost=0.001,
+        stage_id="dispatch",
+        kind="dispatch",
+        model="gpt-4",
+        tokens_input=10,
+        tokens_output=20,
+        latency_ms=100,
+        cost=0.001,
     )
     trace = SimpleNamespace(
         request_id="r2",
@@ -312,17 +415,22 @@ def test_cli_verbose_no_stages(config_file, monkeypatch) -> None:
 
 # === 8. serve command (lines 243-252) ===
 
+
 def _capture_run_api(captured: dict) -> object:
     """Return a callable that records (host, port) into *captured*."""
+
     def _run(host, port):
         captured.update({"host": host, "port": port})
+
     return _run
 
 
 def _capture_run_mcp(captured: dict) -> object:
     """Return a callable that records config_path + parse_argv into *captured*."""
+
     def _run(config_path, parse_argv=True):  # type: ignore[no-untyped-def]
         captured.update({"config_path": config_path, "parse_argv": parse_argv})
+
     return _run
 
 
@@ -331,8 +439,7 @@ def test_cli_serve_with_host_port(config_file, monkeypatch) -> None:
     captured: dict = {}
     monkeypatch.setattr("chimera.api.server.run", _capture_run_api(captured))
     runner = CliRunner()
-    result = runner.invoke(main, ["-c", str(config_file), "serve",
-                                   "--host", "0.0.0.0", "--port", "9999"])
+    result = runner.invoke(main, ["-c", str(config_file), "serve", "--host", "0.0.0.0", "--port", "9999"])
     assert result.exit_code == 0, result.output
     assert captured["host"] == "0.0.0.0"
     assert captured["port"] == 9999
@@ -365,6 +472,7 @@ def test_cli_serve_env_var_fallback(config_file, monkeypatch) -> None:
 
 # === 9. mcp command (lines 257-261) ===
 
+
 def test_cli_mcp(config_file, monkeypatch) -> None:
     """mcp command forwards config_path to chimera.mcp.server.run."""
     captured: dict = {}
@@ -389,18 +497,33 @@ def test_cli_mcp_no_config(config_file, monkeypatch) -> None:
 # Dropped-worker CLI warning (C1) — always printed, not just --verbose
 # ---------------------------------------------------------------------------
 
+
 def _stub_engine_with_failures(monkeypatch, failures):  # type: ignore[no-untyped-def]
     class StubEngine:
         def __init__(self, *a, **k):
             pass
 
         async def deliberate(self, prompt, formation):  # noqa: ANN001
-            span = SimpleNamespace(stage_id="dispatch", kind="dispatch", model="m",
-                                   tokens_input=1, tokens_output=2, latency_ms=5, cost=0.0)
-            trace = SimpleNamespace(request_id="r1", dispatch=span, stages=[],
-                                    total_tokens=3, total_duration_ms=9, total_cost=0.0,
-                                    source="auto", answer_stage_id="aggregator",
-                                    worker_failures=failures)
+            span = SimpleNamespace(
+                stage_id="dispatch",
+                kind="dispatch",
+                model="m",
+                tokens_input=1,
+                tokens_output=2,
+                latency_ms=5,
+                cost=0.0,
+            )
+            trace = SimpleNamespace(
+                request_id="r1",
+                dispatch=span,
+                stages=[],
+                total_tokens=3,
+                total_duration_ms=9,
+                total_cost=0.0,
+                source="auto",
+                answer_stage_id="aggregator",
+                worker_failures=failures,
+            )
             return SimpleNamespace(answer="partial answer", trace=trace)
 
     monkeypatch.setattr("chimera.cli.main.Engine", StubEngine)
@@ -452,18 +575,34 @@ def test_cli_worker_warning_truncates_long_errors(config_file, monkeypatch) -> N
 # Dispatch degradation CLI warning (CH-GAP-044) — always printed, not --verbose
 # ---------------------------------------------------------------------------
 
+
 def _stub_engine_with_trace(monkeypatch, source, dispatch_note):  # type: ignore[no-untyped-def]
     class StubEngine:
         def __init__(self, *a, **k):
             pass
 
         async def deliberate(self, prompt, formation):  # noqa: ANN001
-            span = SimpleNamespace(stage_id="dispatch", kind="dispatch", model="m",
-                                   tokens_input=1, tokens_output=2, latency_ms=5, cost=0.0)
-            trace = SimpleNamespace(request_id="r1", dispatch=span, stages=[],
-                                    total_tokens=3, total_duration_ms=9, total_cost=0.0,
-                                    source=source, answer_stage_id="aggregator",
-                                    worker_failures=[], dispatch_note=dispatch_note)
+            span = SimpleNamespace(
+                stage_id="dispatch",
+                kind="dispatch",
+                model="m",
+                tokens_input=1,
+                tokens_output=2,
+                latency_ms=5,
+                cost=0.0,
+            )
+            trace = SimpleNamespace(
+                request_id="r1",
+                dispatch=span,
+                stages=[],
+                total_tokens=3,
+                total_duration_ms=9,
+                total_cost=0.0,
+                source=source,
+                answer_stage_id="aggregator",
+                worker_failures=[],
+                dispatch_note=dispatch_note,
+            )
             return SimpleNamespace(answer="looks-fine answer", trace=trace)
 
     monkeypatch.setattr("chimera.cli.main.Engine", StubEngine)
@@ -476,8 +615,11 @@ def test_cli_warns_on_fallback_without_verbose(config_file, monkeypatch) -> None
     The answer can look fine while the dispatch collapsed to a generic
     single-worker formation — before this fix the CLI never flagged it.
     """
-    _stub_engine_with_trace(monkeypatch, source="fallback",
-                            dispatch_note="invalid_dag: dispatch produced no aggregator/merge/audit stage")
+    _stub_engine_with_trace(
+        monkeypatch,
+        source="fallback",
+        dispatch_note="invalid_dag: dispatch produced no aggregator/merge/audit stage",
+    )
     runner = CliRunner()
     # NOTE: no --verbose flag — the degradation warning must appear regardless.
     result = runner.invoke(main, ["-c", str(config_file), "hello"])
@@ -493,9 +635,12 @@ def test_cli_warns_on_fallback_without_verbose(config_file, monkeypatch) -> None
 def test_cli_warns_on_dispatch_repair_without_verbose(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """CH-GAP-044: a repaired dispatch (injected aggregator) is surfaced too."""
     _stub_engine_with_trace(
-        monkeypatch, source="auto",
-        dispatch_note=("repaired: injected aggregator stage(s) aggregator "
-                       "referenced by dispatcher edges but missing from stages"),
+        monkeypatch,
+        source="auto",
+        dispatch_note=(
+            "repaired: injected aggregator stage(s) aggregator "
+            "referenced by dispatcher edges but missing from stages"
+        ),
     )
     runner = CliRunner()
     result = runner.invoke(main, ["-c", str(config_file), "hello"])
@@ -553,9 +698,7 @@ def test_cli_dispatch_repair_warning_is_not_double_prefixed(config_file, monkeyp
     ``warning: dispatch repaired: repaired: injected aggregator ...``: the
     duplicated token reads like a second, unexplained repair.
     """
-    _stub_engine_with_trace(
-        monkeypatch, source="auto", dispatch_note=_DISPATCHER_REPAIR_NOTE
-    )
+    _stub_engine_with_trace(monkeypatch, source="auto", dispatch_note=_DISPATCHER_REPAIR_NOTE)
     runner = CliRunner()
     result = runner.invoke(main, ["-c", str(config_file), "hello"])
     assert result.exit_code == 0, result.output
@@ -571,40 +714,41 @@ def test_cli_dispatch_repair_warning_is_not_double_prefixed(config_file, monkeyp
 def test_cli_dispatch_repair_warning_keeps_a_note_without_the_prefix(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """A note that does not self-describe still carries the CLI's label."""
     _stub_engine_with_trace(
-        monkeypatch, source="auto",
+        monkeypatch,
+        source="auto",
         dispatch_note="injected aggregator stage for 2 worker terminals",
     )
     runner = CliRunner()
     result = runner.invoke(main, ["-c", str(config_file), "hello"])
     assert result.exit_code == 0, result.output
-    assert (
-        "warning: dispatch repaired: injected aggregator stage for 2 worker "
-        "terminals"
-    ) in _flat(result.output)
+    assert ("warning: dispatch repaired: injected aggregator stage for 2 worker terminals") in _flat(
+        result.output
+    )
     assert result.output.count("repaired") == 1
 
 
 def test_cli_dispatch_repair_warning_does_not_mangle_other_words(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """``repairedness ...`` merely contains the substring — leave it alone."""
     _stub_engine_with_trace(
-        monkeypatch, source="auto",
+        monkeypatch,
+        source="auto",
         dispatch_note="repairedness check found a dangling edge",
     )
     runner = CliRunner()
     result = runner.invoke(main, ["-c", str(config_file), "hello"])
     assert result.exit_code == 0, result.output
-    assert (
-        "warning: dispatch repaired: repairedness check found a dangling edge"
-    ) in _flat(result.output)
+    assert ("warning: dispatch repaired: repairedness check found a dangling edge") in _flat(result.output)
 
 
 @pytest.mark.parametrize(
     ("note", "expected"),
     [
         # Real dispatcher payload: prefix stripped, payload intact.
-        (_DISPATCHER_REPAIR_NOTE, _DISPATCHER_REPAIR_NOTE[len("repaired: "):]),
-        ("repaired: added aggregator stage for 2 worker terminal",
-         "added aggregator stage for 2 worker terminal"),
+        (_DISPATCHER_REPAIR_NOTE, _DISPATCHER_REPAIR_NOTE[len("repaired: ") :]),
+        (
+            "repaired: added aggregator stage for 2 worker terminal",
+            "added aggregator stage for 2 worker terminal",
+        ),
         ("REPAIRED: added aggregator stage", "added aggregator stage"),
         # A doubled prefix is fully collapsed (never "repaired: repaired").
         ("repaired: repaired: doubly patched", "doubly patched"),
@@ -612,10 +756,11 @@ def test_cli_dispatch_repair_warning_does_not_mangle_other_words(config_file, mo
         ("repaired", ""),
         ("repaired:", ""),
         # Not a repair token: no string surgery on other words.
-        ("injected aggregator stage for 2 worker terminals",
-         "injected aggregator stage for 2 worker terminals"),
-        ("repairedness check found a dangling edge",
-         "repairedness check found a dangling edge"),
+        (
+            "injected aggregator stage for 2 worker terminals",
+            "injected aggregator stage for 2 worker terminals",
+        ),
+        ("repairedness check found a dangling edge", "repairedness check found a dangling edge"),
     ],
 )
 def test_repair_note_detail_strips_only_a_leading_repair_token(note: str, expected: str) -> None:
@@ -660,9 +805,7 @@ def test_cli_worker_warning_short_error_is_unchanged(config_file, monkeypatch) -
     exact = ("blocked " * 24) + "12345678"  # exactly 200 chars
     assert len(exact) == 200
     for error in (short, exact):
-        _stub_engine_with_failures(
-            monkeypatch, [SimpleNamespace(stage_id="w2", model="m", error=error)]
-        )
+        _stub_engine_with_failures(monkeypatch, [SimpleNamespace(stage_id="w2", model="m", error=error)])
         runner = CliRunner()
         result = runner.invoke(main, ["-c", str(config_file), "hello"])
         assert result.exit_code == 0, result.output
@@ -710,9 +853,7 @@ def test_cli_worker_warning_renders_bracket_text_verbatim(config_file, monkeypat
     ]
     assert len(cases[1]) > 200  # the long case also carries the marker
     for error in cases:
-        _stub_engine_with_failures(
-            monkeypatch, [SimpleNamespace(stage_id="w3", model="m", error=error)]
-        )
+        _stub_engine_with_failures(monkeypatch, [SimpleNamespace(stage_id="w3", model="m", error=error)])
         runner = CliRunner()
         result = runner.invoke(main, ["-c", str(config_file), "hello"])
         assert result.exit_code == 0, result.output
@@ -727,6 +868,7 @@ def test_cli_worker_warning_renders_bracket_text_verbatim(config_file, monkeypat
 # ---------------------------------------------------------------------------
 # DF-CHIMERA-V2-2: readable models/formations tables
 # ---------------------------------------------------------------------------
+
 
 def test_cli_models_no_truncation_at_80_cols(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """Regression: `chimera models` used to add one column per category (32+),
@@ -945,6 +1087,7 @@ def test_cli_config_init_force_overwrites(tmp_path, monkeypatch) -> None:  # typ
 # ---------------------------------------------------------------------------
 # DF-CHIMERA-V2-4: group-level --version
 # ---------------------------------------------------------------------------
+
 
 def test_cli_version_flag() -> None:
     """``chimera --version`` prints the package version and exits 0.

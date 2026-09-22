@@ -37,6 +37,7 @@ def _client_with_gateway(config, responder):  # type: ignore[no-untyped-def]
 
 def _resp(text, model, ti, to):  # type: ignore[no-untyped-def]
     from chimera.gateway import GatewayResponse
+
     return GatewayResponse(text=text, model=model, tokens_input=ti, tokens_output=to)
 
 
@@ -231,8 +232,12 @@ def _client_dag_dict() -> dict[str, object]:
     return {
         "stages": [
             {"id": "researcher", "kind": "worker", "model": "deepseek/deepseek-chat"},
-            {"id": "finalizer", "kind": "aggregator",
-             "model": "zai-coding-plan/glm-5.2", "depends_on": ["researcher"]},
+            {
+                "id": "finalizer",
+                "kind": "aggregator",
+                "model": "zai-coding-plan/glm-5.2",
+                "depends_on": ["researcher"],
+            },
         ],
         "edges": [["researcher", "finalizer"]],
     }
@@ -269,8 +274,7 @@ def test_client_dag_invalid_model_returns_400(config) -> None:  # type: ignore[n
     bad_dag = {
         "stages": [
             {"id": "w", "kind": "worker", "model": "no/such/model"},
-            {"id": "a", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2",
-             "depends_on": ["w"]},
+            {"id": "a", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2", "depends_on": ["w"]},
         ],
         "edges": [["w", "a"]],
     }
@@ -289,8 +293,7 @@ def test_stage_models_via_api(config) -> None:  # type: ignore[no-untyped-def]
         json={"prompt": "hi", "stage_models": {"worker_1": "zai-coding-plan/glm-5.2"}},
     )
     assert r.status_code == 200, r.text
-    workers = {s["stage_id"]: s["model"] for s in r.json()["trace"]["stages"]
-               if s["kind"] == "worker"}
+    workers = {s["stage_id"]: s["model"] for s in r.json()["trace"]["stages"] if s["kind"] == "worker"}
     assert workers["worker_1"] == "zai-coding-plan/glm-5.2"
 
 
@@ -492,18 +495,29 @@ def test_deliberate_trace_worker_failures_empty_when_healthy(config) -> None:  #
 _PHANTOM_EDGE_DISPATCH = {
     "formation": {
         "stages": [
-            {"id": "worker_1", "kind": "worker",
-             "model": "deepseek/deepseek-chat", "depends_on": []},
-            {"id": "worker_2", "kind": "worker",
-             "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+            {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat", "depends_on": []},
+            {
+                "id": "worker_2",
+                "kind": "worker",
+                "model": "openrouter/google/gemini-2.5-flash",
+                "depends_on": [],
+            },
         ],
         "edges": [["worker_1", "aggregator"], ["worker_2", "aggregator"]],
     },
     "worker_prompts": [
-        {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
-         "prompt": "Custom subtask for worker_1", "expected_output_schema": None},
-        {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
-         "prompt": "Custom subtask for worker_2", "expected_output_schema": None},
+        {
+            "stage_id": "worker_1",
+            "model": "deepseek/deepseek-chat",
+            "prompt": "Custom subtask for worker_1",
+            "expected_output_schema": None,
+        },
+        {
+            "stage_id": "worker_2",
+            "model": "openrouter/google/gemini-2.5-flash",
+            "prompt": "Custom subtask for worker_2",
+            "expected_output_schema": None,
+        },
     ],
     "aggregator_instructions": "",
     "stage_instructions": {},
@@ -545,7 +559,9 @@ def test_deliberate_trace_serializes_dispatch_repairs(config) -> None:  # type: 
     ]
     # The injected stage really ran: the trace has the aggregator span.
     assert {s["stage_id"] for s in trace["stages"]} == {
-        "worker_1", "worker_2", "aggregator",
+        "worker_1",
+        "worker_2",
+        "aggregator",
     }
 
 
@@ -688,7 +704,9 @@ def test_chat_completions_valid_formations_unaffected(config, formation) -> None
     ],
 )
 def test_chat_completions_unknown_override_model_returns_400(  # type: ignore[no-untyped-def]
-    config, override_payload, field,
+    config,
+    override_payload,
+    field,
 ) -> None:
     """Unknown model INSIDE an override field is a 400 — a different contract.
 
@@ -713,11 +731,13 @@ def test_chat_completions_unknown_override_model_returns_400(  # type: ignore[no
     assert "unknown model" in body["detail"], body
 
 
-def test_chat_completions_unknown_stage_id_warns_but_succeeds(config) -> None:  # type: ignore[no-untyped-def]
-    """An unknown stage_models STAGE id is non-fatal (documented warn) — 200.
+def test_chat_completions_unknown_stage_id_returns_400(config) -> None:  # type: ignore[no-untyped-def]
+    """An unknown stage_models STAGE id is a hard 400 (DF-CHIMERA-V2-32).
 
-    Distinguishes the two halves of `stage_models` for docs accuracy: unknown
-    stage id → warn + normal deliberation; unknown model name → 400.
+    Contract flip: unknown stage ids used to warn + succeed (200); they are
+    now rejected by the engine like unknown model names — same ValueError →
+    400 `detail` mapping, naming the bad stage id. Never a silent partial
+    override behind a normal answer.
     """
     client = _client(config)
     r = client.post(
@@ -728,8 +748,10 @@ def test_chat_completions_unknown_stage_id_warns_but_succeeds(config) -> None:  
             "stage_models": {"no_such_stage": "deepseek/deepseek-chat"},
         },
     )
-    assert r.status_code == 200, r.text
-    assert r.json()["choices"][0]["message"]["content"] == "FINAL ANSWER"
+    assert r.status_code == 400, r.text
+    body = r.json()
+    assert "error" not in body, body
+    assert "no_such_stage" in body["detail"], body
 
 
 def test_chat_completions_stream_true_returns_400(config) -> None:  # type: ignore[no-untyped-def]

@@ -177,10 +177,7 @@ def _stage_cost(model: str, config: ChimeraConfig, tokens_input: int, tokens_out
         entry = config.get_model(model)
     except KeyError:
         return 0.0
-    return (
-        entry.cost_rate_input() * tokens_input / 1000.0
-        + entry.cost_rate_output() * tokens_output / 1000.0
-    )
+    return entry.cost_rate_input() * tokens_input / 1000.0 + entry.cost_rate_output() * tokens_output / 1000.0
 
 
 def _last_user_content(messages: list[dict[str, str]]) -> str:
@@ -197,7 +194,9 @@ def _apply_stage_models(
 ) -> None:
     """Force per-stage models (stage_id → model) onto a dispatch plan.
 
-    * Unknown stage ids are logged as warnings and skipped (never fatal).
+    * Unknown stage ids raise ``ValueError`` naming the offending id AND the
+      valid stage ids (DF-CHIMERA-V2-32) — a typoed id must never silently
+      drop its override behind an apparently-normal run.
     * Unknown model names raise ``ValueError`` (validated against the catalog).
     * Worker prompt model entries are kept in sync with the stage model.
     * Applies to ``auto``, ``preset`` and ``custom`` DAGs uniformly. Per-stage
@@ -208,13 +207,11 @@ def _apply_stage_models(
     stage_ids = set(dispatch.formation.stage_ids())
     for stage_id, model in stage_models.items():
         if stage_id not in stage_ids:
-            log.warning("stage_model_unknown_stage", stage_id=stage_id)
-            continue
-        if model not in config.models:
             raise ValueError(
-                f"stage_models references unknown model for stage "
-                f"{stage_id!r}: {model!r}"
+                f"stage_models references unknown stage {stage_id!r}; valid stages: {sorted(stage_ids)}"
             )
+        if model not in config.models:
+            raise ValueError(f"stage_models references unknown model for stage {stage_id!r}: {model!r}")
         entry = config.models[model]
         if not entry.enabled:
             raise ValueError(
@@ -299,7 +296,9 @@ def _apply_allowed_models(
         if stage.kind == "worker" and stage.model not in allowed_set:
             log.info(
                 "engine_allowed_models_remap",
-                stage=stage.id, original=stage.model, remapped=default,
+                stage=stage.id,
+                original=stage.model,
+                remapped=default,
             )
             stage.model = default
             wp = dispatch.worker_prompt_for(stage.id)
@@ -453,8 +452,7 @@ def _apply_unblocked_worker_models(
     blocked_stages = [
         stage
         for stage in dispatch.formation.stages
-        if stage.kind == "worker"
-        and _credential_block_active(registry, config, stage.model)
+        if stage.kind == "worker" and _credential_block_active(registry, config, stage.model)
     ]
     if not blocked_stages:
         return
@@ -560,9 +558,7 @@ def _apply_global_model_overrides(
 
     if discards:
         note = "; ".join(discards)
-        dispatch.dispatch_note = (
-            f"{dispatch.dispatch_note}; {note}" if dispatch.dispatch_note else note
-        )
+        dispatch.dispatch_note = f"{dispatch.dispatch_note}; {note}" if dispatch.dispatch_note else note
 
 
 class Engine:
@@ -724,16 +720,14 @@ class Engine:
         # discard is recorded in the trace by _apply_global_model_overrides).
         disp_override = (
             overrides.dispatcher_model
-            if (
-                overrides
-                and overrides.dispatcher_model
-                and not self.config.defaults.lock_dispatcher
-            )
+            if (overrides and overrides.dispatcher_model and not self.config.defaults.lock_dispatcher)
             else None
         )
         outcome = await self.dispatcher.dispatch(
-            user_prompt, formation,
-            custom_dag=custom_formation, model_override=disp_override,
+            user_prompt,
+            formation,
+            custom_dag=custom_formation,
+            model_override=disp_override,
         )
         dispatch_span = self._build_dispatch_span(outcome, formation)
 
@@ -763,9 +757,10 @@ class Engine:
         # override is recorded in the trace via dispatch_note.
         _apply_global_model_overrides(outcome.result, overrides, self.config)
 
-        # Apply per-stage model overrides (Feature 2). Unknown stages warn;
-        # unknown models raise ValueError. Done after dispatch so it applies to
-        # auto, preset, and custom DAGs alike.
+        # Apply per-stage model overrides (Feature 2). Unknown stages and
+        # unknown/disabled models alike raise ValueError (DF-CHIMERA-V2-32).
+        # Done after dispatch so it applies to auto, preset, and custom DAGs
+        # alike.
         stage_models = overrides.stage_models if overrides else None
         _apply_stage_models(outcome.result, stage_models, self.config)
         if overrides:
@@ -795,13 +790,14 @@ class Engine:
 
         # Client-provided schema wins; dispatcher's is the fallback.
         effective_schema = (
-            output_schema
-            or (overrides.output_schema if overrides else None)
-            or outcome.result.output_schema
+            output_schema or (overrides.output_schema if overrides else None) or outcome.result.output_schema
         )
 
         stage_spans, stage_results = await self._run_dag(
-            outcome.result, user_prompt, request_id, effective_schema,
+            outcome.result,
+            user_prompt,
+            request_id,
+            effective_schema,
             timeout_total_s=overrides.timeout_total_s if overrides else None,
             timeout_per_stage_s=overrides.timeout_per_stage_s if overrides else None,
             max_tokens=overrides.max_tokens if overrides else None,
@@ -1005,7 +1001,10 @@ class Engine:
                 # Prepare feedback for re-run workers.
                 for sid in stage.iterate_on:
                     feedback_map[sid] = self._collect_feedback(
-                        stage, dispatch, results, spans,
+                        stage,
+                        dispatch,
+                        results,
+                        spans,
                     )
                     log.info(
                         "engine_iteration_feedback",
@@ -1050,11 +1049,7 @@ class Engine:
 
         # Resolve per-stage timeout: request → config → code default
         cfg_timeout = self._config.timeout
-        per_stage = (
-            timeout_per_stage_s
-            if timeout_per_stage_s is not None
-            else cfg_timeout.per_stage_s
-        )
+        per_stage = timeout_per_stage_s if timeout_per_stage_s is not None else cfg_timeout.per_stage_s
         # Clamp per-stage to total if total is set
         if timeout_total_s is not None and timeout_total_s > 0:
             per_stage = min(per_stage, timeout_total_s) if per_stage > 0 else timeout_total_s
@@ -1073,8 +1068,15 @@ class Engine:
         messages: list[dict[str, str]] = []
         try:
             messages, response = await asyncio.wait_for(
-                self._call_stage(stage, dispatch, dep_results, user_prompt, output_schema,
-                                 iteration_feedback=iteration_feedback, max_tokens=max_tokens),
+                self._call_stage(
+                    stage,
+                    dispatch,
+                    dep_results,
+                    user_prompt,
+                    output_schema,
+                    iteration_feedback=iteration_feedback,
+                    max_tokens=max_tokens,
+                ),
                 timeout=per_stage,
             )
         except TimeoutError:
@@ -1094,11 +1096,16 @@ class Engine:
             )
         except (GatewayError, BudgetExhaustedError) as exc:
             return await self._handle_stage_failure(
-                stage, dispatch, dep_results, user_prompt, output_schema, exc, start,
+                stage,
+                dispatch,
+                dep_results,
+                user_prompt,
+                output_schema,
+                exc,
+                start,
             )
 
-        return self._build_stage_result(stage, response, messages, start, user_prompt,
-                                        dispatch, dep_results)
+        return self._build_stage_result(stage, response, messages, start, user_prompt, dispatch, dep_results)
 
     async def _handle_stage_failure(
         self,
@@ -1124,14 +1131,21 @@ class Engine:
             retry_stage = stage.model_copy(update={"model": fallback_model})
             try:
                 messages, response = await self._call_stage(
-                    retry_stage, dispatch, dep_results, user_prompt, output_schema,
+                    retry_stage,
+                    dispatch,
+                    dep_results,
+                    user_prompt,
+                    output_schema,
                 )
                 log.info(
                     "engine_stage_retry_ok",
-                    stage=stage.id, original=stage.model, fallback=fallback_model,
+                    stage=stage.id,
+                    original=stage.model,
+                    fallback=fallback_model,
                 )
-                return self._build_stage_result(stage, response, messages, start,
-                                                user_prompt, dispatch, dep_results)
+                return self._build_stage_result(
+                    stage, response, messages, start, user_prompt, dispatch, dep_results
+                )
             except GatewayError:
                 pass  # fall through to plain-text retry
 
@@ -1139,14 +1153,20 @@ class Engine:
         # provider incompatibilities (e.g. DeepSeek requires "json" in prompt).
         try:
             messages, response = await self._call_stage(
-                stage, dispatch, dep_results, user_prompt, output_schema=None,
+                stage,
+                dispatch,
+                dep_results,
+                user_prompt,
+                output_schema=None,
             )
             log.info(
                 "engine_stage_retry_plaintext",
-                stage=stage.id, model=stage.model,
+                stage=stage.id,
+                model=stage.model,
             )
-            return self._build_stage_result(stage, response, messages, start,
-                                            user_prompt, dispatch, dep_results)
+            return self._build_stage_result(
+                stage, response, messages, start, user_prompt, dispatch, dep_results
+            )
         except GatewayError as exc2:
             return self._degraded_stage(stage, exc2, [], latency_ms, started_at=start)
 
@@ -1162,8 +1182,10 @@ class Engine:
     ) -> tuple[StageResult, StageSpan]:
         """Build a (StageResult, StageSpan) pair for a successful stage call."""
         latency_ms = int((time.monotonic() - start) * 1000)
-        prompt_text = _last_user_content(messages) if messages else _aggregator_prompt_summary(
-            stage, dispatch, dep_results
+        prompt_text = (
+            _last_user_content(messages)
+            if messages
+            else _aggregator_prompt_summary(stage, dispatch, dep_results)
         )
         ended = time.monotonic()
         # QA-CHIMERA-V2-16: the route the gateway resolved for this call, read
@@ -1208,8 +1230,9 @@ class Engine:
     ) -> tuple[list[dict[str, str]], GatewayResponse]:
         """Make the actual model call for a stage; returns (messages, response)."""
         if stage.kind == "worker":
-            messages = self._worker_messages(stage, dispatch, user_prompt,
-                                             iteration_feedback=iteration_feedback)
+            messages = self._worker_messages(
+                stage, dispatch, user_prompt, iteration_feedback=iteration_feedback
+            )
             # Progressive prompting: feed context piece-by-piece before the real call.
             # CH-GAP-058: a caller-supplied ``progressive=True`` now reaches these
             # stages on its own (``_apply_progressive``), so the gate below is the
@@ -1240,7 +1263,10 @@ class Engine:
             response = await self.gateway.complete(stage.model, messages, **kwargs)
             return messages, response
         response = await self.aggregator.execute(
-            stage, dispatch, dep_results, user_prompt,
+            stage,
+            dispatch,
+            dep_results,
+            user_prompt,
             output_schema=output_schema,
             max_prompt_tokens=self.config.max_aggregator_context_tokens,
             max_tokens=max_tokens,
@@ -1249,7 +1275,8 @@ class Engine:
         # ── Mechanical schema validation for AUDIT stages ──────────
         if stage.kind == "audit" and output_schema is not None:
             validation_error = self._validate_against_schema(
-                output_schema, response.text,
+                output_schema,
+                response.text,
             )
             if validation_error is not None:
                 log.info(
@@ -1280,9 +1307,7 @@ class Engine:
         started_at: float | None = None,
     ) -> tuple[StageResult, StageSpan]:
         prompt_text = (
-            _last_user_content(messages)
-            if messages
-            else f"(degraded {stage.kind} stage '{stage.id}')"
+            _last_user_content(messages) if messages else f"(degraded {stage.kind} stage '{stage.id}')"
         )
         degraded_response = GatewayResponse(
             text=f"[stage {stage.id} ({stage.model}) unavailable: {error}]",
@@ -1366,9 +1391,7 @@ class Engine:
         return None
 
     @staticmethod
-    def _validate_against_schema(
-        schema: dict[str, Any], output: str
-    ) -> dict[str, Any] | None:
+    def _validate_against_schema(schema: dict[str, Any], output: str) -> dict[str, Any] | None:
         """Mechanically validate *output* against *schema*.
 
         Returns ``None`` on success (output is valid), or a dict suitable
@@ -1413,9 +1436,7 @@ class Engine:
         return None  # passed
 
     @staticmethod
-    def _normalize_delimited_string_arrays(
-        schema: dict[str, Any], instance: Any
-    ) -> Any:
+    def _normalize_delimited_string_arrays(schema: dict[str, Any], instance: Any) -> Any:
         """Split a comma-joined string where the schema wants an array of strings.
 
         The dispatcher authors the output schema, but the wire cannot always
@@ -1509,15 +1530,11 @@ class Engine:
             except (json.JSONDecodeError, TypeError):
                 continue
         for candidate in candidates:
-            starts = [
-                idx
-                for idx in (candidate.find("{"), candidate.find("["))
-                if idx != -1
-            ]
+            starts = [idx for idx in (candidate.find("{"), candidate.find("[")) if idx != -1]
             if not starts:
                 continue
             try:
-                value, _end = json.JSONDecoder().raw_decode(candidate[min(starts):])
+                value, _end = json.JSONDecoder().raw_decode(candidate[min(starts) :])
             except json.JSONDecodeError:
                 continue
             return True, value
@@ -1539,18 +1556,12 @@ class Engine:
         parts: list[str] = []
         trigger_span = spans.get(trigger.id)
         if trigger_span is not None:
-            parts.append(
-                f"## Re-iteration feedback from {trigger.id}\n"
-                f"{trigger_span.response[:2000]}"
-            )
+            parts.append(f"## Re-iteration feedback from {trigger.id}\n{trigger_span.response[:2000]}")
         # Include all direct upstream results for context
         for dep_id in trigger.depends_on:
             dep_result = results.get(dep_id)
             if dep_result is not None:
-                parts.append(
-                    f"## Context from upstream {dep_id}\n"
-                    f"{dep_result.response.text[:1000]}"
-                )
+                parts.append(f"## Context from upstream {dep_id}\n{dep_result.response.text[:1000]}")
         return "\n\n".join(parts) if parts else "The previous output needs improvement."
 
     # ------------------------------------------------------------------ #
@@ -1621,9 +1632,7 @@ class Engine:
             ended_at=outcome.ended_at,
         )
 
-    def _select_answer(
-        self, dag: FormationDAG, results: dict[str, StageResult]
-    ) -> tuple[str, str]:
+    def _select_answer(self, dag: FormationDAG, results: dict[str, StageResult]) -> tuple[str, str]:
         terminals = dag.terminals()
         if not terminals:
             # fall back to last stage in topo order
@@ -1671,7 +1680,7 @@ class Engine:
         # Language tag must be a bare word (json, python, ...) or empty.
         if opener and not re.fullmatch(r"[A-Za-z0-9_+-]+", opener):
             return text
-        body = stripped[first_nl + 1:]
+        body = stripped[first_nl + 1 :]
         if not body.rstrip().endswith("```"):
             return text
         body = body.rstrip()[:-3]
@@ -1786,24 +1795,18 @@ class Engine:
             if not isinstance(result, StageResult) or not result.degraded:
                 continue
             error = str(result.response.metadata.get("error") or "unknown error")
-            failures.append(
-                WorkerFailure(stage_id=stage_id, model=result.model, error=error)
-            )
+            failures.append(WorkerFailure(stage_id=stage_id, model=result.model, error=error))
             blocked_models.shared_registry.record_failure(
                 result.model,
                 error,
                 credential_fingerprint=(
-                    model_credential_fingerprint(config, result.model)
-                    if config is not None
-                    else None
+                    model_credential_fingerprint(config, result.model) if config is not None else None
                 ),
             )
         return failures
 
 
-def _aggregator_prompt_summary(
-    stage: Stage, dispatch: DispatchResult, deps: list[StageResult]
-) -> str:
+def _aggregator_prompt_summary(stage: Stage, dispatch: DispatchResult, deps: list[StageResult]) -> str:
     """Compact prompt string for aggregator spans (whose messages are built internally)."""
     deps_desc = ", ".join(d.stage_id for d in deps) or "(none)"
     return f"merge stage '{stage.id}' over upstream: {deps_desc}"

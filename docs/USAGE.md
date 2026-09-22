@@ -21,6 +21,9 @@ chimera --stage-models '{"worker_1":"deepseek/deepseek-v4-flash","aggregator":"d
 chimera --stage-models '{"worker_1":"zai-coding-plan/glm-5.2","aggregator":"deepseek/deepseek-v4-pro"}' \
   run "..."
 
+# Unknown stage ids are rejected (exit 2) with the valid stage ids listed —
+# a typoed id never silently drops its override behind a normal answer.
+
 # Print the full deliberation trace
 chimera --verbose run "..."
 

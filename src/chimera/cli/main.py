@@ -74,9 +74,7 @@ class MutuallyExclusiveOption(click.Option):
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.mutually_exclusive: frozenset[str] = frozenset(
-            kwargs.pop("mutually_exclusive", ())
-        )
+        self.mutually_exclusive: frozenset[str] = frozenset(kwargs.pop("mutually_exclusive", ()))
         super().__init__(*args, **kwargs)
 
     def _display_name(self, ctx: click.Context, param_name: str) -> str:
@@ -84,9 +82,7 @@ class MutuallyExclusiveOption(click.Option):
         if param_name == self.name:
             opts = self.opts
         else:
-            sibling = next(
-                (p for p in ctx.command.params if p.name == param_name), None
-            )
+            sibling = next((p for p in ctx.command.params if p.name == param_name), None)
             opts = getattr(sibling, "opts", ()) or ()
         longs = [opt for opt in opts if opt.startswith("--")]
         if longs:
@@ -103,8 +99,7 @@ class MutuallyExclusiveOption(click.Option):
                     self._display_name(ctx, name) for name in clashes
                 ]
                 raise click.UsageError(
-                    f"{' and '.join(names)} are mutually exclusive — "
-                    f"pick one output mode."
+                    f"{' and '.join(names)} are mutually exclusive — pick one output mode."
                 )
         return super().handle_parse_result(ctx, opts, args)
 
@@ -159,7 +154,10 @@ class ChimeraGroup(click.Group):
     "--stage-models",
     "stage_models_json",
     default=None,
-    help='Per-stage model overrides as JSON (e.g. \'{"worker_1":"zai-coding-plan/glm-5.2"}\').',
+    help=(
+        'Per-stage model overrides as JSON (e.g. \'{"worker_1":"zai-coding-plan/glm-5.2"}\'); '
+        "unknown stage ids are rejected."
+    ),
 )
 @click.pass_context
 def main(
@@ -320,9 +318,7 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
         extra_kwargs["dag"] = dag
         extra_kwargs["allow_custom_dag"] = allow_custom_dag
     try:
-        result = asyncio.run(
-            engine.deliberate(prompt, opts["formation"], **extra_kwargs)
-        )
+        result = asyncio.run(engine.deliberate(prompt, opts["formation"], **extra_kwargs))
     except ValueError as exc:
         console.print(f"[red]error:[/red] {exc}")
         sys.exit(2)
@@ -396,9 +392,7 @@ def _provider_api_key_env(provider: str, config: ChimeraConfig | None) -> str:
 _WORKER_ERROR_DISPLAY_CHARS = 200
 
 
-def _elide_worker_error(
-    error: str, limit: int = _WORKER_ERROR_DISPLAY_CHARS
-) -> tuple[str, int]:
+def _elide_worker_error(error: str, limit: int = _WORKER_ERROR_DISPLAY_CHARS) -> tuple[str, int]:
     """Return ``(rendered, omitted_chars)`` for a worker-failure *error*.
 
     An error of at most *limit* characters is returned byte-identical
@@ -461,10 +455,7 @@ def _print_worker_failures(
         # ``escape`` because the error text is upstream/third-party text: an
         # unescaped "[...]" in it is parsed as Rich markup and can swallow the
         # rest of the line (including our "[truncated N chars]" marker).
-        out.print(
-            f"[yellow]warning:[/yellow] worker '{stage_id}' ({model}) "
-            f"failed: {escape(displayed)}"
-        )
+        out.print(f"[yellow]warning:[/yellow] worker '{stage_id}' ({model}) failed: {escape(displayed)}")
         if omitted:
             # The elision must be actionable, not merely visible: name where
             # the complete text is. Both --json and --verbose dump the full
@@ -481,8 +472,7 @@ def _print_worker_failures(
         provider = _provider_for_model(model, config)
         if provider is None:
             out.print(
-                "  [yellow]credential failure:[/yellow] the provider rejected "
-                "the API key for this model."
+                "  [yellow]credential failure:[/yellow] the provider rejected the API key for this model."
             )
         else:
             env_var = _provider_api_key_env(provider, config)
@@ -531,7 +521,7 @@ def _repair_note_detail(note: str) -> str:
             return ""
         for prefix in _REPAIR_NOTE_PREFIXES:
             if lowered.startswith(prefix):
-                text = text[len(prefix):].lstrip()
+                text = text[len(prefix) :].lstrip()
                 break
         else:
             return text
@@ -720,9 +710,7 @@ def models(ctx: click.Context) -> None:
     detail.add_column("model · category", no_wrap=False)
     detail.add_column("weight", justify="right", no_wrap=True)
     for name, entry in config.models.items():
-        pairs = sorted(
-            entry.categories.items(), key=lambda kv: (-kv[1], kv[0])
-        )
+        pairs = sorted(entry.categories.items(), key=lambda kv: (-kv[1], kv[0]))
         for cat, weight in pairs:
             detail.add_row(f"{name} · {cat}", f"{weight:.2f}")
     console.print(detail)
@@ -873,10 +861,7 @@ def config_init(force: bool) -> None:
     """
     target = Path("chimera.yaml")
     if target.exists() and not force:
-        console.print(
-            "[red]error:[/red] chimera.yaml already exists. "
-            "Use --force to overwrite it."
-        )
+        console.print("[red]error:[/red] chimera.yaml already exists. Use --force to overwrite it.")
         sys.exit(2)
     from chimera.config import find_example_config_path
 

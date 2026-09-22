@@ -261,8 +261,9 @@ not the OpenAI-style `error` object).
 }
 ```
 
-Unknown stage IDs warn (non-fatal): the override is skipped and the stage
-keeps its dispatched model, so the request still returns 200. An unknown
+Unknown stage IDs are rejected: the request fails with HTTP 400 naming the
+stage and the valid stage ids — a typoed override can no longer silently
+drop behind an apparently-normal 200. An unknown
 **model name** inside `stage_models` (or `worker_model` / `aggregator_model`)
 *is* validated against the catalog and returns HTTP 400 — see
 [Errors and Status Codes](#errors-and-status-codes).
@@ -555,8 +556,8 @@ OpenAI-style `error` object):
 Two asymmetric cases are worth knowing:
 
 - `stage_models` with an unknown **stage id** (rather than an unknown model)
-  only logs a warning; the request proceeds with the dispatched model and
-  returns 200.
+  is rejected with HTTP 400 naming the stage and the valid stage ids — same
+  4xx class as an unknown model (DF-CHIMERA-V2-32).
 - `allowed_models` entries and `dispatcher_model` are **not** catalog-validated
   on this path — `allowed_models` remaps worker stages to its first entry, and
   `dispatcher_model` is passed through to the dispatcher. A typo there is not
