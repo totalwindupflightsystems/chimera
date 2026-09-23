@@ -78,6 +78,7 @@ class _NoUsableAnswerError(Exception):
 # F5: Request queue / backpressure
 # --------------------------------------------------------------------------- #
 
+
 class RequestQueue:
     """In-memory request queue with semaphore-based concurrency limiting (F5).
 
@@ -181,6 +182,7 @@ def create_app(
     # Web UI (session-backed multi-turn with live DAG viz + SSE)
     try:
         from chimera.web import router as web_router
+
         # INT-API-001: the whole /web/* surface (sessions, chat, SSE, the SPA
         # shell at GET /web/) runs deliberations through the same engine as
         # /v1/deliberate, so it gets the same authentication. The dependency is
@@ -224,16 +226,16 @@ class DeliberateRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
     formation: str = Field("auto", min_length=1)
     # Request-level overrides — maximum flexibility
-    allowed_models: list[str] | None = None      # Only these models allowed
-    disallowed_models: list[str] | None = None    # Exclude these models
-    dispatcher_model: str | None = None           # Override dispatcher
-    aggregator_model: str | None = None                # Override aggregator
-    worker_model: str | None = None               # Override default worker
-    output_schema: dict[str, Any] | None = None   # JSON Schema for final answer
-    stage_models: dict[str, str] | None = None    # Per-stage model overrides (stage_id → model)
+    allowed_models: list[str] | None = None  # Only these models allowed
+    disallowed_models: list[str] | None = None  # Exclude these models
+    dispatcher_model: str | None = None  # Override dispatcher
+    aggregator_model: str | None = None  # Override aggregator
+    worker_model: str | None = None  # Override default worker
+    output_schema: dict[str, Any] | None = None  # JSON Schema for final answer
+    stage_models: dict[str, str] | None = None  # Per-stage model overrides (stage_id → model)
     # Client-defined DAG (Feature 1) — disabled unless allow_custom_dag=True
-    dag: dict[str, Any] | None = None             # Full DAG definition from client
-    allow_custom_dag: bool = False                # Must be True to accept client DAG
+    dag: dict[str, Any] | None = None  # Full DAG definition from client
+    allow_custom_dag: bool = False  # Must be True to accept client DAG
 
 
 class DeliberateResponse(BaseModel):
@@ -268,10 +270,10 @@ class ChatCompletionRequest(BaseModel):
     dispatcher_model: str | None = None
     aggregator_model: str | None = None
     worker_model: str | None = None
-    stage_models: dict[str, str] | None = None    # Per-stage model overrides (stage_id → model)
+    stage_models: dict[str, str] | None = None  # Per-stage model overrides (stage_id → model)
     # Client-defined DAG (Feature 1) — disabled unless allow_custom_dag=True
-    dag: dict[str, Any] | None = None             # Full DAG definition from client
-    allow_custom_dag: bool = False                # Must be True to accept client DAG
+    dag: dict[str, Any] | None = None  # Full DAG definition from client
+    allow_custom_dag: bool = False  # Must be True to accept client DAG
 
 
 class ChatChoiceMessage(BaseModel):
@@ -331,6 +333,7 @@ def aggregate_usage(trace: DeliberationTrace) -> tuple[int, int, int]:
 # --------------------------------------------------------------------------- #
 # Route registration
 # --------------------------------------------------------------------------- #
+
 
 def _catalog_entry_payload(entry: Any) -> dict[str, Any]:
     """Per-model payload served by ``GET /v1/models`` (INT-API-004).
@@ -422,9 +425,7 @@ def _register_routes(app: FastAPI) -> None:
         # CH-GAP-053: count only the providers the config declared — the
         # providers map also carries auto-discovery additions, which used to
         # inflate this count. Discovery-added names are reported separately.
-        configured_count, discovered_names = (
-            _split_configured_and_discovered_providers(cfg)
-        )
+        configured_count, discovered_names = _split_configured_and_discovered_providers(cfg)
         details: dict[str, Any] = {
             "config_loaded": True,
             "models_configured": len(cfg.models),
@@ -447,7 +448,8 @@ def _register_routes(app: FastAPI) -> None:
             # CH-GAP-059: it also excludes the model-less discovery additions,
             # which are returned alongside it for their own top-level key.
             unhealthy, discovered_not_configured = _health_degraded_provider_names(
-                cfg, provider_status,
+                cfg,
+                provider_status,
             )
             # "healthy" is equivalent to "no provider failed"; the previous
             # two identical `degraded` branches are collapsed into this one
@@ -480,9 +482,7 @@ def _register_routes(app: FastAPI) -> None:
             excluded = set(discovered_not_configured)
             return {
                 "status": "degraded",
-                "unhealthy_providers": [
-                    name for name in sorted(cfg.providers) if name not in excluded
-                ],
+                "unhealthy_providers": [name for name in sorted(cfg.providers) if name not in excluded],
                 "discovered_not_configured": discovered_not_configured,
                 "slow_providers": [],
                 "probe_skipped_providers": [],
@@ -515,9 +515,7 @@ def _register_routes(app: FastAPI) -> None:
                 # CH-GAP-059: the same aggregation as /v1/health — this field
                 # documents "the same meaning", so a model-less discovery
                 # addition cannot be named here and excluded there.
-                unhealthy, discovered_not_configured = (
-                    _health_degraded_provider_names(cfg, provider_status)
-                )
+                unhealthy, discovered_not_configured = _health_degraded_provider_names(cfg, provider_status)
                 return {
                     "status": "ready",
                     "unhealthy_providers": unhealthy,
@@ -538,15 +536,9 @@ def _register_routes(app: FastAPI) -> None:
             skipped = _probe_skipped_provider_names(provider_status)
             reasons = []
             if slow:
-                reasons.append(
-                    "no probe answered inside server.health_timeout_s "
-                    f"(slow: {', '.join(slow)})"
-                )
+                reasons.append(f"no probe answered inside server.health_timeout_s (slow: {', '.join(slow)})")
             if skipped:
-                reasons.append(
-                    f"live health probe disabled (health_probe: false: "
-                    f"{', '.join(skipped)})"
-                )
+                reasons.append(f"live health probe disabled (health_probe: false: {', '.join(skipped)})")
             if len(reasons) == len(provider_status):
                 detail = "Not ready — " + "; ".join(reasons)
             else:
@@ -591,10 +583,7 @@ def _register_routes(app: FastAPI) -> None:
     @app.get("/v1/formations")
     async def formations(request: Request) -> dict[str, Any]:
         cfg: ChimeraConfig = request.app.state.config
-        return {
-            name: preset.model_dump(exclude_none=True)
-            for name, preset in cfg.formations.items()
-        }
+        return {name: preset.model_dump(exclude_none=True) for name, preset in cfg.formations.items()}
 
     @app.get("/v1/models")
     async def models(request: Request) -> dict[str, Any]:
@@ -614,9 +603,7 @@ def _register_routes(app: FastAPI) -> None:
         The route stays keyless (docs/SECURITY.md open-endpoint list).
         """
         cfg: ChimeraConfig = request.app.state.config
-        catalog = {
-            name: _catalog_entry_payload(entry) for name, entry in cfg.models.items()
-        }
+        catalog = {name: _catalog_entry_payload(entry) for name, entry in cfg.models.items()}
         return {
             "object": "list",
             "data": [
@@ -654,7 +641,11 @@ def _register_routes(app: FastAPI) -> None:
         try:
             engine: Engine = request.app.state.engine
             cfg: ChimeraConfig = request.app.state.config
-            if body.formation not in cfg.formations:
+            # DF-CHIMERA-V2-33: `auto` is a built-in formation backed by
+            # `Config.auto_formation` — valid even when the config lists no
+            # `auto:` entry (the docs example's shape). The dispatcher's
+            # unknown-name fallback stays untouched (DF-CHIMERA-V2-7).
+            if body.formation not in cfg.formations and body.formation != "auto":
                 raise HTTPException(
                     status_code=422,
                     detail=f"Unknown formation: {body.formation}",
@@ -665,6 +656,7 @@ def _register_routes(app: FastAPI) -> None:
                     detail="Custom DAG requires allow_custom_dag=true",
                 )
             from chimera.config import DeliberationOverrides
+
             overrides = DeliberationOverrides(
                 allowed_models=body.allowed_models,
                 disallowed_models=body.disallowed_models,
@@ -704,8 +696,11 @@ def _register_routes(app: FastAPI) -> None:
                         overrides.timeout_per_stage_s = parsed if parsed > 0 else None
             try:
                 result = await engine.deliberate(
-                    body.prompt, body.formation, overrides=overrides,
-                    dag=body.dag, allow_custom_dag=body.allow_custom_dag,
+                    body.prompt,
+                    body.formation,
+                    overrides=overrides,
+                    dag=body.dag,
+                    allow_custom_dag=body.allow_custom_dag,
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -759,8 +754,10 @@ def _register_routes(app: FastAPI) -> None:
             # silent substitution (CH-GAP-027). Valid values: "auto", a
             # configured formation preset, or "custom" (only with a DAG).
             cfg: ChimeraConfig = request.app.state.config
-            if formation not in cfg.formations and formation != "auto" and not (
-                formation == "custom" and body.dag is not None
+            if (
+                formation not in cfg.formations
+                and formation != "auto"
+                and not (formation == "custom" and body.dag is not None)
             ):
                 # DF-CHIMERA-0911-3: `model` is a FORMATION selector (OpenAI
                 # drop-in compatibility), NOT a catalog model ID — a key from
@@ -797,6 +794,7 @@ def _register_routes(app: FastAPI) -> None:
                     },
                 )
             from chimera.config import DeliberationOverrides
+
             # OpenAI-compat contract: streaming is NOT supported (CH-GAP-030).
             # A drop-in client sending stream:true must get an explicit 400
             # naming the field — never a silent non-stream 200.
@@ -806,8 +804,7 @@ def _register_routes(app: FastAPI) -> None:
                     content={
                         "error": {
                             "message": (
-                                "Streaming is not supported by this server. "
-                                "Omit `stream` or set it to false."
+                                "Streaming is not supported by this server. Omit `stream` or set it to false."
                             ),
                             "type": "invalid_request_error",
                             "param": "stream",
@@ -834,8 +831,12 @@ def _register_routes(app: FastAPI) -> None:
                     output_schema = {"type": "object"}  # generic object
             try:
                 result = await engine.deliberate(
-                    prompt, formation, overrides=overrides, output_schema=output_schema,
-                    dag=body.dag, allow_custom_dag=body.allow_custom_dag,
+                    prompt,
+                    formation,
+                    overrides=overrides,
+                    output_schema=output_schema,
+                    dag=body.dag,
+                    allow_custom_dag=body.allow_custom_dag,
                 )
             except (KeyError, ValueError) as exc:
                 raise HTTPException(status_code=400, detail=f"Unknown model/formation: {exc}") from exc
@@ -916,8 +917,14 @@ def _provider_has_credentials(config: ChimeraConfig, provider_name: str) -> bool
 #: BEFORE the quota tokens so a failure that says both ("401 ... quota") stays
 #: ``auth`` — an auth failure is the more actionable verdict.
 _AUTH_TOKENS: tuple[str, ...] = (
-    "401", "403", "unauthorized", "authentication",
-    "invalid api key", "api key", "forbidden", "permission denied",
+    "401",
+    "403",
+    "unauthorized",
+    "authentication",
+    "invalid api key",
+    "api key",
+    "forbidden",
+    "permission denied",
 )
 
 #: Message tokens that mean "the provider was reachable and authenticated, but
@@ -927,9 +934,17 @@ _AUTH_TOKENS: tuple[str, ...] = (
 #: account" instead of the useless catch-all ``api``.  A 429 status code is
 #: the same condition signalled structurally and is checked first.
 _QUOTA_TOKENS: tuple[str, ...] = (
-    "insufficient_quota", "quota", "insufficient_credits",
-    "insufficient balance", "no resource package", "recharge", "billing",
-    "payment required", "spending limit", "rate limit", "out of credits",
+    "insufficient_quota",
+    "quota",
+    "insufficient_credits",
+    "insufficient balance",
+    "no resource package",
+    "recharge",
+    "billing",
+    "payment required",
+    "spending limit",
+    "rate limit",
+    "out of credits",
 )
 
 
@@ -975,11 +990,7 @@ def _unhealthy_provider_names(
     Callers that want the top-level ``/v1/health`` field semantics must use
     :func:`_degraded_provider_names`; the two differ exactly on ``slow``.
     """
-    return sorted(
-        name
-        for name, info in provider_status.items()
-        if not info.get("healthy", False)
-    )
+    return sorted(name for name, info in provider_status.items() if not info.get("healthy", False))
 
 
 def _unhealthy_entries(
@@ -1009,9 +1020,7 @@ def _slow_provider_names(
     broken.  The measured wait lives in each entry's ``latency_s``.
     """
     return sorted(
-        name
-        for name, info in provider_status.items()
-        if info.get("error_class") == _SLOW_ERROR_CLASS
+        name for name, info in provider_status.items() if info.get("error_class") == _SLOW_ERROR_CLASS
     )
 
 
@@ -1068,7 +1077,8 @@ def _degraded_provider_names(
     degradation: an unexplained class is never silently promoted to healthy.
     """
     unmeasured = {
-        _SLOW_ERROR_CLASS, _PROBE_SKIPPED_ERROR_CLASS,
+        _SLOW_ERROR_CLASS,
+        _PROBE_SKIPPED_ERROR_CLASS,
     }
     return [
         name
@@ -1151,16 +1161,13 @@ def _health_degraded_provider_names(
     """
     discovered_not_configured = _discovered_not_configured_provider_names(config)
     excluded = set(discovered_not_configured)
-    degraded = [
-        name
-        for name in _degraded_provider_names(provider_status)
-        if name not in excluded
-    ]
+    degraded = [name for name in _degraded_provider_names(provider_status) if name not in excluded]
     return degraded, discovered_not_configured
 
 
 async def _check_providers(
-    config: ChimeraConfig, gateway: Any,
+    config: ChimeraConfig,
+    gateway: Any,
 ) -> dict[str, dict[str, Any]]:
     """Check connectivity to each configured provider.
 
@@ -1210,6 +1217,7 @@ async def _check_providers(
     keeps that expected truncation out of the ``token_limit_reached`` warning
     stream, so a healthy provider no longer looks like it is out of quota.
     """
+
     async def check_one(provider_name: str) -> tuple[str, dict[str, Any]]:
         # DF-CHIMERA-V2-27: an opt-out provider is not probed at all. The
         # entry is honest about WHY (``probe_skipped``) instead of being
@@ -1221,10 +1229,7 @@ async def _check_providers(
                 "note": "probe_skipped: live health probe disabled for provider",
                 "error_class": "probe_skipped",
             }
-        model_names = [
-            name for name, entry in config.models.items()
-            if entry.provider == provider_name
-        ]
+        model_names = [name for name, entry in config.models.items() if entry.provider == provider_name]
         if not model_names:
             # CH-GAP-053: nothing was probed, so nothing was proven.  A
             # note-only entry must not read as healthy — reporting it
@@ -1237,10 +1242,7 @@ async def _check_providers(
         if not _provider_has_credentials(config, provider_name):
             return provider_name, {
                 "healthy": False,
-                "error": (
-                    "missing-credentials: no API key resolved "
-                    f"for provider '{provider_name}'"
-                ),
+                "error": (f"missing-credentials: no API key resolved for provider '{provider_name}'"),
                 "error_class": "missing_credentials",
             }
 
@@ -1284,11 +1286,11 @@ async def _check_providers(
     started = time.perf_counter()
 
     tasks = {
-        asyncio.create_task(check_one(provider_name)): provider_name
-        for provider_name in config.providers
+        asyncio.create_task(check_one(provider_name)): provider_name for provider_name in config.providers
     }
     done, pending = await asyncio.wait(
-        tasks, timeout=config.server.health_timeout_s,
+        tasks,
+        timeout=config.server.health_timeout_s,
     )
 
     # DF-CHIMERA-V2-27: a probe that never answers inside the budget is
@@ -1303,8 +1305,7 @@ async def _check_providers(
     # still degrade the status.
     waited_s = round(time.perf_counter() - started, 3)
     slow_error = (
-        f"slow: no response within {config.server.health_timeout_s:.1f}s "
-        f"(probe waited {waited_s:.2f}s)"
+        f"slow: no response within {config.server.health_timeout_s:.1f}s (probe waited {waited_s:.2f}s)"
     )
 
     # DF-CHIMERA-V2-17: a probe still outstanding at the deadline gets a
@@ -1316,7 +1317,8 @@ async def _check_providers(
     # entirely and reproduces the cancel-at-deadline behaviour exactly.
     if pending and config.server.health_probe_grace_s > 0:
         late_done, pending = await asyncio.wait(
-            pending, timeout=config.server.health_probe_grace_s,
+            pending,
+            timeout=config.server.health_probe_grace_s,
         )
         done |= late_done
 
@@ -1325,8 +1327,7 @@ async def _check_providers(
     # whole time the endpoint actually spent waiting on them).
     final_wait_s = round(time.perf_counter() - started, 3)
     slow_error_final = (
-        f"slow: no response within {config.server.health_timeout_s:.1f}s "
-        f"(probe waited {final_wait_s:.2f}s)"
+        f"slow: no response within {config.server.health_timeout_s:.1f}s (probe waited {final_wait_s:.2f}s)"
     )
 
     status: dict[str, dict[str, Any]] = {}
