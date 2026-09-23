@@ -70,8 +70,8 @@ class _Recorder:
 
     @property
     def score_calls(self) -> list[dict[str, Any]]:
-        """Calls whose argv forwards ``--score`` (the auto-scoring step)."""
-        return [c for c in self.calls if "--score" in c["cmd"]]
+        """Calls whose argv forwards a scoring step (``--score`` or ``--score-from``)."""
+        return [c for c in self.calls if "--score" in c["cmd"] or "--score-from" in c["cmd"]]
 
 
 class _Cron:
