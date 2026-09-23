@@ -52,9 +52,19 @@ from chimera.provider_discovery import (  # noqa: E402
 
 #: Core providers we care about for model sync (must match PROVIDER_ID_MAP).
 CORE_PROVIDERS: set[str] = {
-    "openai", "anthropic", "deepseek", "google", "xai",
-    "mistral", "moonshotai", "minimax", "alibaba", "zhipuai",
-    "meta", "stepfun", "xiaomi",
+    "openai",
+    "anthropic",
+    "deepseek",
+    "google",
+    "xai",
+    "mistral",
+    "moonshotai",
+    "minimax",
+    "alibaba",
+    "zhipuai",
+    "meta",
+    "stepfun",
+    "xiaomi",
 }
 
 #: Provider display names.
@@ -76,41 +86,92 @@ PROVIDER_NAMES: dict[str, str] = {
 
 #: Model families to skip (embeddings, speech, rerank, legacy, etc.).
 SKIP_FAMILIES: set[str] = {
-    "embedding", "embeddings", "speech", "tts", "audio",
-    "rerank", "reranker", "moderation", "guard",
-    "dall-e", "dalle", "imagen", "imagegen", "image-gen",
-    "whisper", "transcription", "translate",
-    "text-embedding", "babbage", "davinci", "ada",
-    "stable-diffusion", "sdxl", "midjourney",
-    "video", "video-gen", "sora",
-    "bge", "gte", "e5", "stella",
+    "embedding",
+    "embeddings",
+    "speech",
+    "tts",
+    "audio",
+    "rerank",
+    "reranker",
+    "moderation",
+    "guard",
+    "dall-e",
+    "dalle",
+    "imagen",
+    "imagegen",
+    "image-gen",
+    "whisper",
+    "transcription",
+    "translate",
+    "text-embedding",
+    "babbage",
+    "davinci",
+    "ada",
+    "stable-diffusion",
+    "sdxl",
+    "midjourney",
+    "video",
+    "video-gen",
+    "sora",
+    "bge",
+    "gte",
+    "e5",
+    "stella",
     "voxtral",  # Mistral speech/STT family (audio-in only; added 2026-08-04)
 }
 
 #: Model name substrings that indicate non-chat models.
 SKIP_NAME_PATTERNS: list[str] = [
-    "embedding", "embed", "speech", "tts", "audio",
-    "whisper", "rerank", "moderation", "guard",
-    "dall-e", "dalle", "imagen",
-    "stable-diffusion", "sdxl",
-    "bge-", "gte-", "e5-", "stella-",
-    "vision", "ocr", "video",
+    "embedding",
+    "embed",
+    "speech",
+    "tts",
+    "audio",
+    "whisper",
+    "rerank",
+    "moderation",
+    "guard",
+    "dall-e",
+    "dalle",
+    "imagen",
+    "stable-diffusion",
+    "sdxl",
+    "bge-",
+    "gte-",
+    "e5-",
+    "stella-",
+    "vision",
+    "ocr",
+    "video",
     # Image generation
-    "gpt-image", "chatgpt-image", "grok-imagine",
+    "gpt-image",
+    "chatgpt-image",
+    "grok-imagine",
     # Audio/ASR
-    "asr-", "-asr", "livetranslate",
+    "asr-",
+    "-asr",
+    "livetranslate",
     # Vision-only
-    "-vl-", "vl-", "-vl",
+    "-vl-",
+    "vl-",
+    "-vl",
     # Omni (multimodal, not text-centric)
-    "-omni-", "omni-",
+    "-omni-",
+    "omni-",
     # Non-text modalities
-    "-tts", "tts-",
+    "-tts",
+    "tts-",
     # Image-preview (not text models)
-    "-image-preview", "-image-quality",
+    "-image-preview",
+    "-image-quality",
     # Image/live/music/video-gen/robotics noise (added 2026-08-04)
-    "-image", "lyria", "veo", "robotics",
+    "-image",
+    "lyria",
+    "veo",
+    "robotics",
     # Live/streaming modalities
-    "-live", "live-",
+    "-live",
+    "live-",
 ]
 
 #: Path for tracking already-seen candidate models.
@@ -120,7 +181,11 @@ SEEN_PATH: Path = REPO_ROOT / ".seen_models.json"
 #: providers (DF-CHIMERA-V2-26). Frontier releases often land here first, namespaced
 #: under the owning lab (e.g. ``stepfun/step-5-preview`` in the nano-gpt row).
 RESELLER_WATCH: set[str] = {
-    "openrouter", "kilo", "nano-gpt", "vercel", "llmgateway",
+    "openrouter",
+    "kilo",
+    "nano-gpt",
+    "vercel",
+    "llmgateway",
 }
 
 #: Known lab prefixes used to attribute a reseller id whose basename carries a
@@ -165,6 +230,7 @@ _RESALE_LAB_PREFIXES: dict[str, str] = {
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _is_chat_model(model_id: str, family: str | None = None) -> bool:
     """Return True if the model is a chat/completion/reasoning model."""
     lower = model_id.lower()
@@ -186,6 +252,7 @@ def _is_chat_model(model_id: str, family: str | None = None) -> bool:
 def _load_chimera_models() -> set[str]:
     """Return the set of model IDs from the current chimera.yaml catalog."""
     from chimera.config import load_config
+
     config = load_config()
     return set(config.models.keys())
 
@@ -360,11 +427,7 @@ def _recency_sort_key(candidate: dict[str, Any]) -> tuple[float, int, float, str
     within their score group, deterministically by ``model_id`` ascending.
     """
     score = candidate.get("recency_score")
-    score = (
-        float(score)
-        if isinstance(score, (int, float)) and not isinstance(score, bool)
-        else 0.0
-    )
+    score = float(score) if isinstance(score, (int, float)) and not isinstance(score, bool) else 0.0
     recency_ts = candidate.get("recency_ts")
     dated = isinstance(recency_ts, (int, float)) and not isinstance(recency_ts, bool)
     return (
@@ -399,6 +462,7 @@ def select_top_candidates(
 
 
 # ── Main logic ───────────────────────────────────────────────────────────────
+
 
 def scan_models_dev() -> dict[str, list[dict[str, Any]]]:
     """Scan models.dev cache for new chat/reasoning models.
@@ -469,19 +533,21 @@ def scan_models_dev() -> dict[str, list[dict[str, Any]]]:
             # the score came from the family heuristics / RECENCY_DEFAULT.
             recency_ts = _model_recency_timestamp(provider_data, model_id)
 
-            provider_candidates.append({
-                "model_id": model_id,
-                "chimera_id": chimera_id,
-                "family": family,
-                "description": model_info.get("description", ""),
-                "input_cost_mtok": input_cost,
-                "output_cost_mtok": output_cost,
-                "input_per_1k": _mtok_to_per_1k(input_cost) if input_cost else None,
-                "output_per_1k": _mtok_to_per_1k(output_cost) if output_cost else None,
-                "recency_score": recency,
-                "recency_ts": recency_ts,
-                "provider": provider_id,
-            })
+            provider_candidates.append(
+                {
+                    "model_id": model_id,
+                    "chimera_id": chimera_id,
+                    "family": family,
+                    "description": model_info.get("description", ""),
+                    "input_cost_mtok": input_cost,
+                    "output_cost_mtok": output_cost,
+                    "input_per_1k": _mtok_to_per_1k(input_cost) if input_cost else None,
+                    "output_per_1k": _mtok_to_per_1k(output_cost) if output_cost else None,
+                    "recency_score": recency,
+                    "recency_ts": recency_ts,
+                    "provider": provider_id,
+                }
+            )
 
         if provider_candidates:
             # Sort by recency (newest first, date tie-break inside a bucket)
@@ -581,26 +647,27 @@ def scan_reseller_watch(
             recency = _model_recency_score(provider_data, model_id)
             recency_ts = _model_recency_timestamp(provider_data, model_id)
 
-            entry = aggregated.setdefault(model_id, {
-                "model_id": model_id,
-                "chimera_id": chimera_id,
-                "family": model_info.get("family", ""),
-                "description": model_info.get("description", ""),
-                "input_cost_mtok": input_cost,
-                "output_cost_mtok": output_cost,
-                "input_per_1k": _mtok_to_per_1k(input_cost) if input_cost else None,
-                "output_per_1k": _mtok_to_per_1k(output_cost) if output_cost else None,
-                "recency_score": recency,
-                "recency_ts": recency_ts,
-                "provider": provider_id,
-                "lab": None,
-                "reseller_rows": [],
-            })
+            entry = aggregated.setdefault(
+                model_id,
+                {
+                    "model_id": model_id,
+                    "chimera_id": chimera_id,
+                    "family": model_info.get("family", ""),
+                    "description": model_info.get("description", ""),
+                    "input_cost_mtok": input_cost,
+                    "output_cost_mtok": output_cost,
+                    "input_per_1k": _mtok_to_per_1k(input_cost) if input_cost else None,
+                    "output_per_1k": _mtok_to_per_1k(output_cost) if output_cost else None,
+                    "recency_score": recency,
+                    "recency_ts": recency_ts,
+                    "provider": provider_id,
+                    "lab": None,
+                    "reseller_rows": [],
+                },
+            )
             entry["reseller_rows"].append(provider_id)
             # Keep the best (newest) date/price data across carriers.
-            if recency_ts is not None and (
-                entry["recency_ts"] is None or recency_ts > entry["recency_ts"]
-            ):
+            if recency_ts is not None and (entry["recency_ts"] is None or recency_ts > entry["recency_ts"]):
                 entry["recency_ts"] = recency_ts
                 entry["recency_score"] = recency
 
@@ -658,11 +725,7 @@ def scan_all() -> tuple[
     scope: dict[str, Any] = {
         "core": sorted(CORE_PROVIDERS),
         "reseller": sorted(RESELLER_WATCH),
-        "out_of_scope": sum(
-            1
-            for pid in cache
-            if pid not in CORE_PROVIDERS and pid not in RESELLER_WATCH
-        ),
+        "out_of_scope": sum(1 for pid in cache if pid not in CORE_PROVIDERS and pid not in RESELLER_WATCH),
     }
     return candidates, watch, blind, scope
 
@@ -776,8 +839,8 @@ def format_report(
             lines.append(f"{'=' * 70}")
 
         for m in models:
-            inp = f"${m['input_per_1k']:.6f}" if m['input_per_1k'] else "N/A"
-            out = f"${m['output_per_1k']:.6f}" if m['output_per_1k'] else "N/A"
+            inp = f"${m['input_per_1k']:.6f}" if m["input_per_1k"] else "N/A"
+            out = f"${m['output_per_1k']:.6f}" if m["output_per_1k"] else "N/A"
             rec = m["recency_score"]
 
             if markdown:
@@ -837,17 +900,55 @@ def format_report(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Scan models.dev for new Chimera candidates")
-    parser.add_argument("--diff", action="store_true",
-                        help="Show only newly-seen models (not previously reported)")
-    parser.add_argument("--score", action="store_true",
-                        help="LLM-score top 5 candidates (requires DEEPSEEK_API_KEY)")
-    parser.add_argument("--output", type=str, default=None,
-                        help="Write report to a markdown file")
-    parser.add_argument("--limit", type=int, default=0,
-                        help="Limit to top N candidates (0 = all)")
+    parser.add_argument(
+        "--diff", action="store_true", help="Show only newly-seen models (not previously reported)"
+    )
+    parser.add_argument(
+        "--score", action="store_true", help="LLM-score top 5 candidates (requires DEEPSEEK_API_KEY)"
+    )
+    parser.add_argument("--output", type=str, default=None, help="Write report to a markdown file")
+    parser.add_argument("--limit", type=int, default=0, help="Limit to top N candidates (0 = all)")
+    parser.add_argument(
+        "--diff-json",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="With --diff: save the post-diff-filter candidate set as JSON "
+        "(the step-1 side of the cron pipeline)",
+    )
+    parser.add_argument(
+        "--score-from",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Score the candidates from a saved --diff-json file instead of "
+        "re-scanning (standalone; no cache pass, no .seen_models update)",
+    )
     args = parser.parse_args()
 
+    # --score-from is standalone: it consumes a saved diff file and never
+    # touches the models.dev cache or .seen_models.json (the cron wrapper's
+    # step 1 already did both — DF-CHIMERA-V2-37).
+    if args.score_from:
+        _score_from_file(args.score_from)
+        return
+
     candidates, watch, blind, scope = scan_all()
+
+    if args.diff_json:
+        # Save the NEW finds (the same set --diff would report) before
+        # format_report() marks them seen, so step 3 of the cron pipeline can
+        # score exactly this set instead of re-deriving an empty diff.
+        seen_ids = _load_seen()
+        diff_set: dict[str, list[dict[str, Any]]] = {}
+        for provider_id, models in candidates.items():
+            fresh = [m for m in models if m["chimera_id"] not in seen_ids]
+            if fresh:
+                diff_set[provider_id] = fresh
+        diff_json_path = Path(args.diff_json)
+        diff_json_path.parent.mkdir(parents=True, exist_ok=True)
+        diff_json_path.write_text(json.dumps(diff_set, indent=2))
+        print(f"Diff candidates saved to {diff_json_path}")
 
     if args.limit > 0:
         # Flatten, re-sort by recency and keep the top N
@@ -882,6 +983,11 @@ def main() -> None:
 
     # --score: LLM-score top 5 candidates
     if args.score and candidates:
+        _llm_score_candidates(candidates)
+
+    # --score-from: same scorer, but the candidates come from the saved diff
+    # file (--score-from path) rather than a re-derived (already-empty) diff.
+    if args.score_from and candidates:
         _llm_score_candidates(candidates)
 
 
@@ -930,18 +1036,20 @@ def _extract_json_object(text: str | None) -> dict[str, Any]:
         start, end = stripped.find("{"), stripped.rfind("}")
         if start == -1 or end <= start:
             raise ValueError(f"no JSON object in model content: {stripped[:120]!r}") from None
-        return json.loads(stripped[start:end + 1])
+        return json.loads(stripped[start : end + 1])
 
 
 def _score_request_body(model: str, prompt: str, max_tokens: int) -> bytes:
     """Build the JSON request body for one scoring call."""
-    return json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.0,
-        "max_tokens": max_tokens,
-        "response_format": {"type": "json_object"},
-    }).encode()
+    return json.dumps(
+        {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.0,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+    ).encode()
 
 
 def _post_score_request(
@@ -1001,6 +1109,38 @@ def _score_llm_reply(
             budget = min(budget * 2, SCORE_MAX_TOKENS_CEILING)
 
 
+def _score_from_file(path_str: str) -> None:
+    """Score the candidates saved by a previous ``--diff --diff-json`` run.
+
+    Standalone companion of ``--score-from`` (DF-CHIMERA-V2-37): the cron
+    wrapper's step 1 consumes the diff and records it in ``.seen_models.json``,
+    so step 3 can no longer re-derive it — instead it scores EXACTLY the saved
+    set. This fixes the "new find with an old release_date is never scored"
+    defect: the saved set is precisely the new finds, so top-5 selection only
+    orders within that (small) pool.
+
+    Never touches the models.dev cache or ``.seen_models.json``. Exits 2 on a
+    missing/malformed file (usage error, not a scan failure).
+    """
+    path = Path(path_str)
+    try:
+        diff_set = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"ERROR: cannot read diff candidates from {path}: {exc}", file=sys.stderr)
+        sys.exit(2)
+    if not isinstance(diff_set, dict):
+        print(f"ERROR: {path} does not contain a candidates object", file=sys.stderr)
+        sys.exit(2)
+
+    candidates: dict[str, list[dict[str, Any]]] = {
+        provider: models for provider, models in diff_set.items() if models
+    }
+    if not candidates:
+        print("Diff candidates file is empty — nothing to score.")
+        return
+    _llm_score_candidates(candidates)
+
+
 def _llm_score_candidates(candidates: dict[str, list[dict[str, Any]]]) -> None:
     """Use DeepSeek to score top candidates on Chimera's hierarchical category paths.
 
@@ -1016,12 +1156,12 @@ def _llm_score_candidates(candidates: dict[str, list[dict[str, Any]]]) -> None:
 
     # Build prompt with model info and category paths
     from chimera.selector import PATH_PATTERNS
+
     category_paths = sorted({p for p, _ in PATH_PATTERNS})
     path_list = "\n".join(f"- {p}" for p in category_paths)
 
     model_descriptions = "\n".join(
-        f"- `{m['chimera_id']}`: {m.get('description', m.get('family', ''))[:200]}"
-        for m in top5
+        f"- `{m['chimera_id']}`: {m.get('description', m.get('family', ''))[:200]}" for m in top5
     )
 
     prompt = f"""You are evaluating LLM models for inclusion in the Chimera multi-model deliberation system.
@@ -1068,12 +1208,14 @@ based on benchmarks and provider claims."""
         score_path = reports_dir / f"model_scores_{ts}.yaml"
 
         import yaml as yaml_lib
+
         score_path.write_text(yaml_lib.dump(scored, default_flow_style=False, sort_keys=False))
         print(f"\n✅ Model scores saved to {score_path}")
 
     except Exception as e:
         print(f"\n❌ LLM scoring failed: {e}")
         import traceback
+
         traceback.print_exc()
 
 
