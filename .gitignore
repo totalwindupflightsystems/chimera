@@ -15,6 +15,7 @@ htmlcov/
 reports/
 .seen_models.json
 .seen_models.json.bak*
+.secrets/
 
 # Hilo — local cache files (rebuildable)
 .vfs/graph/
