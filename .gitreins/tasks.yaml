@@ -1489,8 +1489,9 @@ tasks:
     at the _check_providers call site; that test''s assertion block asserting healthy
     False and error_class slow for openrouter and zai is unchanged versus the commit''s
     parent; no skip/pytest.mark/xfail added in the changed file'
-  status: in_progress
+  status: complete
   created_at: '2026-09-21T03:33:02.750880+00:00'
+  completed_at: '2026-09-23T00:30:00.794113+00:00'
 - id: rb-002-version-prep
   title: Version-prep 0.2.7 before next tag (RELEASE-BLOCKER-002)
   criteria:
@@ -1623,3 +1624,16 @@ tasks:
   status: complete
   created_at: '2026-09-22T17:54:32.194325+00:00'
   completed_at: '2026-09-22T18:40:01.647531+00:00'
+- id: DF-CHIMERA-V2-34
+  title: Surface degraded partial-input runs with the documented warning contract
+  criteria:
+  - 'A --quiet CLI run where a worker stage degrades prints a warning: line naming
+    the dropped stage on stderr and exits 0'
+  - 'A --json CLI run under the same degraded DAG prints the warning: line on stderr
+    and stdout stays one JSON object'
+  - The USAGE.md Streams and exit codes table matches shipped behavior after the change
+  - New regression tests drive the real click CLI hermetically with no network and
+    a fresh full pytest run is green
+  status: complete
+  created_at: '2026-09-22T22:44:57.556461+00:00'
+  completed_at: '2026-09-22T23:17:10.077507+00:00'
