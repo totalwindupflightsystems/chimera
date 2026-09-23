@@ -148,15 +148,15 @@ async def session_chat(
     # turn is recorded, so a rejected request costs zero provider calls.  The
     # dispatcher's internal fallback itself is intentional for programmatic
     # callers and stays untouched.
+    # DF-CHIMERA-V2-33: `auto` is a built-in formation backed by
+    # `Config.auto_formation` — valid even when the config lists no `auto:`
+    # entry (the docs example's shape).
     cfg = request.app.state.config
-    if body.formation not in cfg.formations:
+    if body.formation != "auto" and body.formation not in cfg.formations:
         available = ", ".join(sorted(cfg.formations))
         raise HTTPException(
             status_code=422,
-            detail=(
-                f"Unknown formation: {body.formation}. "
-                f"Available formations: {available}."
-            ),
+            detail=(f"Unknown formation: {body.formation}. Available formations: {available}."),
         )
 
     # F2: rate limiting — same helper object and same status/body/header shape
@@ -229,8 +229,7 @@ async def session_chat(
                             "kind": payload.get("kind", ""),
                             "model": payload.get("model", ""),
                             "tokens": (
-                                (payload.get("tokens_input") or 0)
-                                + (payload.get("tokens_output") or 0)
+                                (payload.get("tokens_input") or 0) + (payload.get("tokens_output") or 0)
                             ),
                             "latency_ms": payload.get("latency_ms", 0),
                             "cost": payload.get("cost", 0.0),
@@ -280,19 +279,19 @@ async def session_chat(
         mermaid_str = trace_to_mermaid(trace)
         _sse_broadcaster.broadcast(
             session_id,
-            SSEEvent(event="dag_designed", data={
-                "mermaid": mermaid_str,
-                "formation": body.formation,
-                "source": trace.get("source", ""),
-                "stage_count": len(trace.get("stages", [])),
-            }),
+            SSEEvent(
+                event="dag_designed",
+                data={
+                    "mermaid": mermaid_str,
+                    "formation": body.formation,
+                    "source": trace.get("source", ""),
+                    "stage_count": len(trace.get("stages", [])),
+                },
+            ),
         )
 
         # ── Record the turn ──
-        workers = [
-            s.get("model", "") for s in trace.get("stages", [])
-            if s.get("kind") == "worker"
-        ]
+        workers = [s.get("model", "") for s in trace.get("stages", []) if s.get("kind") == "worker"]
         aggregator_model = ""
         for s in trace.get("stages", []):
             if s.get("kind") in ("aggregator", "judge", "merge", "audit"):
@@ -328,12 +327,15 @@ async def session_chat(
         # ── Store events in session for late-connecting SSE subscribers ──
         session.last_sse_events = [
             ("deliberation_started", {"prompt": body.prompt}),
-            ("dag_designed", {
-                "mermaid": mermaid_str,
-                "formation": body.formation,
-                "source": trace.get("source", ""),
-                "stage_count": len(trace.get("stages", [])),
-            }),
+            (
+                "dag_designed",
+                {
+                    "mermaid": mermaid_str,
+                    "formation": body.formation,
+                    "source": trace.get("source", ""),
+                    "stage_count": len(trace.get("stages", [])),
+                },
+            ),
             ("deliberation_done", done_event_data),
         ]
 
@@ -380,6 +382,8 @@ async def get_session(session_id: str) -> SessionInfo:
             for t in session.turns
         ],
     )
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  SSE endpoint
 # ═══════════════════════════════════════════════════════════════════════════
@@ -503,16 +507,9 @@ async def sse_stream(
     # it is dialing for the turn that is about to run (the SPA re-dials with
     # the flag at send time), so replaying the PREVIOUS turn and closing would
     # strand it exactly the way the bug this branch fixes did.
-    if (
-        not live_mode
-        and session.turns
-        and session.last_sse_events
-        and not session.deliberation_in_flight
-    ):
+    if not live_mode and session.turns and session.last_sse_events and not session.deliberation_in_flight:
         for event_name, event_data in session.last_sse_events:
-            _sse_broadcaster.deliver(
-                sub, SSEEvent(event=event_name, data=event_data)
-            )
+            _sse_broadcaster.deliver(sub, SSEEvent(event=event_name, data=event_data))
         _sse_broadcaster.close_subscriber(session_id, sub)
 
     async def generate():

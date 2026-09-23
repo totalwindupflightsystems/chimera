@@ -142,6 +142,12 @@ An unknown `--formation` name is rejected, never silently swapped for `auto`:
 | MCP | `chimera_deliberate` → `{"error": "unknown_formation", "formation": ..., "available": [...]}` |
 | WEB | `POST /web/sessions/{id}/chat` → HTTP **422** `{"detail": "Unknown formation: <value>. Available formations: ..."}` |
 
+Exception: the name `auto` is a built-in formation (backed by
+`auto_formation` config) and is valid on every surface even when the config's
+`formations:` block does not list it — a config defining only custom
+formations still runs with the default formation. An explicit
+`auto:` entry in `formations` wins over the built-in.
+
 Run `chimera formations` (or `GET /v1/formations` / the `chimera_formations`
 MCP tool) to discover the valid names. An explicit `--dag` payload replaces
 formation selection, so `--dag` invocations are exempt from this check.

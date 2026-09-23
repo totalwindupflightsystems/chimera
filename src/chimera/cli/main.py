@@ -51,6 +51,13 @@ from chimera.exceptions import ConfigError
 from chimera.gateway import LiteLLMGateway
 from chimera.observability import configure_logging
 
+#: The built-in ``auto`` formation name (DF-CHIMERA-V2-33). Backed by
+#: ``Config.auto_formation`` (default ``AutoFormationConfig``), it resolves on
+#: every surface even when the user's config does not list it — the
+#: formation-validation call sites on all four surfaces (CLI/REST/MCP/WEB)
+#: treat the name via this constant so they cannot drift apart.
+_BUILTIN_AUTO_FORMATION = "auto"
+
 # When output is piped (tests, redirection), use a wide console so tables and
 # model names never get truncated. Interactive use auto-detects the terminal.
 console = Console(width=None if sys.stdout.isatty() else 200)
@@ -267,6 +274,15 @@ def _validate_formation(cfg: ChimeraConfig, formation: str, dag: Any) -> None:
     this guard belongs at the user-facing edge, mirroring the API handler's
     check in ``src/chimera/api/server.py``.
 
+    ``auto`` is a BUILT-IN formation (DF-CHIMERA-V2-33): it is backed by
+    ``Config.auto_formation`` (default ``AutoFormationConfig`` in
+    ``src/chimera/config.py``), so the name resolves even when the user's
+    config does not list it — exactly the shape of ``docs/CONFIG.md``'s full
+    example, which defines only custom formations and made every
+    docs-following first run exit 2. An explicit ``auto:`` entry in
+    ``formations`` still wins (the dispatcher resolves the preset normally);
+    the built-in only fills the gap.
+
     ``dag`` exempts validation entirely: an explicit client DAG replaces
     formation selection, so ``--dag`` / ``--allow-custom-dag`` behave exactly
     as before.
@@ -279,6 +295,8 @@ def _validate_formation(cfg: ChimeraConfig, formation: str, dag: Any) -> None:
     if dag is not None:
         return
     if formation in cfg.formations:
+        return
+    if formation == _BUILTIN_AUTO_FORMATION:
         return
     available = ", ".join(sorted(cfg.formations))
     err_console.print(

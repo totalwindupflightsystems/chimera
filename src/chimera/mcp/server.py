@@ -101,7 +101,15 @@ def build_server(
         from chimera.config import DeliberationOverrides
 
         cfg: ChimeraConfig = state["config"]
-        if dag is None and formation not in cfg.formations:
+        # DF-CHIMERA-V2-33: `auto` is a built-in formation backed by
+        # `Config.auto_formation` — valid even when the config lists no
+        # `auto:` entry (the docs example's shape). EXCEPTION: a config with
+        # NO formations at all still answers ``config_missing`` (DF-CHIMERA-
+        # 0917-5) — the auto dispatcher has no catalog to design from, so
+        # "auto is built-in" cannot conjure one.
+        fmts = cfg.formations
+        auto_ok = formation == "auto" and fmts
+        if dag is None and formation not in fmts and not auto_ok:
             if not cfg.formations:
                 return json.dumps(
                     {
@@ -147,10 +155,7 @@ def build_server(
         """List the available formation presets."""
         cfg: ChimeraConfig = state["config"]
         return json.dumps(
-            {
-                name: preset.model_dump(exclude_none=True)
-                for name, preset in cfg.formations.items()
-            },
+            {name: preset.model_dump(exclude_none=True) for name, preset in cfg.formations.items()},
             indent=2,
         )
 
@@ -186,6 +191,7 @@ def run(config_path: str | None = None, parse_argv: bool = True) -> None:
     be treated as a config path (CH-GAP-028).
     """
     import sys
+
     if parse_argv and config_path is None and len(sys.argv) > 1:
         for arg in sys.argv[1:]:
             if arg in ("-h", "--help"):

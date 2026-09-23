@@ -36,21 +36,21 @@ formations:
 models:
   deepseek/deepseek-v4-flash:
     categories:
-      technology_code/code_generation/python: 0.90
-      technology_code/data_science/analysis: 0.80
-      general_knowledge/reasoning/explanation: 0.75
-      creative_conversational/ux_writing/interface_copy: 0.35
-      technology_code/testing_debugging/error_analysis: 0.55
+      technology_code/code_generation/python: 90
+      technology_code/data_science/analysis: 80
+      general_knowledge/reasoning/explanation: 75
+      creative_conversational/ux_writing/interface_copy: 35
+      technology_code/testing_debugging/error_analysis: 55
     cost_tier: budget
     provider: deepseek
 
   zai-coding-plan/glm-5.2:
     categories:
-      technology_code/code_generation/python: 0.92
-      technology_code/data_science/analysis: 0.90
-      general_knowledge/reasoning/explanation: 0.95
-      creative_conversational/ux_writing/interface_copy: 0.85
-      technology_code/testing_debugging/error_analysis: 0.88
+      technology_code/code_generation/python: 92
+      technology_code/data_science/analysis: 90
+      general_knowledge/reasoning/explanation: 95
+      creative_conversational/ux_writing/interface_copy: 85
+      technology_code/testing_debugging/error_analysis: 88
     cost_tier: premium
     provider: zai
 
@@ -332,6 +332,9 @@ load:
 - a value outside 0–100, a non-numeric value, or `NaN`/`Infinity` **fails the
   load** with one actionable line naming the model id, the category path, the
   value and the accepted range — no traceback, CLI exit code 2.
+
+The examples on this page are already percent-correct (plain 0–100 integers),
+so a catalog copied from them loads with no rescale warnings.
 
 **Category keys** are slash-delimited hierarchical paths from the selector's
 `PATH_PATTERNS` tree (see `src/chimera/selector.py`), e.g.
