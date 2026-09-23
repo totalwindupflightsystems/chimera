@@ -12,7 +12,11 @@ description: >-
   v1.3.0 adds the 2026-09-22 run-11 custom-formation section: authoring a
   user formation, `--stage-models` on custom stage ids, the degraded-merge
   observability gap, and the fresh-install quickstart proof on 0.2.7.
-version: 1.3.0
+  v1.4.0 adds the 2026-09-23 run-12 REAL-BROWSER web-UI section: a
+  headless-Chrome CDP recipe for driving the SPA, what live-updates mid-run,
+  the auth.lockout of the browser, the green-failed-node DAG, the doubled
+  answer bubble, and the "None" degraded turn.
+version: 1.4.0
 category: software-development
 ---
 

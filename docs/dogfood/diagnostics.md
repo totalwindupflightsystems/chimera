@@ -596,3 +596,58 @@ answer1.txt (the 87s review), sm.json (override + timeout run), dag.json
 agent 4dfc08f3, venv+pip install 54s, config init from packaged example ok,
 first answer 30s; agent destroyed, 0 remaining. No credentials in any
 artifact; scratch config uses ${DEEPSEEK_API_KEY} indirection only.
+
+## Run 12 addendum (2026-09-23) — why the web UI lies, and how the pieces fit
+
+**How the web surface is assembled (the mental model a maintainer needs):**
+one FastAPI app, three layers. (1) The ENGINE (`Engine.deliberate`) is
+stateless and returns a `DeliberationTrace` — every stage span, plus
+`worker_failures` for stages that died and a `source` field for
+fallback/degraded runs. (2) The WEB layer (`src/chimera/web/`) wraps the
+engine in an in-memory `SessionManager` (turn history → a context preamble
+injected into the NEXT turn's dispatcher prompt), broadcasts SSE events as
+the run progresses, and converts the finished trace to mermaid
+(`trace_viz.trace_to_mermaid`) plus per-turn history JSON. (3) The SPA
+(`web/static/index.html`, one file of inline JS) renders bubbles, the stats
+bar and the DAG, and keeps only `chimera_session_id` in localStorage.
+
+**Why a failed worker still renders green:** the trace records the failure
+in `worker_failures`, but the stage span of a failed worker still exists
+(with 0 tokens), and `trace_to_mermaid` colors nodes by stage KIND only —
+the `_FALLBACK_COLOUR` grey exists but is only for unknown kinds. The SPA's
+SSE stream actually carries a worker-failure event, so the data needed to
+honestify the DAG is already on the wire; only the styling consumer is
+missing (DF-CHIMERA-V2-42).
+
+**Why "None" can be an answer:** the aggregator merges whatever worker
+inputs survived. When zero survive it logs `aggregator_partial_inputs`
+(warning) and merges nothing; the web route then stores the resulting
+Python `None` answer as if it were text and answers 200. The REST surface
+has the same hole; the UI just makes it visible as a normal-looking turn
+(DF-CHIMERA-V2-44). The right way per the resilience docs is to fail the
+turn loudly when `healthy == 0`.
+
+**Why auth killed the browser:** `require_api_key` was (correctly) attached
+at the ROUTER level (INT-API-001's fix), which includes the SPA-shell and
+asset routes. But the SPA predates auth and has no notion of a key — no
+prompt, no header — so enabling auth removes the UI entirely rather than
+gating it (DF-CHIMERA-V2-41). Serving static HTML unauthenticated while the
+data routes enforce the key would keep the hardening AND the UI.
+
+**Run-10 correction, for the record:** the "the DAG is NOT live" finding
+(all SSE broadcasts fire after the engine returns) no longer holds at
+e231b14: a real browser saw "Running aggregator… — deepseek/deepseek-v4-flash"
+and a ticking stats bar DURING the run. The mermaid graph itself still
+arrives with the completed trace, which is fine.
+
+**Fresh-hardware notes (bunker, Debian + Python 3.13):** editable install
+73s; `chimera config init` works from the packaged template; `--formation`
+is a ROOT-level flag — `chimera --formation simple run "..."` works while
+`chimera run --formation ...` exits 2 ("No such option"), a flag-order trap
+that cost one smoke retry. `/tmp` on the bunker agent is not writable by the
+agent user (pip redirect failed with EACCES) — write scratch to ~ there.
+
+**Evidence (ephemeral /tmp/dogfood-chimera/, not committed):** CDP drivers
+`drive_webui.py` / `drive_webui_phase2.py` / `drive_webui_phase3.py`,
+`webui-run.json` (the :8765 401 capture), serve8791.log. Bunker artifacts
+lived on agent d50a7727 (destroyed). No credentials in any artifact.

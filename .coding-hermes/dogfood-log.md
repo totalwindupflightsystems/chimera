@@ -105,3 +105,34 @@ added (CH-GAP-039..044). Cooldown 21600s → woken to 900s.
 2026-09-16 (run B) | SHIPPABLE | 25s t2fs (SDK 'Paris' 27.4s call; bunker box 11s) | friction 4 | 5 findings (2 verify-closes, 3 new) | install: pypi0.2.5 venv=26s ok | bunker=PROVEN 1st time (las-bunker-03 agent 62a41be8: clone 77a1b9d → pip -e .[full] 68s → real answer 11s; destroyed) | smoke=ok | prior fixes VERIFIED on published wheel: MCP stdout purity (DF-CHIMERA-0911-1), drop-in 404 teaching msg (DF-CHIMERA-0911-3); bunker streak closed (DF-CHIMERA-0911-4) | NEW: official OpenAI SDK models.list() crashes on bare-dict /v1/models (DF-CHIMERA-0916B-2); 0.2.5 wheel lacks README-documented --version (release-lag #4, DF-CHIMERA-0916B-3); live chimera.yaml tracked in public repo breaks fresh-clone config init (DF-CHIMERA-0916B-4) | MCP harness lesson: printf-pipes close stdin → server exits pre-response; keep-stdin-open driver required
 2026-09-20 | PROMISING-BUT-ROUGH | 2min t2fs | friction 5 | 5 findings (DF-CHIMERA-V2-18..22) | surface: WEB UI /web/ (first run to drive it; runs 1-9 did CLI/REST/MCP/SDK/install) | promise: "web UI with live DAG visualization" -> the DAG is NOT live: all 3 SSE broadcasts fire only after engine.deliberate() returns (dag_designed+deliberation_done land in the same ms as the chat POST at t=53.1s; panel stuck on placeholder for the whole run) DF-CHIMERA-V2-18 | aged sessions close SSE in 1.4ms/0 bytes -> permanent "SSE reconnecting..." loop, 138 req/40min, replay gate is 30s DF-CHIMERA-V2-19 | POST /web/debug/reset unauthenticated+destructive on 0.0.0.0: wiped every live session, docs/SECURITY.md claims 401-never-404 DF-CHIMERA-V2-20 | install: bunker PROVEN (agent 488a7c16 destroyed; clone 4b89a9c + pip install .[full] 73s -> chimera 0.2.6 + config init + formations + serve /health + /web/ 200; headline feature re-tested on the fresh box) | smoke=ok | confirmed-working: DAG renders 8 nodes post-hoc, node-click detail modal correct, session memory across reload, audit formation answers
 2026-09-22 (run 11) | SHIPPABLE | 7min t2fs custom formation (author→first answer); CLI-only ~2min (54s install + 30s answer) | friction 4 | 5 findings (DF-CHIMERA-V2-32..36) | surface: USER-AUTHORED FORMATIONS (first run to write one; runs 1-10 all used shipped presets) | promise: custom multi-stage formations work as docs describe → HELD (author→load→run→override→serve all worked; 2+1 DAG 86.9s cold/31.9s warm; REST 18.4s 0 failures; --stage-models targets custom stage ids correctly) | top: --stage-models silent no-op on unknown stage ids DF-CHIMERA-V2-32; degraded merge = RC=0 plain answer, degradation only as JSON log lines not the documented warning: contract DF-CHIMERA-V2-34; default run wants formation auto that minimal configs lack (CONFIG.md example omits it) DF-CHIMERA-V2-33 | install: bunker PROVEN (agent 4dfc08f3 destroyed; pypi 0.2.7 venv 54s → config init from PACKAGED example ok — DF-CHIMERA-0916B-4 fix VERIFIED on the published artifact → first answer 30s; no sudo/compose/toolchain needed) | smoke=ok | no PERF row: CLI overhead 0.25s mean, all real latency is model-bound; the 120s per-stage timeout is configurable (timeout.per_stage_s, undocumented for users — folded into -34) | PyPI 0.2.7 == repo == live server commit faf78b4: release-lag chain closed for this artifact
+
+## 2026-09-23 — SHIPPABLE (4th consecutive) — run 12, real-browser web UI
+
+**Promise:** "One API call. A team of models. One answer." — this run tested
+the README's flagship entry point in an ACTUAL browser (headless Chrome via
+CDP), the surface run 10 had only curl-probed.
+
+**Reality:** The engine promise holds (4th consecutive SHIPPABLE): auto
+("Paris", 21,749 tok, $0.004, 10.5s cold), multi-turn context ("What capital
+did I just ask about?" → "Paris"), debate (26,268 tok, $0.0087, 25s), all
+driven through the SPA's own controls. SSE now carries MID-RUN stage status
+("Running aggregator…", ticking stats) — run 10's "DAG is NOT live" is
+outdated at e231b14. But four new defects: (1) auth.enabled=true renders the
+401 JSON as the whole /web/ page and the SPA has no key entry — the browser
+UI is dead on the current :8765 deployment; (2) failed workers draw as green
+success nodes (trace_viz ignores worker_failures); (3) a fully-degraded turn
+stores/renders answer "None" with 200 + full token credit; (4) completed
+turns render duplicated bubbles with divergent stage counts.
+
+**Install leg:** PROVEN on bunker-las-03 (agent d50a7727, destroyed) — the
+DEVELOPER path this time: fresh clone of the public repo → venv →
+`pip install -e '.[full]'` 73s on Python 3.13 → config init → CLI "pong"
+14s → `chimera serve` → /web/ 200 → session+chat "pong" with full trace.
+
+**Time-to-first-success:** ~6 min (server up + first answer rendered in the
+UI, after the driver wiring). **Friction count:** 4 (findings above) + 2
+driver-side traps (CDP origins flag, hamburger/send text match).
+
+**Board:** DF-CHIMERA-V2-41..44 filed via boardctl; dogfood findings section
+in tasks.md; transcript docs/dogfood/2026-09-23-integration.md; usage skill
+v1.4.0. Perf: no rows (nothing a user would feel as a defect).
