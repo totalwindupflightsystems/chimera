@@ -12,6 +12,12 @@ The fix attaches the existing dependency at the ROUTER (``create_app``'s
 so every current and future ``/web`` route is gated by one line and nothing
 below the auth layer runs for an unauthenticated request.
 
+DF-CHIMERA-V2-41 refined that: the SPA shell and the vendored assets it loads
+are served by a second, public router (``ui_router``) — a browser has no key to
+send before it has loaded the page that asks for one, so gating the shell made
+the UI unreachable.  The dependency on ``router`` is unchanged, and the census
+test below pins the carve-out to exactly those two read-only paths.
+
 These tests pin the edge behaviour, with a stubbed gateway throughout — an
 unauthenticated request must be refused BEFORE the engine is reached, so a 401
 case must record zero gateway calls (no provider billing):
@@ -213,12 +219,23 @@ def test_web_sse_stream_requires_key() -> None:
     assert session_id not in web_routes._sse_broadcaster._subscribers
 
 
-def test_web_spa_shell_requires_key() -> None:
+def test_web_spa_shell_is_served_without_a_key() -> None:
+    """DF-CHIMERA-V2-41: the shell is public — the data surface is not.
+
+    The SPA is the only place a browser can enter a key, so gating it locked
+    every browser out of the UI with no way back in: ``GET /web/`` answered 401
+    JSON, which the browser rendered as the page.  The shell (and the vendored
+    assets it loads) therefore serve anonymously; the box they ship is what
+    asks for the key, and every route it calls back into stays gated (see
+    ``test_every_registered_web_path_is_gated_except_the_public_shell``).
+    """
     client, _, _ = _build(_auth_on_list())
 
     response = client.get("/web/")
 
-    _assert_unauthorized(response)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert 'id="auth-overlay"' in response.text, "the public shell must carry the key prompt"
 
 
 def test_web_debug_reset_requires_key() -> None:
@@ -232,14 +249,23 @@ def test_web_debug_reset_requires_key() -> None:
     assert web_routes._session_manager is before
 
 
-def test_every_registered_web_path_is_gated() -> None:
+def test_every_registered_web_path_is_gated_except_the_public_shell() -> None:
     """Derive the surface from the app's own OpenAPI spec, not a hardcoded list.
 
     A route added to the web router later inherits the router-level dependency,
     so this test fails (rather than silently missing coverage) if any ``/web``
     path ever escapes the key requirement.
+
+    DF-CHIMERA-V2-41 carves exactly TWO read-only paths out of that gate — the
+    SPA shell and the vendored static assets it loads — because a browser has
+    no key to send before it has loaded the page that asks for one.  Everything
+    else (including the SSE stream, which validates the key the same way) stays
+    a 401 for an anonymous caller.
     """
     client, app, gateway = _build(_auth_on_list())
+
+    #: The carve-out, in the app's own OpenAPI spelling.
+    public_paths = {"/web/", "/web/{asset_path}"}
 
     web_paths = sorted(p for p in app.openapi()["paths"] if p.startswith("/web"))
     assert web_paths, "the web router must be mounted for this test to mean anything"
@@ -247,11 +273,15 @@ def test_every_registered_web_path_is_gated() -> None:
     assert "/web/sessions/{session_id}/chat" in web_paths
 
     gated: list[str] = []
+    public: list[str] = []
     for path in web_paths:
         item = app.openapi()["paths"][path]
         url = path.replace("{session_id}", MISSING_SESSION)
         for method in ("get", "post"):
             if method not in item:
+                continue
+            if path in public_paths:
+                public.append(f"{method.upper()} {path}")
                 continue
             response = client.request(method.upper(), url)
             # 401 wins over 404: the auth layer runs before the handler, so an
@@ -259,10 +289,17 @@ def test_every_registered_web_path_is_gated() -> None:
             assert response.status_code == 401, f"{method.upper()} {path} -> {response.status_code}"
             gated.append(f"{method.upper()} {path}")
 
-    # DF-CHIMERA-V2-21: the vendored-asset catch-all (GET /web/vendor/…) is
-    # the 7th gated path — key-gated like the rest of the surface.
-    assert len(gated) == 7, gated
+    # DF-CHIMERA-V2-21: the vendored-asset catch-all (GET /web/vendor/…) is now
+    # public alongside the shell; the other five paths — session create, chat,
+    # history, debug/reset and the SSE stream — stay gated.
+    assert public == ["GET /web/", "GET /web/{asset_path}"], public
+    assert len(gated) == 5, gated
     assert gateway.calls == []
+
+    # The carve-out is real, not merely "not a 401": the shell and a vendored
+    # asset both serve anonymously.
+    assert client.get("/web/").status_code == 200
+    assert client.get("/web/vendor/mermaid.min.js").status_code == 200
 
 
 def test_keyed_chat_still_deliberates() -> None:

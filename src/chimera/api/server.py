@@ -182,6 +182,7 @@ def create_app(
     # Web UI (session-backed multi-turn with live DAG viz + SSE)
     try:
         from chimera.web import router as web_router
+        from chimera.web.routes import ui_router
 
         # INT-API-001: the whole /web/* surface (sessions, chat, SSE, the SPA
         # shell at GET /web/) runs deliberations through the same engine as
@@ -191,6 +192,16 @@ def create_app(
         # ``require_api_key`` returns "anonymous" before reading any header, so
         # the default deployment is unchanged.
         app.include_router(web_router, dependencies=[Depends(require_api_key)])
+
+        # DF-CHIMERA-V2-41: the browser-facing carve-out, mounted AFTER the
+        # gated router so every key-gated path matches first (the UI router's
+        # static catch-all would otherwise swallow them). It serves exactly
+        # three paths — the SPA shell, the vendored assets it loads, and the
+        # SSE stream (which takes the key from ?api_key=, because an
+        # EventSource cannot set request headers). Without this the shell
+        # answered 401 JSON with auth.enabled=true and the browser had no way
+        # to enter a key: the UI was unreachable. Data routes are untouched.
+        app.include_router(ui_router)
     except ImportError:
         pass  # web extra not installed — skip gracefully
 

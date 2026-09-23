@@ -12,6 +12,13 @@ Endpoints:
 * ``GET  /web/`` — serve the SPA
 * ``GET  /web/{path}`` — SPA static assets (vendored JS bundles; catch-all)
 
+Two routers, one prefix (DF-CHIMERA-V2-41): ``router`` carries the whole
+key-gated data surface and is mounted in ``create_app`` with
+``dependencies=[Depends(require_api_key)]``; ``ui_router`` serves the three
+paths a browser must be able to reach before it has a key to send — the shell,
+the vendored assets, and the SSE stream (which takes its key from
+``?api_key=``, since ``EventSource`` cannot set headers).
+
 ``POST /web/sessions/{id}/chat`` runs the same billed deliberation as
 ``POST /v1/deliberate`` and ``POST /v1/chat/completions``, so it takes the same
 two guards through the same implementations (DF-CHIMERA-V2-22): the shared
@@ -31,13 +38,28 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from chimera.api.dependencies import require_api_key
+from chimera.api.dependencies import require_api_key, require_api_key_or_query
 from chimera.api.server import RequestQueue, _check_rate_limit
 from chimera.web.session import SessionManager, Turn
 from chimera.web.sse import TERMINAL_EVENT, TERMINAL_RETRY_MS, SSEBroadcaster, SSEEvent
 from chimera.web.trace_viz import trace_to_mermaid
 
 router = APIRouter(prefix="/web", tags=["web"])
+
+#: The browser-facing surface (DF-CHIMERA-V2-41): the SPA shell, the vendored
+#: assets it loads, and the SSE stream.  These three cannot live on ``router``,
+#: whose router-level ``require_api_key`` dependency (attached in
+#: ``create_app``) answers 401 before a handler runs — a browser that has not
+#: loaded the page yet has nowhere to enter a key, and an ``EventSource``
+#: cannot set a header at all.  The shell and the assets are therefore public
+#: (they are what the key prompt itself is made of) and the SSE route carries
+#: the query-parameter auth dependency :func:`sse_stream` documents.
+#:
+#: Fail-closed is preserved: everything else on ``/web/*`` stays on ``router``,
+#: so a route added later inherits the gate — and
+#: ``tests/test_web_auth.py::test_every_registered_web_path_is_gated_except_the_public_shell``
+#: fails if any ``/web`` path escapes it.
+ui_router = APIRouter(prefix="/web", tags=["web"])
 
 #: Spellings of ``?live=`` that mean "this client is dialing for the turn that is
 #: about to run" (DF-CHIMERA-V2-29).  Lower-cased before lookup.  Anything else —
@@ -99,6 +121,110 @@ class SessionInfo(BaseModel):
     turns: list[dict[str, Any]]
 
 
+# ── Fully degraded runs (DF-CHIMERA-V2-44) ─────────────────────────────────
+
+#: Discriminator carried by the failure envelope this route answers with when a
+#: deliberation produced no usable answer at all.  ``static/index.html`` keys
+#: its failure-bubble branch on the same string.
+ALL_WORKERS_FAILED_ERROR = "all_workers_failed"
+
+#: Marker stored in the session turn of a degraded run.  The turn is still
+#: recorded — the providers were called and the user was billed for it — but its
+#: ``answer`` carries this marker instead of the engine's ``None``/empty answer,
+#: so neither the history list nor the next turn's context preamble can mistake
+#: it for an answer.
+ALL_WORKERS_FAILED_MARKER = "[all workers failed]"
+
+#: Display budget (characters) for one upstream error inside the user-facing
+#: ``message``.  Mirrors the CLI's dropped-worker line (DF-CHIMERA-V2-5): only
+#: this rendering is bounded, ``worker_failures[]`` keeps the full text.
+_WORKER_ERROR_DISPLAY_CHARS = 200
+
+
+def _elide_error(error: str, limit: int = _WORKER_ERROR_DISPLAY_CHARS) -> str:
+    """Bound *error* for the failure message and mark the elision.
+
+    Cuts at the last whitespace INSIDE the budget so the words naming the actual
+    failure survive, and spells out how much was dropped.  A single unbroken
+    token longer than the budget has no boundary to cut at, so the budget wins
+    there — the same documented degenerate case as the CLI's renderer.
+    """
+    if len(error) <= limit:
+        return error
+    head = error[:limit]
+    boundary = max(head.rfind(ch) for ch in (" ", "\n", "\t"))
+    if boundary > 0:
+        head = head[:boundary]
+    head = head.rstrip()
+    return f"{head}... [truncated {len(error) - len(head)} chars]"
+
+
+def _worker_failures_payload(trace: dict[str, Any]) -> list[dict[str, str]]:
+    """The trace's ``worker_failures`` as plain JSON objects.
+
+    Tolerates a missing/None field and non-object entries: this runs on the
+    response path of an ALREADY failed run, so it must never raise an error of
+    its own.
+    """
+    payload: list[dict[str, str]] = []
+    for failure in trace.get("worker_failures") or []:
+        if not isinstance(failure, dict):
+            continue
+        payload.append(
+            {
+                "stage_id": str(failure.get("stage_id") or ""),
+                "model": str(failure.get("model") or ""),
+                "error": str(failure.get("error") or ""),
+            }
+        )
+    return payload
+
+
+def _all_workers_failed_message(failures: list[dict[str, str]]) -> str:
+    """Human wording for the envelope — the CLI's dropped-worker style.
+
+    ``worker 'stage' (model) failed: error`` per stage (``chimera.cli.main``),
+    wrapped in the same "deliberation failed / no usable answer" sentence the
+    ``/v1`` surface raises for a degraded answer.
+    """
+    listed = "; ".join(
+        f"'{failure['stage_id']}' ({failure['model']}) failed: "
+        f"{_elide_error(failure['error'] or 'unknown error')}"
+        for failure in failures
+    )
+    return (
+        f"Deliberation failed: all {len(failures)} worker stage(s) failed and no usable "
+        f"answer was produced — the run was still billed. Failed stages: {listed}"
+    )
+
+
+def _all_workers_failed_envelope(trace: dict[str, Any], failures: list[dict[str, str]]) -> dict[str, Any]:
+    """The failure body for a run that produced no usable answer.
+
+    Answered with HTTP 502 — the status the ``/v1`` surfaces already use for a
+    degraded answer — and shaped for the SPA: the failed stages with their
+    upstream errors, and (because the providers were billed regardless of the
+    outcome) the tokens and cost the user paid for nothing.
+    """
+    return {
+        "error": ALL_WORKERS_FAILED_ERROR,
+        "message": _all_workers_failed_message(failures),
+        "worker_failures": failures,
+        "tokens_billed": int(trace.get("total_tokens") or 0),
+        "cost_billed": float(trace.get("total_cost") or 0.0),
+        "request_id": str(trace.get("request_id") or ""),
+    }
+
+
+def _degraded_turn_marker(envelope: dict[str, Any]) -> str:
+    """The ``answer`` stored for a degraded turn, in place of the engine's."""
+    return (
+        f"{ALL_WORKERS_FAILED_MARKER} no answer was produced — "
+        f"{len(envelope['worker_failures'])} stage(s) failed, "
+        f"{envelope['tokens_billed']} tokens billed"
+    )
+
+
 # ── Routes ─────────────────────────────────────────────────────────────────
 
 
@@ -133,6 +259,15 @@ async def session_chat(
     turn is recorded, and the slot is released in ``finally`` — so a
     saturation refusal never leaves a half-started turn that would suppress
     the events of an already in-flight deliberation on this session.
+
+    A run that produced NO usable answer while ``trace.worker_failures`` is
+    populated (every worker stage failed upstream) is answered **502** with the
+    :data:`ALL_WORKERS_FAILED_ERROR` envelope — the failed stages and the
+    tokens/cost the user was billed for them — instead of a 200 turn whose
+    answer is the engine's ``None`` (DF-CHIMERA-V2-44).  The turn is still
+    recorded, but with an ``[all workers failed]`` marker in ``answer`` instead
+    of that ``None``, so history and the next turn's context stay honest; the
+    same envelope is broadcast on ``deliberation_done`` for the SSE renderer.
     """
     session = _session_manager.get(session_id)
     if session is None:
@@ -273,6 +408,28 @@ async def session_chat(
         trace = result.trace.model_dump(mode="json")
         answer = result.answer
 
+        # ── DF-CHIMERA-V2-44: a fully degraded run is a FAILURE, not a turn ──
+        # When every worker stage failed upstream the engine still hands back a
+        # result whose answer is ``None``/empty while ``trace.worker_failures``
+        # lists everyone. Storing that answer and answering 200 is what made the
+        # SPA render the literal text "None" as the answer bubble, the DAG stay
+        # green, and the user pay full tokens with zero signal that nothing
+        # worked. The test is deliberately this narrow combination (an
+        # ``answer_degraded`` flag alone is not it): a partial degradation that
+        # still produced an answer must keep answering 200 with that answer.
+        worker_failures = _worker_failures_payload(trace)
+        failure_envelope: dict[str, Any] | None = None
+        if not str(answer or "").strip() and worker_failures:
+            failure_envelope = _all_workers_failed_envelope(trace, worker_failures)
+            log.warning(
+                "web_deliberation_all_workers_failed",
+                session_id=session_id,
+                request_id=failure_envelope["request_id"],
+                failed_stages=len(worker_failures),
+                tokens_billed=failure_envelope["tokens_billed"],
+                cost_billed=failure_envelope["cost_billed"],
+            )
+
         elapsed_ms = int((time.monotonic() - started) * 1000)
 
         # ── SSE: DAG designed ──
@@ -298,9 +455,17 @@ async def session_chat(
                 aggregator_model = s.get("model", "")
                 break
 
+        # A degraded turn is still recorded — the user was billed for it — but
+        # never with the engine's None/empty answer: a no-turn-at-all policy
+        # would leave the client's already-rendered user bubble unpaired in the
+        # history sidebar and renumber the following turn, while storing the
+        # None verbatim is the defect. The marker keeps turn_number monotonic,
+        # keeps `GET /web/sessions/{id}` honest about what happened, and rides
+        # into the next turn's context preamble as the failure it was.
+        turn_answer = _degraded_turn_marker(failure_envelope) if failure_envelope else answer
         turn = Turn(
             user_prompt=body.prompt,
-            answer=answer,
+            answer=turn_answer,
             formation=body.formation,
             dispatch_model=trace.get("dispatch", {}).get("model", ""),
             worker_models=workers,
@@ -312,13 +477,28 @@ async def session_chat(
         session.add_turn(turn)
 
         # ── SSE: deliberation done ──
-        done_event_data = {
-            "answer": answer,
-            "total_tokens": trace.get("total_tokens", 0),
-            "total_cost": trace.get("total_cost", 0.0),
-            "elapsed_ms": elapsed_ms,
-            "turn_number": session.turn_count,
-        }
+        if failure_envelope is None:
+            done_event_data = {
+                "answer": answer,
+                "total_tokens": trace.get("total_tokens", 0),
+                "total_cost": trace.get("total_cost", 0.0),
+                "elapsed_ms": elapsed_ms,
+                "turn_number": session.turn_count,
+            }
+        else:
+            # The SMALLEST envelope the live renderer needs: the same failure
+            # fields the POST answers with, plus the stat fields every
+            # deliberation_done frame carries (the SPA's tile/bookkeeping code
+            # runs before it dispatches on the bubble). ``answer`` is empty so
+            # no client can render a "None" bubble from this frame either.
+            done_event_data = {
+                **failure_envelope,
+                "answer": "",
+                "total_tokens": trace.get("total_tokens", 0),
+                "total_cost": trace.get("total_cost", 0.0),
+                "elapsed_ms": elapsed_ms,
+                "turn_number": session.turn_count,
+            }
         _sse_broadcaster.broadcast(
             session_id,
             SSEEvent(event="deliberation_done", data=done_event_data),
@@ -341,6 +521,14 @@ async def session_chat(
 
         # ── Close all SSE streams for this session ──
         _sse_broadcaster.unsubscribe_all(session_id)
+
+        if failure_envelope is not None:
+            # Everything above is already done — the turn is recorded with its
+            # marker, the failure was broadcast and stored for late
+            # subscribers, and the streams are closed — so raising here only
+            # replaces the fake 200 with the truth. The ``finally`` below still
+            # returns the queue slot and closes the in-flight window.
+            raise HTTPException(status_code=502, detail=failure_envelope)
     finally:
         # Both release paths run on every exit (success, exception, or an
         # early return below): the queue slot is returned and the in-flight
@@ -411,7 +599,7 @@ async def debug_reset():
     return {"status": "ok", "message": "singletons reset"}
 
 
-@router.get("/sse/{session_id}")
+@ui_router.get("/sse/{session_id}", dependencies=[Depends(require_api_key_or_query)])
 async def sse_stream(
     session_id: str,
     request: Request,
@@ -472,6 +660,16 @@ async def sse_stream(
     stream cleanly; the idle timeout remains the backstop if no turn ever
     arrives. The default (no flag) behavior — replay, marker, close — is
     unchanged for page loads and other consumers.
+
+    **Auth seam** (DF-CHIMERA-V2-41). ``EventSource`` cannot set request
+    headers, so this route — and only this one — accepts the API key as
+    ``?api_key=<key>`` in addition to the ``Authorization: Bearer`` /
+    ``X-API-Key`` headers, both verified by the same
+    :func:`~chimera.api.dependencies.verify_api_key` comparison.  The tradeoff,
+    accepted for the local web UI: a key in a query string can be captured by
+    server or proxy access logs, which is why every other ``/web`` route stays
+    header-only (a state-changing route reached with ``?api_key=`` answers 401).
+    With auth disabled no parameter is read and the dial is unchanged.
 
     The replay and its marker are queued onto THIS request's subscriber only.
     Fanning the replay out through ``broadcast`` would dump a stranger's stored
@@ -563,9 +761,16 @@ def _unknown_session_stream(session_id: str):
 # ── Static SPA ─────────────────────────────────────────────────────────────
 
 
-@router.get("/")
+@ui_router.get("/")
 async def serve_spa():
-    """Serve the single-page web UI."""
+    """Serve the single-page web UI.
+
+    DF-CHIMERA-V2-41: public even with ``auth.enabled=true``.  The shell is
+    where the key prompt lives, so gating it made the UI unreachable — the
+    browser rendered this route's 401 JSON as the page, with no field to type
+    the key into.  It serves the SPA only; every data route it calls back into
+    (sessions, chat, history, SSE) keeps its key requirement.
+    """
     from pathlib import Path
 
     from fastapi.responses import HTMLResponse
@@ -584,7 +789,7 @@ async def serve_spa():
     )
 
 
-@router.get("/{asset_path:path}")
+@ui_router.get("/{asset_path:path}")
 async def serve_static_asset(asset_path: str) -> FileResponse:
     """Serve the SPA's static assets (e.g. the vendored mermaid bundle).
 
@@ -595,8 +800,13 @@ async def serve_static_asset(asset_path: str) -> FileResponse:
     Without it the vendored file 404s and every DAG panel falls back to the
     "renderer unavailable" banner.
 
-    Registration order makes the catch-all safe: every real web route above
-    (sessions, chat, SSE, the SPA shell) matches first; this handler only ever
+    DF-CHIMERA-V2-41: public (like the shell) even with ``auth.enabled=true`` —
+    a key-gated asset answers 401 and leaves the page it belongs to unrendered,
+    including the key prompt the shell ships.
+
+    Registration order makes the catch-all safe: it sits on the UI router (no
+    router-level dependency) which ``create_app`` mounts AFTER the gated web
+    router, so every real web route above matches first; this handler only ever
     sees unknown ``GET /web/*`` paths. Confinement: the resolved file must
     stay inside the static directory (``..`` traversal is rejected with 404,
     never 400, so a hostile probe learns nothing about the filesystem), and

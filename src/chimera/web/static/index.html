@@ -204,6 +204,38 @@ body {
   white-space: pre-wrap; word-break: break-word;
   color: var(--text);
 }
+/* DF-CHIMERA-V2-44 — a fully degraded run gets a bubble of its own. It is
+   never the answer bubble: that is what used to render the engine's "None"
+   as if it were an answer. */
+.msg-failure {
+  align-self: flex-start;
+  background: rgba(248, 81, 73, .08);
+  border: 1px solid var(--red);
+  border-bottom-left-radius: 4px;
+  color: var(--text);
+  max-width: 78%;
+}
+.msg-failure .failure-headline { color: var(--red); font-weight: 600; margin-bottom: 6px; }
+.msg-failure .failure-message { color: var(--text-secondary); font-size: 13px; }
+.msg-failure .failure-list { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
+.msg-failure .failure-list li { margin-bottom: 6px; }
+.msg-failure .failure-stage { color: var(--red); font-weight: 600; }
+.msg-failure .failure-model {
+  color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px;
+}
+.msg-failure .failure-error {
+  color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px;
+  word-break: break-word;
+}
+.msg-failure .failure-billing { margin-top: 8px; color: var(--yellow); font-size: 12px; }
+.msg-meta .failure-badge {
+  background: rgba(248, 81, 73, .12);
+  border: 1px solid var(--red);
+  color: var(--red);
+  padding: 2px 8px; border-radius: 10px;
+  font-size: 10px; text-transform: uppercase;
+  letter-spacing: .3px;
+}
 .msg-meta {
   font-size: 10px; color: var(--text-muted);
   display: flex; gap: 12px; align-items: center;
@@ -482,6 +514,34 @@ body {
 }
 #toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
 #toast.error { border-color: var(--red); }
+
+/* ── API key gate (DF-CHIMERA-V2-41) ── */
+#auth-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.72);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 500;
+}
+#auth-overlay[hidden] { display: none; }
+#auth-box {
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-lg);
+  padding: 22px; width: min(440px, 90vw);
+}
+#auth-box h3 { font-size: 15px; margin-bottom: 8px; }
+#auth-box p { font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 12px; }
+#auth-input {
+  width: 100%; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 9px 11px; font-size: 13px; margin-bottom: 12px;
+}
+#auth-input:focus { outline: none; border-color: var(--accent); }
+.auth-actions { display: flex; gap: 8px; }
+.auth-actions button {
+  flex: 1; background: var(--green-dim); color: #fff; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px; font-size: 12px; cursor: pointer;
+}
+.auth-actions button.secondary { background: transparent; color: var(--text-secondary); }
+#auth-status { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -498,7 +558,9 @@ body {
   </div>
   <div id="session-info">
     <span>Session: <span class="sid" id="sid-display">—</span></span>
+    <span id="auth-status" title="API key this browser sends (DF-CHIMERA-V2-41)">🔓 No API key</span>
     <button id="new-session-btn" title="New session">+ New</button>
+    <button id="api-key-btn" type="button" title="Set the API key this browser sends">Key</button>
   </div>
   <div id="history"></div>
   <div id="controls">
@@ -563,6 +625,22 @@ body {
   </div>
 </div>
 
+<!-- API key gate (DF-CHIMERA-V2-41). Hidden until the server answers 401: the
+     SPA shell is public so this box is the only way a browser can hand over a
+     key on a deployment with auth.enabled=true. With auth disabled it never
+     appears. -->
+<div id="auth-overlay" hidden>
+  <div id="auth-box" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <h3 id="auth-title">🔑 API key required</h3>
+    <p id="auth-hint">This Chimera server has auth enabled. Paste the API key to continue — it is kept in this browser only (localStorage) and sent with every request.</p>
+    <input id="auth-input" type="password" autocomplete="off" spellcheck="false" placeholder="API key">
+    <div class="auth-actions">
+      <button id="auth-save" type="button">Save &amp; continue</button>
+      <button id="auth-clear" type="button" class="secondary">Forget key</button>
+    </div>
+  </div>
+</div>
+
 <!-- Stage Detail Modal -->
 <div id="modal-overlay">
   <div id="modal">
@@ -586,7 +664,21 @@ let dagPanelCollapsed = false;
 let deliberationComplete = false; // True after deliberation_done — prevents SSE reconnect
 let sseTerminalSeen = false; // True after the server's replay_done marker — this stream closed on purpose
 let sseLiveMode = false; // True while the current EventSource was dialed with ?live=1 (in-flight turn)
+// ── Per-turn answer render guard (DF-CHIMERA-V2-43) ──
+// One finished turn reaches addMessageBubble from TWO live paths: the
+// `deliberation_done` listener below (synthetic stage array) and the POST
+// /chat response handler in sendMessage() (the real trace). In live mode both
+// run for the same turn — the server broadcasts the event, then the POST
+// resolves — which painted the answer bubble TWICE, the first copy reporting
+// the synthetic 1-stage count and the second the trace's real count.
+// The guard is the turn number already rendered: the first renderer marks it,
+// the second skips its bubble (first renderer wins, in either arrival order).
+// It starts null so a page-load replay (no POST) and a POST-only turn (no
+// event) both still render exactly one bubble, and sendMessage() clears it so
+// each new turn renders its own.
+let lastRenderedTurn = null; // Turn number whose answer bubble is already on screen
 let currentMermaid = null; // Saved from dag_designed for use in message bubble
+let failureBubbleShown = false; // DF-CHIMERA-V2-44 — a failure bubble was rendered for the current turn
 let retryTimer = null; // Pending "retry after backpressure" timer (cleared on new send)
 // ── Live stage state (DF-CHIMERA-V2-25) ──
 // stage_started / stage_completed arrive BEFORE dag_designed renders the DAG
@@ -596,6 +688,115 @@ let retryTimer = null; // Pending "retry after backpressure" timer (cleared on n
 let stageRunState = {}; // normalized stage id -> 'in-flight' | 'done'
 let stageCompletedCount = 0; // stages completed so far this run
 let stageRunTotals = { tokens: 0, cost: 0, latency_ms: 0 }; // incremental tile tallies
+
+// ═══════════════════════════════════════════
+// API Key Gate (DF-CHIMERA-V2-41)
+// ═══════════════════════════════════════════
+// The server gates every data route with `require_api_key`, but the SPA shell
+// and its vendored assets are public — they have to be, because a browser has
+// nowhere to enter a key before it has loaded the page that asks for one
+// (gating the shell answered 401 JSON *as the page*). So the key lives here:
+// entered once, kept in localStorage, and attached to every request —
+//
+//   * fetch()     -> `Authorization: Bearer <key>`, the header shape the
+//                    server's _extract_api_key() reads;
+//   * EventSource -> it CANNOT set headers, so the SSE dial appends
+//                    `?api_key=<key>` (the one route that accepts it).
+//
+// With auth disabled nothing is stored, no header is attached, the SSE dial
+// carries no parameter and the box never appears: behaviour is unchanged.
+const API_KEY_STORAGE = 'chimera_api_key';
+let apiKey = '';
+try { apiKey = localStorage.getItem(API_KEY_STORAGE) || ''; } catch (_) { apiKey = ''; }
+let authResolver = null; // resolves the pending promptForApiKey() promise
+
+function authHeaders(base) {
+  const headers = Object.assign({}, base || {});
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+  return headers;
+}
+
+function setApiKey(next) {
+  apiKey = (next || '').trim();
+  try {
+    if (apiKey) localStorage.setItem(API_KEY_STORAGE, apiKey);
+    else localStorage.removeItem(API_KEY_STORAGE);
+  } catch (_) { /* storage blocked (private mode) — the in-memory key still works */ }
+  updateAuthStatus();
+}
+
+function updateAuthStatus() {
+  const el = document.getElementById('auth-status');
+  if (el) el.textContent = apiKey ? '🔑 Key set' : '🔓 No API key';
+}
+
+// Show the box and resolve once the user saves (true) or dismisses (false).
+// window.prompt is the fallback when the box is missing from the document.
+function promptForApiKey(reason) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('auth-overlay');
+    if (!overlay) {
+      const entered = window.prompt(reason || 'This server requires an API key.');
+      if (entered) setApiKey(entered);
+      resolve(Boolean(apiKey));
+      return;
+    }
+    authResolver = resolve;
+    document.getElementById('auth-hint').textContent = reason || 'Enter the API key.';
+    overlay.hidden = false;
+    const input = document.getElementById('auth-input');
+    input.value = '';
+    input.focus();
+  });
+}
+
+function resolveAuthPrompt(accepted) {
+  const overlay = document.getElementById('auth-overlay');
+  if (overlay) overlay.hidden = true;
+  const resolver = authResolver;
+  authResolver = null;
+  if (resolver) resolver(Boolean(accepted && apiKey));
+}
+
+// The single request helper for every API call site: it attaches the stored
+// key, and on a 401 (auth enabled and no or invalid key) surfaces the box and
+// retries with whatever was entered. Bounded, so a key that keeps failing
+// reaches the caller as an error instead of looping the prompt forever.
+async function apiFetch(url, options) {
+  const opts = options || {};
+  let r = await fetch(url, Object.assign({}, opts, { headers: authHeaders(opts.headers) }));
+  let attempts = 0;
+  while (r.status === 401 && attempts < 3) {
+    attempts += 1;
+    setStatus('warn', 'API key required — enter it to continue');
+    const accepted = await promptForApiKey(
+      'This server has auth enabled and rejected the request. Paste the API key to continue.',
+    );
+    if (!accepted) break;
+    r = await fetch(url, Object.assign({}, opts, { headers: authHeaders(opts.headers) }));
+  }
+  return r;
+}
+
+updateAuthStatus(); // reflect a key restored from localStorage
+
+document.getElementById('api-key-btn').addEventListener('click', () => {
+  promptForApiKey('Enter the API key this browser should send with every request.');
+});
+document.getElementById('auth-save').addEventListener('click', () => {
+  const input = document.getElementById('auth-input');
+  setApiKey(input.value);
+  input.value = '';
+  resolveAuthPrompt(Boolean(apiKey));
+});
+document.getElementById('auth-clear').addEventListener('click', () => {
+  setApiKey('');
+  resolveAuthPrompt(false);
+});
+document.getElementById('auth-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('auth-save').click(); }
+  if (e.key === 'Escape') { e.preventDefault(); resolveAuthPrompt(false); }
+});
 
 // ═══════════════════════════════════════════
 // Mermaid Init
@@ -630,7 +831,7 @@ mermaid.initialize({
 // ═══════════════════════════════════════════
 async function createSession() {
   try {
-    const r = await fetch('/web/sessions', { method: 'POST' });
+    const r = await apiFetch('/web/sessions', { method: 'POST' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     sessionId = data.session_id;
@@ -646,7 +847,7 @@ async function createSession() {
 
 async function restoreSession(sid) {
   try {
-    const r = await fetch(`/web/sessions/${sid}`);
+    const r = await apiFetch(`/web/sessions/${sid}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     sessionId = sid;
     localStorage.setItem('chimera_session_id', sessionId);
@@ -702,7 +903,18 @@ function connectSSE(live = false) {
   // URL answers a session-with-history by replaying then closing, which put
   // this EventSource into a replay/error/redial cycle that never carried a
   // live turn — so the stage listeners below never fired in the UI.
-  eventSource = new EventSource(`/web/sse/${sessionId}${live ? '?live=1' : ''}`);
+  //
+  // Auth seam (DF-CHIMERA-V2-41): an EventSource cannot set request headers,
+  // so a stored key rides the URL as ?api_key=<key> — the one route the server
+  // accepts it on (verified by the same comparison the header path uses).
+  // Tradeoff, accepted for a local web UI: a key in a query string can land in
+  // server or proxy access logs. No key stored (auth disabled) -> the URL is
+  // byte-for-byte what it was before.
+  const sseQuery = live ? '?live=1' : '';
+  const sseKeyParam = apiKey ? `api_key=${encodeURIComponent(apiKey)}` : '';
+  eventSource = new EventSource(
+    `/web/sse/${sessionId}${sseQuery}${sseKeyParam ? (sseQuery ? '&' : '?') + sseKeyParam : ''}`,
+  );
 
   eventSource.addEventListener('deliberation_started', (e) => {
     const data = JSON.parse(e.data);
@@ -795,14 +1007,33 @@ function connectSSE(live = false) {
     document.getElementById('send-btn').disabled = false;
     document.getElementById('dag-live-indicator').style.display = 'none';
     document.getElementById('prompt-input').focus();
+    // DF-CHIMERA-V2-44: a fully degraded run announces itself on this event
+    // too (the server puts the same failure envelope on the frame). Render the
+    // FAILURE bubble — an answer bubble carrying the engine's placeholder is
+    // exactly the bug. `failureBubbleShown` keeps the POST handler, which sees
+    // the same envelope on its 502, from adding a second bubble for the turn.
+    const failure = failureFromEnvelope(data);
+    if (failure) {
+      setStatus('error', `All workers failed — turn ${data.turn_number} produced no answer`);
+      addFailureBubble(failure);
+      loadHistory();
+      return;
+    }
     setStatus('', `Done — turn ${data.turn_number}`);
     loadHistory();
-    // Add message bubble with mermaid + stats
-    addMessageBubble(data.answer, data.turn_number, currentMermaid, {
-      total_tokens: data.total_tokens,
-      total_cost: data.total_cost,
-      stages: new Array(data.stage_count || 1).fill({}),
-    });
+    // Add message bubble with mermaid + stats — exactly ONCE per turn. The POST
+    // /chat response handler below renders this same bubble when this stream did
+    // not carry the event, so whichever path arrives first marks the turn and
+    // renders it; the second path sees the mark and only refreshes the sidebar
+    // (its stats-tile writes above are idempotent value-sets and stay).
+    if (lastRenderedTurn !== data.turn_number) {
+      lastRenderedTurn = data.turn_number;
+      addMessageBubble(data.answer, data.turn_number, currentMermaid, {
+        total_tokens: data.total_tokens,
+        total_cost: data.total_cost,
+        stages: new Array(data.stage_count || 1).fill({}),
+      });
+    }
   });
 
   // Terminal marker: the server finished with this stream ON PURPOSE (the
@@ -850,6 +1081,8 @@ async function sendMessage() {
   input.value = '';
   autoResize(input);
   deliberationComplete = false; // New deliberation starting — allow SSE reconnect
+  lastRenderedTurn = null; // New turn: the answer-bubble guard is per-turn (DF-CHIMERA-V2-43)
+  failureBubbleShown = false; // this turn has not rendered a failure bubble yet (DF-CHIMERA-V2-44)
 
   const formation = document.getElementById('formation-select').value;
   const aggModel = document.getElementById('aggregator-model').value.trim();
@@ -874,26 +1107,45 @@ async function sendMessage() {
   setStatus('live', 'Sending…');
 
   try {
-    const r = await fetch(`/web/sessions/${sessionId}/chat`, {
+    const r = await apiFetch(`/web/sessions/${sessionId}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     if (!r.ok) {
       const kind = r.headers.get('content-type') || '';
+      // Read the body ONCE as text (the generic error path renders it
+      // verbatim, unchanged) and parse it for the failure envelope the way the
+      // status paths below already parsed it.
+      const rawBody = await r.text();
+      let payload = null;
+      if (kind.includes('application/json')) {
+        try { payload = JSON.parse(rawBody); } catch (_) { payload = null; }
+      }
+      // DF-CHIMERA-V2-44: a fully degraded run is a REAL failure — 502 carrying
+      // the same envelope the deliberation_done frame carries. Render the
+      // failure bubble (listing the failed stages, their errors and the tokens
+      // billed) instead of falling into the generic "Error: 502 — {...}" path.
+      // The live stream usually rendered it a moment earlier; `failureBubbleShown`
+      // keeps this from doubling the bubble when the SSE event DID carry the
+      // envelope, and this branch is the only renderer when it did not.
+      const failure = failureFromEnvelope(payload && payload.detail);
+      if (failure) {
+        if (!failureBubbleShown) addFailureBubble(failure);
+        setStatus('error', `All workers failed — no answer was produced (${fmtNum(failure.tokens)} tokens billed)`);
+        showToast('All workers failed — no answer was produced', 'error');
+        document.getElementById('send-btn').disabled = false;
+        document.getElementById('dag-live-indicator').style.display = 'none';
+        await loadHistory();
+        return;
+      }
       // Backpressure (or a rate-limited refusal): the server owns the wait
       // time, so surface it with the Retry-After delay and retry once on a
       // user send. `r.status`/`r.statusText` are the fallback text.
       if (r.status === 503 || r.status === 429) {
         const waitS = parseInt(r.headers.get('retry-after') || '', 10) || 5;
-        let serverMsg = '';
-        if (kind.includes('application/json')) {
-          try {
-            const payload = await r.json();
-            const detail = payload && payload.detail;
-            serverMsg = typeof detail === 'string' ? detail : (detail && detail.message) || '';
-          } catch (_) { /* keep the status text */ }
-        }
+        const detail = payload && payload.detail;
+        const serverMsg = typeof detail === 'string' ? detail : (detail && detail.message) || '';
         const reason = serverMsg || `${r.status} ${r.statusText}`.trim();
         const msg = `${reason} Retrying in ${waitS}s — the server is at capacity.`;
         setStatus('warn', msg);
@@ -902,7 +1154,7 @@ async function sendMessage() {
         scheduleBackpressureRetry(prompt, waitS);
         return;
       }
-      const err = await r.text();
+      const err = rawBody;
       setStatus('error', `Error: ${r.status} — ${err.slice(0, 200)}`);
       document.getElementById('send-btn').disabled = false;
       document.getElementById('dag-live-indicator').style.display = 'none';
@@ -931,8 +1183,15 @@ async function sendMessage() {
     document.getElementById('send-btn').disabled = false;
     document.getElementById('prompt-input').focus();
 
-    // Add assistant message bubble
-    addMessageBubble(data.answer, data.turn_number, data.mermaid, data.trace);
+    // Add assistant message bubble — exactly once per turn. In live mode the
+    // SSE `deliberation_done` listener above has usually rendered this turn's
+    // bubble already (and marked it), so this path must not paint a second copy
+    // with the real trace's stage count. First renderer wins, in either order:
+    // if the POST resolves first it marks the turn and the late SSE event skips.
+    if (lastRenderedTurn !== data.turn_number) {
+      lastRenderedTurn = data.turn_number;
+      addMessageBubble(data.answer, data.turn_number, data.mermaid, data.trace);
+    }
 
     setStatus('', `Turn ${data.turn_number} complete`);
     await loadHistory();
@@ -1043,12 +1302,73 @@ function toggleDagInMessage(toggleEl) {
 }
 
 // ═══════════════════════════════════════════
+// Fully degraded turns (DF-CHIMERA-V2-44)
+// ═══════════════════════════════════════════
+// A run whose every worker stage failed upstream is NOT an answer: the server
+// answers the POST with 502 and puts the same envelope on the
+// `deliberation_done` frame. Both paths funnel through failureFromEnvelope, and
+// the bubble is rendered once per turn (failureBubbleShown) because the SSE
+// frame arrives while the POST is still in flight.
+function failureFromEnvelope(env) {
+  if (!env || typeof env !== 'object') return null;
+  // Keyed on the server's discriminator: a 502 that is not this failure (a
+  // proxy error, a plain string detail) falls through to the generic handling.
+  if (env.error !== 'all_workers_failed') return null;
+  const failures = Array.isArray(env.worker_failures) ? env.worker_failures : [];
+  const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
+  return {
+    message: (typeof env.message === 'string' && env.message)
+      ? env.message
+      : 'All workers failed — no answer was produced.',
+    failures,
+    tokens: num(env.tokens_billed),
+    cost: num(env.cost_billed),
+  };
+}
+
+// The failure bubble: a class of its own (never .msg-assistant), listing every
+// failed stage with its upstream error, and disclosing what the run billed.
+function addFailureBubble(failure) {
+  failureBubbleShown = true;
+  const area = document.getElementById('chat-area');
+  const emptyEl = area.querySelector('.chat-empty');
+  if (emptyEl) emptyEl.remove();
+
+  const rows = failure.failures.map(f => {
+    const stage = escHtml(String(f.stage_id || '?'));
+    const model = escHtml(String(f.model || '?'));
+    const error = escHtml(String(f.error || 'unknown error'));
+    return `<li><span class="failure-stage">${stage}</span> `
+      + `<span class="failure-model">${model}</span><br>`
+      + `<span class="failure-error">${error}</span></li>`;
+  }).join('');
+
+  const costText = failure.cost > 0 ? ` ($${failure.cost.toFixed(6)})` : '';
+  const block = document.createElement('div');
+  block.className = 'turn-block';
+  block.innerHTML = `
+    <div class="msg-meta">
+      <span>Chimera</span>
+      <span class="failure-badge">Failed</span>
+    </div>
+    <div class="msg-bubble msg-failure">
+      <div class="failure-headline">All workers failed — no answer was produced.</div>
+      <div class="failure-message">${escHtml(failure.message)}</div>
+      <ul class="failure-list">${rows || '<li><span class="failure-error">No failure detail was reported.</span></li>'}</ul>
+      <div class="failure-billing">Tokens billed: ${fmtNum(failure.tokens)}${costText}</div>
+    </div>
+  `;
+  area.appendChild(block);
+  area.scrollTop = area.scrollHeight;
+}
+
+// ═══════════════════════════════════════════
 // History Loading
 // ═══════════════════════════════════════════
 async function loadHistory() {
   if (!sessionId) return;
   try {
-    const r = await fetch(`/web/sessions/${sessionId}`);
+    const r = await apiFetch(`/web/sessions/${sessionId}`);
     if (!r.ok) return;
     const data = await r.json();
     const el = document.getElementById('history');

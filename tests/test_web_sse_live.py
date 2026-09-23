@@ -65,8 +65,8 @@ SPA_SOURCE = SPA_PATH.read_text(encoding="utf-8")
 #: makes the ASGI test below fail instead of silently leaving live mode OFF.
 _LIVE_DIAL = re.search(r"live \? '(\?[^']*)'", SPA_SOURCE)
 assert _LIVE_DIAL, "the SPA no longer builds a live-mode dial URL"
-LIVE_QUERY = _LIVE_DIAL.group(1)              # e.g. "?live=1"
-LIVE_QUERY_STRING = LIVE_QUERY.lstrip("?")    # e.g. "live=1"
+LIVE_QUERY = _LIVE_DIAL.group(1)  # e.g. "?live=1"
+LIVE_QUERY_STRING = LIVE_QUERY.lstrip("?")  # e.g. "live=1"
 
 #: The replay a finished turn leaves behind — the frame that must NOT appear on
 #: a live-mode stream (its prompt is deliberately distinguishable from the live
@@ -105,8 +105,7 @@ def _slow_stage_responder(payload: str, delay: float):  # type: ignore[no-untype
 
 def _engine_with_slow_stages(config: Any, delay: float) -> Engine:
     payload = dispatch_json(
-        workers=[("worker_1", "deepseek/deepseek-chat"),
-                 ("worker_2", "openrouter/google/gemini-2.5-flash")],
+        workers=[("worker_1", "deepseek/deepseek-chat"), ("worker_2", "openrouter/google/gemini-2.5-flash")],
     )
     return Engine(config, FakeGateway(_slow_stage_responder(payload, delay)))
 
@@ -195,9 +194,7 @@ class _LiveStream:
         async def send(message: dict[str, Any]) -> None:
             if message["type"] == "http.response.start":
                 self.status = message["status"]
-                self.headers = {
-                    k.decode(): v.decode() for k, v in message.get("headers", ())
-                }
+                self.headers = {k.decode(): v.decode() for k, v in message.get("headers", ())}
                 self._opened.set()
             elif message["type"] == "http.response.body":
                 body = message.get("body", b"")
@@ -255,15 +252,24 @@ async def test_live_mode_on_a_session_with_history_does_not_replay_or_close(conf
     # The stream is a LIVE pipe: events emitted AFTER connect reach it.
     web_routes._sse_broadcaster.broadcast(
         session_id,
-        SSEEvent(event="stage_started", data={"stage": "worker_1", "kind": "worker",
-                                              "model": "deepseek/deepseek-chat"}),
+        SSEEvent(
+            event="stage_started",
+            data={"stage": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat"},
+        ),
     )
     web_routes._sse_broadcaster.broadcast(
         session_id,
-        SSEEvent(event="stage_completed", data={"stage": "worker_1", "kind": "worker",
-                                                "model": "deepseek/deepseek-chat",
-                                                "tokens": 30, "latency_ms": 12.0,
-                                                "cost": 0.0001}),
+        SSEEvent(
+            event="stage_completed",
+            data={
+                "stage": "worker_1",
+                "kind": "worker",
+                "model": "deepseek/deepseek-chat",
+                "tokens": 30,
+                "latency_ms": 12.0,
+                "cost": 0.0001,
+            },
+        ),
     )
     # Poll rather than sleep a fixed amount: the two sends are two awaits, and a
     # loaded box can take several scheduler ticks to drain both queue entries.
@@ -383,9 +389,7 @@ async def test_a_truthy_live_flag_skips_the_replay(config, query: str) -> None: 
     stream = await _LiveStream(app, session_id, query.lstrip("?")).opened()
 
     assert stream.status == 200
-    assert stream.text == "", (
-        f"query {query!r} was answered as a replay: {stream.names}"
-    )
+    assert stream.text == "", f"query {query!r} was answered as a replay: {stream.names}"
     assert session_id in web_routes._sse_broadcaster._subscribers, (
         f"query {query!r} did not leave a live subscriber open"
     )
@@ -500,7 +504,12 @@ def test_send_message_redials_the_stream_for_the_new_turn() -> None:
     )
     # The re-dial has to happen BEFORE the chat POST: the server's readiness
     # gate and the first events are both on the far side of that request.
-    assert body.index("connectSSE(true)") < body.index("await fetch("), (
+    # DF-CHIMERA-V2-41: the POST now goes through `apiFetch()` (the key-aware
+    # wrapper every API call site uses), so match either spelling — the
+    # ordering claim is what matters, not the helper's name.
+    chat_request = re.search(r"await (?:apiFetch|fetch)\(", body)
+    assert chat_request, "sendMessage() must send the chat request"
+    assert body.index("connectSSE(true)") < chat_request.start(), (
         "the live stream must be open before the chat request is sent"
     )
 
@@ -523,9 +532,7 @@ def test_page_load_dials_are_not_live() -> None:
     """createSession/restoreSession keep the replay dial — DF-19 not regressed."""
     for declaration in ("async function createSession()", "async function restoreSession("):
         body = _js_function(declaration)
-        assert re.search(r"connectSSE\(\s*\)", body), (
-            f"{declaration} must dial without the live flag"
-        )
+        assert re.search(r"connectSSE\(\s*\)", body), f"{declaration} must dial without the live flag"
         assert "connectSSE(true)" not in body
 
 
@@ -574,9 +581,7 @@ def test_the_live_query_the_spa_sends_is_the_one_the_server_parses() -> None:
 
     route = web_routes.sse_stream
     params = inspect.signature(route).parameters
-    assert "live" in params, (
-        "the SSE route no longer declares the live parameter the SPA sends"
-    )
+    assert "live" in params, "the SSE route no longer declares the live parameter the SPA sends"
     # Off by default: the replay contract is what a page load gets. (``None``
     # and not ``False`` because the flag is truthy-parsed — see the route.)
     assert params["live"].default is None, (
@@ -653,14 +658,12 @@ def test_live_stream_carries_a_real_turn_mid_post(config) -> None:  # type: igno
 
         def read_sse() -> None:
             try:
-                with urllib.request.urlopen(
-                    f"{base}/web/sse/{session_id}{LIVE_QUERY}", timeout=30
-                ) as resp:
+                with urllib.request.urlopen(f"{base}/web/sse/{session_id}{LIVE_QUERY}", timeout=30) as resp:
                     for raw in resp:
                         line = raw.decode("utf-8")
                         body_chunks.append(line)
                         if line.startswith("event: "):
-                            frames.append((time.monotonic(), line[len("event: "):].strip()))
+                            frames.append((time.monotonic(), line[len("event: ") :].strip()))
             except Exception:
                 pass  # stream closed by the sentinel — expected
 
@@ -703,8 +706,7 @@ def test_live_stream_carries_a_real_turn_mid_post(config) -> None:  # type: igno
 
         # No replay: the stored turn's prompt is not on this stream at all.
         assert REPLAY_PROMPT not in body, (
-            "the live stream replayed the previous turn — the EventSource loop "
-            "the SPA was stuck in"
+            "the live stream replayed the previous turn — the EventSource loop the SPA was stuck in"
         )
         assert names and names[0] == "deliberation_started", names
         assert '"prompt": "live question"' in body, "the new turn's events never arrived"
@@ -866,19 +868,23 @@ async def test_live_stream_dispatches_every_event_a_turn_broadcasts(config) -> N
             session_id,
             SSEEvent(
                 event="stage_completed",
-                data={"stage": f"worker_{i}", "kind": "worker", "model": "m",
-                      "tokens": 30, "latency_ms": 12.0, "cost": 0.0001},
+                data={
+                    "stage": f"worker_{i}",
+                    "kind": "worker",
+                    "model": "m",
+                    "tokens": 30,
+                    "latency_ms": 12.0,
+                    "cost": 0.0001,
+                },
             ),
         )
     web_routes._sse_broadcaster.broadcast(
         session_id,
-        SSEEvent(event="dag_designed",
-                 data={"mermaid": "flowchart TB\n  a-->b", "stage_count": 3}),
+        SSEEvent(event="dag_designed", data={"mermaid": "flowchart TB\n  a-->b", "stage_count": 3}),
     )
     web_routes._sse_broadcaster.broadcast(
         session_id,
-        SSEEvent(event="deliberation_done",
-                 data={"answer": "x", "turn_number": 2}),
+        SSEEvent(event="deliberation_done", data={"answer": "x", "turn_number": 2}),
     )
     web_routes._sse_broadcaster.unsubscribe_all(session_id)
     await asyncio.wait_for(stream.task, timeout=5.0)  # NOT the idle timeout
@@ -892,9 +898,12 @@ async def test_live_stream_dispatches_every_event_a_turn_broadcasts(config) -> N
     )
     assert [e["event"] for e in dispatched] == [
         "deliberation_started",
-        "stage_started", "stage_completed",
-        "stage_started", "stage_completed",
-        "stage_started", "stage_completed",
+        "stage_started",
+        "stage_completed",
+        "stage_started",
+        "stage_completed",
+        "stage_started",
+        "stage_completed",
         "dag_designed",
         "deliberation_done",
     ]
@@ -940,9 +949,8 @@ async def test_httpx_sse_client_stack_dispatches_the_live_stream(config) -> None
     session_id = _aged_session(TestClient(app))
 
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test", timeout=10.0
-    ) as client:
+    async with httpx.AsyncClient(transport=transport, base_url="http://test", timeout=10.0) as client:
+
         async def fire_broadcasts() -> None:
             # Give the request a beat to reach the handler and subscribe.
             for _ in range(200):
@@ -952,13 +960,13 @@ async def test_httpx_sse_client_stack_dispatches_the_live_stream(config) -> None
             for i in range(1, 4):
                 web_routes._sse_broadcaster.broadcast(
                     session_id,
-                    SSEEvent(event="stage_started",
-                             data={"stage": f"worker_{i}", "kind": "worker"}),
+                    SSEEvent(event="stage_started", data={"stage": f"worker_{i}", "kind": "worker"}),
                 )
                 web_routes._sse_broadcaster.broadcast(
                     session_id,
-                    SSEEvent(event="stage_completed",
-                             data={"stage": f"worker_{i}", "kind": "worker", "tokens": i}),
+                    SSEEvent(
+                        event="stage_completed", data={"stage": f"worker_{i}", "kind": "worker", "tokens": i}
+                    ),
                 )
             web_routes._sse_broadcaster.unsubscribe_all(session_id)
 
