@@ -37,7 +37,7 @@ pipeline:
     true:
     - pre-eval
     condition: 'true'
-    max_iterations: 200
+    max_iterations: 300
     tools:
     - read_file
     - run_command
@@ -46,7 +46,7 @@ pipeline:
     - sandbox
     - detect_dead_code
 evaluator:
-  max_iterations: 200
+  max_iterations: 300
   max_time: 60m
   max_input_tokens: 16M
   max_output_tokens: 4M

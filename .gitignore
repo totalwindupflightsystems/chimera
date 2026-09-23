@@ -34,3 +34,7 @@ reports/
 
 # duckbrain CLI local namespace store (git-backed tool state, created 2026-09-18)
 namespaces/
+
+# gitreins runtime state (role checkpoints, lifecycle lock)
+.gitreins/role.db*
+.gitreins/tasks.yaml.lock

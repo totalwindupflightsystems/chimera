@@ -1649,3 +1649,27 @@ tasks:
   status: complete
   created_at: '2026-09-23T01:14:36.107868+00:00'
   completed_at: '2026-09-23T01:18:42.453546+00:00'
+- id: DF-CHIMERA-V2-33
+  title: auto formation built-in + CONFIG.md percent-scale examples
+  criteria:
+  - A config defining only custom formations runs the default formation without exit
+    2 (auto resolves as built-in)
+  - --formation nope still exits 2 with available formations (DF-CHIMERA-V2-7 parity
+    not weakened)
+  - docs CONFIG.md category examples use percent 0-100 integers and a config copied
+    from them loads with zero category_scale_normalized warnings
+  status: complete
+  created_at: '2026-09-23T05:29:15.896551+00:00'
+  completed_at: '2026-09-23T05:50:59.426963+00:00'
+- id: DF-CHIMERA-V2-37
+  title: model_sync_cron contradictory output + never-scoring old-date finds
+  criteria:
+  - 'the cron wrapper''s final stdout line never contradicts the report file it just
+    wrote (no bare Candidates: 0 new models beneath a report with finds)'
+  - a new find with an old release_date present in step 1's saved diff IS included
+    in the scoring input
+  - model_sync.py --diff and --diff --score standalone behavior is unchanged (argv
+    parse tests)
+  status: complete
+  created_at: '2026-09-23T05:29:16.135537+00:00'
+  completed_at: '2026-09-23T05:51:00.160549+00:00'

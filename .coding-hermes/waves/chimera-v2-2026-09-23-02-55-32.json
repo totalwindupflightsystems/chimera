@@ -1,0 +1,45 @@
+{
+  "tick_id": "chimera-v2-2026-09-23-02-55-32",
+  "project": "chimera-v2",
+  "repo": "/home/kara/chimera-v2",
+  "branch_target": "main",
+  "base_ref": "origin/main",
+  "base_sha": "e231b14",
+  "composed_at": "2026-09-23T03:20:00Z",
+  "wave_budget": 5,
+  "worker_model": "k3",
+  "worker_provider": "kimi-for-coding",
+  "mode": "auto-merge (foreman merges serially, workers never push)",
+  "tasks": [
+    {
+      "id": "DF-CHIMERA-V2-33",
+      "title": "[P3] A config with no `auto` formation makes the default `chimera run` fail with exit 2 (wave-paired with DF-CHIMERA-V2-35, same file set: docs/CONFIG.md + CLI validation)",
+      "priority": "P3",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-33",
+      "branch": "wt/DF-CHIMERA-V2-33",
+      "brief": "/tmp/brief-DF-CHIMERA-V2-33.txt",
+      "files_in_scope": [
+        "src/chimera/cli/main.py",
+        "src/chimera/config.py",
+        "tests/",
+        "docs/CONFIG.md"
+      ],
+      "depends_on": null,
+      "also_closes": ["DF-CHIMERA-V2-35"]
+    },
+    {
+      "id": "DF-CHIMERA-V2-37",
+      "title": "[P3] model_sync_cron prints a candidate count that contradicts the report it just wrote; --score never scores a new find with an old release date",
+      "priority": "P3",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-37",
+      "branch": "wt/DF-CHIMERA-V2-37",
+      "brief": "/tmp/brief-DF-CHIMERA-V2-37.txt",
+      "files_in_scope": [
+        "scripts/model_sync.py",
+        "scripts/model_sync_cron.py",
+        "tests/"
+      ],
+      "depends_on": null
+    }
+  ]
+}
