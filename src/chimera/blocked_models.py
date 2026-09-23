@@ -63,9 +63,7 @@ DEFAULT_STATE_PATH: str = "~/.chimera/blocked-models.json"
 
 #: Error-message signature of a guardrail/privacy/endpoint-availability
 #: failure that should exclude the model from future candidate lists.
-GUARDRAIL_ERROR_RE = re.compile(
-    r"guardrail|no endpoints available|privacy", re.IGNORECASE
-)
+GUARDRAIL_ERROR_RE = re.compile(r"guardrail|no endpoints available|privacy", re.IGNORECASE)
 
 #: Error-message signature of an authentication/authorization rejection: the
 #: credential is present but invalid (expired key, wrong key, revoked key).
@@ -128,9 +126,7 @@ class ModelBlockRegistry:
     ) -> None:
         self.cooldown_s = cooldown_s
         self._clock = clock
-        self._state_path = (
-            Path(state_path).expanduser() if state_path is not None else None
-        )
+        self._state_path = Path(state_path).expanduser() if state_path is not None else None
         self._blocked_until: dict[str, float] = {}
         #: Block class per model ("guardrail" | "credential").
         self._reasons: dict[str, str] = {}
@@ -163,13 +159,9 @@ class ModelBlockRegistry:
         until = self._clock() + self.cooldown_s
         self._blocked_until[model] = until
         self._reasons[model] = reason
-        self._fingerprints[model] = (
-            credential_fingerprint if reason == REASON_CREDENTIAL else None
-        )
+        self._fingerprints[model] = credential_fingerprint if reason == REASON_CREDENTIAL else None
         log.warning(
-            "model_blocked_guardrail"
-            if reason == REASON_GUARDRAIL
-            else "model_blocked_credential",
+            "model_blocked_guardrail" if reason == REASON_GUARDRAIL else "model_blocked_credential",
             model=model,
             reason=reason,
             cooldown_s=self.cooldown_s,
@@ -178,9 +170,7 @@ class ModelBlockRegistry:
         self._save()
         return True
 
-    def is_blocked(
-        self, model: str, credential_fingerprint: str | None = None
-    ) -> bool:
+    def is_blocked(self, model: str, credential_fingerprint: str | None = None) -> bool:
         """True when *model* is currently inside its block cooldown.
 
         When the entry was recorded for a credential-class failure WITH a
@@ -197,10 +187,7 @@ class ModelBlockRegistry:
             # Cooldown expired — clear the entry so the model is a candidate again.
             self._forget(model)
             return False
-        if (
-            self._reasons.get(model) == REASON_CREDENTIAL
-            and credential_fingerprint is not None
-        ):
+        if self._reasons.get(model) == REASON_CREDENTIAL and credential_fingerprint is not None:
             stored = self._fingerprints.get(model)
             if stored is not None and stored != credential_fingerprint:
                 log.info(
@@ -285,9 +272,7 @@ class ModelBlockRegistry:
         reasons_raw = data.get("reasons")
         reasons = reasons_raw if isinstance(reasons_raw, dict) else {}
         fingerprints_raw = data.get("credential_fingerprints")
-        fingerprints = (
-            fingerprints_raw if isinstance(fingerprints_raw, dict) else {}
-        )
+        fingerprints = fingerprints_raw if isinstance(fingerprints_raw, dict) else {}
         # Persisted timestamps are wall-clock; convert the remaining TTL into
         # the injected clock's units so in-memory semantics are unchanged.
         now_wall = time.time()
@@ -300,13 +285,10 @@ class ModelBlockRegistry:
             self._blocked_until[model] = self._clock() + remaining
             reason = reasons.get(model)
             self._reasons[model] = (
-                reason if reason in (REASON_GUARDRAIL, REASON_CREDENTIAL)
-                else REASON_GUARDRAIL
+                reason if reason in (REASON_GUARDRAIL, REASON_CREDENTIAL) else REASON_GUARDRAIL
             )
             fingerprint = fingerprints.get(model)
-            self._fingerprints[model] = (
-                fingerprint if isinstance(fingerprint, str) and fingerprint else None
-            )
+            self._fingerprints[model] = fingerprint if isinstance(fingerprint, str) and fingerprint else None
 
     def _save(self) -> None:
         """Persist current blocks as wall-clock expiry timestamps.
@@ -320,16 +302,14 @@ class ModelBlockRegistry:
             return
         now_wall = time.time()
         now_clock = self._clock()
+        # No version field: the loader is field-driven (it reads exactly the
+        # three keys below and ignores everything else), so a version tag is
+        # dead weight — written by nothing, read by nothing. Verified 2026-09-22.
         payload = {
-            "version": 2,
             "blocked_until_epoch": {
-                model: now_wall + (until - now_clock)
-                for model, until in self._blocked_until.items()
+                model: now_wall + (until - now_clock) for model, until in self._blocked_until.items()
             },
-            "reasons": {
-                model: self._reasons.get(model, REASON_GUARDRAIL)
-                for model in self._blocked_until
-            },
+            "reasons": {model: self._reasons.get(model, REASON_GUARDRAIL) for model in self._blocked_until},
             "credential_fingerprints": {
                 model: self._fingerprints[model]
                 for model in self._blocked_until
@@ -339,9 +319,7 @@ class ModelBlockRegistry:
         try:
             self._state_path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._state_path.with_name(self._state_path.name + ".tmp")
-            tmp.write_text(
-                json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
-            )
+            tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
             os.replace(tmp, self._state_path)
         except OSError as exc:
             log.warning(
