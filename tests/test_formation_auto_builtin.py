@@ -47,6 +47,29 @@ from chimera.engine import Engine  # noqa: E402
 from chimera.gateway import GatewayResponse  # noqa: E402
 from tests.conftest import FakeGateway, dispatch_json  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _no_global_logging_repin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub ``configure_logging`` for every consumer module this file drives.
+
+    The CLI/MCP/REST paths under test legitimately call
+    ``configure_logging(..., force_stderr=True)``, which repins the GLOBAL
+    structlog sink to stderr for the rest of the pytest process — test files
+    sorted after this one then find their own warnings missing from captured
+    stdout (test_gateway.py / test_health_providers.py broke exactly this way
+    when this file landed). The stub keeps the surfaces' behavior observable
+    (warnings still emit, just through whatever sink the outer test process
+    configured) while the file stops being a cross-file polluter.
+    """
+    import chimera.api.server as api_server_mod
+    import chimera.cli.main as cli_main_mod
+    import chimera.mcp.server as mcp_server_mod
+
+    monkeypatch.setattr(api_server_mod, "configure_logging", lambda *a, **k: None)
+    monkeypatch.setattr(cli_main_mod, "configure_logging", lambda *a, **k: None)
+    monkeypatch.setattr(mcp_server_mod, "configure_logging", lambda *a, **k: None)
+
+
 PY_PATH = "technology_code/code_generation/python"
 
 # ── The docs-faithful config ────────────────────────────────────────────────
