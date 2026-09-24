@@ -6,6 +6,8 @@
   "base_ref": "origin/main",
   "base_sha": "d5658d4",
   "composed_at": "2026-09-24T13:05:00Z",
+  "finished_at": "2026-09-24T22:58:00Z",
+  "finished_by": "recovery tick chimera-v2-2026-09-24-22-15-26 (event 1471): all 3 tasks verified content-present on main; no recovery dispatch needed",
   "wave_budget": 7,
   "worker_model": "k3",
   "worker_provider": "kimi-for-coding",
