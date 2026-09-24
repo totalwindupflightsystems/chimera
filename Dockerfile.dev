@@ -5,7 +5,7 @@
 #
 # Usage:
 #   docker build -f Dockerfile.dev -t chimera-dev .
-#   docker run -p 8765:8765 -e DEEPSEEK_KEY=sk-... chimera-dev
+#   docker run -p 8765:8765 -e DEEPSEEK_API_KEY=sk-... chimera-dev
 #
 # Or with compose:
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d

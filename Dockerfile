@@ -3,13 +3,13 @@
 # Quick start with docker compose (recommended):
 #   cp chimera.yaml.example chimera.yaml
 #   # Set your keys via env vars (no YAML editing needed):
-#   export DEEPSEEK_KEY=sk-... OPENROUTER_KEY=sk-or-v1-... ZAI_KEY=sk-...
+#   export DEEPSEEK_API_KEY=sk-... OPENROUTER_KEY=sk-or-v1-... ZAI_KEY=sk-...
 #   docker compose up -d
 #
 # Or without compose:
 #   docker build -t chimera .
 #   docker run -p 8765:8765 \
-#     -e DEEPSEEK_KEY=sk-... \
+#     -e DEEPSEEK_API_KEY=sk-... \
 #     -e OPENROUTER_KEY=sk-or-v1-... \
 #     -e ZAI_KEY=sk-... \
 #     -v ./chimera.yaml:/etc/chimera/chimera.yaml \
