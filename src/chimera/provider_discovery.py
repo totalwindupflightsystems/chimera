@@ -259,8 +259,13 @@ def load_preferred_registry(*, force_refresh: bool = False) -> RegistrySnapshot:
             )
             return RegistrySnapshot(data=data, source="task-router", path=path)
         except TaskRouterRegistryError as exc:
-            log.warning(
-                "registry_source_fallback",
+            # A task-router checkout is optional for installed Chimera users;
+            # its normal absence is not a warning or a CLI-output regression.
+            # Explicit or malformed sources still deserve an actionable warning.
+            event = "registry_source_fallback"
+            level = log.warning if os.environ.get("CHIMERA_TASK_ROUTER_MODELS_PATH") else log.info
+            level(
+                event,
                 preferred="task-router",
                 fallback="models.dev",
                 reason=str(exc),
