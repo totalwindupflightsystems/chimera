@@ -40,4 +40,5 @@ against the live deployment, **not** a description of current behavior.
 - [dogfood/2026-09-20-runB-integration.md](dogfood/2026-09-20-runB-integration.md) — run 10, web-UI (`/web/`) live-DAG focus (2026-09-20)
 - [dogfood/2026-09-22-integration.md](dogfood/2026-09-22-integration.md) — run 11, custom-formation authoring focus (2026-09-22)
 - [dogfood/2026-09-23-integration.md](dogfood/2026-09-23-integration.md) — run 12, real-browser web-UI pass (2026-09-23)
+- [dogfood/2026-09-24-integration.md](dogfood/2026-09-24-integration.md) — run 13, docker deploy surface on fresh hardware (2026-09-24)
 - [dogfood/diagnostics.md](dogfood/diagnostics.md) — build/diagnostic trail behind the 2026-08-03 run
