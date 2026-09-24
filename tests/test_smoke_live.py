@@ -32,16 +32,42 @@ tests pin the class-aware rendering:
   provider (no models configured, nothing probed) pads the total, never the
   healthy count.
 
-Hermetic by construction: ``_http_json`` and ``_local_head`` are monkeypatched, so
-no test opens a socket, spawns ``git``, or touches a live server.  Paths resolve
-from this file, never the process cwd.
+The same file covers DF-CHIMERA-V2-45 — path-scoped deployment parity.  ``main()``
+used to print a bare "deployed commit X != local HEAD Y — service runs older
+code" whenever the two strings differed, with no look at WHAT differed.  The
+incident that filed the row had ``/health`` reporting ``0fc54d5`` while ``HEAD``
+already held an 11-file ``src/`` wave; a foreman narrative read the gap as
+"board-only delta, expected" and exited green.  A bookkeeping-only gap and a real
+code gap are different findings, and neither may be guessed from commit subjects:
+
+* C6 — a delta under ``src/``/``scripts/``/``tests/``/``pyproject.toml`` is
+  STALE, names the changed material paths, and requires a restart or an explicit
+  deferral;
+* C7 — a gap touching nothing under that scope is CODE-CURRENT
+  (bookkeeping/board-only) and never says the service runs older code;
+* C8 — missing, ``unknown``, unresolvable, non-ancestor, git-unavailable and
+  git-failure cases all classify UNVERIFIABLE with the reason, and claim no
+  restart;
+* C9 — the evidence is printed prominently but the deliberation still owns the
+  exit code, and AGENTS.md documents the exact command and the contract.
+
+Hermetic by construction: ``_http_json``, ``_local_head`` and ``_git_run``
+are monkeypatched, so no test opens a socket, touches a live server, or spawns
+``git`` — except
+``test_real_git_repo_scopes_the_diff_and_the_ancestry_check``, which runs
+``git`` against a throwaway repository under ``tmp_path`` (no network, no
+remote) to prove the real argv shape: rev-parse resolution, the ancestry
+direction, and the path-scoped diff.  Paths resolve from this file, never the
+process cwd.
 """
 
 from __future__ import annotations
 
 import ast
 import importlib.util
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -180,11 +206,20 @@ def _routes(
 def _run_main(
     monkeypatch: pytest.MonkeyPatch,
     routes: dict[str, tuple[int, dict[str, Any]]],
+    *,
+    git: Any = None,
 ) -> int:
-    """Run ``main()`` against the stubbed HTTP layer; return the exit code."""
+    """Run ``main()`` against the stubbed HTTP layer; return the exit code.
+
+    ``_git_run`` is replaced too: by default with a fake that reports git as
+    UNAVAILABLE, so a test that reaches a commit gap without asking for a
+    specific git behaviour gets an honest UNVERIFIABLE instead of silently
+    spawning the enclosing checkout's ``git``.
+    """
     stub = StubHTTP(routes)
     monkeypatch.setattr(smoke_live, "_http_json", stub)
     monkeypatch.setattr(smoke_live, "_local_head", lambda: COMMIT)
+    monkeypatch.setattr(smoke_live, "_git_run", git if git is not None else FakeGit(fail="unavailable"))
     monkeypatch.setattr(sys, "argv", ["smoke_live.py", "--base-url", BASE])
     return smoke_live.main()
 
@@ -240,8 +275,9 @@ def test_keyless_only_renders_info_not_the_degradation_warning() -> None:
     assert "providers: 9/11 healthy" in lines, f"the count must come from the map:\n{text}"
 
 
-def test_keyless_only_run_exits_zero_and_never_warns(monkeypatch: pytest.MonkeyPatch,
-                                                     capsys: pytest.CaptureFixture[str]) -> None:
+def test_keyless_only_run_exits_zero_and_never_warns(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """C1/C4 at the script level: stderr/stdout carry no degradation warning, exit 0."""
     providers = _healthy(8)
     providers["zai"] = _issue("missing_credentials", "missing-credentials: no API key resolved")
@@ -369,9 +405,7 @@ def test_count_ignores_providers_configured() -> None:
     """C3: ``providers_configured`` says nothing about who answered — never use it."""
     providers = _healthy(9)
 
-    text = "\n".join(
-        smoke_live.provider_health_lines(_details(providers, providers_configured=3), [])
-    )
+    text = "\n".join(smoke_live.provider_health_lines(_details(providers, providers_configured=3), []))
 
     assert "providers: 9/9 healthy" in text
     assert "3/3" not in text, "configured-over-configured is the bug being fixed"
@@ -391,8 +425,9 @@ def test_run_prints_the_payload_count_not_the_configured_count(
     assert smoke_live.UNHEALTHY_WARNING_PREFIX in out
 
 
-def test_healthy_run_prints_the_full_count(monkeypatch: pytest.MonkeyPatch,
-                                           capsys: pytest.CaptureFixture[str]) -> None:
+def test_healthy_run_prints_the_full_count(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The all-healthy path still prints the count, with no WARNING."""
     _run_main(monkeypatch, _routes(v1_body=_v1_body(_healthy(5))))
     out = capsys.readouterr().out
@@ -431,7 +466,8 @@ def test_proven_healthy_requires_a_model_tested() -> None:
     }
 
     lines = smoke_live.provider_health_lines(
-        _details(providers), ["claimed", "blank_model", "not_a_dict"],
+        _details(providers),
+        ["claimed", "blank_model", "not_a_dict"],
     )
 
     assert "providers: 1/4 healthy" in lines
@@ -442,8 +478,9 @@ def test_proven_healthy_requires_a_model_tested() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_degraded_providers_do_not_fail_the_run(monkeypatch: pytest.MonkeyPatch,
-                                                capsys: pytest.CaptureFixture[str]) -> None:
+def test_degraded_providers_do_not_fail_the_run(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Every provider unhealthy + a good deliberation = exit 0 (only the call decides)."""
     providers = {name: _issue("timeout", "timeout: no response within 10.0s") for name in _healthy(3)}
 
@@ -481,8 +518,9 @@ def test_deliberation_failures_still_exit_one(
     assert "SMOKE PASS" not in captured.out
 
 
-def test_health_probe_failure_still_continues(monkeypatch: pytest.MonkeyPatch,
-                                              capsys: pytest.CaptureFixture[str]) -> None:
+def test_health_probe_failure_still_continues(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A non-200 ``/v1/health`` warns and continues to the real call, exit 0."""
     code = _run_main(monkeypatch, _routes(v1_body={}, v1_status=500))
     captured = capsys.readouterr()
@@ -508,20 +546,489 @@ def test_probe_error_payload_names_the_configured_providers(
     assert "providers: 0/0 healthy" not in out, "an absent provider map must not read as healthy"
 
 
-def test_deployed_commit_warning_is_untouched(monkeypatch: pytest.MonkeyPatch,
-                                              capsys: pytest.CaptureFixture[str]) -> None:
-    """The pre-existing staleness warning still fires (unchanged behaviour)."""
-    stub = StubHTTP(_routes(v1_body=_v1_body(_healthy(2))))
-    monkeypatch.setattr(smoke_live, "_http_json", stub)
-    monkeypatch.setattr(smoke_live, "_local_head", lambda: "0000000")
-    monkeypatch.setattr(sys, "argv", ["smoke_live.py", "--base-url", BASE])
+# --------------------------------------------------------------------------- #
+# DF-CHIMERA-V2-45 — path-scoped deployment parity (helpers)
+# --------------------------------------------------------------------------- #
 
-    code = smoke_live.main()
+#: The target commit in a gap scenario — differ from COMMIT, and never resolve it
+#: against the enclosing checkout.
+BEHIND = "0fc54d5"
+
+#: The 11-file wave from the incident, trimmed to what the report must name.
+WAVE_PATHS = ("src/chimera/web/routes.py", "src/chimera/web/trace_viz.py")
+
+
+class FakeGit:
+    """Scriptable ``_git_run`` stand-in: no process is ever spawned.
+
+    ``resolve`` maps a commit string to the full sha git would print (``None``
+    for an unresolvable commit); ``ancestor`` answers ``merge-base
+    --is-ancestor``; ``diff`` is the ``--name-only`` stdout.  ``fail`` simulates
+    git being absent (``_git_run`` returns ``(None, "")``).  Every argv is
+    recorded so a test can pin the exact command shape.
+    """
+
+    def __init__(
+        self,
+        *,
+        resolve: dict[str, str | None] | None = None,
+        ancestor: bool = True,
+        ancestor_exit: int | None = None,
+        diff: str = "",
+        diff_exit: int = 0,
+        fail: str | None = None,
+    ) -> None:
+        self.resolve = dict(resolve or {})
+        self.ancestor = ancestor
+        self.ancestor_exit = ancestor_exit
+        self.diff = diff
+        self.diff_exit = diff_exit
+        self.fail = fail
+        self.commands: list[tuple[str, ...]] = []
+        self.calls = 0
+
+    def __call__(self, args: list[str], cwd: str | None = None) -> tuple[int | None, str]:
+        self.commands.append(tuple(args))
+        self.calls += 1
+        if self.fail:
+            return None, ""
+        if args[:3] == ["git", "rev-parse", "--verify"]:
+            # argv is ["git", "rev-parse", "--verify", "<commit>^{commit}"], so the
+            # commit is args[3] — indexing args[4] raised IndexError, which the
+            # classifier correctly treats as a git failure, so EVERY diff scenario
+            # silently degraded to UNVERIFIABLE and the suite never exercised the
+            # STALE/CODE-CURRENT branches at all.
+            commit = args[3].removesuffix("^{commit}")
+            resolved = self.resolve.get(commit, None)
+            return (0, resolved) if resolved else (1, "")
+        if args[:3] == ["git", "merge-base", "--is-ancestor"]:
+            if self.ancestor_exit is not None:
+                # A git that RAN and refused with a code other than the ancestry
+                # answer — the classifier must report that code, not read it as 0.
+                return self.ancestor_exit, ""
+            return (0 if self.ancestor else 1), ""
+        if args[:2] == ["git", "diff"]:
+            return self.diff_exit, self.diff if self.diff_exit == 0 else ""
+        raise AssertionError(f"unexpected git command: {args}")
+
+    def diff_commands(self) -> list[tuple[str, ...]]:
+        return [command for command in self.commands if command[:2] == ("git", "diff")]
+
+
+def _git_with(running: str = BEHIND, head: str = COMMIT, **kwargs: Any) -> FakeGit:
+    """A ``FakeGit`` that resolves both commits, so the gap reaches the diff."""
+    resolve = {str(running): _full_sha(str(running)), str(head): _full_sha(str(head))}
+    resolve.update(kwargs.pop("resolve", {}))
+    return FakeGit(resolve=resolve, **kwargs)
+
+
+def _full_sha(commit: str) -> str:
+    """The 40-char sha ``git rev-parse --verify`` would print for ``commit``.
+
+    The classifier expands both commits before diffing, so a test that pins the
+    diff RANGE must expect the expanded form, not the short spelling the caller
+    passed in.
+    """
+    return commit.ljust(40, "0")
+
+
+def _classify(git: FakeGit, running: str = BEHIND, head: str = COMMIT) -> Any:
+    """Run the production classifier with the injected git runner."""
+    return smoke_live.classify_deployment_parity(running, head, run=git)
+
+
+def _emit(parity: Any) -> str:
+    """The rendered evidence for a classification."""
+    return "\n".join(smoke_live.deployment_parity_lines(parity))
+
+
+# --------------------------------------------------------------------------- #
+# C6 — a material code delta is STALE and names what changed
+# --------------------------------------------------------------------------- #
+
+
+def test_material_scope_is_exactly_the_four_entries() -> None:
+    """The scope is one constant, and the documented command is built from it."""
+    assert smoke_live.MATERIAL_PATHS == ("src/", "scripts/", "tests/", "pyproject.toml"), (
+        "the material-code scope changed — it is the whole discriminator"
+    )
+    expected = "git diff --name-only <running>..<HEAD> -- " + " ".join(smoke_live.MATERIAL_PATHS)
+    assert expected == smoke_live.MATERIAL_DIFF_COMMAND_TEMPLATE, (
+        "the documented command and the executed scope have drifted apart"
+    )
+
+
+def test_code_delta_is_stale_and_names_the_material_paths() -> None:
+    """C6: a non-empty scoped diff is STALE and names every changed path."""
+    git = _git_with(diff="\n".join(WAVE_PATHS) + "\n")
+
+    parity = _classify(git)
+
+    assert parity.status == smoke_live.DEPLOY_STATUS_STALE
+    assert tuple(parity.material_paths) == WAVE_PATHS, "the changed paths must be named"
+    rendered = _emit(parity)
+    assert "STALE" in rendered
+    for path in WAVE_PATHS:
+        assert path in rendered, f"{path} must appear in the evidence:\n{rendered}"
+    assert "restart" in rendered.lower(), "a material gap must require a reload"
+
+
+def test_stale_diff_is_path_scoped_and_never_a_shell() -> None:
+    """C6: exactly one diff, with the four-entry pathspec, argv-only (no shell)."""
+    git = _git_with(diff="src/chimera/web/routes.py\n")
+
+    _classify(git)
+
+    diffs = git.diff_commands()
+    assert len(diffs) == 1, f"exactly one scoped diff expected: {git.commands}"
+    command = list(diffs[0])
+    assert command[0] == "git" and all(isinstance(part, str) for part in command)
+    assert command[:3] == ["git", "diff", "--name-only"]
+    assert command[3] == f"{_full_sha(BEHIND)}..{_full_sha(COMMIT)}", (
+        f"the diff range must be the RESOLVED full shas, running..HEAD: {command}"
+    )
+    assert command[4] == "--"
+    assert tuple(command[5:]) == smoke_live.MATERIAL_PATHS, (
+        f"the diff pathspec must be the material scope exactly: {command}"
+    )
+    assert not any("|" in part or ";" in part or "&&" in part for part in command), (
+        "no shell metacharacters may reach git"
+    )
+
+
+def test_stale_gap_evidence_is_prominent_and_requires_a_restart(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """C6 end to end: the gap is reported as STALE with an actionable requirement."""
+    git = _git_with(diff="\n".join(WAVE_PATHS) + "\n")
+    routes = _routes(health=(200, {"status": "alive", "commit": BEHIND, "uptime_models": 42}))
+
+    code = _run_main(monkeypatch, routes, git=git)
     out = capsys.readouterr().out
 
-    assert code == 0
-    assert f"WARNING: deployed commit {COMMIT} != local HEAD 0000000" in out
-    assert "providers: 2/2 healthy" in out
+    assert code == 0, out
+    assert "STALE" in out
+    assert WAVE_PATHS[0] in out
+    assert "systemctl restart chimera" in out, "the reload command must be actionable"
+    assert "board-only" not in out, "a material gap is not bookkeeping-only"
+    assert "runs older code" not in out, "the removed generic guess must be gone"
+    assert "SMOKE PASS" in out
+
+
+# --------------------------------------------------------------------------- #
+# C7 — a bookkeeping/board-only gap is CODE-CURRENT, never a code deployment
+# --------------------------------------------------------------------------- #
+
+
+def test_empty_scoped_diff_is_code_current() -> None:
+    """C7: a valid ancestor gap with nothing material in it is CODE-CURRENT."""
+    parity = _classify(_git_with(diff=""))
+
+    assert parity.status == smoke_live.DEPLOY_STATUS_CODE_CURRENT
+    assert tuple(parity.material_paths) == ()
+    rendered = _emit(parity)
+    assert "CODE-CURRENT" in rendered
+    assert "runs older code" not in rendered, "an empty material diff must not claim stale code"
+    assert "STALE" not in rendered
+
+
+def test_bookkeeping_gap_never_warns_about_old_code(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """C7 end to end: the board-only gap is classified, and no WARNING is printed."""
+    git = _git_with(diff="")
+    routes = _routes(health=(200, {"status": "alive", "commit": BEHIND, "uptime_models": 42}))
+
+    code = _run_main(monkeypatch, routes, git=git)
+    out = capsys.readouterr().out
+
+    assert code == 0, out
+    assert "CODE-CURRENT" in out
+    assert "WARNING" not in out, f"a bookkeeping gap is not a warning:\n{out}"
+    assert "runs older code" not in out
+    assert BEHIND in out and COMMIT in out, "both commits must still be visible"
+
+
+def test_equal_commits_are_current_without_a_diff() -> None:
+    """C7: identical commits classify current and never shell out to git."""
+    git = _git_with()
+
+    parity = _classify(git, running=COMMIT, head=COMMIT)
+
+    assert parity.status == smoke_live.DEPLOY_STATUS_CURRENT
+    assert git.calls == 0, f"an equal commit pair needs no git at all: {git.commands}"
+    rendered = _emit(parity)
+    assert rendered.startswith("deployment: CURRENT"), rendered
+    assert "CODE-CURRENT" not in rendered
+    assert "STALE" not in rendered
+    assert "runs older code" not in rendered
+
+
+def test_short_and_full_spellings_of_one_commit_are_current() -> None:
+    """Both names resolving to the same commit is not a gap (short vs full sha)."""
+    full = "abcdef0123456789abcdef0123456789abcdef01"
+    git = FakeGit(resolve={COMMIT: full, full: full})
+
+    parity = _classify(git, running=COMMIT, head=full)
+
+    assert parity.status == smoke_live.DEPLOY_STATUS_CURRENT
+    assert not git.diff_commands(), "no diff is needed once the two names agree"
+
+
+# --------------------------------------------------------------------------- #
+# C8 — unknown / missing / non-ancestor / no-git all fail honestly
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("case", "running", "head", "git"),
+    [
+        ("missing_commit", None, COMMIT, _git_with()),
+        ("unknown_commit", "unknown", COMMIT, _git_with()),
+        ("missing_head", BEHIND, None, _git_with()),
+        ("unknown_head", BEHIND, "unknown", _git_with()),
+        ("unresolvable_running", BEHIND, COMMIT, _git_with(resolve={BEHIND: None})),
+        ("unresolvable_head", BEHIND, COMMIT, _git_with(resolve={COMMIT: None})),
+        ("non_ancestor", BEHIND, COMMIT, _git_with(ancestor=False)),
+        ("git_unavailable", BEHIND, COMMIT, _git_with(fail="unavailable")),
+    ],
+)
+def test_unverifiable_cases_are_unverifiable_with_a_reason(
+    case: str, running: str | None, head: str | None, git: FakeGit
+) -> None:
+    """C8: every ambiguous shape classifies UNVERIFIABLE, with the reason, no guess."""
+    parity = _classify(git, running=running, head=head)  # type: ignore[arg-type]
+    rendered = _emit(parity)
+
+    assert parity.status == smoke_live.DEPLOY_STATUS_UNVERIFIABLE, f"{case}: {rendered}"
+    assert "UNVERIFIABLE" in rendered, f"{case}: {rendered}"
+    assert parity.reason, f"{case}: the reason must be stated: {rendered}"
+    assert "STALE" not in rendered.replace("UNVERIFIABLE", ""), f"{case}: {rendered}"
+    assert "CODE-CURRENT" not in rendered, f"{case}: never guess code-current either"
+    assert "runs older code" not in rendered
+    assert not git.diff_commands(), f"{case}: an unclassifiable gap must not diff"
+
+
+def test_non_ancestor_reason_names_the_divergence() -> None:
+    """C8: a rewound/diverged HEAD says so, instead of reading as a clean gap."""
+    parity = _classify(_git_with(ancestor=False))
+
+    assert "ancestor" in parity.reason.lower(), parity.reason
+    assert BEHIND in parity.reason and COMMIT in parity.reason
+
+
+def test_unverifiable_run_claims_no_restart(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """C8 end to end: no restart is claimed, and the deliberation still decides."""
+    routes = _routes(health=(200, {"status": "alive", "commit": BEHIND, "uptime_models": 42}))
+
+    code = _run_main(monkeypatch, routes, git=FakeGit(fail="unavailable"))
+    out = capsys.readouterr().out
+
+    assert code == 0, out
+    assert "UNVERIFIABLE" in out
+    assert "restart" not in out.lower(), f"nothing may claim a restart: {out}"
+    assert "STALE" not in out and "CODE-CURRENT" not in out
+
+
+def test_unknown_running_commit_is_named_in_the_evidence(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A wheel install reporting ``unknown`` is unverifiable, and says that much."""
+    routes = _routes(health=(200, {"status": "alive", "commit": "unknown", "uptime_models": 2}))
+
+    code = _run_main(monkeypatch, routes, git=_git_with())
+    out = capsys.readouterr().out
+
+    assert code == 0, out
+    assert "UNVERIFIABLE" in out
+    assert "unknown" in out
+    assert "STALE" not in out and "CODE-CURRENT" not in out
+
+
+def test_resolving_git_runner_is_bounded_and_never_raises() -> None:
+    """A runner that raises is a git failure, not a crash in the operator's tool."""
+
+    def exploding(args: list[str], cwd: str | None = None) -> tuple[int | None, str]:
+        raise RuntimeError("git exploded")
+
+    parity = _classify(exploding)  # type: ignore[arg-type]
+
+    assert parity.status == smoke_live.DEPLOY_STATUS_UNVERIFIABLE
+
+
+def test_nonzero_merge_base_exit_is_reported_not_read_as_ancestor() -> None:
+    """A merge-base that RAN and failed must not be mistaken for exit 0.
+
+    ``--is-ancestor`` answers with 0/1; anything else (a corrupt object store, a
+    bad pathspec, a killed git) is a git FAILURE. Reading it as 0 would fall
+    through to the diff and could then report a confident STALE/CODE-CURRENT
+    from evidence git never produced — the exact guessed verdict this row exists
+    to eliminate.
+    """
+    git = _git_with(diff="src/chimera/web/routes.py\n", ancestor_exit=128)
+
+    parity = _classify(git)
+
+    assert parity.status == smoke_live.DEPLOY_STATUS_UNVERIFIABLE, _emit(parity)
+    assert "128" in parity.reason, f"the exit code must be named: {parity.reason}"
+    assert not git.diff_commands(), "a failed ancestry check must not proceed to the diff"
+    assert "STALE" not in _emit(parity).replace("UNVERIFIABLE", "")
+
+
+def test_failed_scoped_diff_is_unverifiable_never_code_current() -> None:
+    """A diff git could not run is missing evidence, not proof of no change.
+
+    This is the sharpest branch: the diff is the ONLY thing separating STALE
+    from CODE-CURRENT, so a failed diff read as "no output" would print
+    CODE-CURRENT — a false all-clear, which the contract calls worse than an
+    honest UNVERIFIABLE.
+    """
+    git = _git_with(diff_exit=128)
+
+    parity = _classify(git)
+
+    assert parity.status == smoke_live.DEPLOY_STATUS_UNVERIFIABLE, _emit(parity)
+    assert git.diff_commands(), "the diff must have been attempted"
+    rendered = _emit(parity)
+    assert "CODE-CURRENT" not in rendered, f"a failed diff must not read as no-change: {rendered}"
+    assert "runs older code" not in rendered
+
+
+# --------------------------------------------------------------------------- #
+# C9 — the evidence is printed, the deliberation still decides
+# --------------------------------------------------------------------------- #
+
+
+def test_stale_evidence_never_decides_the_exit_code(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """C9: STALE + a failed deliberation still exits 1; the exit code is the call's."""
+    git = _git_with(diff="src/chimera/web/routes.py\n")
+    routes = _routes(
+        health=(200, {"status": "alive", "commit": BEHIND, "uptime_models": 42}),
+        deliberate=(500, {"detail": "boom"}),
+    )
+
+    code = _run_main(monkeypatch, routes, git=git)
+    captured = capsys.readouterr()
+
+    assert code == 1, captured.out
+    assert "STALE" in captured.out, "the deployment evidence is still reported"
+    assert "SMOKE PASS" not in captured.out
+
+
+def test_dead_health_endpoint_still_short_circuits(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A non-alive /health still exits 1 immediately, with no deployment verdict."""
+    git = _git_with(diff="src/chimera/web/routes.py\n")
+    routes = _routes(health=(200, {"status": "starting", "commit": BEHIND, "uptime_models": 0}))
+
+    code = _run_main(monkeypatch, routes, git=git)
+    captured = capsys.readouterr()
+
+    assert code == 1, captured.out
+    assert "SMOKE FAIL: /health not alive" in captured.err
+    assert "deployment:" not in captured.out, "liveness is checked before parity"
+    assert git.calls == 0, "a dead service needs no git evidence"
+
+
+def test_real_git_repo_scopes_the_diff_and_the_ancestry_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real git runner: scoped diff, ancestry direction, no shell, no crash.
+
+    ``FakeGit`` pins the argv the classifier builds; this test proves the argv
+    means what the classifier thinks it means, against a throwaway repository
+    built under ``tmp_path`` (no network, no remote, no live service).
+    """
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "docs").mkdir()
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
+
+    def git(*args: str) -> str:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            env=env,
+            check=True,
+        )
+        return proc.stdout.strip()
+
+    git("init", "-q")
+    (repo / "src" / "mod.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (repo / "pyproject.toml").write_text("[project]\nname='t'\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "base wave touching src")
+    running = git("rev-parse", "--short", "HEAD")
+
+    # A bookkeeping-only commit: nothing in the material scope changes.
+    (repo / "docs" / "notes.md").write_text("board\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "chore: board bookkeeping only")
+    bookkeeping_head = git("rev-parse", "HEAD")
+
+    monkeypatch.chdir(repo)
+    parity = smoke_live.classify_deployment_parity(running, bookkeeping_head, run=smoke_live._git_run)
+    assert parity.status == smoke_live.DEPLOY_STATUS_CODE_CURRENT, _emit(parity)
+
+    # A material commit: src/ changes, and now the gap is STALE.
+    (repo / "src" / "mod.py").write_text("VALUE = 2\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "feat: change src code")
+    material_head = git("rev-parse", "HEAD")
+
+    parity = smoke_live.classify_deployment_parity(running, material_head, run=smoke_live._git_run)
+    assert parity.status == smoke_live.DEPLOY_STATUS_STALE, _emit(parity)
+    assert parity.material_paths == ("src/mod.py",), parity.material_paths
+
+    # An unresolvable commit is unverifiable, not stale.
+    parity = smoke_live.classify_deployment_parity("0" * 40, material_head, run=smoke_live._git_run)
+    assert parity.status == smoke_live.DEPLOY_STATUS_UNVERIFIABLE, _emit(parity)
+
+    # Ancestry direction: HEAD is NOT an ancestor of the older commit.
+    parity = smoke_live.classify_deployment_parity(material_head, running, run=smoke_live._git_run)
+    assert parity.status == smoke_live.DEPLOY_STATUS_UNVERIFIABLE, _emit(parity)
+    assert "ancestor" in parity.reason.lower(), parity.reason
+
+
+# --------------------------------------------------------------------------- #
+# C9 — the contract is documented where the foreman reads it
+# --------------------------------------------------------------------------- #
+
+
+def test_agents_md_documents_the_command_and_the_evidence_contract() -> None:
+    """C9: AGENTS.md carries the exact commands and the STALE/current/honest rules."""
+    text = (REPO / "AGENTS.md").read_text(encoding="utf-8")
+
+    assert smoke_live.MATERIAL_DIFF_COMMAND_TEMPLATE in text, (
+        "AGENTS.md must carry the exact path-scoped diff command a foreman runs"
+    )
+    assert smoke_live.ANCESTRY_COMMAND_TEMPLATE in text, (
+        "AGENTS.md must carry the ancestry check the classification depends on"
+    )
+    for path in smoke_live.MATERIAL_PATHS:
+        assert path in text, f"AGENTS.md must name the scope entry {path}"
+    assert "STALE" in text, "AGENTS.md must name the stale classification"
+    assert "CODE-CURRENT" in text, "AGENTS.md must name the bookkeeping-only classification"
+    assert "UNVERIFIABLE" in text, "AGENTS.md must say an unclassifiable gap says so"
+    assert "bookkeeping-only" in text or "board-only" in text, (
+        "AGENTS.md must state that a non-material gap is not a code deployment"
+    )
+    assert smoke_live.RELOAD_REQUIREMENT in text, (
+        "AGENTS.md must carry the same reload/deferral requirement the script prints"
+    )
 
 
 def test_the_three_expected_routes_are_the_only_requests(

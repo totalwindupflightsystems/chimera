@@ -94,6 +94,62 @@ Health endpoints now expose the running git commit (`/health`,
 `git rev-parse --short HEAD` to prove the deployed process matches the
 checkout. Foreman light-audits do exactly this check on every tick.
 
+### Deployment parity: classify the gap from git evidence, never a commit subject
+
+A commit gap is NOT by itself a staleness finding, and it is not a bookkeeping
+one either — the two look identical until you look at WHAT changed. The
+incident behind DF-CHIMERA-V2-45 had `/health` reporting `0fc54d5` while HEAD
+already held an 11-file `src/` wave, and the gap was written off as "board-only
+delta, expected" purely because a commit subject said so; the service really
+was running old code. `scripts/smoke_live.py` now classifies the gap from git
+evidence and prints one of these:
+
+- **`STALE`** — the running commit is an ancestor of HEAD and the material diff
+  below is NON-EMPTY. The changed material paths are named, and the finding
+  requires a reload or an explicit deferral.
+- **`CODE-CURRENT`** — same ancestry, but the material diff is EMPTY: a
+  bookkeeping/board-only gap. The running code IS current; no reload is owed,
+  and the line never says the service runs older code.
+- **`CURRENT`** — the two commits are identical (no diff is run at all).
+- **`UNVERIFIABLE`** — the evidence was insufficient: a missing/`unknown` commit
+  on either side, a sha this checkout cannot resolve, a running commit that is
+  NOT an ancestor of HEAD (HEAD was rewound or diverged), git unavailable, or a
+  git failure. It states the reason, makes no staleness verdict and claims no
+  reload.
+
+The material scope is exactly `src/`, `scripts/`, `tests/`, `pyproject.toml` —
+docs, board, specs, `.gitreins/`, `.coding-hermes/` and reports live OUTSIDE it,
+so committing those alone can never be reported as a code deployment.
+
+Reproduce the classification by hand (expand BOTH commits to full shas first —
+the script resolves them before diffing):
+
+```bash
+running=$(curl -s localhost:8765/health | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])')
+git rev-parse --verify "${running}^{commit}"   # must resolve, else UNVERIFIABLE
+git merge-base --is-ancestor <running> <HEAD>  # exit 1 => UNVERIFIABLE (diverged)
+git diff --name-only <running>..<HEAD> -- src/ scripts/ tests/ pyproject.toml
+```
+
+Non-empty output from that last command = **STALE**; empty = **CODE-CURRENT**.
+
+Evidence contract — state the classification, never assert a reload:
+
+- A claim that a reload HAPPENED requires a post-restart `/health` showing the
+  new commit AND a passing `scripts/smoke_live.py` (exit 0). Nothing else
+  proves it; a `systemctl restart` exit status does not.
+- Non-empty material diff: reload the supervised service
+  (`sudo systemctl restart chimera`), or record an explicit deferral in this
+  tick — do not report the deployment as current either way. That is exactly
+  what the script prints, so the doc and the runtime cannot drift into two
+  different requirements, and it is reproduced verbatim here so a foreman can
+  grep it: reload the supervised service (sudo systemctl restart chimera), or record an explicit deferral in this tick
+- Empty material diff: report it as bookkeeping-only, and do not claim a code
+  deployment happened.
+- Unverifiable: say so, and go get the git evidence before acting. Never guess
+  in either direction — a false CODE-CURRENT is worse than an honest
+  UNVERIFIABLE.
+
 ### Live config is local-only (never commit it)
 
 `/home/kara/chimera-v2/chimera.yaml` is **untracked and gitignored**
@@ -117,8 +173,9 @@ python scripts/smoke_live.py --formation auto   # full dispatcher path
 CHIMERA_API_KEY=... python scripts/smoke_live.py  # if auth is enabled
 ```
 
-It checks liveness + running commit (warns if the deployed commit diverges
-from local HEAD), probes `/v1/health`, then POSTs a real `/v1/deliberate`
+It checks liveness + running commit (classifies the gap as STALE /
+CODE-CURRENT / UNVERIFIABLE from the path-scoped git diff — see the deploy
+section), probes `/v1/health`, then POSTs a real `/v1/deliberate`
 and prints the merged answer. Exit 0 = merged answer received; exit 1 =
 failure with an actionable message (auth/formation/busy/provider hints);
 exit 2 = usage error. Stdlib-only, no extra dependencies.
