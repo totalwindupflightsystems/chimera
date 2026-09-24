@@ -651,3 +651,41 @@ agent user (pip redirect failed with EACCES) — write scratch to ~ there.
 `drive_webui.py` / `drive_webui_phase2.py` / `drive_webui_phase3.py`,
 `webui-run.json` (the :8765 401 capture), serve8791.log. Bunker artifacts
 lived on agent d50a7727 (destroyed). No credentials in any artifact.
+
+## Docker deploy leg (run 13, 2026-09-24) — why the container path is shaped
+like it is, and how to test it
+
+The container path is deliberately **release-based**: the Dockerfile does
+`pip install chimera-deliberation[full]>=0.2.0` (latest wheel, 0.2.7), while
+the repo itself is ahead. That means a container runs the *published*
+artifact, not the checkout — repo-level fixes reach the image only after the
+next PyPI release. Anyone debugging "my fix isn't in the container" should
+check the release chain first, not the image build. The bind-mount of a live
+`chimera.yaml` is opt-in for the same fresh-clone reason the repo is shipped
+config-less: a bind-mount source that doesn't exist makes docker create a
+directory in its place and the container never starts — that trap is written
+into docker-compose.yml itself (volumes: [] until the user opts in), and it
+matches reality on a fresh clone.
+
+**How the env-key contract was proven without a real key:** set
+`DEEPSEEK_KEY` to an obviously-fake key and re-`compose up`. The /v1/health
+provider probe flips from `missing-credentials` to `auth: ... Your api key:
+****-leg is invalid` — a real DeepSeek API round-trip. That distinguishes
+"env var never reached the engine" from "key invalid" in one step, and needs
+no secret at all. This is the cheapest credential-path probe available for
+any config that feeds provider keys from env.
+
+**Bunker runtime note (for whoever runs the docker leg next):** on
+bunker-las-03 the per-agent docker daemon lives at
+`/run/bunker/<agent>/docker.sock` (bunkerd-managed), NOT
+`/run/user/<uid>/docker.sock`; the agent's user `docker.service` unit is
+failed-idle and `docker context` does not know the bunker socket. Point the
+CLI at it explicitly (`docker -H unix:///run/bunker/<agent>/docker.sock ...`)
+or pass it through a script; the socket exists from spawn and works with the
+shipped compose + the compose v5.5 plugin already on the agent. No sudo, no
+plugin install needed.
+
+**Evidence:** clone→build→up→smoke transcript in
+`docs/dogfood/2026-09-24-integration.md`; agent 5d1b8e8e destroyed; the fake
+key `sk-ds-DOGEATING-PROBE-...` and the real key both lived only in
+`~/appkey` on the agent (gone with the agent). No credentials committed.

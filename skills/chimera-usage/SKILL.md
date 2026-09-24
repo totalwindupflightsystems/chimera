@@ -16,7 +16,11 @@ description: >-
   headless-Chrome CDP recipe for driving the SPA, what live-updates mid-run,
   the auth.lockout of the browser, the green-failed-node DAG, the doubled
   answer bubble, and the "None" degraded turn.
-version: 1.4.0
+  v1.5.0 adds the 2026-09-24 run-13 DOCKER deployment section: compose
+  build/up/smoke numbers on fresh hardware, the DEEPSEEK_KEY vs
+  ${DEEPSEEK_API_KEY} naming split, the fake-key credential probe, the
+  release-based image caveat, and the bunker docker-socket recipe.
+version: 1.5.0
 category: software-development
 ---
 
@@ -524,3 +528,45 @@ than concatenated).
 - Inline `--dag '{"stages":[...],"edges":[...]}' --allow-custom-dag` works
   exactly as USAGE.md documents (40.2s, 2 stages, $0.005). Trace labels the
   formation `auto` — cosmetic.
+
+## Update 2026-09-24 (run 13) — the DOCKER deployment path
+
+**Proven end-to-end on a fresh bunker box (bare Debian user, agent 5d1b8e8e,
+destroyed):** clone public repo (4s) → `docker compose build` (106s) →
+`DEEPSEEK_KEY=<key> docker compose up -d` (<1s, container healthy) →
+POST /v1/deliberate simple → `"Paris"` with full trace (34s cold / 32s, 30s
+warm). `docker run --rm <image> --version` → `chimera 0.2.7`. No sudo, no
+compose-plugin install, no toolchain prep needed — compose v5.5 is already on
+bunker agents.
+
+Recipes:
+
+```bash
+docker compose build                        # image: pip install chimera-deliberation[full]>=0.2.0
+DEEPSEEK_KEY=sk-... docker compose up -d    # env keys only, no YAML edit needed
+curl localhost:8765/v1/health               # degraded + per-provider classes until keys are set
+curl -o /dev/null -w '%{http_code}' localhost:8765/web/   # 200
+```
+
+Pitfalls (all hit for real):
+
+1. **The image is release-based**: it installs the latest *PyPI wheel*
+   (0.2.7), not your checkout. Repo fixes reach the container only after the
+   next release. Debug the release chain first when "the fix isn't in the
+   container".
+2. **Key-name split**: Dockerfile/compose docs say `DEEPSEEK_KEY`; the shipped
+   `chimera.yaml.docker` template expands `${DEEPSEEK_API_KEY}`. Both names
+   currently work (`config._apply_env_overrides` maps both), but the docker
+   leg should pin the short Docker-friendly name the docs use.
+3. **Credential-path probe without a secret**: put an obviously-fake key in
+   `DEEPSEEK_KEY` and re-up. /v1/health flips the provider from
+   `missing-credentials` to `auth: ... api key ****-x is invalid` — a real
+   provider round-trip proving the env var reached the engine.
+4. **`commit: "unknown"` in /health inside a container** is expected (wheel
+   install has no git metadata); the container still reports model/provider
+   counts and works.
+5. **Sessions wipe on container restart** — in-memory by design; the compose
+   `restart: unless-stopped` policy is for crashes, not data.
+6. **Bunker docker socket**: `/run/bunker/<agent>/docker.sock`, not
+   `/run/user/<uid>/docker.sock`; use `docker -H <socket>` (a DOCKER_HOST env
+   export may trip control-host gates) — compose works as-is against it.
