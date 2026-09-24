@@ -1,0 +1,45 @@
+{
+  "tick_id": "chimera-v2-2026-09-24-12-35-28",
+  "project": "chimera-v2",
+  "repo": "/home/kara/chimera-v2",
+  "branch_target": "main",
+  "base_ref": "origin/main",
+  "base_sha": "d5658d4",
+  "composed_at": "2026-09-24T13:05:00Z",
+  "wave_budget": 7,
+  "worker_model": "k3",
+  "worker_provider": "kimi-for-coding",
+  "mode": "auto-merge (foreman merges serially, workers never push)",
+  "tasks": [
+    {
+      "id": "DF-CHIMERA-V2-47",
+      "title": "[P2] Docker docs say DEEPSEEK_KEY but the shipped chimera.yaml.docker template expands ${DEEPSEEK_API_KEY} — name split fixed in Dockerfile examples",
+      "priority": "P2",
+      "worktree": "~/worktrees/chimera-v2-DF-CHIMERA-V2-47",
+      "branch": "wt/DF-CHIMERA-V2-47",
+      "brief": "/tmp/brief-DF-CHIMERA-V2-47.txt",
+      "files_in_scope": ["Dockerfile", "Dockerfile.dev"],
+      "depends_on": null
+    },
+    {
+      "id": "CI-FIX-001",
+      "title": "[P2] Unit suite red on main (all 3 Python versions): docs-index hygiene test fails for unlinked dogfood run log docs/dogfood/2026-09-24-integration.md — file board row INT-CI-010 class",
+      "priority": "P2",
+      "worktree": "~/worktrees/chimera-v2-CI-FIX-001",
+      "branch": "wt/CI-FIX-001",
+      "brief": "/tmp/brief-CI-FIX-001.txt",
+      "files_in_scope": ["docs/README.md"],
+      "depends_on": null
+    },
+    {
+      "id": "DF-CHIMERA-V2-48",
+      "title": "[P3] Container /health commit:'unknown' has no version fallback — wheel installs carry no identity",
+      "priority": "P3",
+      "worktree": "~/worktrees/chimera-v2-DF-CHIMERA-V2-48",
+      "branch": "wt/DF-CHIMERA-V2-48",
+      "brief": "/tmp/brief-DF-CHIMERA-V2-48.txt",
+      "files_in_scope": ["src/chimera/api/server.py", "tests/test_health_identity.py"],
+      "depends_on": null
+    }
+  ]
+}
