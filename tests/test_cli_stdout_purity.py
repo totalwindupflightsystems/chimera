@@ -46,6 +46,8 @@ LOG_SIGNATURES = (
     "provider_fetch_ok",
     "provider_discovery_done",
     "provider_fetch_failed",
+    "registry_source_selected",
+    "registry_source_fallback",
     '"event"',
     '"timestamp"',
     "'event':",
@@ -89,6 +91,9 @@ def cli_env(tmp_path: Path) -> dict[str, str]:
 
     env = dict(os.environ)
     env["HOME"] = str(home)
+    # This test specifically drives the offline models.dev-cache branch.  An
+    # adjacent task-router checkout must not leak into the subprocess fixture.
+    env["CHIMERA_TASK_ROUTER_MODELS_PATH"] = str(tmp_path / "no-task-router.jsonl")
     env["CHIMERA_CONFIG"] = str(cfg_path)
     env["PYTHONPATH"] = str(REPO / "src") + os.pathsep + env.get("PYTHONPATH", "")
     env["PYTHONUNBUFFERED"] = "1"

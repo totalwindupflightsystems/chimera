@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,6 +19,13 @@ from chimera.provider_discovery import (
     _save_cache,
     discover_providers,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_models_dev_tests_from_local_task_router(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Keep legacy models.dev tests independent of sibling checkouts."""
+    monkeypatch.setenv("CHIMERA_TASK_ROUTER_MODELS_PATH", str(tmp_path / "no-task-router.jsonl"))
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Unit: helpers
@@ -110,11 +118,14 @@ class TestDiscoverProviders:
         monkeypatch.setenv("GEMINI_API_KEY", "gemini-test-key")
         # UNKNOWN_KEY is NOT set
 
-        with patch(
-            "chimera.provider_discovery._fetch_models_dev",
-            return_value=SAMPLE_API_JSON,
-        ), patch(
-            "chimera.provider_discovery._save_cache",
+        with (
+            patch(
+                "chimera.provider_discovery._fetch_models_dev",
+                return_value=SAMPLE_API_JSON,
+            ),
+            patch(
+                "chimera.provider_discovery._save_cache",
+            ),
         ):
             providers, pricing = discover_providers(force_refresh=True)
 
@@ -126,11 +137,14 @@ class TestDiscoverProviders:
         """Discovered providers get correct base_url with /v1 suffix."""
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
 
-        with patch(
-            "chimera.provider_discovery._fetch_models_dev",
-            return_value=SAMPLE_API_JSON,
-        ), patch(
-            "chimera.provider_discovery._save_cache",
+        with (
+            patch(
+                "chimera.provider_discovery._fetch_models_dev",
+                return_value=SAMPLE_API_JSON,
+            ),
+            patch(
+                "chimera.provider_discovery._save_cache",
+            ),
         ):
             providers, _pricing = discover_providers(force_refresh=True)
 
@@ -140,11 +154,14 @@ class TestDiscoverProviders:
         """Model pricing is converted from $/MTok to $/1k tokens."""
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
 
-        with patch(
-            "chimera.provider_discovery._fetch_models_dev",
-            return_value=SAMPLE_API_JSON,
-        ), patch(
-            "chimera.provider_discovery._save_cache",
+        with (
+            patch(
+                "chimera.provider_discovery._fetch_models_dev",
+                return_value=SAMPLE_API_JSON,
+            ),
+            patch(
+                "chimera.provider_discovery._save_cache",
+            ),
         ):
             _providers, pricing = discover_providers(force_refresh=True)
 
@@ -158,11 +175,14 @@ class TestDiscoverProviders:
         for v in ["DEEPSEEK_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY"]:
             monkeypatch.delenv(v, raising=False)
 
-        with patch(
-            "chimera.provider_discovery._fetch_models_dev",
-            return_value=SAMPLE_API_JSON,
-        ), patch(
-            "chimera.provider_discovery._save_cache",
+        with (
+            patch(
+                "chimera.provider_discovery._fetch_models_dev",
+                return_value=SAMPLE_API_JSON,
+            ),
+            patch(
+                "chimera.provider_discovery._save_cache",
+            ),
         ):
             providers, pricing = discover_providers(force_refresh=True)
 
@@ -192,11 +212,14 @@ class TestDiscoverProviders:
             },
         }
 
-        with patch(
-            "chimera.provider_discovery._fetch_models_dev",
-            return_value=data,
-        ), patch(
-            "chimera.provider_discovery._save_cache",
+        with (
+            patch(
+                "chimera.provider_discovery._fetch_models_dev",
+                return_value=data,
+            ),
+            patch(
+                "chimera.provider_discovery._save_cache",
+            ),
         ):
             _providers, pricing = discover_providers(force_refresh=True)
 
@@ -207,11 +230,14 @@ class TestDiscoverProviders:
         monkeypatch.setenv("DEEPSEEK_API_KEY", "${DEEPSEEK_API_KEY}")
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
-        with patch(
-            "chimera.provider_discovery._fetch_models_dev",
-            return_value=SAMPLE_API_JSON,
-        ), patch(
-            "chimera.provider_discovery._save_cache",
+        with (
+            patch(
+                "chimera.provider_discovery._fetch_models_dev",
+                return_value=SAMPLE_API_JSON,
+            ),
+            patch(
+                "chimera.provider_discovery._save_cache",
+            ),
         ):
             providers, _pricing = discover_providers(force_refresh=True)
 
@@ -230,18 +256,19 @@ class TestDiscoverProviders:
         cache_path = tmp_path / "stale-cache.json"
         cache_path.write_text(json.dumps(stale_data), encoding="utf-8")
 
-        with patch(
-            "chimera.provider_discovery._fetch_models_dev",
-            side_effect=ConnectionError("network down"),
-        ), patch(
-            "chimera.provider_discovery.CACHE_PATH",
-            str(cache_path),
+        with (
+            patch(
+                "chimera.provider_discovery._fetch_models_dev",
+                side_effect=ConnectionError("network down"),
+            ),
+            patch(
+                "chimera.provider_discovery.CACHE_PATH",
+                str(cache_path),
+            ),
         ):
             providers, pricing = discover_providers()
 
-        assert "deepseek" in providers, (
-            f"DeepSeek should be discovered from stale cache: {providers}"
-        )
+        assert "deepseek" in providers, f"DeepSeek should be discovered from stale cache: {providers}"
         assert len(pricing) == 4, f"Pricing should be extracted from stale cache: {pricing}"
 
 
@@ -298,9 +325,7 @@ class TestConfigDiscoveryIntegration:
         ):
             cfg = load_config(path)
 
-        assert "deepseek" in cfg.providers, (
-            f"DeepSeek should be auto-added: {list(cfg.providers.keys())}"
-        )
+        assert "deepseek" in cfg.providers, f"DeepSeek should be auto-added: {list(cfg.providers.keys())}"
 
     def test_discovery_respects_existing_providers(self, tmp_path, monkeypatch):
         """Discovered providers do NOT overwrite explicitly configured ones."""
@@ -481,8 +506,7 @@ class TestLoadCache:
     def test_missing_cache_file(self, tmp_path, monkeypatch):
         """When the cache file does not exist, returns None."""
         # Point CACHE_PATH at a path inside tmp_path that we never create
-        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH",
-                            str(tmp_path / "does-not-exist.json"))
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(tmp_path / "does-not-exist.json"))
         assert _load_cache() is None
 
     def test_corrupt_json(self, tmp_path, monkeypatch):
@@ -517,8 +541,7 @@ class TestLoadCache:
     def test_valid_cache(self, tmp_path, monkeypatch):
         """Valid cache within TTL is returned unchanged (minus _fetched_at)."""
         cache = tmp_path / "cache.json"
-        data = {"deepseek": {"id": "deepseek", "env": ["K"], "models": {"x": {}}},
-                "_fetched_at": time.time()}
+        data = {"deepseek": {"id": "deepseek", "env": ["K"], "models": {"x": {}}}, "_fetched_at": time.time()}
         cache.write_text(json.dumps(data), encoding="utf-8")
         monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
         loaded = _load_cache()
@@ -528,8 +551,10 @@ class TestLoadCache:
     def test_stale_cache_respects_ttl_by_default(self, tmp_path, monkeypatch):
         """Without ignore_ttl, stale cache returns None."""
         cache = tmp_path / "cache.json"
-        data = {"deepseek": {"id": "deepseek", "env": ["K"], "models": {"x": {}}},
-                "_fetched_at": time.time() - CACHE_TTL - 100}
+        data = {
+            "deepseek": {"id": "deepseek", "env": ["K"], "models": {"x": {}}},
+            "_fetched_at": time.time() - CACHE_TTL - 100,
+        }
         cache.write_text(json.dumps(data), encoding="utf-8")
         monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
         assert _load_cache() is None
@@ -537,8 +562,10 @@ class TestLoadCache:
     def test_stale_cache_usable_with_ignore_ttl(self, tmp_path, monkeypatch):
         """With ignore_ttl=True, stale cache is still returned."""
         cache = tmp_path / "cache.json"
-        data = {"deepseek": {"id": "deepseek", "env": ["K"], "models": {"x": {}}},
-                "_fetched_at": time.time() - CACHE_TTL - 100}
+        data = {
+            "deepseek": {"id": "deepseek", "env": ["K"], "models": {"x": {}}},
+            "_fetched_at": time.time() - CACHE_TTL - 100,
+        }
         cache.write_text(json.dumps(data), encoding="utf-8")
         monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
         loaded = _load_cache(ignore_ttl=True)
@@ -594,16 +621,20 @@ class TestDiscoverProvidersEdgeCases:
             "_fetched_at": time.time(),
         }
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
-        with patch("chimera.provider_discovery._fetch_models_dev",
-                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+        with (
+            patch("chimera.provider_discovery._fetch_models_dev", return_value=data),
+            patch("chimera.provider_discovery._save_cache"),
+        ):
             providers, _pricing = discover_providers(force_refresh=True)
         assert "deepseek" in providers
 
     def test_provider_value_not_a_dict(self, monkeypatch):
         """``md_provider`` that isn't a dict is skipped over."""
         data = {"bogus_provider": "not a dict"}
-        with patch("chimera.provider_discovery._fetch_models_dev",
-                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+        with (
+            patch("chimera.provider_discovery._fetch_models_dev", return_value=data),
+            patch("chimera.provider_discovery._save_cache"),
+        ):
             providers, pricing = discover_providers(force_refresh=True)
         assert providers == {}
         assert pricing == {}
@@ -619,8 +650,10 @@ class TestDiscoverProvidersEdgeCases:
             },
         }
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
-        with patch("chimera.provider_discovery._fetch_models_dev",
-                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+        with (
+            patch("chimera.provider_discovery._fetch_models_dev", return_value=data),
+            patch("chimera.provider_discovery._save_cache"),
+        ):
             providers, pricing = discover_providers(force_refresh=True)
         assert pricing == {}
         assert "deepseek" in providers
@@ -640,8 +673,10 @@ class TestDiscoverProvidersEdgeCases:
                 },
             },
         }
-        with patch("chimera.provider_discovery._fetch_models_dev",
-                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+        with (
+            patch("chimera.provider_discovery._fetch_models_dev", return_value=data),
+            patch("chimera.provider_discovery._save_cache"),
+        ):
             _providers, pricing = discover_providers(force_refresh=True)
         assert pricing == {}
 
@@ -656,8 +691,10 @@ class TestDiscoverProvidersEdgeCases:
             },
         }
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
-        with patch("chimera.provider_discovery._fetch_models_dev",
-                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+        with (
+            patch("chimera.provider_discovery._fetch_models_dev", return_value=data),
+            patch("chimera.provider_discovery._save_cache"),
+        ):
             providers, _pricing = discover_providers(force_refresh=True)
         assert "deepseek" in providers
         assert providers["deepseek"]["api_key_env"] == "DEEPSEEK_API_KEY"
@@ -674,8 +711,10 @@ class TestDiscoverProvidersEdgeCases:
             },
         }
         monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-        with patch("chimera.provider_discovery._fetch_models_dev",
-                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+        with (
+            patch("chimera.provider_discovery._fetch_models_dev", return_value=data),
+            patch("chimera.provider_discovery._save_cache"),
+        ):
             providers, _pricing = discover_providers(force_refresh=True)
         # Without any env match and without api_keys, provider is not registered.
         assert "deepseek" not in providers
@@ -691,10 +730,13 @@ class TestDiscoverProvidersEdgeCases:
             },
         }
         monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-        with patch("chimera.provider_discovery._fetch_models_dev",
-                   return_value=data), patch("chimera.provider_discovery._save_cache"):
+        with (
+            patch("chimera.provider_discovery._fetch_models_dev", return_value=data),
+            patch("chimera.provider_discovery._save_cache"),
+        ):
             providers, _pricing = discover_providers(
-                force_refresh=True, api_keys={"deepseek": "yaml-supplied-key"},
+                force_refresh=True,
+                api_keys={"deepseek": "yaml-supplied-key"},
             )
         assert "deepseek" in providers
         assert providers["deepseek"]["api_key_env"] == "DEEPSEEK_API_KEY"
@@ -702,10 +744,10 @@ class TestDiscoverProvidersEdgeCases:
     def test_fetch_failure_without_stale_cache_returns_empty(self, monkeypatch, tmp_path):
         """When network fails AND no stale cache exists, returns ({},{})."""
         # Ensure no cache
-        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH",
-                            str(tmp_path / "no-cache-here.json"))
-        with patch("chimera.provider_discovery._fetch_models_dev",
-                   side_effect=ConnectionError("network down")):
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(tmp_path / "no-cache-here.json"))
+        with patch(
+            "chimera.provider_discovery._fetch_models_dev", side_effect=ConnectionError("network down")
+        ):
             providers, pricing = discover_providers(force_refresh=True)
         assert providers == {}
         assert pricing == {}

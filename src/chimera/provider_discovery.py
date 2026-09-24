@@ -18,10 +18,17 @@ from __future__ import annotations
 import json
 import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import structlog
+
+from chimera.task_router_registry import (
+    TaskRouterRegistryError,
+    load_task_router_registry,
+    locate_task_router_models,
+)
 
 log = structlog.get_logger("chimera.provider_discovery")
 
@@ -161,15 +168,18 @@ def _load_cache(*, ignore_ttl: bool = False) -> dict[str, Any] | None:
         log.info("provider_cache_stale", age_s=int(age))
         return None
     # Ensure at least one provider entry exists
-    provider_count = sum(1 for k, v in data.items()
-                         if k != "_fetched_at" and isinstance(v, dict) and "models" in v)
+    provider_count = sum(
+        1 for k, v in data.items() if k != "_fetched_at" and isinstance(v, dict) and "models" in v
+    )
     if provider_count == 0:
         log.warning("provider_cache_empty", reason="no provider entries with models")
         return None
-    log.info("provider_cache_hit",
-             age_s=int(age),
-             providers=provider_count,
-             stale=bool(ignore_ttl and age > CACHE_TTL))
+    log.info(
+        "provider_cache_hit",
+        age_s=int(age),
+        providers=provider_count,
+        stale=bool(ignore_ttl and age > CACHE_TTL),
+    )
     return data
 
 
@@ -197,6 +207,69 @@ def _fetch_models_dev() -> dict[str, Any]:
         return json.loads(resp.read().decode("utf-8"))
 
 
+@dataclass(frozen=True)
+class RegistrySnapshot:
+    """One selected registry plus enough provenance for diagnostics."""
+
+    data: dict[str, Any]
+    source: str
+    path: Path | None = None
+
+
+def _load_models_dev_registry(*, force_refresh: bool = False) -> dict[str, Any]:
+    """Load models.dev with the existing cache/network/stale-cache policy."""
+    data: dict[str, Any] | None = None
+    if not force_refresh:
+        data = _load_cache()
+    if data is not None:
+        return data
+
+    try:
+        data = _fetch_models_dev()
+        _save_cache(data)
+        log.info("provider_fetch_ok", providers=len(data))
+        return data
+    except Exception as exc:
+        log.warning("provider_fetch_failed", error=str(exc))
+        # Fall back to stale cache — ignore TTL because the network is
+        # unreachable and stale data is better than nothing.
+        data = _load_cache(ignore_ttl=True)
+        if data is None:
+            log.warning("provider_no_data")
+            return {}
+        return data
+
+
+def load_preferred_registry(*, force_refresh: bool = False) -> RegistrySnapshot:
+    """Prefer task-router's JSONL registry, with models.dev as portable fallback.
+
+    ``force_refresh`` retains its historical meaning: callers explicitly asking
+    for a models.dev refresh bypass local task-router selection.  Normal config
+    loading and model-sync scans prefer task-router whenever its table is valid.
+    """
+    if not force_refresh:
+        try:
+            path = locate_task_router_models()
+            data = load_task_router_registry(path)
+            log.info(
+                "registry_source_selected",
+                source="task-router",
+                path=str(path),
+                providers=len(data),
+            )
+            return RegistrySnapshot(data=data, source="task-router", path=path)
+        except TaskRouterRegistryError as exc:
+            log.warning(
+                "registry_source_fallback",
+                preferred="task-router",
+                fallback="models.dev",
+                reason=str(exc),
+            )
+
+    data = _load_models_dev_registry(force_refresh=force_refresh)
+    return RegistrySnapshot(data=data, source="models.dev")
+
+
 def discover_providers(
     *,
     force_refresh: bool = False,
@@ -221,25 +294,14 @@ def discover_providers(
         model_pricing: ``{chimera_model_id: {input: float, output: float}}``
             where input/output are $/1k tokens.
     """
-    # 1. Load from cache or fetch
-    data: dict[str, Any] | None = None
-    if not force_refresh:
-        data = _load_cache()
-    if data is None:
-        try:
-            data = _fetch_models_dev()
-            _save_cache(data)
-            log.info("provider_fetch_ok", providers=len(data))
-        except Exception as exc:
-            log.warning("provider_fetch_failed", error=str(exc))
-            # Fall back to stale cache — ignore TTL because the network is
-            # unreachable and stale data is better than nothing.
-            data = _load_cache(ignore_ttl=True)
-            if data is None:
-                log.warning("provider_no_data")
-                return {}, {}
+    # 1. Select task-router when available; force_refresh keeps the historical
+    # models.dev refresh escape hatch for explicit callers.
+    snapshot = load_preferred_registry(force_refresh=force_refresh)
+    data = snapshot.data
+    if not data:
+        return {}, {}
 
-    # 2. Extract per-model pricing from ALL providers in cache.
+    # 2. Extract per-model pricing from ALL providers in the selected registry.
     #    Pricing data does NOT require API keys — it's public data.
     providers: dict[str, dict[str, str]] = {}
     model_pricing: dict[str, dict[str, float]] = {}

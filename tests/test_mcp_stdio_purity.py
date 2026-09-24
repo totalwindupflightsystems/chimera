@@ -85,14 +85,10 @@ def mcp_env(tmp_path: Path) -> dict[str, str]:
         "_fetched_at": time.time(),
         "deepseek": {
             "env": ["DEEPSEEK_API_KEY"],
-            "models": {
-                "deepseek-chat": {"cost": {"input": 1.0, "output": 1.0}}
-            },
+            "models": {"deepseek-chat": {"cost": {"input": 1.0, "output": 1.0}}},
         },
     }
-    (home / ".chimera" / "models-dev-cache.json").write_text(
-        json.dumps(cache), encoding="utf-8"
-    )
+    (home / ".chimera" / "models-dev-cache.json").write_text(json.dumps(cache), encoding="utf-8")
 
     cfg_dict = copy.deepcopy(CONFIG_DICT)
     cfg_dict["observability"] = {
@@ -109,6 +105,9 @@ def mcp_env(tmp_path: Path) -> dict[str, str]:
 
     env = dict(os.environ)
     env["HOME"] = str(home)
+    # Keep this provider-cache regression hermetic even when the source tree
+    # has a task-router sibling checkout.
+    env["CHIMERA_TASK_ROUTER_MODELS_PATH"] = str(tmp_path / "no-task-router.jsonl")
     env["CHIMERA_CONFIG"] = str(cfg_path)
     env["PYTHONPATH"] = str(REPO / "src") + os.pathsep + env.get("PYTHONPATH", "")
     env["PYTHONUNBUFFERED"] = "1"
@@ -175,11 +174,7 @@ def test_mcp_stdout_is_pure_json_rpc(style: str, mcp_env: dict[str, str]) -> Non
                 obj = json.loads(text)
             except json.JSONDecodeError:
                 continue
-            if (
-                isinstance(obj, dict)
-                and obj.get("jsonrpc") == "2.0"
-                and obj.get("id") is not None
-            ):
+            if isinstance(obj, dict) and obj.get("jsonrpc") == "2.0" and obj.get("id") is not None:
                 responses[int(obj["id"])] = obj
                 order.append(int(obj["id"]))
 
@@ -239,9 +234,7 @@ def test_mcp_stdout_is_pure_json_rpc(style: str, mcp_env: dict[str, str]) -> Non
         models_data = json.loads(_response_text(call_result))
     except json.JSONDecodeError as exc:  # pragma: no cover - diagnostic
         pytest.fail(f"[{style}] chimera_models did not return JSON: {exc}\n{call_result}")
-    assert isinstance(models_data, dict) and models_data, (
-        f"[{style}] chimera_models returned an empty result"
-    )
+    assert isinstance(models_data, dict) and models_data, f"[{style}] chimera_models returned an empty result"
     assert all(isinstance(v, dict) for v in models_data.values()), (
         f"[{style}] chimera_models entries are not model dicts"
     )
@@ -249,10 +242,8 @@ def test_mcp_stdout_is_pure_json_rpc(style: str, mcp_env: dict[str, str]) -> Non
     # Provider discovery logs must be REDIRECTED to stderr — proving the
     # structural fix rather than a silenced-discovery config.
     assert "provider_cache_hit" in stderr_text, (
-        f"[{style}] provider_cache_hit not on stderr (was it silenced?) "
-        f"stderr:\n{stderr_text[-2000:]}"
+        f"[{style}] provider_cache_hit not on stderr (was it silenced?) stderr:\n{stderr_text[-2000:]}"
     )
     assert "provider_discovery_done" in stderr_text, (
-        f"[{style}] provider_discovery_done not on stderr (was it silenced?) "
-        f"stderr:\n{stderr_text[-2000:]}"
+        f"[{style}] provider_discovery_done not on stderr (was it silenced?) stderr:\n{stderr_text[-2000:]}"
     )

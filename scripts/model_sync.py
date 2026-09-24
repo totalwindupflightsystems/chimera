@@ -46,6 +46,7 @@ from chimera.provider_discovery import (  # noqa: E402
     _mtok_to_per_1k,
     _resolve_model_id,
     _save_cache,
+    load_preferred_registry,
 )
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -464,12 +465,19 @@ def select_top_candidates(
 # ── Main logic ───────────────────────────────────────────────────────────────
 
 
-def scan_models_dev() -> dict[str, list[dict[str, Any]]]:
-    """Scan models.dev cache for new chat/reasoning models.
+def scan_models_dev(
+    cache: dict[str, Any] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Scan registry data for new chat/reasoning models.
+
+    ``cache`` accepts an already-selected models.dev-compatible registry.  When
+    omitted, the legacy models.dev cache/refresh path remains available for
+    direct callers and focused tests.
 
     Returns dict mapping provider_id → list of candidate model dicts.
     """
-    cache = _load_cache()
+    if cache is None:
+        cache = _load_cache()
     if cache is None:
         # Cache missing or stale (CACHE_TTL is 30 min) — refresh from the
         # network before giving up. Without this, the cron wrapper fails on
@@ -694,29 +702,16 @@ def scan_all() -> tuple[
     provider ids are IN (core + reseller) and how many models.dev rows are OUT
     of scope — the report prints this on every run.
     """
-    cache = _load_cache()
-    if cache is None:
-        # Cache missing or stale (CACHE_TTL is 30 min) — refresh from the
-        # network before giving up. Without this, the cron wrapper fails on
-        # almost every scheduled run (observed 3 consecutive weeks, Aug
-        # 15-17 2026) because the cache is only refreshed on demand by
-        # server startup/gateway activity. Fall back to the stale cache if
-        # the network is unreachable — old data beats no data.
-        print("INFO: models.dev cache missing or stale — refreshing from network...")
-        try:
-            _save_cache(_fetch_models_dev())
-            cache = _load_cache()
-        except Exception as exc:
-            print(f"WARNING: models.dev refresh failed ({exc}) — using stale cache")
-            cache = _load_cache(ignore_ttl=True)
-        if cache is None:
-            print(
-                "ERROR: models.dev cache is stale or missing. "
-                "Run `chimera models` to refresh the provider cache."
-            )
-            sys.exit(1)
+    snapshot = load_preferred_registry()
+    cache = snapshot.data
+    if not cache:
+        print(
+            "ERROR: neither task-router nor models.dev supplied a usable registry. "
+            "Set CHIMERA_TASK_ROUTER_MODELS_PATH or run `chimera models` to refresh."
+        )
+        sys.exit(1)
 
-    candidates = scan_models_dev()
+    candidates = scan_models_dev(cache)
     core_basenames = {
         m["model_id"] for models in candidates.values() for m in models
     } | _load_chimera_models() or set()

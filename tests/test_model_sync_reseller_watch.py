@@ -40,6 +40,8 @@ from typing import Any
 
 import pytest
 
+from chimera.provider_discovery import RegistrySnapshot
+
 REPO = Path(__file__).resolve().parent.parent
 SYNC_PATH = REPO / "scripts" / "model_sync.py"
 
@@ -153,6 +155,11 @@ def isolated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     cache = _reseller_cache()
     seen_path = tmp_path / "seen_models.json"
     monkeypatch.setattr(model_sync, "_load_cache", lambda *a, **k: cache)
+    monkeypatch.setattr(
+        model_sync,
+        "load_preferred_registry",
+        lambda **_kwargs: RegistrySnapshot(data=cache, source="models.dev"),
+    )
     monkeypatch.setattr(model_sync, "_load_chimera_models", lambda: set())
     monkeypatch.setattr(model_sync, "SEEN_PATH", seen_path)
     return {"cache": cache, "seen_path": seen_path}
@@ -225,9 +232,7 @@ def test_catalog_admitted_reseller_find_not_reported(
     """A reseller find whose resolved Chimera id is already in the catalog drops out."""
     cache = _reseller_cache()
     monkeypatch.setattr(model_sync, "_load_cache", lambda *a, **k: cache)
-    monkeypatch.setattr(
-        model_sync, "_load_chimera_models", lambda: {"stepfun/step-5-preview"}
-    )
+    monkeypatch.setattr(model_sync, "_load_chimera_models", lambda: {"stepfun/step-5-preview"})
     # Empty core-basename set: the drop must come from the CATALOG admission
     # path, not from the "already in a core row" dedupe.
     watch, blind = model_sync.scan_reseller_watch(cache, set())
@@ -241,9 +246,11 @@ def test_catalog_admitted_reseller_find_not_reported(
 
 def test_report_states_scan_scope(isolated: dict[str, Any]) -> None:
     """Scope statement names IN (core + reseller) and OUT counts on every run."""
-    scope = {"core": sorted(model_sync.CORE_PROVIDERS),
-             "reseller": sorted(model_sync.RESELLER_WATCH),
-             "out_of_scope": 205}
+    scope = {
+        "core": sorted(model_sync.CORE_PROVIDERS),
+        "reseller": sorted(model_sync.RESELLER_WATCH),
+        "out_of_scope": 205,
+    }
     for markdown in (True, False):
         report = model_sync.format_report(
             {}, markdown=markdown, reseller_watch=[], blind_spot=[], scope=scope
@@ -268,9 +275,11 @@ def test_report_carries_watch_and_blindspot_sections(isolated: dict[str, Any]) -
         markdown=True,
         reseller_watch=watch,
         blind_spot=blind,
-        scope={"core": sorted(model_sync.CORE_PROVIDERS),
-               "reseller": sorted(model_sync.RESELLER_WATCH),
-               "out_of_scope": 205},
+        scope={
+            "core": sorted(model_sync.CORE_PROVIDERS),
+            "reseller": sorted(model_sync.RESELLER_WATCH),
+            "out_of_scope": 205,
+        },
     )
     assert "## Reseller Watch" in report
     assert "`stepfun/step-5-preview`" in report
@@ -294,9 +303,11 @@ def test_diff_mode_still_reports_watch_sections(
         markdown=True,
         reseller_watch=watch,
         blind_spot=blind,
-        scope={"core": sorted(model_sync.CORE_PROVIDERS),
-               "reseller": sorted(model_sync.RESELLER_WATCH),
-               "out_of_scope": 205},
+        scope={
+            "core": sorted(model_sync.CORE_PROVIDERS),
+            "reseller": sorted(model_sync.RESELLER_WATCH),
+            "out_of_scope": 205,
+        },
     )
     assert "Reseller Watch" in report
     assert "stepfun/step-5-preview" in report
