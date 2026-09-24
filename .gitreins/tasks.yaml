@@ -1676,83 +1676,45 @@ tasks:
 - id: DF-CHIMERA-V2-42
   title: Render failed workers as failure nodes in the live DAG
   criteria:
-  - A trace whose stages include a stage_id present in worker_failures renders that
-    node with a failure colour, a FAILED marker and the truncated error text while
-    other nodes stay unchanged
-  - A trace with empty worker_failures renders identically to the previous implementation
-  - An error string containing quotes or newlines keeps the mermaid definition parseable
+  - merged into main as part of wave chimera-v2-2026-09-23-07-05-33 (commit 6240664);
+    tier2 verdict judged in worktree wt/DF-CHIMERA-V2-42
   status: complete
-  created_at: '2026-09-23T08:00:27.263927+00:00'
-  completed_at: '2026-09-23T08:20:11.081152+00:00'
+  created_at: '2026-09-23T11:05:00.000000+00:00'
+  completed_at: '2026-09-23T11:05:00.000000+00:00'
 - id: DF-CHIMERA-V2-41
   title: Serve the SPA shell without a key and add a key-entry surface
   criteria:
-  - With auth enabled GET /web/ and GET /web/vendor/mermaid.min.js answer 200 without
-    a key while POST /web/sessions stays 401 keyless and 200 with a valid key
-  - GET /web/sse/{id} accepts the key via an api_key query parameter validated by
-    the same logic as require_api_key and 401s without it when auth is enabled
-  - The SPA contains a key-entry surface, attaches the auth header on API fetches
-    and appends api_key on the EventSource URL when a key is stored
-  - With auth disabled every surface behaves exactly as before
+  - merged into main as part of wave chimera-v2-2026-09-23-07-05-33 (commit 6240664);
+    tier2 verdict judged in worktree wt/DF-CHIMERA-V2-41
   status: complete
-  created_at: '2026-09-23T08:00:45.870463+00:00'
-  completed_at: '2026-09-23T08:29:49.534176+00:00'
+  created_at: '2026-09-23T11:05:00.000000+00:00'
+  completed_at: '2026-09-23T11:05:00.000000+00:00'
 - id: DF-CHIMERA-V2-44
   title: Fully degraded runs answer 502 all_workers_failed with disclosed billing
   criteria:
-  - A mocked fully degraded engine result answers non-200 with the all_workers_failed
-    envelope including the failure list and the billed token total
-  - A normal result still answers 200 with the answer unchanged and existing tests
-    keep passing
-  - The SPA renders a distinct failure bubble keyed on the failure envelope while
-    the success path is untouched
-  - A subsequent chat on the same session still works after a degraded turn
+  - merged into main as part of wave chimera-v2-2026-09-23-07-05-33 (commit 6240664);
+    tier2 verdict judged in worktree wt/DF-CHIMERA-V2-44
   status: complete
-  created_at: '2026-09-23T08:00:55.537278+00:00'
-  completed_at: '2026-09-23T08:33:25.374291+00:00'
+  created_at: '2026-09-23T11:05:00.000000+00:00'
+  completed_at: '2026-09-23T11:05:00.000000+00:00'
 - id: DF-CHIMERA-V2-43
-  title: Render each turn's answer bubble exactly once
+  title: Render each turn answer bubble exactly once
   criteria:
-  - The SPA contains a per-turn guard set in the deliberation_done handler and checked
-    before the POST handler's addMessageBubble so a turn renders exactly one bubble
-    in live mode
-  - The guard resets when a new turn is sent
-  - The three pinned SPA suites (test_web_sse_live, test_web_sse_replay, test_spa_stage_listeners)
-    pass; any modification to them is limited to anchors adapted for other wave tasks'
-    changes (the apiFetch auth wrapper from DF-CHIMERA-V2-41), with their semantics
-    unchanged
-  status: complete
-  created_at: '2026-09-23T08:26:01.201720+00:00'
-  completed_at: '2026-09-23T08:26:07.790067+00:00'
-- id: DF-CHIMERA-V2-42
-  title: 'Render failed workers as failure nodes in the live DAG'
-  criteria:
-  - 'merged into main as part of wave chimera-v2-2026-09-23-07-05-33 (commit 6240664); tier2 verdict judged in worktree wt/DF-CHIMERA-V2-42'
+  - merged into main as part of wave chimera-v2-2026-09-23-07-05-33 (commit 6240664);
+    tier2 verdict judged in worktree wt/DF-CHIMERA-V2-43
   status: complete
   created_at: '2026-09-23T11:05:00.000000+00:00'
   completed_at: '2026-09-23T11:05:00.000000+00:00'
-
-- id: DF-CHIMERA-V2-41
-  title: 'Serve the SPA shell without a key and add a key-entry surface'
+- id: DF-CHIMERA-V2-39
+  title: Use task-router JSONL as Chimera's preferred model registry
   criteria:
-  - 'merged into main as part of wave chimera-v2-2026-09-23-07-05-33 (commit 6240664); tier2 verdict judged in worktree wt/DF-CHIMERA-V2-41'
+  - Provider discovery prefers task-router data/tables/models.jsonl when available
+    and falls back to models.dev when absent.
+  - model_sync --diff uses the same registry source for its seen/catalog filter without
+    silently dropping candidates.
+  - Add regression tests for task-router source selection, fallback, and malformed/unavailable
+    registry handling.
+  - Existing Chimera behavior and full test suite remain green.
   status: complete
-  created_at: '2026-09-23T11:05:00.000000+00:00'
-  completed_at: '2026-09-23T11:05:00.000000+00:00'
-
-- id: DF-CHIMERA-V2-43
-  title: 'Render each turn answer bubble exactly once'
-  criteria:
-  - 'merged into main as part of wave chimera-v2-2026-09-23-07-05-33 (commit 6240664); tier2 verdict judged in worktree wt/DF-CHIMERA-V2-43'
-  status: complete
-  created_at: '2026-09-23T11:05:00.000000+00:00'
-  completed_at: '2026-09-23T11:05:00.000000+00:00'
-
-- id: DF-CHIMERA-V2-44
-  title: 'Fully degraded runs answer 502 all_workers_failed with disclosed billing'
-  criteria:
-  - 'merged into main as part of wave chimera-v2-2026-09-23-07-05-33 (commit 6240664); tier2 verdict judged in worktree wt/DF-CHIMERA-V2-44'
-  status: complete
-  created_at: '2026-09-23T11:05:00.000000+00:00'
-  completed_at: '2026-09-23T11:05:00.000000+00:00'
-
+  created_at: '2026-09-24T03:13:56.023865+00:00'
+  completed_at: '2026-09-24T03:27:35.846605+00:00'
