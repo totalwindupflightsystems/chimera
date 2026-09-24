@@ -1727,3 +1727,16 @@ tasks:
   status: complete
   created_at: '2026-09-24T08:53:51.971852+00:00'
   completed_at: '2026-09-24T08:55:28.084945+00:00'
+- id: DF-CHIMERA-V2-48
+  title: Container /health commit:'unknown' has no version fallback
+  criteria:
+  - /v1/health/live, /health and /v1/health report a version field alongside commit;
+    when git metadata is unavailable the commit field falls back to the package version
+    instead of the string unknown
+  - 'New tests cover: version present on all three health surfaces; commit falls back
+    to version outside a git checkout; existing health-shape tests still pass'
+  - scripts/smoke_live.py UNVERIFIABLE classification for a non-commit identity is
+    preserved (its UNKNOWN_COMMIT logic stays correct)
+  status: complete
+  created_at: '2026-09-24T12:55:14.566472+00:00'
+  completed_at: '2026-09-24T13:23:46.182495+00:00'
