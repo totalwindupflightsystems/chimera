@@ -349,6 +349,10 @@ def test_scan_all_returns_candidates_watch_blind_scope(
     assert any(m["model_id"] == "stepfun/step-5-preview" for m in watch)
     assert any(m["model_id"] == "qx-turbo-9000" for m in blind)
     assert sorted(scope["reseller"]) == sorted(model_sync.RESELLER_WATCH)
-    assert sorted(scope["core"]) == sorted(model_sync.CORE_PROVIDERS)
+    # MEASURED scope (DF-CHIMERA-V2-49): only labs the source actually has a
+    # block for — the fixture carries stepfun alone. The constant
+    # CORE_PROVIDERS list must NOT be reported as coverage.
+    assert sorted(scope["core"]) == ["stepfun"]
+    assert "openai" not in scope["core"]  # no block → not measured IN
     assert isinstance(scope["out_of_scope"], int)
     assert scope["out_of_scope"] >= 0

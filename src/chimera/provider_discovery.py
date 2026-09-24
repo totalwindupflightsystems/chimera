@@ -65,6 +65,51 @@ PROVIDER_ID_MAP: dict[str, str] = {
     "xiaomi": "xiaomi",
 }
 
+#: Reseller / aggregator namespace blocks. Under a task-router source these
+#: must never be lab-attributed: their ids are deliberately namespaced
+#: (``openrouter/deepseek-v4-pro``), and mapping them onto lab keys would
+#: collide with the owning lab's own pricing (DF-CHIMERA-V2-49).
+RESELLER_NAMESPACE_IDS: frozenset[str] = frozenset({"openrouter", "kilo", "nano-gpt", "vercel", "llmgateway"})
+
+#: Unambiguous lab markers inside a task-router model id. Rows under LANE
+#: blocks (scheduling lanes such as xkiro, zai-glm, ollama-cloud — anything
+#: that is neither a core-lab block nor a reseller namespace) are attributed
+#: to their owning lab per model by these case-insensitive markers.
+_LAB_ID_MARKERS: tuple[tuple[str, str], ...] = (
+    ("claude", "anthropic"),
+    ("gpt-", "openai"),
+    ("deepseek", "deepseek"),
+    ("gemini", "google"),
+    ("grok", "xai"),
+    ("glm", "zhipuai"),
+    ("kimi", "moonshotai"),
+    ("minimax", "minimax"),
+    ("qwen", "alibaba"),
+    ("mistral", "mistral"),
+    ("llama", "meta"),
+    ("step-", "stepfun"),
+)
+
+
+def lab_of_router_provider(provider_id: str, model_id: str) -> str | None:
+    """Return the core lab a task-router (provider, model) row belongs to.
+
+    Only LANE rows are attributed — blocks that are already core-lab shaped
+    (``PROVIDER_ID_MAP`` keys) or reseller namespaces (``RESELLER_NAMESPACE_IDS``)
+    return None: they resolve under their own id by design. Lane rows are
+    attributed per model by an unambiguous lab marker in the id; a lane row
+    with no marker (mixed lanes carry foreign models too) stays unattributed
+    rather than being mis-attributed by block ownership.
+    """
+    if provider_id in PROVIDER_ID_MAP or provider_id in RESELLER_NAMESPACE_IDS:
+        return None
+    low = model_id.lower()
+    for marker, lab in _LAB_ID_MARKERS:
+        if marker in low:
+            return lab
+    return None
+
+
 #: Map models.dev model IDs to Chimera model IDs.
 #: Most follow ``provider/model-name`` pattern; this handles exceptions.
 MODEL_ID_MAP: dict[str, str] = {
@@ -163,6 +208,16 @@ def _load_cache(*, ignore_ttl: bool = False) -> dict[str, Any] | None:
         log.warning("provider_cache_invalid", reason="not a dict")
         return None
     fetched_at = data.get("_fetched_at", 0)
+    if not isinstance(fetched_at, (int, float)) or isinstance(fetched_at, bool) or fetched_at <= 0:
+        # Marker-less cache (e.g. written by an external tool with a plain
+        # json.dump — DF-CHIMERA-V2-49): fall back to the file's mtime so a
+        # fresh cache is a HIT instead of a ~infinite age and a pointless
+        # network refetch on every load.
+        try:
+            fetched_at = path.stat().st_mtime
+            log.info("provider_cache_marker_fallback", fetched_at=fetched_at)
+        except OSError:
+            fetched_at = 0
     age = time.time() - fetched_at
     if not ignore_ttl and age > CACHE_TTL:
         log.info("provider_cache_stale", age_s=int(age))
@@ -275,6 +330,31 @@ def load_preferred_registry(*, force_refresh: bool = False) -> RegistrySnapshot:
     return RegistrySnapshot(data=data, source="models.dev")
 
 
+def merge_registry_with_models_dev(
+    primary: dict[str, Any],
+    fallback: dict[str, Any],
+) -> dict[str, Any]:
+    """Union a primary registry (e.g. task-router) with models.dev rows.
+
+    The primary is the pricing authority: where a provider block exists in
+    both, the primary block wins wholesale. models.dev only contributes
+    provider blocks the primary lacks (or fills a primary block that is not a
+    dict), so a lab with no rows in the primary source still reaches the core
+    scan. This is the mechanism behind DF-CHIMERA-V2-49's coverage restore:
+    lane-named router blocks cannot cover every lab id, and the models.dev
+    cache — already loaded as the sanctioned fallback — fills exactly those
+    gaps without ever overriding a router row.
+    """
+    merged: dict[str, Any] = {k: v for k, v in primary.items() if k != "_fetched_at"}
+    for pid, block in fallback.items():
+        if pid == "_fetched_at" or not isinstance(block, dict):
+            continue
+        existing = merged.get(pid)
+        if existing is None or not isinstance(existing, dict):
+            merged[pid] = block
+    return merged
+
+
 def discover_providers(
     *,
     force_refresh: bool = False,
@@ -306,11 +386,29 @@ def discover_providers(
     if not data:
         return {}, {}
 
+    # Router blocks are lane-named and cannot cover every lab. Union the
+    # models.dev cache UNDERNEATH (router rows win — pricing authority) so
+    # pricing and provider registration keep models.dev-level coverage
+    # (DF-CHIMERA-V2-49). Lane rows are then attributed to their owning lab
+    # when resolving Chimera ids, so keys match the catalog.
+    if snapshot.source == "task-router":
+        data = merge_registry_with_models_dev(data, _load_models_dev_registry())
+
     # 2. Extract per-model pricing from ALL providers in the selected registry.
     #    Pricing data does NOT require API keys — it's public data.
     providers: dict[str, dict[str, str]] = {}
     model_pricing: dict[str, dict[str, float]] = {}
     api_keys = api_keys or {}
+    # Blocks that CAME FROM the task-router table (any block in the snapshot's
+    # own data — lab blocks, lane blocks, reseller-namespace blocks).
+    router_block_ids = (
+        {k for k, v in snapshot.data.items() if isinstance(v, dict)}
+        if snapshot.source == "task-router"
+        else set()
+    )
+    # Pricing keys whose CURRENT value came from a router block; models.dev
+    # fill blocks must not overwrite them (DF-CHIMERA-V2-49).
+    router_derived_keys: set[str] = set()
 
     for md_id, md_provider in data.items():
         if md_id in ("_fetched_at",):
@@ -333,7 +431,16 @@ def discover_providers(
                 cost_output = cost.get("output")
                 if cost_input is None or cost_output is None:
                     continue
-                chimera_model_id = _resolve_model_id(md_id, md_model_id)
+                # Under a task-router source, lane blocks store rows under the
+                # lane id; attribute lane rows to their owning lab so the
+                # resolved Chimera id matches the catalog key shape
+                # (``deepseek/...`` not ``ollama-cloud/...``).
+                attribution_source = (
+                    lab_of_router_provider(md_id, md_model_id) or md_id
+                    if snapshot.source == "task-router"
+                    else md_id
+                )
+                chimera_model_id = _resolve_model_id(attribution_source, md_model_id)
                 new_input = _mtok_to_per_1k(float(cost_input))
                 new_output = _mtok_to_per_1k(float(cost_output))
                 # Prefer non-zero pricing: if we already have real pricing,
@@ -347,6 +454,16 @@ def discover_providers(
                     and new_output == 0.0
                 ):
                     continue
+                # DF-CHIMERA-V2-49: a pricing key derived from the task-router
+                # source (the pricing authority) is FINAL — a later models.dev
+                # fill block (openrouter, kilo, ...) must not overwrite it
+                # through a MODEL_ID_MAP collision (e.g. a reseller's bare
+                # ``deepseek-v4-pro`` row).
+                router_derived = md_id in router_block_ids
+                if chimera_model_id in router_derived_keys and not router_derived:
+                    continue
+                if router_derived:
+                    router_derived_keys.add(chimera_model_id)
                 model_pricing[chimera_model_id] = {
                     "input": new_input,
                     "output": new_output,

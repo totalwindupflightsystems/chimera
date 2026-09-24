@@ -41,12 +41,15 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from chimera.provider_discovery import (  # noqa: E402
     PROVIDER_ID_MAP,
-    _fetch_models_dev,
-    _load_cache,
+    _fetch_models_dev,  # noqa: F401  (patch seam: tests monkeypatch this name)
+    _load_cache,  # noqa: F401  (patch seam: tests monkeypatch this name)
+    _load_models_dev_registry,
     _mtok_to_per_1k,
     _resolve_model_id,
-    _save_cache,
+    _save_cache,  # noqa: F401  (patch seam: tests monkeypatch this name)
+    lab_of_router_provider,
     load_preferred_registry,
+    merge_registry_with_models_dev,
 )
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -227,6 +230,16 @@ _RESALE_LAB_PREFIXES: dict[str, str] = {
     "stepfun": "stepfun",
     "xiaomi": "xiaomi",
 }
+
+#: Task-router LANE ids (scheduling lanes, not labs) mapped to the owning core
+#: lab whose models they serve — shared with provider_discovery (single
+#: source); consumed here through the alias below.
+_LAB_OF_ROUTER_PROVIDER = lab_of_router_provider
+
+
+def _lab_of_router_provider(provider_id: str, model_id: str) -> str | None:
+    """Core lab owning a task-router (provider, model) row (see provider_discovery)."""
+    return lab_of_router_provider(provider_id, model_id)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -467,49 +480,83 @@ def select_top_candidates(
 
 def scan_models_dev(
     cache: dict[str, Any] | None = None,
+    snapshot: Any = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Scan registry data for new chat/reasoning models.
 
     ``cache`` accepts an already-selected models.dev-compatible registry.  When
-    omitted, the legacy models.dev cache/refresh path remains available for
-    direct callers and focused tests.
+    omitted, the preferred-registry path loads the task-router table when
+    valid (merging models.dev rows underneath so labs the router table cannot
+    cover still reach the core scan — DF-CHIMERA-V2-49) and falls back to the
+    models.dev cache/refresh path otherwise. ``snapshot`` may pass an explicit
+    ``RegistrySnapshot`` (tests, or a caller that already selected a source);
+    its provenance drives the lane-attribution pass. When ``cache`` is given
+    without a snapshot, the source is assumed to be models.dev-shaped.
 
     Returns dict mapping provider_id → list of candidate model dicts.
     """
-    if cache is None:
-        cache = _load_cache()
-    if cache is None:
-        # Cache missing or stale (CACHE_TTL is 30 min) — refresh from the
-        # network before giving up. Without this, the cron wrapper fails on
-        # almost every scheduled run (observed 3 consecutive weeks, Aug
-        # 15-17 2026) because the cache is only refreshed on demand by
-        # server startup/gateway activity. Fall back to the stale cache if
-        # the network is unreachable — old data beats no data.
-        print("INFO: models.dev cache missing or stale — refreshing from network...")
-        try:
-            _save_cache(_fetch_models_dev())
-            cache = _load_cache()
-        except Exception as exc:
-            print(f"WARNING: models.dev refresh failed ({exc}) — using stale cache")
-            cache = _load_cache(ignore_ttl=True)
-        if cache is None:
+    if snapshot is None and cache is None:
+        snapshot = load_preferred_registry()
+        if not snapshot.data:
             print(
-                "ERROR: models.dev cache is stale or missing. "
-                "Run `chimera models` to refresh the provider cache."
+                "ERROR: neither task-router nor models.dev supplied a usable "
+                "registry. Set CHIMERA_TASK_ROUTER_MODELS_PATH or run "
+                "`chimera models` to refresh."
             )
             sys.exit(1)
+    if snapshot is not None:
+        snapshot_source = snapshot.source
+        if cache is None:
+            if snapshot_source == "task-router":
+                # Router blocks are lane-named and cannot cover every core
+                # lab. Union the models.dev cache UNDERNEATH (router rows
+                # win — they are the pricing authority) so coverage returns
+                # to 13/13. The fill goes through the ``_load_cache`` seam so
+                # tests can mock a fixture cache; on a miss, load models.dev
+                # from disk/network.
+                fill = _load_cache()
+                if fill is None:
+                    fill = _load_models_dev_registry()
+                cache = merge_registry_with_models_dev(snapshot.data, fill)
+            else:
+                cache = snapshot.data
+    else:
+        snapshot_source = "models.dev"
+    if not cache:
+        print(
+            "ERROR: models.dev cache is stale or missing. Run `chimera models` to refresh the provider cache."
+        )
+        sys.exit(1)
+    merged_cache = cache
 
     chimera_models = _load_chimera_models()
 
     candidates: dict[str, list[dict[str, Any]]] = {}
 
-    for provider_id in sorted(CORE_PROVIDERS):
-        if provider_id not in cache:
-            continue
-        provider_data = cache[provider_id]
-        if not isinstance(provider_data, dict):
-            continue
+    # Router-covered (lab, model_id) pairs, computed BEFORE the block scan so
+    # a models.dev fill row for an id the router also carries (under a lane)
+    # is skipped — the lane pass below supplies it with router pricing, which
+    # is the authority (DF-CHIMERA-V2-49).
+    router_covered: set[tuple[str, str]] = set()
+    if snapshot is not None and snapshot.source == "task-router":
+        for lane_id, lane_block in snapshot.data.items():
+            if lane_id == "_fetched_at" or not isinstance(lane_block, dict):
+                continue
+            if lane_id in CORE_PROVIDERS:
+                continue  # router lab blocks: the merged lab block IS router data
+            for model_id, model_info in lane_block.get("models", {}).items():
+                if not isinstance(model_info, dict):
+                    continue
+                lab = _lab_of_router_provider(lane_id, model_id)
+                if lab and lab in CORE_PROVIDERS:
+                    router_covered.add((lab, model_id))
 
+    def _scan_core_block(
+        provider_id: str,
+        provider_data: dict[str, Any],
+        bucket: dict[str, list[dict[str, Any]]],
+    ) -> None:
+        """Collect core candidates from one provider block into ``bucket``."""
         models = provider_data.get("models", {})
         provider_candidates: list[dict[str, Any]] = []
 
@@ -521,6 +568,11 @@ def scan_models_dev(
 
             # Skip non-chat models
             if not _is_chat_model(model_id, family):
+                continue
+
+            # A models.dev fill row for an id the router also carries (under a
+            # lane) is supplied by the lane pass with router pricing instead.
+            if (provider_id, model_id) in router_covered:
                 continue
 
             # Resolve to Chimera ID
@@ -560,7 +612,71 @@ def scan_models_dev(
         if provider_candidates:
             # Sort by recency (newest first, date tie-break inside a bucket)
             provider_candidates.sort(key=_recency_sort_key)
-            candidates[provider_id] = provider_candidates
+            bucket[provider_id] = provider_candidates
+
+    for provider_id in sorted(CORE_PROVIDERS):
+        provider_data = merged_cache.get(provider_id)
+        if not isinstance(provider_data, dict):
+            continue
+        _scan_core_block(provider_id, provider_data, candidates)
+
+    # Task-router rows stored under LANE ids carry core-lab models too —
+    # attribute each lane row to its owning lab and scan it under that lab's
+    # bucket (DF-CHIMERA-V2-49). A model already attributed to the lab from
+    # the lab's own block must not duplicate: the lane scan skips ids the lab
+    # block already produced.
+    if snapshot is not None and snapshot.source == "task-router":
+        lane_rows: dict[str, list[tuple[str, dict[str, Any], dict[str, Any]]]] = {}
+        for lane_id, lane_block in snapshot.data.items():
+            if lane_id == "_fetched_at" or not isinstance(lane_block, dict):
+                continue
+            if lane_id in CORE_PROVIDERS:
+                continue  # lab block — already scanned above
+            for model_id, model_info in lane_block.get("models", {}).items():
+                if not isinstance(model_info, dict):
+                    continue
+                lab = _lab_of_router_provider(lane_id, model_id)
+                if lab and lab in CORE_PROVIDERS:
+                    lane_rows.setdefault(lab, []).append((lane_id, model_id, model_info))
+
+        for lab, rows in lane_rows.items():
+            lane_candidates: list[dict[str, Any]] = []
+            already = {c["model_id"] for c in candidates.get(lab, [])}
+            for lane_id, model_id, model_info in rows:
+                if model_id in already:
+                    continue
+                already.add(model_id)
+                if not _is_chat_model(model_id, model_info.get("family", "")):
+                    continue
+                # Resolve against the ATTRIBUTED lab so the chimera id matches
+                # the catalog key shape (deepseek/..., not ollama-cloud/...).
+                chimera_id = _resolve_model_id(lab, model_id)
+                if chimera_id in chimera_models:
+                    continue
+                cost = model_info.get("cost", {})
+                input_cost = cost.get("input") if isinstance(cost, dict) else None
+                output_cost = cost.get("output") if isinstance(cost, dict) else None
+                recency = _model_recency_score({}, model_id)
+                recency_ts = _model_recency_timestamp({}, model_id)
+                lane_candidates.append(
+                    {
+                        "model_id": model_id,
+                        "chimera_id": chimera_id,
+                        "family": model_info.get("family", ""),
+                        "description": model_info.get("description", ""),
+                        "input_cost_mtok": input_cost,
+                        "output_cost_mtok": output_cost,
+                        "input_per_1k": _mtok_to_per_1k(input_cost) if input_cost else None,
+                        "output_per_1k": _mtok_to_per_1k(output_cost) if output_cost else None,
+                        "recency_score": recency,
+                        "recency_ts": recency_ts,
+                        "provider": lane_id,
+                    }
+                )
+            if lane_candidates:
+                lane_candidates.sort(key=_recency_sort_key)
+                existing = candidates.get(lab, [])
+                candidates[lab] = sorted(existing + lane_candidates, key=_recency_sort_key)
 
     return candidates
 
@@ -690,6 +806,28 @@ def scan_reseller_watch(
     return watch, blind
 
 
+def _measured_core_labs(cache: dict[str, Any], snapshot: Any = None) -> set[str]:
+    """Labs the active source view actually contributes core rows for.
+
+    A lab is measured IN when the merged cache holds a dict block for it, or —
+    under a task-router source — when any lane block carries a model the
+    lane-attribution logic assigns to that lab. The constant CORE_PROVIDERS
+    list is intent, not coverage (DF-CHIMERA-V2-49).
+    """
+    measured: set[str] = {pid for pid in cache if pid in CORE_PROVIDERS and isinstance(cache[pid], dict)}
+    if snapshot is not None and snapshot.source == "task-router":
+        for lane_id, lane_block in snapshot.data.items():
+            if lane_id == "_fetched_at" or lane_id in CORE_PROVIDERS:
+                continue
+            if not isinstance(lane_block, dict):
+                continue
+            for model_id in lane_block.get("models", {}):
+                lab = _lab_of_router_provider(lane_id, model_id)
+                if lab:
+                    measured.add(lab)
+    return measured
+
+
 def scan_all() -> tuple[
     dict[str, list[dict[str, Any]]],
     list[dict[str, Any]],
@@ -703,22 +841,38 @@ def scan_all() -> tuple[
     of scope — the report prints this on every run.
     """
     snapshot = load_preferred_registry()
-    cache = snapshot.data
-    if not cache:
+    if not snapshot.data:
         print(
             "ERROR: neither task-router nor models.dev supplied a usable registry. "
             "Set CHIMERA_TASK_ROUTER_MODELS_PATH or run `chimera models` to refresh."
         )
         sys.exit(1)
+    # One merged view for the WHOLE pass (DF-CHIMERA-V2-49): task-router rows
+    # are the pricing authority, models.dev rows fill the labs and reseller
+    # blocks the router table cannot cover. Core scan, lane attribution,
+    # reseller watch and the measured scope all read the same merged cache.
+    cache = snapshot.data
+    if snapshot.source == "task-router":
+        # Same seam: fixture cache when mocked, real models.dev otherwise.
+        fill = _load_cache()
+        if fill is None:
+            fill = _load_models_dev_registry()
+        cache = merge_registry_with_models_dev(snapshot.data, fill)
 
-    candidates = scan_models_dev(cache)
+    # MEASURED scope (DF-CHIMERA-V2-49): a lab is IN only when the active
+    # source view actually contains a block for it (own block — lane rows are
+    # scanned under their owning lab regardless). The constant CORE_PROVIDERS
+    # list is intent, not coverage, and must not be printed as if every lab
+    # had rows behind it.
+    measured_labs = _measured_core_labs(cache, snapshot)
+    candidates = scan_models_dev(cache, snapshot=snapshot)
     core_basenames = {
         m["model_id"] for models in candidates.values() for m in models
     } | _load_chimera_models() or set()
     watch, blind = scan_reseller_watch(cache, core_basenames)
 
     scope: dict[str, Any] = {
-        "core": sorted(CORE_PROVIDERS),
+        "core": sorted(measured_labs),
         "reseller": sorted(RESELLER_WATCH),
         "out_of_scope": sum(1 for pid in cache if pid not in CORE_PROVIDERS and pid not in RESELLER_WATCH),
     }
