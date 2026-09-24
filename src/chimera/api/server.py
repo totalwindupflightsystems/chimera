@@ -63,6 +63,22 @@ def _running_commit() -> str:
         return "unknown"
 
 
+def _running_identity() -> str:
+    """Running-code identity for health surfaces: git commit, else version.
+
+    DF-CHIMERA-V2-48: a wheel/container install has no git metadata and
+    ``_running_commit`` then returns its ``'unknown'`` sentinel — a health
+    body carrying that bare string has no identity at all. The health
+    surfaces use this helper instead: the sentinel is translated into the
+    package version (``v<version>``). The fallback is version-shaped, never
+    commit-shaped, so deployment tooling (``scripts/smoke_live.py``) keeps
+    classifying it as UNVERIFIABLE rather than mistaking it for a
+    resolvable commit.
+    """
+    commit = _running_commit()
+    return commit if commit != "unknown" else f"v{__version__}"
+
+
 class _NoUsableAnswerError(Exception):
     """Raised when a deliberation produced no usable answer — the answer
     stage degraded and only a placeholder was returned. Translated into
@@ -442,7 +458,8 @@ def _register_routes(app: FastAPI) -> None:
             "models_configured": len(cfg.models),
             "providers_configured": configured_count,
             "providers_discovered": discovered_names,
-            "commit": _running_commit(),
+            "commit": _running_identity(),
+            "version": __version__,
         }
 
         # Optional provider connectivity check
@@ -573,7 +590,8 @@ def _register_routes(app: FastAPI) -> None:
         return {
             "status": "alive",
             "uptime_models": len(cfg.models),
-            "commit": _running_commit(),
+            "commit": _running_identity(),
+            "version": __version__,
         }
 
     @app.get("/health")
@@ -588,7 +606,8 @@ def _register_routes(app: FastAPI) -> None:
         return {
             "status": "alive",
             "uptime_models": len(cfg.models),
-            "commit": _running_commit(),
+            "commit": _running_identity(),
+            "version": __version__,
         }
 
     @app.get("/v1/formations")

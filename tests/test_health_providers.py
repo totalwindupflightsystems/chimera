@@ -59,14 +59,8 @@ def _config(
     """
     first_model = next(iter(models))
     cfg_dict = {
-        "providers": {
-            name: {"base_url": f"https://{name}.example/v1"}
-            for name in set(models.values())
-        },
-        "models": {
-            name: {"provider": provider, "cost_tier": "budget"}
-            for name, provider in models.items()
-        },
+        "providers": {name: {"base_url": f"https://{name}.example/v1"} for name in set(models.values())},
+        "models": {name: {"provider": provider, "cost_tier": "budget"} for name, provider in models.items()},
         "defaults": {
             "dispatcher": first_model,
             "default_worker": first_model,
@@ -102,8 +96,7 @@ _QUOTA_MESSAGE = "Insufficient balance or no resource package. Please recharge."
 #: The measured z.ai quota-exhaustion condition (DF-CHIMERA-V2-16, 2026-09-18):
 #: http=429 in 0.93-1.30 s with this body while the account is exhausted.
 _ZAI_QUOTA_MESSAGE = (
-    "litellm.RateLimitError: Weekly/Monthly Limit Exhausted. "
-    "Your limit will reset at 2026-09-20 04:07:32"
+    "litellm.RateLimitError: Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-09-20 04:07:32"
 )
 
 
@@ -128,7 +121,10 @@ class _ProbeGateway:
         action = self.behavior.get(model, "ok")
         if action == "ok":
             return GatewayResponse(
-                text="pong", model=model, tokens_input=1, tokens_output=1,
+                text="pong",
+                model=model,
+                tokens_input=1,
+                tokens_output=1,
             )
         if action == "slow":
             await asyncio.sleep(30)
@@ -441,9 +437,7 @@ def test_quota_message_without_status_code_class() -> None:
 
 #: The body z.ai returns while the account is quota-exhausted (measured
 #: 2026-09-18: http=429, 0.93-1.30 s, while the retry ladder took 10.17-17.01 s).
-_ZAI_QUOTA_BODY = (
-    "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-09-20 04:07:32"
-)
+_ZAI_QUOTA_BODY = "Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-09-20 04:07:32"
 
 
 def _zai_quota_rate_limit_error() -> Exception:
@@ -459,10 +453,13 @@ def _zai_quota_rate_limit_error() -> Exception:
     import litellm
 
     request = httpx.Request(
-        "POST", "https://api.z.ai/api/coding/paas/v4/chat/completions",
+        "POST",
+        "https://api.z.ai/api/coding/paas/v4/chat/completions",
     )
     response = httpx.Response(
-        429, request=request, json={"error": {"code": "1310", "message": _ZAI_QUOTA_BODY}},
+        429,
+        request=request,
+        json={"error": {"code": "1310", "message": _ZAI_QUOTA_BODY}},
     )
     return litellm.RateLimitError(
         message=_ZAI_QUOTA_BODY,
@@ -486,7 +483,9 @@ def test_zai_quota_429_reports_quota_with_provider_message() -> None:
         "z-ai/glm-5-turbo": "zai",
     }
     cfg = _config(
-        models=models, api_keys={"zai": "sk-test"}, health_timeout_s=0.5,
+        models=models,
+        api_keys={"zai": "sk-test"},
+        health_timeout_s=0.5,
     )
     gw = _ProbeGateway(dict.fromkeys(models, "zai_quota"))
     status = asyncio.run(_check_providers(cfg, gw))
@@ -501,7 +500,9 @@ def test_zai_quota_429_reports_quota_with_provider_message() -> None:
     assert info["error"].startswith("quota:")
     # quota stays NON-terminal: all three models were probed (3 calls, not 1).
     assert [m for m, _ in gw.calls] == [
-        "zai-coding-plan/glm-5.2", "z-ai/glm-5", "z-ai/glm-5-turbo",
+        "zai-coding-plan/glm-5.2",
+        "z-ai/glm-5",
+        "z-ai/glm-5-turbo",
     ]
 
 
@@ -598,8 +599,14 @@ def test_no_models_for_provider_is_unhealthy_note() -> None:
 #: ``status``.
 _ERROR_CLASSES = frozenset(
     {
-        "missing_credentials", "timeout", "auth", "quota", "api", "unknown",
-        "slow", "probe_skipped",
+        "missing_credentials",
+        "timeout",
+        "auth",
+        "quota",
+        "api",
+        "unknown",
+        "slow",
+        "probe_skipped",
     },
 )
 
@@ -622,7 +629,9 @@ def test_error_class_missing_credentials() -> None:
 def test_error_class_slow() -> None:
     """An over-budget probe is classed ``slow`` (proven by the 0.2s budget)."""
     cfg = _config(
-        models={"p1/slow": "p1"}, health_timeout_s=0.2, api_keys={"p1": "sk-test"},
+        models={"p1/slow": "p1"},
+        health_timeout_s=0.2,
+        api_keys={"p1": "sk-test"},
     )
     gw = _ProbeGateway({"p1/slow": "slow"})
     info = asyncio.run(_check_providers(cfg, gw))["p1"]
@@ -638,7 +647,8 @@ def test_error_class_slow() -> None:
     [("auth", "auth"), ("quota", "quota"), ("quota_msg", "quota"), ("api", "api")],
 )
 def test_error_class_for_provider_exception(
-    behavior: str, expected_class: str,
+    behavior: str,
+    expected_class: str,
 ) -> None:
     """Provider exceptions carry the class their ``error`` prefix names."""
     cfg = _config(models={"prov/a": "prov"}, api_keys={"prov": "sk-test"})
@@ -653,6 +663,7 @@ def test_error_class_for_provider_exception(
 
 def test_error_class_generic_exception_is_non_empty() -> None:
     """An exception the classifier does not recognize still gets a class."""
+
     class _WeirdError(Exception):
         """Deliberately outside every classifier token list."""
 
@@ -707,10 +718,12 @@ def test_no_models_provider_note_only_shape() -> None:
 # DF-CHIMERA-V2-14 (b): top-level unhealthy_providers on /v1/health
 # --------------------------------------------------------------------------- #
 
+
 def _stub_probe(
     status: dict[str, dict[str, Any]],
 ) -> Any:
     """An async stand-in for ``_check_providers`` returning *status*."""
+
     async def probe(config: ChimeraConfig, gateway: Any) -> dict[str, dict[str, Any]]:
         return status
 
@@ -736,7 +749,8 @@ def _probe_status_client(
     ``monkeypatch.setattr`` convention so the stub cannot leak between tests.
     """
     monkeypatch.setattr(
-        "chimera.api.server._check_providers", _stub_probe(probe_status),
+        "chimera.api.server._check_providers",
+        _stub_probe(probe_status),
     )
     return _health_client(cfg)
 
@@ -750,15 +764,13 @@ def test_health_unhealthy_providers_lists_exactly_the_failing_names(
         api_keys={"alpha": "sk", "beta": "sk", "zeta": "sk"},
     )
     probe_status: dict[str, dict[str, Any]] = {
-        "zeta": {"healthy": False, "error": "api: boom", "error_class": "api",
-                 "model_tested": "zeta/m"},
+        "zeta": {"healthy": False, "error": "api: boom", "error_class": "api", "model_tested": "zeta/m"},
         "beta": {"healthy": True, "model_tested": "beta/m"},
-        "alpha": {"healthy": False,
-                  "error": "timeout: no response within 0.2s",
-                  "error_class": "timeout"},
+        "alpha": {"healthy": False, "error": "timeout: no response within 0.2s", "error_class": "timeout"},
     }
     monkeypatch.setattr(
-        "chimera.api.server._check_providers", _stub_probe(probe_status),
+        "chimera.api.server._check_providers",
+        _stub_probe(probe_status),
     )
     r = _health_client(cfg).get("/v1/health")
 
@@ -779,7 +791,8 @@ def test_health_unhealthy_providers_empty_when_all_healthy(
         "a": {"healthy": True, "model_tested": "a/1"},
     }
     monkeypatch.setattr(
-        "chimera.api.server._check_providers", _stub_probe(probe_status),
+        "chimera.api.server._check_providers",
+        _stub_probe(probe_status),
     )
     data = _health_client(cfg).get("/v1/health").json()
 
@@ -791,31 +804,39 @@ def test_health_response_keeps_every_pre_existing_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Backwards compatibility: no pre-existing key moved or changed shape."""
-    cfg = _config(models={"a/1": "a", "b/1": "b"},
-                  api_keys={"a": "sk", "b": "sk"})
+    cfg = _config(models={"a/1": "a", "b/1": "b"}, api_keys={"a": "sk", "b": "sk"})
     probe_status: dict[str, dict[str, Any]] = {
         "a": {"healthy": True, "model_tested": "a/1"},
-        "b": {"healthy": False, "error": "quota: recharge", "error_class": "quota",
-              "model_tested": "b/1"},
+        "b": {"healthy": False, "error": "quota: recharge", "error_class": "quota", "model_tested": "b/1"},
     }
     monkeypatch.setattr(
-        "chimera.api.server._check_providers", _stub_probe(probe_status),
+        "chimera.api.server._check_providers",
+        _stub_probe(probe_status),
     )
     r = _health_client(cfg).get("/v1/health")
 
     assert r.status_code == 200
     data = r.json()
     assert set(data) == {
-        "status", "unhealthy_providers", "discovered_not_configured",
-        "slow_providers", "probe_skipped_providers", "details",
+        "status",
+        "unhealthy_providers",
+        "discovered_not_configured",
+        "slow_providers",
+        "probe_skipped_providers",
+        "details",
     }
     # Additive key (CH-GAP-059): absent from the math, never omitted, and
     # empty when the config declared everything it carries.
     assert data["discovered_not_configured"] == []
     details = data["details"]
     assert set(details) == {
-        "config_loaded", "models_configured", "providers_configured",
-        "providers_discovered", "commit", "providers",
+        "config_loaded",
+        "models_configured",
+        "providers_configured",
+        "providers_discovered",
+        "commit",
+        "version",
+        "providers",
     }
     assert details["config_loaded"] is True
     assert details["models_configured"] == len(cfg.models)
@@ -843,7 +864,8 @@ def test_health_names_the_provider_a_real_probe_failed(
     assert real_status["bad"]["error_class"] == "api"
 
     monkeypatch.setattr(
-        "chimera.api.server._check_providers", _stub_probe(real_status),
+        "chimera.api.server._check_providers",
+        _stub_probe(real_status),
     )
     data = _health_client(cfg).get("/v1/health").json()
 
@@ -878,15 +900,14 @@ def test_ready_reports_unhealthy_providers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The ready body carries the same list when at least one provider works."""
-    cfg = _config(models={"a/1": "a", "b/1": "b"},
-                  api_keys={"a": "sk", "b": "sk"})
+    cfg = _config(models={"a/1": "a", "b/1": "b"}, api_keys={"a": "sk", "b": "sk"})
     probe_status: dict[str, dict[str, Any]] = {
         "a": {"healthy": True, "model_tested": "a/1"},
-        "b": {"healthy": False, "error": "api: boom", "error_class": "api",
-              "model_tested": "b/1"},
+        "b": {"healthy": False, "error": "api: boom", "error_class": "api", "model_tested": "b/1"},
     }
     monkeypatch.setattr(
-        "chimera.api.server._check_providers", _stub_probe(probe_status),
+        "chimera.api.server._check_providers",
+        _stub_probe(probe_status),
     )
     r = _health_client(cfg).get("/v1/health/ready")
 
@@ -931,7 +952,10 @@ class _DelayedProbeGateway:
         if self.error is not None:
             raise self.error
         return GatewayResponse(
-            text="pong", model=model, tokens_input=1, tokens_output=1,
+            text="pong",
+            model=model,
+            tokens_input=1,
+            tokens_output=1,
         )
 
 
@@ -1068,7 +1092,6 @@ def test_grace_completed_healthy_probe_keeps_exact_previous_shape() -> None:
     assert info == {"healthy": True, "model_tested": "prov/a"}
 
 
-
 # --------------------------------------------------------------------------- #
 # DF-CHIMERA-V2-27: a provider that cannot answer inside the probe budget is
 # ``slow`` (measured), not a permanently-degraded ``timeout`` — while a real
@@ -1097,7 +1120,10 @@ class _SlowGateway:
         self.completion_calls = 0
 
     async def complete(
-        self, model: str, messages: list[dict[str, str]], **kwargs: object,
+        self,
+        model: str,
+        messages: list[dict[str, str]],
+        **kwargs: object,
     ) -> GatewayResponse:
         self.completion_calls += 1
         await asyncio.sleep(30)  # outlives the budget by orders of magnitude
@@ -1218,7 +1244,10 @@ def test_slow_and_real_failure_are_distinct_signals_side_by_side(
 
     class MixedGateway:
         async def complete(
-            self, model: str, messages: list[dict[str, str]], **kw: object,
+            self,
+            model: str,
+            messages: list[dict[str, str]],
+            **kw: object,
         ) -> GatewayResponse:
             if model.startswith("slow/"):
                 await asyncio.sleep(30)
@@ -1279,7 +1308,8 @@ def test_health_probe_false_skips_the_probe_and_is_named(
 def test_health_probe_default_true_probes_normally() -> None:
     """The opt-out is opt-IN: the default keeps probing exactly as before."""
     cfg = _config(
-        models={"p/one": "prov"}, api_keys={"prov": "sk-test"},
+        models={"p/one": "prov"},
+        api_keys={"prov": "sk-test"},
     )
     assert cfg.providers["prov"].health_probe is True
 
@@ -1392,7 +1422,8 @@ def test_discovered_zero_model_creds_do_not_degrade_status(
 
     for name in _DISCOVERED_CREDS:
         assert probe_status[name] == {
-            "healthy": False, "note": "no models configured for provider",
+            "healthy": False,
+            "note": "no models configured for provider",
         }
     assert {name for name, info in probe_status.items() if info["healthy"]} == set(declared)
 
@@ -1445,7 +1476,8 @@ def test_declared_zero_model_provider_still_degrades_status(
     cfg.configured_provider_names = set(cfg.providers)
     probe_status = asyncio.run(_check_providers(cfg, _ProbeGateway({})))
     assert probe_status["anthropic"] == {
-        "healthy": False, "note": "no models configured for provider",
+        "healthy": False,
+        "note": "no models configured for provider",
     }
 
     data = _probe_status_client(monkeypatch, cfg, probe_status).get("/v1/health").json()
@@ -1465,31 +1497,43 @@ def test_adding_a_model_to_a_discovered_cred_makes_its_health_count(
     probe of that same model degrades the report and names the provider.
     """
     healthy_cfg, _ = _config_with_discovered_creds()
-    healthy_cfg.models["openai/gpt-5"] = healthy_cfg.models[
-        "google/gemini-3-pro"
-    ].model_copy(update={"provider": "openai"})
+    healthy_cfg.models["openai/gpt-5"] = healthy_cfg.models["google/gemini-3-pro"].model_copy(
+        update={"provider": "openai"}
+    )
     healthy_status = asyncio.run(_check_providers(healthy_cfg, _ProbeGateway({})))
     assert healthy_status["openai"]["healthy"] is True
 
-    healthy = _probe_status_client(
-        monkeypatch, healthy_cfg, healthy_status,
-    ).get("/v1/health").json()
+    healthy = (
+        _probe_status_client(
+            monkeypatch,
+            healthy_cfg,
+            healthy_status,
+        )
+        .get("/v1/health")
+        .json()
+    )
     assert healthy["status"] == "healthy", healthy
     assert healthy["unhealthy_providers"] == []
     assert healthy["discovered_not_configured"] == ["xai"]
 
     failing_cfg, _ = _config_with_discovered_creds()
-    failing_cfg.models["openai/gpt-5"] = failing_cfg.models[
-        "google/gemini-3-pro"
-    ].model_copy(update={"provider": "openai"})
+    failing_cfg.models["openai/gpt-5"] = failing_cfg.models["google/gemini-3-pro"].model_copy(
+        update={"provider": "openai"}
+    )
     failing_status = asyncio.run(
         _check_providers(failing_cfg, _ProbeGateway({"openai/gpt-5": "api"})),
     )
     assert failing_status["openai"]["error_class"] == "api"
 
-    failing = _probe_status_client(
-        monkeypatch, failing_cfg, failing_status,
-    ).get("/v1/health").json()
+    failing = (
+        _probe_status_client(
+            monkeypatch,
+            failing_cfg,
+            failing_status,
+        )
+        .get("/v1/health")
+        .json()
+    )
     assert failing["status"] == "degraded", failing
     assert failing["unhealthy_providers"] == ["openai"]
     assert failing["discovered_not_configured"] == ["xai"]

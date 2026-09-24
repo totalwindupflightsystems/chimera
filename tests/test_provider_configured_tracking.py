@@ -52,9 +52,7 @@ def _fake_discovery(extra: dict[str, str]):
 
     def fake(api_keys: dict | None = None):  # noqa: ARG001 - signature parity
         pricing: dict = {}
-        providers = {
-            name: {"base_url": f"https://{name}.example/v1"} for name in extra
-        }
+        providers = {name: {"base_url": f"https://{name}.example/v1"} for name in extra}
         return providers, pricing
 
     return fake
@@ -121,9 +119,7 @@ def test_declared_names_field_is_internal_and_never_serialized() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_health_separates_declared_from_discovered(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_health_separates_declared_from_discovered(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """End-to-end: 1 configured + phantom discovered; the map shows both."""
     path = tmp_path / "chimera.yaml"
     path.write_text(yaml.safe_dump(_yaml_doc()), encoding="utf-8")
@@ -134,10 +130,12 @@ def test_health_separates_declared_from_discovered(
     cfg = load_config(path)
     monkeypatch.setattr(
         "chimera.api.server._check_providers",
-        _stub_probe({
-            "declared": {"healthy": True, "model_tested": "declared/model-a"},
-            "phantom": {"healthy": True, "model_tested": "phantom/model-x"},
-        }),
+        _stub_probe(
+            {
+                "declared": {"healthy": True, "model_tested": "declared/model-a"},
+                "phantom": {"healthy": True, "model_tested": "phantom/model-x"},
+            }
+        ),
     )
 
     data = _health_client(cfg).get("/v1/health").json()
@@ -166,10 +164,12 @@ def test_health_programmatic_config_counts_current_providers(
     )
     monkeypatch.setattr(
         "chimera.api.server._check_providers",
-        _stub_probe({
-            "declared": {"healthy": True, "model_tested": "declared/model-a"},
-            "lonely": {"healthy": True, "model_tested": "declared/model-b"},
-        }),
+        _stub_probe(
+            {
+                "declared": {"healthy": True, "model_tested": "declared/model-a"},
+                "lonely": {"healthy": True, "model_tested": "declared/model-b"},
+            }
+        ),
     )
 
     data = _health_client(cfg).get("/v1/health").json()
@@ -197,5 +197,6 @@ def test_health_details_shape_adds_only_the_discovered_key(
         "providers_configured",
         "providers_discovered",
         "commit",
+        "version",
         "providers",
     }
