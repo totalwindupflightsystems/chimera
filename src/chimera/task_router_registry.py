@@ -109,7 +109,7 @@ def _number(value: Any) -> float | None:
 def load_task_router_registry(path: Path | str | None = None) -> dict[str, Any]:
     """Translate task-router JSONL into the subset of models.dev Chimera reads.
 
-    The whole file is validated before a registry is returned.  One malformed or
+    The whole file is validated before a registry is returned. One malformed or
     unsupported row invalidates the preferred source so the caller can fall back
     to models.dev instead of accepting a misleading partial catalog.
     """
