@@ -790,3 +790,69 @@ canary-check strict schemas, keep max_tokens generous.
 probe outputs under `/tmp/dg-consumer/` (ephemeral); agent 6963ad23
 destroyed + verified gone; board rows DF-CHIMERA-V2-53..56; no credentials
 committed (agent key file destroyed with the agent).
+
+## Run 16 leg (2026-09-25) — the custom-provider seam, and why a shared state file burned a fresh instance
+
+**How this leg is built.** Chimera treats any non-first-party provider as an
+"OpenAI-compatible endpoint": config declares `providers.<name>.base_url` +
+`api_key_env`, and a `models.<catalog-id>` entry (with `provider: <name>`)
+is what makes an id dispatchable — dispatch validates against the CATALOG,
+not the gateway's model list (a 271-model gateway is reachable only through
+the ids you declare). At call time exactly one leading `<provider>/`
+segment is stripped; deeper slashes are kept (`router9/ds/deepseek-v4-flash`
+→ upstream `ds/deepseek-v4-flash`). The same seam serves CLI, REST,
+client-DAG and /v1/deliberate because they all end in one engine path —
+which is why all four entry points behaved identically in this leg.
+
+**Why the blocked-models state exists, and where it fails.** When a stage
+fails with an auth-shaped error, `engine._dropped_workers` records the model
+in `blocked_models.shared_registry` so the dispatcher stops picking it
+(protects the user from hammering a dead credential). The registry persists
+to `~/.chimera/blocked-models.json` — deliberately GLOBAL, so a block
+survives restarts and spans processes. The design hole: the missing-key
+case has no credential to fingerprint, so the record stores `None`,
+`_save()` drops None fingerprints, and `is_blocked` self-heal requires a
+stored fingerprint to differ from — a missing-key block therefore has no
+representation of "what key would unblock me", and its 7-day TTL outlives
+the user fixing the key. The self-heal (DF-CHIMERA-V2-6) works exactly as
+designed only for the had-a-key-got-rejected case. The error I hit and the
+right way: my scratch venv with a valid key inherited a stale block from
+another process's earlier failed run; the verified escape is deleting the
+state file (safe: it regenerates; blocks only ever suppress selection) —
+and the durable fix is a no-credential sentinel or session-scoped
+fingerprintless blocks (board row DF-CHIMERA-V2-58).
+
+**Malformed-upstream probes (why control probes come first).** Before
+blaming the seam, I drove both upstreams DIRECTLY with curl. That is how
+two 9router quirks were separated from Chimera behavior: the `ollama/`
+prefix streams SSE chunks even when `stream` is unset (Chimera's client
+consumes it fine — resilience credit), and the `ds/` prefix appends a
+literal `data: [DONE]` after the non-stream JSON body (Chimera parses
+leniently; a strict client would break — upstream defect, row -63). Reading
+raw bytes, not status codes, is what turned "weird jq parse error" into two
+named upstream defects in one probe round.
+
+**Deploy-parity lesson of this leg.** `smoke_live.py`'s parity check
+compares the running commit against CHECKOUT HEAD — sound for a
+maintainer on main, structurally blind on this box, where the foreman's
+judge moves the shared checkout between branches (I watched HEAD at
+476a5bd → 9f54505 → judge-* branches within minutes). During exactly such
+a window it printed "CURRENT" while origin/main was 7 material files
+ahead, and the script still exits 0 on STALE (row -60, successor to -46).
+The rule for anyone auditing this deployment: classify from
+`git diff --name-only <running>..origin/main -- src/ scripts/ tests/
+pyproject.toml` yourself; never trust a parity line computed on a moving
+checkout.
+
+**Shared-workdir discipline.** The foreman's tick-279 judge ran in this
+same checkout during the leg (branches judge-56-rerun/judge-57-rerun,
+HEAD swinging). Artifacts were committed with explicit paths at the end,
+after re-verifying HEAD — the standard defense against a sibling's
+`git add/commit` sweeping or unstaging your files.
+
+**Evidence:** run-16 report `docs/dogfood/2026-09-25-run16-integration.md`;
+scratch venv + config + raw upstream captures under
+`/tmp/dogfood-chimera-v2/` (ephemeral); repro script `repro_blocked.py`
+(temp state file, wheel registry); live `~/.chimera/blocked-models.json`
+backed up and restored byte-identical; board rows DF-CHIMERA-V2-58..63;
+no credentials committed.

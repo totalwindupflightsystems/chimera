@@ -30,7 +30,13 @@ description: >-
   (SDK-only scratch venv), the exact error-contract behavior, the two
   silent-contract traps (schema stripping, finish_reason truncation), and
   the fresh-box bootstrap order (auth env + .env auto-load).
-version: 1.7.0
+  v1.8.0 adds the 2026-09-25 run-16 CUSTOM-OPENAI-COMPATIBLE-PROVIDER
+  section: pointing Chimera at your own gateways (base_url + api_key_env +
+  REQUIRED catalog entry), per-entry-point field-tested recipes, the
+  workers-vs-stages formation trap, and the shared
+  ~/.chimera/blocked-models.json stale-credential trap with its verified
+  escape.
+version: 1.8.0
 category: software-development
 ---
 
@@ -677,3 +683,74 @@ your config has `auth.mode: env` — otherwise the server starts "alive" and
 401s everything with no hint why (DF-CHIMERA-V2-56) → 4. put provider keys
 in a `.env` NEXT TO `chimera.yaml` (auto-loaded; `DEEPSEEK_API_KEY`
 minimum) → 5. verify with the repo's `smoke_live.py --api-key ...`.
+
+## Update 2026-09-25 (run 16) — CUSTOM OPENAI-COMPATIBLE PROVIDERS: point Chimera at your own gateways
+
+Any non-first-party provider is a `base_url` + `api_key_env` pair. The seam
+was driven for real against a local Hermes gateway (:8642) and a fleet
+9router (:20128) through all four entry points — everything below was
+executed, not read.
+
+**Config recipe (field-tested):**
+
+```yaml
+defaults:                       # point defaults AT custom models if your
+  dispatcher: hermes/glm-5.3-flash        # first-party key is ever blocked
+  default_worker: router9/ds/deepseek-v4-flash
+  default_aggregator: hermes/glm-5.3-flash
+formations:
+  simple: {workers: 2}          # workers: — NOT stages: (see trap 2)
+providers:
+  hermes:  {base_url: http://127.0.0.1:8642/v1, api_key_env: API_SERVER_KEY}
+  router9: {base_url: http://myhost:20128/v1, api_key_env: ROUTER9_API_KEY}
+models:                         # the catalog entry is REQUIRED (trap 1)
+  hermes/glm-5.3-flash: {provider: hermes, cost_tier: budget}
+  router9/ds/deepseek-v4-flash: {provider: router9, cost_tier: budget}
+```
+
+**What works (measured):**
+
+- Live REST: `POST /v1/chat/completions` with
+  `"model":"simple","worker_model":"router9/ds/deepseek-v4-flash"` →
+  correct merged answer, 10.9s, finish stop.
+- CLI: `chimera --formation simple --stage-models
+  '{"worker_1":"router9/ds/…","worker_2":"hermes/…"}'` → 3 stages, 0
+  failures, $0.02, 14.6s cold / 25.6–31.1s warm (model-bound).
+- Client DAG: `--allow-custom-dag --dag '{...}'` with EVERY stage on custom
+  providers → 61.0s sequential (custom DAGs are dependency-ordered, not
+  parallel), correct structured answer, source=custom.
+- `/v1/deliberate` with `stage_models` → 9.5s. Takes `prompt`, not
+  `messages` (chat/completions takes `messages`).
+- Malformed upstreams: a gateway that streams SSE when `stream` is unset is
+  consumed cleanly; a body with a trailing `data: [DONE]` after non-stream
+  JSON parses (lenient client). Both quirks exist on 9router lanes today.
+
+**Traps (all hit for real):**
+
+1. **The `models.<id>` catalog entry is REQUIRED for dispatch.** A
+   custom-provider model the gateway actually serves still gets
+   `400 Unknown model/formation: worker_model references unknown model …`
+   if you did not declare it. Dispatch validates against your catalog, not
+   the gateway's `/v1/models`. One leading `<provider>/` segment is
+   stripped at call time; deeper slashes are kept (`router9/ds/x` →
+   upstream `ds/x`).
+2. **Formation scalar is `workers:`.** Writing `stages: 2` is accepted
+   silently and the preset degrades to an auto-mode preset; the later
+   failure says "Cannot build a structural DAG from an auto preset" —
+   nothing names the real typo (DF-CHIMERA-V2-59).
+3. **`~/.chimera/blocked-models.json` is SHARED by every chimera process on
+   the machine, and a credential block recorded while NO key was set never
+   self-clears (7-day TTL; `credential_fingerprints` is empty so the
+   "self-clears when the key changes" remedy has nothing to compare).**
+   Symptom: a fresh venv with a VALID key still logs
+   `Blocked models (excluded from selection; state file:
+   ~/.chimera/blocked-models.json)` for the default provider. Verified
+   escape: back up + delete that file (it regenerates; blocks only ever
+   suppress model selection) — or route everything through custom-provider
+   defaults as in the recipe above (DF-CHIMERA-V2-58).
+4. **`${VAR}` substitution in chimera.yaml resolves to the EMPTY string
+   when the var is unset** (config still loads; every call to that provider
+   fails auth). Resolution order: process env → repo `.env` next to
+   chimera.yaml → `~/.hermes/.env`. Export before running.
+5. `/v1/deliberate` → `prompt`; `/v1/chat/completions` → `messages`.
+   Mixing them is the classic cross-endpoint 422.
