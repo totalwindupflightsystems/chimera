@@ -21,6 +21,14 @@ hypothesized owning lab, unattributable ones under an explicit "Blind Spot".
 Those sections are informational and NOT recorded in .seen_models.json —
 they re-appear on every run until the model surfaces in a core row or is
 admitted to the catalog.
+
+Since DF-CHIMERA-V2-50 the core scan ALSO dedupes against the catalog at
+BASENAME level (the same comparison the reseller watch uses): a candidate
+admitted under a namespaced prefix (e.g. ``openrouter/minimax/minimax-m3``)
+never resolves to that exact catalog key from its bare row, so it re-reported
+as new. It is now SKIPPED, recorded in .seen_models.json with the basename
+match marker, and stated on the report as an explicit SKIP line instead of
+inflating the headline.
 """
 
 from __future__ import annotations
@@ -271,8 +279,56 @@ def _load_chimera_models() -> set[str]:
     return set(config.models.keys())
 
 
+def _basename(model_id: str) -> str:
+    """The segment after the last ``/`` — the dedupe key of both scan paths.
+
+    THE one basename helper (DF-CHIMERA-V2-50): the reseller watch compares
+    basenames because a namespaced reseller id never equals its resolved
+    Chimera id, and the core scan now compares basenames because a catalog
+    entry admitted under a non-bare prefix (``openrouter/``, ``router9/``,
+    ...) is invisible to an exact-id comparison from its bare row. Both paths
+    call this symbol so the two definitions can never drift apart.
+    """
+    return model_id.rsplit("/", 1)[-1]
+
+
+#: The empty catalog — the frozen default of ``_basename_match``. A module
+#: default argument binds ONCE at import time; binding the empty set here
+#: guarantees a bare call can never dedupe against a stale snapshot of a
+#: populated catalog (tests pin this).
+_EMPTY_CATALOG: frozenset[str] = frozenset()
+
+
+def _basename_match(model_id: str, catalog: set[str] | frozenset[str] | None = None) -> str | None:
+    """Return the catalog id whose BASENAME matches ``model_id``'s, or None.
+
+    Case-insensitive on the basename (the catalog carries
+    ``router9/mmx/MiniMax-M3`` while models.dev ships ``minimax-m3`` casing);
+    prefix-sensitive by design so ``foo-v3`` never matches ``foo-v2``. When
+    several catalog entries share the basename the FIRST match in sorted
+    order is returned — deterministic across runs.
+
+    ``catalog=None`` binds to the frozen ``_EMPTY_CATALOG`` default: a bare
+    call matches nothing instead of silently consulting an import-time
+    snapshot of a live catalog.
+    """
+    if catalog is None:
+        catalog = _EMPTY_CATALOG
+    target = _basename(model_id).lower()
+    for cid in sorted(catalog):
+        if _basename(cid).lower() == target:
+            return cid
+    return None
+
+
 def _load_seen() -> set[str]:
-    """Load the set of already-reported candidate model IDs."""
+    """Load the set of already-reported candidate model IDs.
+
+    Entries are plain id strings (pre-DF-CHIMERA-V2-50 files) or id strings
+    carrying a `` [basename=<catalog-id>]`` marker appended when a candidate
+    was skipped by the catalog-basename comparison — both load as plain
+    strings, so old files stay readable and old readers keep working.
+    """
     if SEEN_PATH.exists():
         try:
             return set(json.loads(SEEN_PATH.read_text()))
@@ -478,6 +534,14 @@ def select_top_candidates(
 # ── Main logic ───────────────────────────────────────────────────────────────
 
 
+#: Basename skips from the LAST ``scan_models_dev()`` call — the report trail
+#: that keeps the headline honest (each skipped candidate is STATED, not
+#: silently dropped). One entry per skip:
+#: ``{model_id, chimera_id, provider, catalog_id}``. Cleared at the start of
+#: every scan; ``format_report()`` renders it and never writes it.
+LAST_BASENAME_SKIPS: list[dict[str, Any]] = []
+
+
 def scan_models_dev(
     cache: dict[str, Any] | None = None,
     snapshot: Any = None,
@@ -494,6 +558,9 @@ def scan_models_dev(
     without a snapshot, the source is assumed to be models.dev-shaped.
 
     Returns dict mapping provider_id → list of candidate model dicts.
+    Catalog entries sharing a candidate's basename skip the candidate
+    (DF-CHIMERA-V2-50); each skip is also appended to the module-level
+    ``LAST_BASENAME_SKIPS`` report trail so ``format_report()`` can state it.
     """
     if snapshot is None and cache is None:
         snapshot = load_preferred_registry()
@@ -532,6 +599,7 @@ def scan_models_dev(
     chimera_models = _load_chimera_models()
 
     candidates: dict[str, list[dict[str, Any]]] = {}
+    LAST_BASENAME_SKIPS.clear()
 
     # Router-covered (lab, model_id) pairs, computed BEFORE the block scan so
     # a models.dev fill row for an id the router also carries (under a lane)
@@ -578,8 +646,22 @@ def scan_models_dev(
             # Resolve to Chimera ID
             chimera_id = _resolve_model_id(provider_id, model_id)
 
-            # Skip already in catalog
+            # Skip already in catalog — exact resolved id first (primary),
+            # then the basename comparison the reseller watch uses (a catalog
+            # entry admitted under a non-bare prefix never equals the resolved
+            # id of its bare-row sibling — DF-CHIMERA-V2-50).
             if chimera_id in chimera_models:
+                continue
+            basename_match = _basename_match(model_id, chimera_models)
+            if basename_match is not None:
+                LAST_BASENAME_SKIPS.append(
+                    {
+                        "model_id": model_id,
+                        "chimera_id": chimera_id,
+                        "provider": provider_id,
+                        "catalog_id": basename_match,
+                    }
+                )
                 continue
 
             # Extract pricing
@@ -740,7 +822,7 @@ def scan_reseller_watch(
     resolved Chimera id, so the comparison is done on basenames).
     """
     chimera_models = chimera_models if chimera_models is not None else _load_chimera_models()
-    catalog_basenames = {cid.rsplit("/", 1)[-1] for cid in chimera_models}
+    catalog_basenames = {_basename(cid) for cid in chimera_models}
 
     aggregated: dict[str, dict[str, Any]] = {}
 
@@ -758,8 +840,10 @@ def scan_reseller_watch(
             if not _is_chat_model(model_id, model_info.get("family", "")):
                 continue
             # Already visible to the core scan, or already admitted to the
-            # catalog (basename-level comparison — see docstring).
-            basename = model_id.rsplit("/", 1)[-1]
+            # catalog (basename-level comparison — see docstring). The
+            # basename comes from the SAME shared helper the core scan uses
+            # (DF-CHIMERA-V2-50) so the two paths cannot drift.
+            basename = _basename(model_id)
             if basename in core_basenames or basename in catalog_basenames:
                 continue
 
@@ -969,9 +1053,17 @@ def format_report(
     for provider_id, models in candidates.items():
         provider_name = PROVIDER_NAMES.get(provider_id, provider_id)
 
-        # Filter for --diff mode
+        # Filter for --diff mode: exact seen entries first, then a seen
+        # basename-marker entry (``<id> [basename=<catalog-id>]``) filters by
+        # prefix match on the candidate's resolved id — so a basename-skipped
+        # candidate stays filtered on later runs without weakening the
+        # exact-id filter (a plain entry can never prefix-match a longer id).
         if diff_only:
-            models = [m for m in models if m["chimera_id"] not in seen]
+            models = [
+                m
+                for m in models
+                if m["chimera_id"] not in seen and not any(s.startswith(f"{m['chimera_id']} ") for s in seen)
+            ]
             if not models:
                 continue
 
@@ -1002,6 +1094,26 @@ def format_report(
 
         if markdown:
             lines.append("")
+
+    # Basename skips (DF-CHIMERA-V2-50): stated, never silently dropped — the
+    # headline counts only NEW finds, and the SKIP lines name the catalog
+    # entry each candidate already matches by basename. The trail is read
+    # from the LAST scan (LAST_BASENAME_SKIPS); tests that format reports
+    # without a scan simply see none.
+    if LAST_BASENAME_SKIPS:
+        lines.append("## Basename Skips (already admitted under another prefix)")
+        lines.append("")
+        for skip in LAST_BASENAME_SKIPS:
+            catalog_id = skip["catalog_id"]
+            note = f" [basename={catalog_id}]"
+            if markdown:
+                lines.append(
+                    f"- SKIP `{skip['chimera_id']}` — already admitted as `{catalog_id}` (basename match)"
+                )
+            else:
+                lines.append(f"  SKIP {skip['chimera_id']:50s} basename-match → {catalog_id}")
+            new_seen.add(f"{skip['chimera_id']}{note}")
+        lines.append("")
 
     # Reseller watch + blind spot — informational, never tracked in .seen_models.json
     lines.extend(_format_reseller_section("Reseller Watch", reseller_watch, markdown, show_lab=True))
@@ -1037,10 +1149,13 @@ def format_report(
     lines.append("")
     lines.extend(_format_scope_statement(scope, markdown))
 
-    # Update seen models — CORE finds only. Reseller watch/blind ids are
-    # deliberately NOT recorded: they are re-reported every run until the
-    # model surfaces in a core row or is admitted to the catalog.
-    if diff_only or candidates:
+    # Update seen models — CORE finds only, plus the basename-skips trail
+    # (each skip is recorded as ``<id> [basename=<catalog-id>]`` so tomorrow's
+    # run filters the diff honestly instead of re-reporting it). Reseller
+    # watch/blind ids are still deliberately NOT recorded: they are
+    # re-reported every run until the model surfaces in a core row or is
+    # admitted to the catalog.
+    if diff_only or candidates or LAST_BASENAME_SKIPS:
         all_seen = seen | new_seen
         _save_seen(all_seen)
 
