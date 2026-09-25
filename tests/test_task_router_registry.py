@@ -83,9 +83,13 @@ def test_valid_task_router_table_is_preferred_and_translated(
     )
     monkeypatch.setenv("CHIMERA_TASK_ROUTER_MODELS_PATH", str(table))
 
+    # DF-CHIMERA-V2-49: a valid preferred source still unions the models.dev
+    # cache UNDERNEATH (router rows win) so labs the router table cannot cover
+    # reach the core scan and discovery. The network fetch must NOT happen —
+    # only the local cache may fill gaps — so the fetch raises if touched.
     with patch(
         "chimera.provider_discovery._fetch_models_dev",
-        side_effect=AssertionError("models.dev must not be read for a valid preferred source"),
+        side_effect=AssertionError("models.dev must not be fetched for a valid preferred source"),
     ):
         snapshot = load_preferred_registry()
 
@@ -208,13 +212,10 @@ def test_model_sync_scan_all_uses_the_preferred_registry_once(
 
     monkeypatch.setattr(model_sync, "load_preferred_registry", preferred)
     monkeypatch.setattr(model_sync, "_load_chimera_models", lambda: set())
-    monkeypatch.setattr(
-        model_sync,
-        "_load_cache",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("scan_all must not bypass preferred source selection")
-        ),
-    )
+    # DF-CHIMERA-V2-49: the fill goes through the _load_cache seam; pin it to
+    # an empty dict so the fixture stays a closed world (no real models.dev
+    # cache leaks into the pass) — the router table remains the only data.
+    monkeypatch.setattr(model_sync, "_load_cache", lambda *a, **k: {})
 
     candidates, watch, blind, scope = model_sync.scan_all()
 
@@ -223,4 +224,6 @@ def test_model_sync_scan_all_uses_the_preferred_registry_once(
     assert candidates["deepseek"][0]["input_per_1k"] == pytest.approx(0.00066)
     assert watch == []
     assert blind == []
-    assert scope["core"] == sorted(model_sync.CORE_PROVIDERS)
+    # MEASURED scope (DF-CHIMERA-V2-49): only labs the source actually has a
+    # block for — the fixture registry carries deepseek alone.
+    assert scope["core"] == ["deepseek"]

@@ -213,7 +213,11 @@ def test_recency_select_top_candidates_orders_newest_release_date_first() -> Non
     top = model_sync.select_top_candidates(candidates, limit=5)
 
     assert [c["model_id"] for c in top] == [
-        "zzz-newest", "mmm-recent", "yyy-older", "bbb-mid", "aaa-oldest",
+        "zzz-newest",
+        "mmm-recent",
+        "yyy-older",
+        "bbb-mid",
+        "aaa-oldest",
     ]
     assert [c["chimera_id"] for c in top] != sorted(c["chimera_id"] for c in top)
     scores = [c["recency_score"] for c in top]
@@ -225,14 +229,17 @@ def test_recency_select_top_candidates_defaults_to_top_five() -> None:
     """--score's helper defaults to a 5-candidate shortlist."""
     candidates = {
         "openai": [
-            _candidate(f"model-{days}", release_date=_date(days))
-            for days in (400, 120, 45, 20, 2, 3)
+            _candidate(f"model-{days}", release_date=_date(days)) for days in (400, 120, 45, 20, 2, 3)
         ],
     }
     top = model_sync.select_top_candidates(candidates)
     assert len(top) == 5
     assert [c["model_id"] for c in top] == [
-        "model-2", "model-3", "model-20", "model-45", "model-120",
+        "model-2",
+        "model-3",
+        "model-20",
+        "model-45",
+        "model-120",
     ]
 
 
@@ -249,7 +256,8 @@ def test_recency_select_top_candidates_limit_truncates_the_newest() -> None:
         ],
     }
     assert [c["model_id"] for c in model_sync.select_top_candidates(candidates, limit=2)] == [
-        "new-openai", "mid-deepseek",
+        "new-openai",
+        "mid-deepseek",
     ]
     assert len(model_sync.select_top_candidates(candidates, limit=0)) == 4
     assert model_sync.select_top_candidates({}, limit=5) == []
@@ -313,7 +321,10 @@ def test_recency_same_bucket_tie_break_is_provider_agnostic() -> None:
         ],
     }
     assert [c["model_id"] for c in model_sync.select_top_candidates(candidates, limit=4)] == [
-        "zzz", "yyy", "xxx", "vvv",
+        "zzz",
+        "yyy",
+        "xxx",
+        "vvv",
     ]
 
 
@@ -326,7 +337,11 @@ def test_recency_date_less_candidates_tie_break_by_model_id_ascending() -> None:
     assert [c["recency_score"] for c in top] == [model_sync.RECENCY_DEFAULT] * 5
     assert [c["recency_ts"] for c in top] == [None] * 5
     assert [c["model_id"] for c in top] == [
-        "unknown-a", "unknown-b", "unknown-c", "unknown-d", "unknown-e",
+        "unknown-a",
+        "unknown-b",
+        "unknown-c",
+        "unknown-d",
+        "unknown-e",
     ]
 
 
@@ -368,13 +383,14 @@ def test_recency_scan_models_dev_scores_candidates_from_release_date() -> None:
             },
         },
     }
-    original_cache, original_catalog = model_sync._load_cache, model_sync._load_chimera_models
-    model_sync._load_cache = lambda *a, **k: cache  # type: ignore[assignment]
+    original_catalog = model_sync._load_chimera_models
     model_sync._load_chimera_models = lambda: set()  # type: ignore[assignment]
     try:
-        candidates = model_sync.scan_models_dev()
+        # DF-CHIMERA-V2-49: the argless scan path is the preferred-registry
+        # path; a fixture cache is supplied through the explicit ``cache=``
+        # parameter (documented contract), which is models.dev-shaped.
+        candidates = model_sync.scan_models_dev(cache=cache)
     finally:
-        model_sync._load_cache = original_cache  # type: ignore[assignment]
         model_sync._load_chimera_models = original_catalog  # type: ignore[assignment]
 
     scored = {m["model_id"]: m["recency_score"] for m in candidates["openai"]}
@@ -415,18 +431,20 @@ def test_recency_scan_models_dev_carries_recency_ts_and_orders_by_date() -> None
             },
         },
     }
-    original_cache, original_catalog = model_sync._load_cache, model_sync._load_chimera_models
-    model_sync._load_cache = lambda *a, **k: cache  # type: ignore[assignment]
+    original_catalog = model_sync._load_chimera_models
     model_sync._load_chimera_models = lambda: set()  # type: ignore[assignment]
     try:
-        candidates = model_sync.scan_models_dev()
+        # DF-CHIMERA-V2-49: explicit ``cache=`` is the models.dev-shaped entry.
+        candidates = model_sync.scan_models_dev(cache=cache)
     finally:
-        model_sync._load_cache = original_cache  # type: ignore[assignment]
         model_sync._load_chimera_models = original_catalog  # type: ignore[assignment]
 
     rows = candidates["openai"]
     assert [m["model_id"] for m in rows] == [
-        "zzz-fresh", "yyy-fresh", "undated-model", "gpt-3-legacy",
+        "zzz-fresh",
+        "yyy-fresh",
+        "undated-model",
+        "gpt-3-legacy",
     ]
     assert [m["recency_score"] for m in rows] == [100.0, 100.0, 40.0, 30.0]
 
@@ -443,23 +461,30 @@ def test_recency_scan_models_dev_carries_recency_ts_and_orders_by_date() -> None
     # cache row is never emitted.
     for m in rows:
         assert set(m) == {
-            "model_id", "chimera_id", "family", "description",
-            "input_cost_mtok", "output_cost_mtok", "input_per_1k",
-            "output_per_1k", "recency_score", "recency_ts", "provider",
+            "model_id",
+            "chimera_id",
+            "family",
+            "description",
+            "input_cost_mtok",
+            "output_cost_mtok",
+            "input_per_1k",
+            "output_per_1k",
+            "recency_score",
+            "recency_ts",
+            "provider",
         }
         assert m["recency_ts"] is None or isinstance(m["recency_ts"], float)
         assert isinstance(m["recency_score"], float)
         assert isinstance(m["provider"], str)
 
     # Selection over the scan's own output keeps the date order.
-    assert [
-        m["model_id"] for m in model_sync.select_top_candidates(candidates, limit=2)
-    ] == ["zzz-fresh", "yyy-fresh"]
+    assert [m["model_id"] for m in model_sync.select_top_candidates(candidates, limit=2)] == [
+        "zzz-fresh",
+        "yyy-fresh",
+    ]
 
 
-def test_recency_llm_score_skip_path_without_api_key(
-    monkeypatch, capsys
-) -> None:
+def test_recency_llm_score_skip_path_without_api_key(monkeypatch, capsys) -> None:
     """--score still skips cleanly (and without network) when the key is unset."""
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     candidates = {"openai": [_candidate("zzz-newest", release_date=_date(2))]}

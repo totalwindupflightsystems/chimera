@@ -524,6 +524,58 @@ class TestLoadCache:
         monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
         assert _load_cache() is None
 
+    def test_markerless_cache_fresh_mtime_is_hit(self, tmp_path, monkeypatch):
+        """A cache written without _fetched_at (plain json.dump by an external
+        tool — DF-CHIMERA-V2-49) must be a HIT when the file is fresh, not a
+        ~infinite age and a pointless refetch."""
+        import os
+
+        data = {
+            "deepseek": {
+                "id": "deepseek",
+                "models": {
+                    "deepseek-v4-pro": {
+                        "id": "deepseek-v4-pro",
+                        "cost": {"input": 0.15, "output": 0.6},
+                    }
+                },
+            }
+        }
+        cache = tmp_path / "cache.json"
+        cache.write_text(json.dumps(data), encoding="utf-8")
+        # mtime is fresh by construction; pin it explicitly anyway.
+        os.utime(cache, (time.time(), time.time()))
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
+        loaded = _load_cache()
+        assert loaded is not None, "fresh marker-less cache must be a hit"
+        assert "deepseek" in loaded
+
+    def test_markerless_cache_old_mtime_is_stale(self, tmp_path, monkeypatch):
+        """Marker-less cache with an old mtime still expires (mtime is the
+        fallback clock, not a bypass)."""
+        import os
+
+        data = {"deepseek": {"id": "deepseek", "models": {}}}
+        cache = tmp_path / "cache.json"
+        cache.write_text(json.dumps(data), encoding="utf-8")
+        old = time.time() - CACHE_TTL - 3600
+        os.utime(cache, (old, old))
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
+        assert _load_cache() is None
+
+    def test_zero_fetched_at_behaves_like_missing(self, tmp_path, monkeypatch):
+        """_fetched_at=0 (or a non-number) must use the mtime fallback, not
+        produce an astronomical age."""
+        import os
+
+        data = {"deepseek": {"id": "deepseek", "models": {}}}
+        data["_fetched_at"] = 0
+        cache = tmp_path / "cache.json"
+        cache.write_text(json.dumps(data), encoding="utf-8")
+        os.utime(cache, (time.time(), time.time()))
+        monkeypatch.setattr("chimera.provider_discovery.CACHE_PATH", str(cache))
+        assert _load_cache() is not None, "_fetched_at=0 must fall back to mtime"
+
     def test_non_dict_data(self, tmp_path, monkeypatch, caplog):
         """Cache file containing a JSON list (not dict) returns None."""
         cache = tmp_path / "cache.json"
