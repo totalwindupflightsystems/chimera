@@ -28,6 +28,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import time
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -36,6 +37,12 @@ import pytest
 
 REPO = Path(__file__).resolve().parent.parent
 SYNC_PATH = REPO / "scripts" / "model_sync.py"
+
+#: Fixed "now" for recency fixtures — newer candidates carry larger timestamps.
+NOW_BASE = time.time()
+
+#: Deliberately not key-shaped so the repo's secret scanner has nothing to match.
+TEST_KEY = "scoring-test-key-not-real"
 
 
 def _load_module(name: str, path: Path) -> ModuleType:
@@ -182,3 +189,173 @@ def test_score_reply_handles_malformed_response_shape() -> None:
     with pytest.raises(ValueError) as exc:
         model_sync._score_llm_reply("prompt", "key", post=fake_post)
     assert "empty model content" in str(exc.value)
+
+
+# --- concatenated-JSON replies + the no-silent-success contract (DF-CHIMERA-V2-57) --- #
+#
+# The 2026-09-25 12:00 cron run failed with ``LLM scoring failed: Extra data:
+# line 2 column 1 (char 24)`` and wrote NO model_scores_*.yaml: the model
+# returned two JSON objects back to back and the brace-slice fallback fed the
+# whole concatenation back to ``json.loads``. Two contract halves are pinned
+# here: a reply of concatenated objects scores from the FIRST object, and an
+# unparseable non-truncation reply exits non-zero with a named reason — never
+# exit 0 with no score file.
+
+
+def test_extract_concatenated_json_objects_scores_from_the_first() -> None:
+    """Two objects back to back: the first object is the reply's payload."""
+    text = '{"models": [{"chimera_id": "a/b"}]}\n{"models": [{"chimera_id": "c/d"}]}'
+    assert model_sync._extract_json_object(text) == {"models": [{"chimera_id": "a/b"}]}
+
+
+def test_extract_concatenated_json_objects_with_blank_line_separation() -> None:
+    text = '{"models": []}\n\n{"scores": 1}'
+    assert model_sync._extract_json_object(text) == {"models": []}
+
+
+def test_extract_unparseable_content_names_the_parse_error() -> None:
+    text = '{"models": [{"chimera_id": "a/b"}}, {"oops": '
+    with pytest.raises(ValueError) as exc:
+        model_sync._extract_json_object(text)
+    message = str(exc.value)
+    assert "no JSON object in model content" in message
+    assert "Extra data" in message or "Expecting" in message  # the underlying parse error
+
+
+def test_score_reply_concatenated_objects_scores_from_the_first() -> None:
+    """End-to-end reply shape of the 2026-09-25 failure — finish_reason=stop."""
+    calls: list[int] = []
+
+    def fake_post(model: str, prompt: str, max_tokens: int, api_key: str) -> dict[str, Any]:
+        calls.append(max_tokens)
+        return _reply('{"models": [{"chimera_id": "a/b"}]}\n{"models": [{"chimera_id": "c/d"}]}')
+
+    out = model_sync._score_llm_reply("prompt", "key", post=fake_post)
+    assert out == {"models": [{"chimera_id": "a/b"}]}
+    assert calls == [model_sync.SCORE_MAX_TOKENS]  # no retry — parsed on the first call
+
+
+def test_score_reply_unparseable_content_raises_named_reason_no_retry() -> None:
+    """A parse-failed reply with finish_reason=stop is a hard, NAMED error."""
+    calls = 0
+
+    def fake_post(model: str, prompt: str, max_tokens: int, api_key: str) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return _reply('{"broken": ')
+
+    with pytest.raises(ValueError) as exc:
+        model_sync._score_llm_reply("prompt", "key", post=fake_post)
+    message = str(exc.value)
+    assert "no JSON object in model content" in message  # the parse error, named
+    assert "finish_reason=stop" in message  # the finish reason, named
+    assert calls == 1  # parse failure is NOT the truncation ladder's trigger
+
+
+def test_score_reply_length_ladder_still_doubles_on_truncated_content() -> None:
+    """Regression guard for the ladder's other half: truncated CONTENT retries.
+
+    The concatenation fix must not turn a genuinely truncated reply
+    (finish_reason=length) into a hard error — the 2026-09-18 contract.
+    """
+    budgets: list[int] = []
+
+    def fake_post(model: str, prompt: str, max_tokens: int, api_key: str) -> dict[str, Any]:
+        budgets.append(max_tokens)
+        if len(budgets) == 1:
+            return _reply('{"models": [{"chimera_id": "a/b"', finish_reason="length")
+        return _reply('{"models": [{"chimera_id": "a/b"}]}')
+
+    out = model_sync._score_llm_reply("prompt", "key", post=fake_post)
+    assert out == {"models": [{"chimera_id": "a/b"}]}
+    assert budgets == [model_sync.SCORE_MAX_TOKENS, model_sync.SCORE_MAX_TOKENS * 2]
+
+
+class TestSilentSuccessContract:
+    """``--score`` / ``--score-from`` must never exit 0 with no score file."""
+
+    def _candidates(self) -> dict[str, list[dict[str, Any]]]:
+        return {"openai": [{"chimera_id": "openai/m-1", "model_id": "m-1", "description": "d"}]}
+
+    def test_scoring_failure_exits_nonzero_with_named_reason(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+    ) -> None:
+        def broken_reply(prompt: str, api_key: str, post: Any = None) -> dict[str, Any]:
+            raise ValueError(
+                "no JSON object in model content "
+                "(model=deepseek-v4-flash, finish_reason=stop, max_tokens=8192)"
+            )
+
+        monkeypatch.setattr(model_sync, "_score_llm_reply", broken_reply)
+        monkeypatch.setattr(model_sync, "REPO_ROOT", tmp_path)
+        monkeypatch.setenv("DEEPSEEK_API_KEY", TEST_KEY)
+
+        with pytest.raises(SystemExit) as excinfo:
+            model_sync._llm_score_candidates(self._candidates())
+
+        assert excinfo.value.code == 1
+        # The named reason reaches stderr, not a swallowed stdout note.
+        err = capsys.readouterr().err
+        assert "LLM scoring failed" in err
+        assert "finish_reason=stop" in err
+        # And the silent-success hole stays closed: no score file appeared.
+        assert not list((tmp_path / "reports").glob("model_scores_*.yaml"))
+
+    def test_scoring_success_still_writes_the_score_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+    ) -> None:
+        """Control for the exit path: the happy contract is unchanged."""
+
+        def good_reply(prompt: str, api_key: str, post: Any = None) -> dict[str, Any]:
+            return {"models": [{"chimera_id": "openai/m-1"}]}
+
+        monkeypatch.setattr(model_sync, "_score_llm_reply", good_reply)
+        monkeypatch.setattr(model_sync, "REPO_ROOT", tmp_path)
+        monkeypatch.setenv("DEEPSEEK_API_KEY", TEST_KEY)
+
+        model_sync._llm_score_candidates(self._candidates())  # no SystemExit
+
+        files = list((tmp_path / "reports").glob("model_scores_*.yaml"))
+        assert len(files) == 1
+        assert "chimera_id" in files[0].read_text(encoding="utf-8")
+        assert "Model scores saved to" in capsys.readouterr().out
+
+
+def test_score_prompt_is_capped_to_the_documented_top_candidates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The scoring payload must not scale with a candidate flood (cap = 5).
+
+    The 2026-09-25 run's scan carried ~225 candidates; the prompt embeds only
+    the recency-selected top ``SCORE_CANDIDATE_LIMIT`` of them — pinned here so
+    the cap cannot silently regress to "embed everything".
+    """
+    assert model_sync.SCORE_CANDIDATE_LIMIT == 5
+    many = {
+        "prov": [
+            {
+                "chimera_id": f"prov/m-{i:02d}",
+                "model_id": f"m-{i:02d}",
+                "description": f"candidate {i}",
+                "recency_score": 100.0,
+                "recency_ts": float(NOW_BASE - i * 86400),
+                "provider": "prov",
+            }
+            for i in range(12)
+        ]
+    }
+    prompts: list[str] = []
+
+    def fake_reply(prompt: str, api_key: str, post: Any = None) -> dict[str, Any]:
+        prompts.append(prompt)
+        return {"models": []}
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "scoring-test-key-not-real")
+    monkeypatch.setattr(model_sync, "_score_llm_reply", fake_reply)
+    monkeypatch.setattr(model_sync, "REPO_ROOT", tmp_path)
+
+    model_sync._llm_score_candidates(many)
+
+    prompt = prompts[0]
+    embedded = [f"prov/m-{i:02d}" for i in range(12) if f"prov/m-{i:02d}" in prompt]
+    assert embedded == [f"prov/m-{i:02d}" for i in range(model_sync.SCORE_CANDIDATE_LIMIT)]
