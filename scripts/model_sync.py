@@ -1268,6 +1268,11 @@ SCORE_MODEL: str = "deepseek-v4-flash"
 #: Token budget for the first scoring call; doubled on a truncated reply.
 SCORE_MAX_TOKENS: int = 8192
 
+#: DOCUMENTED cap on the scoring payload (DF-CHIMERA-V2-57): the prompt embeds
+#: only the recency-selected top N candidates, so a lane-namespace flood
+#: (the 2026-09-25 run's scan carried ~225 finds) can never scale the call.
+SCORE_CANDIDATE_LIMIT: int = 5
+
 #: Hard ceiling for the retry ladder — a reply truncated even here is an error.
 SCORE_MAX_TOKENS_CEILING: int = 32768
 
@@ -1281,6 +1286,11 @@ def _extract_json_object(text: str | None) -> dict[str, Any]:
     ``reasoning_content`` and returned ``finish_reason="length"``; the caller
     retries with a larger budget and needs to be able to tell that apart from
     a genuinely unparsable reply.
+
+    Concatenated objects (DF-CHIMERA-V2-57: the 2026-09-25 cron run's reply
+    was two complete JSON objects back to back, so a first-brace-to-last-brace
+    slice is still invalid JSON) are handled by ``raw_decode`` at the first
+    ``{``: a trailing second object is ignored and the FIRST object wins.
     """
     if not text or not text.strip():
         raise ValueError("empty model content (reasoning likely consumed the whole max_tokens budget)")
@@ -1297,10 +1307,46 @@ def _extract_json_object(text: str | None) -> dict[str, Any]:
     try:
         return json.loads(stripped)
     except json.JSONDecodeError:
-        start, end = stripped.find("{"), stripped.rfind("}")
-        if start == -1 or end <= start:
-            raise ValueError(f"no JSON object in model content: {stripped[:120]!r}") from None
-        return json.loads(stripped[start : end + 1])
+        pass
+
+    # Scan only TOP-LEVEL braces (string-aware, DF-CHIMERA-V2-57): rescanning
+    # at every ``{`` could return a fragment nested inside a broken outer
+    # object — e.g. a reply truncated (finish_reason="length") after the first
+    # array element — which would silently bypass the caller's truncation
+    # ladder and score garbage. Concatenated complete objects and
+    # brace-carrying prose both parse from a top-level start; a truncated
+    # outer object leaves only its own top-level start, which fails, and the
+    # named error below lets the ladder decide.
+    starts: list[int] = []
+    depth = 0
+    in_string = False
+    escaped = False
+    for i, ch in enumerate(stripped):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch == "{":
+            if depth == 0:
+                starts.append(i)
+            depth += 1
+        elif ch == "}" and depth > 0:
+            depth -= 1
+
+    decoder = json.JSONDecoder()
+    detail = "no object found"
+    for start in starts[:16]:  # bound the scan — a pathological reply cannot drive an O(n²) walk
+        try:
+            obj, _end = decoder.raw_decode(stripped[start:])
+            return obj
+        except json.JSONDecodeError as exc:
+            detail = str(exc)
+    raise ValueError(f"no JSON object in model content: {stripped[:120]!r} ({detail})") from None
 
 
 def _score_request_body(model: str, prompt: str, max_tokens: int) -> bytes:
@@ -1409,14 +1455,21 @@ def _llm_score_candidates(candidates: dict[str, list[dict[str, Any]]]) -> None:
     """Use DeepSeek to score top candidates on Chimera's hierarchical category paths.
 
     Saves scored models to reports/model_scores_<timestamp>.yaml.
+
+    On a scoring failure the named reason goes to stderr and the error is
+    re-raised as ``SystemExit(1)`` (DF-CHIMERA-V2-57): the cron pipeline must
+    never exit 0 having silently produced no score file — the wrapper already
+    treats a non-zero step-3 exit as an explicit WARNING.
     """
     deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
     if not deepseek_key:
         print("\n⚠️  --score requires DEEPSEEK_API_KEY in environment. Skipping.")
         return
 
-    # Flatten and take top 5 (pure selection — no network, no API key needed)
-    top5 = select_top_candidates(candidates, limit=5)
+    # Flatten and take the top candidates (pure selection — no network, no API
+    # key needed). The cap is documented at SCORE_CANDIDATE_LIMIT: the prompt
+    # embeds only the recency-selected top N models.
+    top5 = select_top_candidates(candidates, limit=SCORE_CANDIDATE_LIMIT)
 
     # Build prompt with model info and category paths
     from chimera.selector import PATH_PATTERNS
@@ -1477,10 +1530,16 @@ based on benchmarks and provider claims."""
         print(f"\n✅ Model scores saved to {score_path}")
 
     except Exception as e:
-        print(f"\n❌ LLM scoring failed: {e}")
+        # DF-CHIMERA-V2-57: naming the failure and exiting non-zero is the
+        # contract — the old swallow-and-return let the script exit 0 with no
+        # score file (the 2026-09-25 cron run "succeeded" having produced
+        # nothing). Both the reason and the trace go to stderr; the wrapper's
+        # step 3 already treats a non-zero exit as an explicit WARNING.
+        print(f"\n❌ LLM scoring failed: {e}", file=sys.stderr)
         import traceback
 
-        traceback.print_exc()
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
