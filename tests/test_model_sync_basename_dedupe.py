@@ -402,7 +402,7 @@ def test_scan_all_applies_basename_dedupe(isolated: dict[str, Any], monkeypatch:
     candidates, _watch, _blind, scope = model_sync.scan_all()
     assert "minimax" not in candidates  # basename-matched row skipped
     assert "google" in candidates  # genuinely-new row survives
-    assert scope["core"] == sorted(model_sync.CORE_PROVIDERS)
+    assert scope["core"] == sorted(model_sync._measured_core_labs(isolated["cache"]))
     assert isinstance(scope["out_of_scope"], int)
     assert scope["out_of_scope"] >= 0
 
