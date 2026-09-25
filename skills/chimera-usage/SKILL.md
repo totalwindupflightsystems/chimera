@@ -25,7 +25,12 @@ description: >-
   init from the wheel's site-packages template, and a ~60-line raw
   JSON-RPC stdio client that proves MCP interop without npx or the repo's
   own probe.
-version: 1.6.0
+  v1.7.0 adds the 2026-09-25 run-15 OFFICIAL-OPENAI-SDK section: driving
+  the OpenAI-compat drop-in surface the way a migrated OpenAI user would
+  (SDK-only scratch venv), the exact error-contract behavior, the two
+  silent-contract traps (schema stripping, finish_reason truncation), and
+  the fresh-box bootstrap order (auth env + .env auto-load).
+version: 1.7.0
 category: software-development
 ---
 
@@ -615,3 +620,60 @@ send {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"chimera_del
   identically local and on a fresh agent — interop is not machine-specific.
 - The repo's `scripts/mcp-liveness-check.sh` needs npx and cannot run on
   wheel-only machines (DF-CHIMERA-V2-52); use the raw client instead.
+
+## Update 2026-09-25 (run 15) — the OFFICIAL OpenAI SDK against the compat surface
+
+A consumer with only `pip install openai` (v3.19.2 tested) can use Chimera
+as an OpenAI replacement. Proven end to end; the traps below are the ones
+the docs describe but the response cannot show.
+
+**The working recipe (SDK-only, no chimera imports):**
+
+```python
+import os
+from openai import OpenAI
+c = OpenAI(base_url="http://127.0.0.1:8765/v1",
+           api_key=os.environ["CHIMERA_API_KEY"], max_retries=0)
+r = c.chat.completions.create(model="auto",            # formation, NOT a model id
+                              messages=[{"role": "user", "content": "..."}])
+answer = r.choices[0].message.content
+```
+
+- `client.models.list()` returns 42 typed model objects. Formations are
+  learned from `GET /v1/formations` (open endpoint) or the teaching 404.
+- Multi-turn history works (memory probe answered "Paris" correctly).
+- Documented no-ops never error: `temperature`, `top_p`, `n` (always 1
+  choice back), `max_completion_tokens` alias accepted.
+- Error contracts, verified 5/5 against docs/OPENAI_API.md:
+  `stream:true` → 400 `stream_not_supported` naming the param;
+  model-id-as-formation → 404 with a message pointing at formations;
+  wrong key → 401; empty `model` / empty `messages` → 422 FastAPI detail.
+- Set `max_retries=0` (or a big timeout) for long formations: a full-file
+  `auto` review ran 266-292s. All latency is model-bound.
+
+**Trap 1 — structured output can be silently unvalidated (DF-CHIMERA-V2-53).**
+If the resolved aggregator is deepseek (the default), `response_format`
+json_schema is REMOVED before the call. The docs' capability table is
+accurate — but the response gives no signal: you get 200, JSON-shaped
+text, and your enum/`required` guarantees are gone. Detect it client-side
+by sending a canary (`const` field) and checking it survives; or pin a
+schema-capable aggregator (`aggregator_model`).
+
+**Trap 2 — small `max_tokens` returns garbage marked `stop`
+(DF-CHIMERA-V2-54/55).** The cap IS honored per stage (CH-GAP-031), but
+truncation never surfaces as `finish_reason:"length"` in the compat
+response: with caps ≈25-60 the final answer is the aggregator's truncated
+reasoning ("We need answer user...") with `finish_reason:"stop"`. Keep
+caps generous (500+) or treat tiny caps as unsupported.
+
+**Trap 3 — request-shape split.** `POST /v1/chat/completions` takes OpenAI
+`messages`; `POST /v1/deliberate` takes `prompt`. Mixing them 422s with a
+schema dump that names the right field.
+
+**Fresh-box bootstrap order (proven on a bare Debian agent, install 71s):**
+1. `pip install "chimera-deliberation[full]"` → 2. `chimera config init`
+(wheel template) → 3. **export CHIMERA_API_KEY before `chimera serve`** if
+your config has `auth.mode: env` — otherwise the server starts "alive" and
+401s everything with no hint why (DF-CHIMERA-V2-56) → 4. put provider keys
+in a `.env` NEXT TO `chimera.yaml` (auto-loaded; `DEEPSEEK_API_KEY`
+minimum) → 5. verify with the repo's `smoke_live.py --api-key ...`.

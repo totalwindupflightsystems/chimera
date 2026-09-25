@@ -732,3 +732,61 @@ How it works, why, and the right way:
 **Evidence:** numbers in `docs/dogfood/2026-09-25-integration.md`; agent
 c26d8af2 destroyed; the real key lived only in `~/dfkey` on the agent (gone).
 No credentials committed.
+
+## Run 15 (2026-09-25) — the OpenAI-compat surface, driven by the official SDK
+
+**How the surface was tested:** a scratch venv OUTSIDE the repo with the
+official `openai` SDK (3.19.2) as the ONLY dependency, and a real tool —
+`panel_review.py`, paste-a-file → schema-shaped multi-model review — built
+from docs/OPENAI_API.md alone. Plus the full contract battery: metadata,
+errors, no-ops, structured output, max_tokens, multi-turn.
+
+**Why the engine answers like this (the load-bearing design):** one
+"answer" is a dispatcher call carrying the WHOLE model catalog (~18.7k
+input tokens, 7.0s of a 12.6s small run) plus parallel workers plus an
+aggregator. That is why `usage` reports deliberation-wide totals (a
+six-word prompt can bill 100k+ prompt tokens — documented) and why wall
+time is minutes for big inputs and irreducible below tens of seconds for
+small ones. Optimizing the gateway would not move the number; the catalog
+carry is what makes per-stage subtask prompting work.
+
+**The errors I hit, and the right way:**
+
+- *My `/v1/deliberate` 422.* I guessed a chat-shaped body; the endpoint
+  takes `prompt`, not `messages`. The 422's FastAPI detail named the
+  field — read it, don't guess. Two request models exist by design;
+  cross-referencing them is the one real doc friction.
+- *The fresh-box 401.* I launched `chimera serve` on the ephemeral agent
+  without exporting `CHIMERA_API_KEY`; the server started "alive" and
+  rejected everything with "Invalid API key." — the safe-reject default
+  works, but the server says nothing about the missing env (filed
+  DF-CHIMERA-V2-56). The right way: `INTEGRATION.md` §3 — export the key
+  before serve; then the documented path works end to end (drop-in answer
+  10s + smoke_live SMOKE PASS on the bare agent).
+- *The hung curl.* My driver read stdin twice with `-H @/dev/stdin`; curl
+  blocked forever. Header files must be real files (`-H @$HOME/auth.hdr`
+  — and note curl does NOT expand `~` mid-word). The key crossed to the
+  agent as a 0600 file via stdin, never argv, never a log.
+- *nohup& inside an ssh one-liner died with the session* (server gone by
+  the next ssh). The pattern that survives: pipe a launcher script to the
+  agent, `setsid ... > log 2>&1 < /dev/null &` + disown, poll
+  `/health` in the same script. (Same lesson as bunker-qa.sh's setsid.)
+
+**What the canary proved:** a `const` marker inside a `strict` json_schema
+never survived the `speed` formation (deepseek aggregator) — the docs'
+capability table ("removed" for non-table providers) is accurate, and the
+defect is purely that the CLIENT cannot see the strip (DF-CHIMERA-V2-53).
+Likewise the gateway tracks `finish_reason="length"` internally
+(FAILURE_RESILIENCE.md) but the compat schema hardcodes `"stop"` — so a
+max_tokens=25 run's 109-char reasoning fragment looks like a complete
+answer (DF-CHIMERA-V2-54/55).
+
+**Perf read (no PERF row, numbers recorded):** headline op cold 292.4s /
+warm 266.3s, client user+sys <1.1s → ≥99% model-bound; spread ≈ provider
+variance. Caller guidance (now in the usage skill): generous timeouts,
+canary-check strict schemas, keep max_tokens generous.
+
+**Evidence:** run-15 report `docs/dogfood/2026-09-25-run15-integration.md`;
+probe outputs under `/tmp/dg-consumer/` (ephemeral); agent 6963ad23
+destroyed + verified gone; board rows DF-CHIMERA-V2-53..56; no credentials
+committed (agent key file destroyed with the agent).
