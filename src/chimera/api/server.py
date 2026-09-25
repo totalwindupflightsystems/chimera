@@ -327,6 +327,34 @@ class ChatCompletionResponse(BaseModel):
     model: str
     choices: list[ChatChoice]
     usage: ChatUsage
+    chimera_format_negotiation: dict[str, Any] | None = None
+    """Present ONLY when the resolved answer stage's provider could not honor
+    the requested ``response_format`` — a downgrade or removal — as
+    ``{"requested": <type>, "served": <type-or-null>}`` (DF-CHIMERA-V2-53,
+    mirroring the ``gateway_format_downgrade`` / ``gateway_format_removed``
+    log events). ``served: null`` means the call ran as plain text. Absent
+    (not null) when the format was honored or none was requested, so existing
+    responses are byte-identical. The field is Chimera-specific; OpenAI-strict
+    clients ignore unknown response fields."""
+
+
+def _compat_format_negotiation(trace: DeliberationTrace) -> dict[str, Any] | None:
+    """The format-negotiation outcome of the stage that produced the answer.
+
+    ``None`` (⇒ field omitted from the compat response) unless the ANSWER
+    stage's own gateway call reported a lossy negotiation
+    (``StageSpan.negotiated_format``): only that call's wire constraints
+    describe the merged answer — a worker span's outcome says nothing about
+    the answer stage, and a pass-through (``served == requested``) is not a
+    downgrade. The comparison uses the span's recorded outcome verbatim; it
+    is never re-derived from the model or provider name.
+    """
+    span = next((s for s in trace.stages if s.stage_id == trace.answer_stage_id), None)
+    if span is None or span.negotiated_format is None:
+        return None
+    if span.negotiated_format.get("served") == span.negotiated_format.get("requested"):
+        return None  # pass-through — not a downgrade, nothing to surface
+    return span.negotiated_format
 
 
 def aggregate_usage(trace: DeliberationTrace) -> tuple[int, int, int]:
@@ -750,7 +778,14 @@ def _register_routes(app: FastAPI) -> None:
         finally:
             queue.release()
 
-    @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
+    @app.post(
+        "/v1/chat/completions",
+        response_model=ChatCompletionResponse,
+        # DF-CHIMERA-V2-53: `chimera_format_negotiation` must be ABSENT (not
+        # explicit null) when the format was honored, so existing drop-in
+        # clients see a byte-identical response shape.
+        response_model_exclude_none=True,
+    )
     async def chat_completions(
         request: Request,
         body: ChatCompletionRequest,
@@ -900,6 +935,11 @@ def _register_routes(app: FastAPI) -> None:
                     completion_tokens=usage_completion,
                     total_tokens=usage_total,
                 ),
+                # DF-CHIMERA-V2-53: make format negotiation visible at the
+                # compat edge — a lossy outcome on the ANSWER stage rides the
+                # response instead of living only in the logs. Present only
+                # when the requested format was weakened; omitted otherwise.
+                chimera_format_negotiation=_compat_format_negotiation(trace),
             )
         finally:
             queue.release()

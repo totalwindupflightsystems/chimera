@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
@@ -147,22 +148,31 @@ class Gateway(Protocol):
 # F6: Provider-aware format negotiation
 # --------------------------------------------------------------------------- #
 
+
 class FormatCapability(Enum):
     """What level of structured output a provider supports."""
-    JSON_SCHEMA = "json_schema"          # Full JSON Schema (openai, anthropic, google, zai)
-    JSON_OBJECT = "json_object"           # Generic {} only (moonshot)
-    NONE = "none"                         # Plain text only
+
+    JSON_SCHEMA = "json_schema"  # Full JSON Schema (openai, anthropic, google, zai)
+    JSON_OBJECT = "json_object"  # Generic {} only (moonshot)
+    NONE = "none"  # Plain text only
 
 
 # Providers that support full json_schema
-_JSON_SCHEMA_PROVIDERS: frozenset[str] = frozenset({
-    "openai", "anthropic", "google", "zai",
-})
+_JSON_SCHEMA_PROVIDERS: frozenset[str] = frozenset(
+    {
+        "openai",
+        "anthropic",
+        "google",
+        "zai",
+    }
+)
 
 # Providers that support json_object but not json_schema
-_JSON_OBJECT_PROVIDERS: frozenset[str] = frozenset({
-    "moonshot",
-})
+_JSON_OBJECT_PROVIDERS: frozenset[str] = frozenset(
+    {
+        "moonshot",
+    }
+)
 
 
 def _get_format_capability(provider: str) -> FormatCapability:
@@ -184,6 +194,16 @@ def negotiate_response_format(
     * json_schema → json_object for providers that don't support schema.
     * Any format → None for text-only providers.
     * Returns None if the provider can't handle any structured format.
+
+    DF-CHIMERA-V2-53: alongside the wire format this records the OUTCOME on
+    ``GatewayResponse.metadata["format_negotiation"]`` as
+    ``{"requested": <type>, "served": <type-or-None>}`` — but ONLY when the
+    provider could not honor the request (a downgrade or a removal). A
+    pass-through (served == requested) and a plain call with no
+    ``response_format`` stamp nothing, so the presence of the key is exactly
+    the signal that the response is less constrained than the caller asked
+    for. The engine copies the entry onto the answer stage's trace span and
+    the OpenAI-compat route surfaces it as ``chimera_format_negotiation``.
     """
     if requested is None:
         return None
@@ -203,10 +223,12 @@ def negotiate_response_format(
                 to_format="json_object",
                 provider=provider,
             )
+            _stamp_format_negotiation(requested_type, "json_object")
             return {"type": "json_object"}
         if requested_type == "json_object":
             return requested
         # unknown type — try json_object as a safe bet
+        _stamp_format_negotiation(requested_type, "json_object")
         return {"type": "json_object"}
 
     # capability == NONE
@@ -216,7 +238,28 @@ def negotiate_response_format(
             requested_type=requested_type,
             provider=provider,
         )
+        _stamp_format_negotiation(requested_type, None)
     return None
+
+
+def _stamp_format_negotiation(requested_type: Any, served_type: str | None) -> None:
+    """Record the negotiation outcome on the CURRENT call's gateway response.
+
+    ``negotiate_response_format`` runs inside ``LiteLLMGateway.complete``
+    before the provider call exists, so there is no response object to stamp
+    yet — the call site assigns the returned marker to a local and writes it
+    into the response's ``metadata`` side-band once the response is built,
+    the same channel ``stamp_route_attribution`` uses.
+    """
+    _current_format_negotiation.set({"requested": requested_type, "served": served_type})
+
+
+#: ContextVar carrying the outcome ``negotiate_response_format`` just computed
+#: for the call in flight; consumed (and cleared) by ``LiteLLMGateway.complete``.
+_current_format_negotiation: ContextVar[dict[str, Any] | None] = ContextVar(
+    "chimera_format_negotiation_outcome",
+    default=None,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -225,7 +268,9 @@ def negotiate_response_format(
 
 
 def resolve_litellm_model(
-    model_name: str, entry: ModelEntry, api_key: str | None = None,
+    model_name: str,
+    entry: ModelEntry,
+    api_key: str | None = None,
     fallback_provider: str | None = None,
     base_url: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
@@ -326,7 +371,7 @@ def resolve_litellm_model(
         # behavior (INT-PROV-ROUTER9-001).
         prefix = f"{provider}/"
         if model_name.lower().startswith(prefix):
-            api_model = model_name[len(prefix):]
+            api_model = model_name[len(prefix) :]
         else:
             api_model = model_name.rsplit("/", 1)[-1]
         kwargs["api_base"] = base_url
@@ -386,10 +431,15 @@ def stamp_route_attribution(
 # --------------------------------------------------------------------------- #
 
 # HTTP status codes that are retryable (transient failures)
-_RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({
-    429,                      # Rate limit
-    500, 502, 503, 504,       # Server errors
-})
+_RETRYABLE_STATUS_CODES: frozenset[int] = frozenset(
+    {
+        429,  # Rate limit
+        500,
+        502,
+        503,
+        504,  # Server errors
+    }
+)
 
 
 def _is_retryable(exc: BaseException) -> bool:
@@ -406,14 +456,23 @@ def _is_retryable(exc: BaseException) -> bool:
         return code in _RETRYABLE_STATUS_CODES
 
     # Network-level errors (timeout, connection refused, DNS, ...)
-    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError,
-                         httpx.ConnectError, httpx.ReadError,
-                         httpx.WriteError, httpx.PoolTimeout)):
+    if isinstance(
+        exc,
+        (
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            httpx.ConnectError,
+            httpx.ReadError,
+            httpx.WriteError,
+            httpx.PoolTimeout,
+        ),
+    ):
         return True
 
     # openai.OpenAIError – check for retryable HTTP subclasses
     try:
         import openai
+
         if isinstance(exc, openai.OpenAIError):
             # OpenAI's APIStatusError has a status_code attribute
             if hasattr(exc, "status_code"):
@@ -532,7 +591,8 @@ class LiteLLMGateway:
         # Auto-initialize breakers for configured providers
         for provider_name, cb_cfg in config.circuit_breakers.items():
             self._circuit_breakers[provider_name] = ProviderCircuitBreaker(
-                name=provider_name, config=cb_cfg,
+                name=provider_name,
+                config=cb_cfg,
             )
 
     async def complete(
@@ -583,14 +643,25 @@ class LiteLLMGateway:
             api_key = provider_cfg.api_key
 
         lm_model, extra = resolve_litellm_model(
-            model, entry, api_key=api_key, fallback_provider=effective_provider,
+            model,
+            entry,
+            api_key=api_key,
+            fallback_provider=effective_provider,
             base_url=provider_cfg.base_url if provider_cfg is not None else None,
         )
 
-        # F6: Provider-aware format negotiation
-        negotiated_format = negotiate_response_format(
-            response_format, effective_provider
-        )
+        # F6: Provider-aware format negotiation. A lossy outcome (downgrade or
+        # removal) is read back here and stamped onto the response's metadata
+        # side-band once the call completes (DF-CHIMERA-V2-53) — the same
+        # channel as the route attribution, so test doubles without it are
+        # simply silent. The ContextVar is reset BEFORE the negotiation and
+        # drained right after: direct callers of ``negotiate_response_format``
+        # (unit tests, other modules) leave a stale outcome behind, and this
+        # call must never report another call's negotiation.
+        _current_format_negotiation.set(None)
+        negotiated_format = negotiate_response_format(response_format, effective_provider)
+        format_negotiation = _current_format_negotiation.get()
+        _current_format_negotiation.set(None)
 
         call_kwargs: dict[str, Any] = {
             "model": lm_model,
@@ -612,9 +683,7 @@ class LiteLLMGateway:
             "gateway_call",
             model=model,
             litellm_model=lm_model,
-            response_format_type=(
-                negotiated_format.get("type") if negotiated_format else "none"
-            ),
+            response_format_type=(negotiated_format.get("type") if negotiated_format else "none"),
         )
 
         # F3: Circuit breaker check
@@ -634,14 +703,21 @@ class LiteLLMGateway:
 
         try:
             response = await self._complete_with_retry(
-                call_kwargs, model, provider=effective_provider, probe=probe,
+                call_kwargs,
+                model,
+                provider=effective_provider,
+                probe=probe,
             )
             if breaker is not None:
                 breaker.on_success()
             # Stamp the route that actually served the call onto the response's
             # metadata side-band; the engine copies it onto the trace span
             # (``model`` alone cannot attribute a call — its catalog prefix can
-            # name a provider other than the one that served it).
+            # name a provider other than the one that served it). A lossy
+            # format negotiation (downgrade/removal, DF-CHIMERA-V2-53) rides
+            # the same side-band.
+            if format_negotiation is not None:
+                response.metadata["format_negotiation"] = format_negotiation
             return stamp_route_attribution(
                 response,
                 provider=effective_provider,
@@ -707,7 +783,9 @@ class LiteLLMGateway:
         """
         if probe:
             return await self._complete_probe_once(
-                call_kwargs, model, provider=provider,
+                call_kwargs,
+                model,
+                provider=provider,
             )
 
         retry_cfg = self.config.retry
@@ -832,7 +910,10 @@ class LiteLLMGateway:
         return self._build_response(result, model, probe=True)
 
     def _build_response(
-        self, result: Any, model: str, probe: bool = False,
+        self,
+        result: Any,
+        model: str,
+        probe: bool = False,
     ) -> GatewayResponse:
         """Build a GatewayResponse from a LiteLLM result, with token limit
         and empty response detection (C3, C4).
@@ -843,7 +924,9 @@ class LiteLLMGateway:
 
 
 def _build_response(
-    result: Any, model: str, probe: bool = False,
+    result: Any,
+    model: str,
+    probe: bool = False,
 ) -> GatewayResponse:
     """Build a GatewayResponse from a LiteLLM result (standalone, testable).
 
@@ -943,14 +1026,13 @@ async def _litellm_acomplete(call_kwargs: dict[str, Any]) -> Any:
 
     executor = _get_gateway_executor()
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        executor, _litellm_sync_complete, call_kwargs
-    )
+    return await loop.run_in_executor(executor, _litellm_sync_complete, call_kwargs)
 
 
 # --------------------------------------------------------------------------- #
 # C4: Empty/null response extraction
 # --------------------------------------------------------------------------- #
+
 
 def _extract_text(result: Any) -> str:
     """Extract text content from a LiteLLM completion result.
@@ -1002,6 +1084,7 @@ def _extract_text(result: Any) -> str:
 # --------------------------------------------------------------------------- #
 # C7: Budget exhaustion detection
 # --------------------------------------------------------------------------- #
+
 
 def _is_budget_exhausted(error_str: str) -> bool:
     """Detect provider errors indicating quota/budget exhaustion (C7)."""

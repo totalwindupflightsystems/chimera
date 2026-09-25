@@ -98,6 +98,33 @@ class StageSpan(BaseModel):
     none — a degraded placeholder or a dispatcher fallback).  The API layer
     surfaces any answer-contributing stage's ``"length"`` as the OpenAI
     response's ``finish_reason`` (DF-CHIMERA-V2-54)."""
+    negotiated_format: dict[str, Any] | None = None
+    """The response_format negotiation outcome THIS call's gateway recorded
+    (``{"requested": <type>, "served": <type-or-None>}`` from
+    ``GatewayResponse.metadata["format_negotiation"]``) — present only when
+    the provider could not honor the requested format, i.e. the call is less
+    constrained than requested (DF-CHIMERA-V2-53). ``None`` for pass-through
+    routes, plain calls, and gateways that carry no side-band (test doubles);
+    never guessed from the model or provider name."""
+
+
+#: Constant for the metadata key carrying a lossy format-negotiation outcome.
+FORMAT_NEGOTIATION_KEY = "format_negotiation"
+
+
+def _format_negotiation(response: GatewayResponse) -> dict[str, Any] | None:
+    """Read the format-negotiation outcome off *response*'s metadata side-band.
+
+    ``LiteLLMGateway.complete`` stamps a lossy outcome (a downgrade or removal
+    of the requested ``response_format``, DF-CHIMERA-V2-53) next to the route
+    attribution it already writes. Responses that never went through a
+    resolved route — engine-fabricated degraded placeholders, test doubles —
+    carry no such key, so this stays ``None``; the absence is meaningful (the
+    call's format was honored or none was requested) and is never inferred
+    from the model/provider name.
+    """
+    metadata = response.metadata or {}
+    return metadata.get(FORMAT_NEGOTIATION_KEY)
 
 
 def _route_attribution(response: GatewayResponse) -> tuple[str, str, str]:
@@ -1228,6 +1255,7 @@ class Engine:
             started_at=start,
             ended_at=ended,
             finish_reason=response.finish_reason,
+            negotiated_format=_format_negotiation(response),
         )
         result = StageResult(
             stage_id=stage.id,
@@ -1360,6 +1388,7 @@ class Engine:
             started_at=start_ts,
             ended_at=ended,
             finish_reason=degraded_response.finish_reason,
+            negotiated_format=_format_negotiation(degraded_response),
         )
         result = StageResult(
             stage_id=stage.id,
@@ -1652,6 +1681,7 @@ class Engine:
             started_at=outcome.started_at,
             ended_at=outcome.ended_at,
             finish_reason=resp.finish_reason,
+            negotiated_format=_format_negotiation(resp),
         )
 
     def _select_answer(self, dag: FormationDAG, results: dict[str, StageResult]) -> tuple[str, str]:
