@@ -107,6 +107,27 @@ curl http://localhost:8765/v1/chat/completions \
   }'
 ```
 
+### finish_reason
+
+The choice's `finish_reason` describes the **deliberation**, not one model
+call. It mirrors the OpenAI semantics over the aggregate:
+
+| Value | Meaning |
+|---|---|
+| `"stop"` | No contributing stage was truncated — every worker, judge, and aggregator call ended normally. This is the default. |
+| `"length"` | **At least one** stage span hit its `max_tokens` cap. The merged answer is incomplete in exactly that case: whatever a truncated worker or a truncated aggregator never produced cannot appear in it. |
+
+Because one request fans out to several upstream calls, `"length"` means "any
+contributing stage was capped" — the same contract a plain OpenAI response
+gives a single call, lifted to the aggregate. The dispatcher's internal design
+call is small, structured, and uncapped, so it never turns the deliberation's
+finish reason into `"length"`. A drop-in SDK client that retries or continues
+on `"length"` therefore keeps working: when it sees `"length"` it knows the
+answer it received may be cut short.
+
+The per-stage detail — including each span's own finish reason — is on
+`POST /v1/deliberate`'s `trace`.
+
 The following standard OpenAI fields are accepted for drop-in compatibility
 but are **documented no-ops** (never errors, never silently misapplied):
 

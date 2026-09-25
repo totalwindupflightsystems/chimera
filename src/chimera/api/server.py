@@ -882,11 +882,19 @@ def _register_routes(app: FastAPI) -> None:
             # Deliberation-wide aggregate (dispatch + every stage), not the
             # dispatcher stage's numbers alone — see aggregate_usage().
             usage_prompt, usage_completion, usage_total = aggregate_usage(trace)
+            # "length" when ANY contributing stage was truncated (the merged
+            # answer is incomplete in exactly that case), else "stop" —
+            # aggregated_finish_reason().
             return ChatCompletionResponse(
                 id=f"chatcmpl-{trace.request_id}",
                 created=int(time.time()),
                 model=formation,
-                choices=[ChatChoice(message=ChatChoiceMessage(content=result.answer))],
+                choices=[
+                    ChatChoice(
+                        message=ChatChoiceMessage(content=result.answer),
+                        finish_reason=aggregated_finish_reason(trace),
+                    )
+                ],
                 usage=ChatUsage(
                     prompt_tokens=usage_prompt,
                     completion_tokens=usage_completion,
@@ -926,6 +934,25 @@ _MAX_PROBE_MODELS = 3
 #: ``api``): nothing was measured about this provider's behaviour except that
 #: it is slower than the budget.
 _SLOW_ERROR_CLASS = "slow"
+
+
+def aggregated_finish_reason(trace: DeliberationTrace) -> str:
+    """Finish reason of a WHOLE deliberation, mirroring OpenAI semantics.
+
+    One chimera request fans a prompt out to many upstream model calls, so the
+    aggregated completion is truncated whenever ANY answer-contributing stage
+    was: the merged answer can silently lack what a truncated worker or a
+    truncated aggregator never delivered.  Returns ``"length"`` when any span
+    in ``trace.stages`` (workers, judges, aggregators — never the dispatch
+    span, whose small structured design call is uncapped and contributes no
+    answer text) carries ``finish_reason == "length"``, else ``"stop"``.
+
+    DF-CHIMERA-V2-54: the choice used to hard-code the ``"stop"`` default, so
+    drop-in SDK clients that retry or continue on ``"length"`` misfired.
+    """
+    if any(span.finish_reason == "length" for span in trace.stages):
+        return "length"
+    return "stop"
 
 
 def _provider_has_credentials(config: ChimeraConfig, provider_name: str) -> bool:

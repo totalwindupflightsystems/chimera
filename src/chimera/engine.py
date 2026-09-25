@@ -91,6 +91,13 @@ class StageSpan(BaseModel):
     """``time.monotonic()`` when the stage began (for wave overlap checks)."""
     ended_at: float = 0.0
     """``time.monotonic()`` when the stage finished."""
+    finish_reason: str = ""
+    """The finish reason the gateway reported for THIS stage's call, read off
+    its ``GatewayResponse`` (``"length"`` when the call hit its ``max_tokens``
+    cap, ``"stop"`` on a normal completion, ``""`` when the provider reported
+    none — a degraded placeholder or a dispatcher fallback).  The API layer
+    surfaces any answer-contributing stage's ``"length"`` as the OpenAI
+    response's ``finish_reason`` (DF-CHIMERA-V2-54)."""
 
 
 def _route_attribution(response: GatewayResponse) -> tuple[str, str, str]:
@@ -1220,6 +1227,7 @@ class Engine:
             depends_on=list(stage.depends_on),
             started_at=start,
             ended_at=ended,
+            finish_reason=response.finish_reason,
         )
         result = StageResult(
             stage_id=stage.id,
@@ -1351,6 +1359,7 @@ class Engine:
             depends_on=list(stage.depends_on),
             started_at=start_ts,
             ended_at=ended,
+            finish_reason=degraded_response.finish_reason,
         )
         result = StageResult(
             stage_id=stage.id,
@@ -1642,6 +1651,7 @@ class Engine:
             depends_on=[],
             started_at=outcome.started_at,
             ended_at=outcome.ended_at,
+            finish_reason=resp.finish_reason,
         )
 
     def _select_answer(self, dag: FormationDAG, results: dict[str, StageResult]) -> tuple[str, str]:
