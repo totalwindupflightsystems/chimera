@@ -28,6 +28,7 @@ from typing import Annotated, Any
 import structlog
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
+from rich.console import Console
 
 from chimera import __version__
 from chimera.api.dependencies import require_api_key
@@ -1462,11 +1463,52 @@ async def _check_providers(
     return status
 
 
+#: Channel for serve-startup warnings: stderr, so the machine-readable stdout
+#: contract (DF-CHIMERA-V2-3) holds even on the ``serve`` path. Same channel
+#: the CLI uses for its ``error:`` lines (``cli.main.err_console``).
+_err_console = Console(stderr=True)
+
+
+def _warn_if_auth_key_missing(cfg: ChimeraConfig) -> None:
+    """Loud one-line warning when env-mode auth can never succeed (DF-CHIMERA-V2-56).
+
+    The fresh-install dead end: ``chimera config init`` ships
+    ``auth.enabled: true`` / ``auth.mode: env``, and a ``chimera serve``
+    WITHOUT ``CHIMERA_API_KEY`` starts perfectly healthy —
+    ``/v1/health/live`` says alive — then rejects every authenticated call
+    with 401 ``Invalid API key.``, which reads like a broken key rather than
+    a missing one. Announce the mismatch BEFORE uvicorn binds the port, on
+    stderr, naming the literal variable and the config stanza so the line is
+    greppable in console/journal logs.
+
+    Silent when the key is set, when auth is disabled (the default), or when
+    ``auth.mode: list`` (keys come from config, not the env). Read-only:
+    never sets a default key, never bypasses the check in
+    ``dependencies.verify_api_key`` — the server starts either way.
+    """
+    auth = cfg.auth
+    if not auth.enabled or auth.mode != "env":
+        return
+    if os.environ.get("CHIMERA_API_KEY", "").strip():
+        return
+    _err_console.print(
+        "[yellow]warning:[/yellow] "
+        "auth.enabled=true with auth.mode: env, but CHIMERA_API_KEY is not "
+        "set — every authenticated call will be rejected with 401 Invalid "
+        'API key. Export CHIMERA_API_KEY="<your shared key>" and restart '
+        "the server.",
+        soft_wrap=True,
+    )
+
+
 def run(host: str | None = None, port: int | None = None) -> None:
     """Run the API server with uvicorn (``chimera serve`` entrypoint)."""
     import uvicorn
 
     cfg = load_config()
+    # DF-CHIMERA-V2-56: at startup, before the port binds — not on the first
+    # request, when the 401s have already confused everyone.
+    _warn_if_auth_key_missing(cfg)
     uvicorn.run(
         create_app(cfg),
         host=host or cfg.server.host,
