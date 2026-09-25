@@ -1761,3 +1761,15 @@ tasks:
   status: complete
   created_at: '2026-09-25T16:15:26.453322+00:00'
   completed_at: '2026-09-25T16:24:14.138458+00:00'
+- id: DF-CHIMERA-V2-54
+  title: Surface truncation as finish_reason=length in OpenAI-compat responses
+  criteria:
+  - A deliberation where any stage span ended truncated produces an OpenAI-compat
+    response whose choices[0].finish_reason equals "length" instead of "stop"
+  - A deliberation with no truncated stage keeps finish_reason "stop"
+  - Unit tests cover both paths (span plumbing + response mapping) and the full pytest
+    suite passes green
+  - docs/OPENAI_API.md documents finish_reason semantics (stop vs length)
+  status: complete
+  created_at: '2026-09-25T16:57:16.070766+00:00'
+  completed_at: '2026-09-25T17:27:09.010163+00:00'
