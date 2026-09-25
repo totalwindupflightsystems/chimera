@@ -1740,3 +1740,24 @@ tasks:
   status: complete
   created_at: '2026-09-24T12:55:14.566472+00:00'
   completed_at: '2026-09-24T13:23:46.182495+00:00'
+- id: DF-CHIMERA-V2-49
+  title: Restore model-sync core-scan coverage under the task-router source + _fetched_at
+    mtime fallback
+  criteria:
+  - Core scan sees all 13 labs under the task-router source (router rows attributed
+    per-model by id marker; models.dev fills gaps; router pricing wins); discover_providers
+    pricing keys router-final; report scope prints measured coverage; marker-less
+    cache mtime fallback; full suite + Tier-1 guard green
+  status: complete
+  created_at: '2026-09-25T16:15:26.199223+00:00'
+  completed_at: '2026-09-25T16:19:10.033640+00:00'
+- id: DF-CHIMERA-V2-50
+  title: Core-scan dedupe compares basenames, matching the reseller path
+  criteria:
+  - Core-scan dedupe skips candidates whose basename matches an existing catalog entry
+    via the shared _basename helper; basename-skipped candidates recorded in .seen_models.json
+    with markers and stated in the report instead of silently dropped; old seen files
+    load unchanged; full suite green
+  status: complete
+  created_at: '2026-09-25T16:15:26.453322+00:00'
+  completed_at: '2026-09-25T16:24:14.138458+00:00'

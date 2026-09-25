@@ -1,0 +1,31 @@
+{
+  "tick_number": 276,
+  "wave": "chimera-v2-2026-09-24-22-15-26",
+  "action": "wave-composed",
+  "tasks": [
+    "DF-CHIMERA-V2-49",
+    "DF-CHIMERA-V2-50"
+  ],
+  "workers": [
+    {
+      "task": "DF-CHIMERA-V2-49",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-49",
+      "branch": "wt/DF-CHIMERA-V2-49",
+      "base": "cd44092"
+    },
+    {
+      "task": "DF-CHIMERA-V2-50",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-50",
+      "branch": "wt/DF-CHIMERA-V2-50",
+      "base": "cd44092"
+    }
+  ],
+  "mode": "auto-merge (foreman merges serially, workers never push)",
+  "budget": 10,
+  "composed_at": "2026-09-24T22:59:00Z",
+  "finished_at": "2026-09-25T16:35:00Z",
+  "recovered": {
+    "by": "tick 277 (scheduler chimera-v2-2026-09-25-15-55-41)",
+    "verdict": "work landed and judged: suites green on both branches (1781/64 and 1779/64 via PYTHONPATH worktree checkout), merged serially (22a7216, 0c87a0b), merge-gate fix e5ee291, tier2 PASS both (f735e852, 2aece991)"
+  }
+}
