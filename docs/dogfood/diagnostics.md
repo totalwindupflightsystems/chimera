@@ -687,5 +687,48 @@ plugin install needed.
 
 **Evidence:** clone→build→up→smoke transcript in
 `docs/dogfood/2026-09-24-integration.md`; agent 5d1b8e8e destroyed; the fake
-key `sk-ds-DOGEATING-PROBE-...` and the real key both lived only in
+key `sk-ds-...OBE-...` and the real key both lived only in
 `~/appkey` on the agent (gone with the agent). No credentials committed.
+
+## 2026-09-25 — run 14: the PyPI wheel leg and the MCP stdio leg
+
+The 13 earlier runs all exercised chimera from a REPO checkout (or a compose
+image built from one). Two surfaces had never been touched: the wheel that a
+`pip install chimera-deliberation[full]` user actually runs, and the MCP
+stdio server driven by a client that is not the repo's own probe.
+
+How it works, why, and the right way:
+
+- **The wheel is the product a PyPI user runs; this run proved it equals the
+  repo.** Installed `[full]` from PyPI in a throwaway venv (36s, py3.11) and
+  on a bare Debian 3.13.5 bunker agent (266s): both give 0.2.7, `python -m
+  chimera` works, `chimera config init` finds the template INSIDE
+  site-packages — so the wheel force-includes of `chimera.yaml.example` are
+  load-bearing and verified. The errors I hit were both MY tooling, not the
+  product: `uv venv` ships no pip (use `python3 -m venv`), and `uv` defaults
+  to the newest CPython (pass `--python 3.11`).
+- **MCP interop is real, not probe-shaped.** A hand-rolled JSON-RPC-over-
+  stdio client (initialize → notifications/initialized → tools/list →
+  tools/call) gets 3 tools with correct schemas and full deliberations
+  (12.8s local / 45.5s on the fresh agent), protocol 2024-11-05. The client
+  lives in the run-14 report; it is ~60 lines and is the model for any
+  harness integration. The repo's own `scripts/mcp-liveness-check.sh` cannot
+  run on such machines (npx missing — DF-CHIMERA-V2-52).
+- **The error I hit that is NOT mine:** `bunker-qa.sh launch` shipped a
+  0-byte qa-run.sh to the agent (DETECT_UP_PREV_DIR unbound at line 846
+  aborts script generation after the sync; `docker pull requires 1 argument`
+  warning precedes it) — the collect phase then reports `pull-failed`, which
+  looks like a network fault but is a driver defect. Diagnosis: `wc -c
+  ~/qa-run.sh` on the agent (0 bytes) + `bash -n` (syntax OK on an empty
+  file). The fix belongs in the QA driver (hermes-infra), filed as
+  DF-CHIMERA-V2-51; the install leg was completed by hand per the skill and
+  PASSED (config init → real deliberation → MCP battery, agent c26d8af2
+  destroyed and verified gone).
+- Deployment parity: `smoke_live.py` classifies the live deployment
+  CODE-CURRENT (ee8ad95, bookkeeping-only gap to HEAD) with a class-aware
+  zai quota warning and a live merged answer — the same one-command proof
+  every run ends with.
+
+**Evidence:** numbers in `docs/dogfood/2026-09-25-integration.md`; agent
+c26d8af2 destroyed; the real key lived only in `~/dfkey` on the agent (gone).
+No credentials committed.

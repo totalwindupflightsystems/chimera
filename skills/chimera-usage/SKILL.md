@@ -20,7 +20,12 @@ description: >-
   build/up/smoke numbers on fresh hardware, the DEEPSEEK_KEY vs
   ${DEEPSEEK_API_KEY} naming split, the fake-key credential probe, the
   release-based image caveat, and the bunker docker-socket recipe.
-version: 1.5.0
+  v1.6.0 adds the 2026-09-25 run-14 PYPI-WHEEL + INDEPENDENT-MCP section:
+  installing from PyPI (no repo) on this box and a bare 3.13 agent, config
+  init from the wheel's site-packages template, and a ~60-line raw
+  JSON-RPC stdio client that proves MCP interop without npx or the repo's
+  own probe.
+version: 1.6.0
 category: software-development
 ---
 
@@ -570,3 +575,43 @@ Pitfalls (all hit for real):
 6. **Bunker docker socket**: `/run/bunker/<agent>/docker.sock`, not
    `/run/user/<uid>/docker.sock`; use `docker -H <socket>` (a DOCKER_HOST env
    export may trip control-host gates) — compose works as-is against it.
+
+## Update 2026-09-25 (run 14) — the PYPI WHEEL and an INDEPENDENT MCP client
+
+Runs 1-13 always ran chimera from a repo checkout or a compose image. Two
+surfaces were never touched: the wheel a `pip install
+chimera-deliberation[full]` user actually runs, and the MCP server driven by
+a client that is not this repo's probe.
+
+PyPI-wheel install (proven twice, including a bare Debian 3.13.5 agent):
+
+```bash
+python3 -m venv venv && venv/bin/pip install 'chimera-deliberation[full]'
+chimera config init        # template found INSIDE site-packages — no repo needed
+chimera --quiet "…"        # real merged answer; python -m chimera also works
+```
+
+- Numbers: 36s install + 29s first answer (py3.11, warm box); 266s install +
+  18s answer (bare 3.13 agent). Warm CLI ≈11s, wall == trace duration_ms
+  (model-bound, zero client overhead).
+- Tooling traps (mine, not the product's): `uv venv` ships no pip — use
+  `python3 -m venv`; `uv` defaults to the NEWEST CPython — pass
+  `--python 3.11`.
+
+Independent MCP client (no npx, no repo code): ~60 lines of stdio JSON-RPC —
+
+```python
+p = subprocess.Popen(["chimera-mcp"], stdin=PIPE, stdout=PIPE, text=True)
+send {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{...}}}
+send {"jsonrpc":"2.0","method":"notifications/initialized"}          # notification, no id
+send {"jsonrpc":"2.0","id":2,"method":"tools/list"}                  # 3 tools
+send {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"chimera_deliberate","arguments":{"prompt":"..."}}}
+```
+
+- initialize 0.5s; tools `chimera_deliberate` (prompt required;
+  formation/stage_models/dag optional), `chimera_formations`,
+  `chimera_models`; full trace comes back inside the content text.
+- Full client: `docs/dogfood/2026-09-25-integration.md` (run 14). Works
+  identically local and on a fresh agent — interop is not machine-specific.
+- The repo's `scripts/mcp-liveness-check.sh` needs npx and cannot run on
+  wheel-only machines (DF-CHIMERA-V2-52); use the raw client instead.
