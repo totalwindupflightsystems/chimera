@@ -602,3 +602,7 @@
 {"id": 1495, "timestamp": "2026-09-25T21:38:36Z", "event_type": "task_created", "task_id": "DF-CHIMERA-V2-61", "actor": "foreman", "detail": "{\"id\":\"DF-CHIMERA-V2-61\",\"status\":\"pending\"}", "tick_number": null}
 {"id": 1496, "timestamp": "2026-09-25T21:38:36Z", "event_type": "task_created", "task_id": "DF-CHIMERA-V2-62", "actor": "foreman", "detail": "{\"id\":\"DF-CHIMERA-V2-62\",\"status\":\"pending\"}", "tick_number": null}
 {"id": 1497, "timestamp": "2026-09-25T21:38:36Z", "event_type": "task_created", "task_id": "DF-CHIMERA-V2-63", "actor": "foreman", "detail": "{\"id\":\"DF-CHIMERA-V2-63\",\"status\":\"pending\"}", "tick_number": null}
+{"id": 1498, "timestamp": "2026-09-26T02:15:18Z", "event_type": "task_created", "task_id": "REVIEW-CHIMERA-005", "actor": "foreman", "detail": "{\"id\":\"REVIEW-CHIMERA-005\",\"status\":\"pending\"}", "tick_number": null}
+{"id": 1499, "timestamp": "2026-09-26T12:25:22Z", "event_type": "task_created", "task_id": "DOC-2", "actor": "foreman", "detail": "{\"id\":\"DOC-2\",\"status\":\"pending\"}", "tick_number": null}
+{"id": 1500, "timestamp": "2026-09-26T12:25:23Z", "event_type": "task_created", "task_id": "DOC-3", "actor": "foreman", "detail": "{\"id\":\"DOC-3\",\"status\":\"pending\"}", "tick_number": null}
+{"id": 1501, "timestamp": "2026-09-26T12:25:23Z", "event_type": "task_created", "task_id": "DOC-4", "actor": "foreman", "detail": "{\"id\":\"DOC-4\",\"status\":\"pending\"}", "tick_number": null}
