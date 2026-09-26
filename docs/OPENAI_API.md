@@ -176,7 +176,7 @@ defaults to budget-friendly auto-deliberation.
 | `stage_models` | `object` | — | Per-stage model overrides: `{"worker_1": "zai-coding-plan/glm-5.2"}` |
 | `dag` | `object` | — | Client-defined DAG (requires `allow_custom_dag: true`) |
 | `allow_custom_dag` | `bool` | `false` | Must be `true` for `dag` to be accepted |
-| `response_format` | `object` | — | OpenAI-compatible structured output |
+| `response_format` | `object` | — | OpenAI-compatible structured output. Downgrades/removals per the provider capability table are reported back on the response as `chimera_format_negotiation` (see [Structured Output](#structured-output)) |
 
 ## Structured Output
 
@@ -244,6 +244,87 @@ the automatic Anthropic→OpenRouter credential fallback, which logs
 `gateway_anthropic_fallback`) loses the requested format, and an
 `openrouter`-facing aggregator is therefore a common source of
 `gateway_format_removed` on real requests.
+
+The downgrade itself is intentional — the internal API deliberately falls
+back to the best format the provider supports instead of failing the
+deliberation — but it is no longer invisible: the OpenAI-compatible response
+reports it, and there is a client-side recipe (below) that catches it even
+when you cannot read the extra field.
+
+### `chimera_format_negotiation`: the downgrade, on the response itself
+
+When the stage that produced the merged answer could not honor your
+`response_format`, the `200` response body carries one extra Chimera field;
+when the format was honored (or none was requested) the field is **absent**
+— existing clients see a byte-identical response shape:
+
+```json
+{
+  "id": "chatcmpl-...",
+  "object": "chat.completion",
+  "choices": [ ... ],
+  "usage": { ... },
+  "chimera_format_negotiation": {
+    "requested": "json_schema",
+    "served": "json_object"
+  }
+}
+```
+
+| Observation | Meaning |
+|---|---|
+| `served: "json_object"` | **Downgraded** — the resolved provider speaks generic JSON but not schemas (`gateway_format_downgrade`): your schema was discarded before the call. Expect well-formed JSON; do NOT expect your shape, `enum`s, or `required` fields to hold. |
+| `served: null` | **Removed** — the resolved provider is not in the capability table (`gateway_format_removed`): the call went out as plain text, and any JSON in the answer is the model's own habit, not an enforced constraint. |
+| field absent | The format passed through unchanged (schema-capable provider), or no `response_format` was sent. |
+
+The field reports the outcome of the stage whose call produced the answer
+(the aggregator/merge stage) — that is the only call whose wire constraints
+describe the answer you received. A downgrade on a worker stage does not
+surface here.
+
+#### Client-side canary: detect a "validated" answer that was never validated
+
+OpenAI-strict clients ignore unknown response fields, and SDK wrappers may
+hide `chimera_format_negotiation` from your code. For an assertion that does
+not depend on reading it, put a **canary** in your schema: a `const` no real
+answer would contain. If the schema reached the wire, the provider was forced
+to emit it; if the response is missing it, the schema was NOT enforced —
+regardless of the `200` status or `finish_reason: "stop"`:
+
+```python
+CANARY = "cf-negotiation-check"  # any constant a real answer would never contain
+
+schema = {
+    "type": "object",
+    "properties": {
+        "severity": {"type": "string", "enum": ["P0", "P1", "P2"]},
+        "canary": {"const": CANARY},
+        # ... your real fields ...
+    },
+    "required": ["severity", "canary"],
+}
+
+data = json.loads(response.choices[0].message.content)
+if data.get("canary") != CANARY:
+    # The response looked successful, but the schema was not enforced:
+    # the provider answered without your constraints (downgraded or removed).
+    # Treat the payload as unvalidated text: re-validate / repair the JSON
+    # yourself, or pin a schema-capable provider for the answer stage.
+    ...
+```
+
+Honest limits of the canary: a MISSING canary is a reliable negative — proof
+the schema was not enforced. A PRESENT canary is strong but not ironclad
+proof of enforcement: when the format is downgraded or removed the merge
+prompt still describes the requested shape in prose, so a model can in rare
+cases copy the canary's value from the prompt without ever being constrained
+by it. For a definitive signal, read `chimera_format_negotiation`.
+
+This recipe exists because the failure mode is silent by construction: a
+`json_schema` request answered by a provider without schema support returns
+HTTP `200` and `finish_reason: "stop"`, and a client that trusted the status
+code believed it had validated data — a severity `enum` of `P0`/`P1`/`P2` can
+come back as free-text `high`/`medium`/`low` with every check green.
 
 ## Custom DAG: Full Control
 

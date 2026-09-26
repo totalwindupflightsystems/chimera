@@ -1773,3 +1773,43 @@ tasks:
   status: complete
   created_at: '2026-09-25T16:57:16.070766+00:00'
   completed_at: '2026-09-25T17:27:09.010163+00:00'
+- id: DF-CHIMERA-V2-53
+  title: Surface response_format negotiation to OpenAI-compat clients
+  criteria:
+  - Compat response surfaces the format-negotiation outcome when a downgrade or removal
+    occurs; no-downgrade behavior explicitly tested
+  - 'RED proof stated: new tests failed against pre-fix source'
+  - Full suite green via PYTHONPATH worktree run (baseline 1810 passed / 62 skipped)
+  - ruff check clean and ruff format idempotent on touched files
+  - docs/OPENAI_API.md documents negotiation surfacing plus the canary-const client
+    detection recipe
+  status: complete
+  created_at: '2026-09-25T19:06:06.071237+00:00'
+  completed_at: '2026-09-25T20:19:04.449227+00:00'
+- id: DF-CHIMERA-V2-56
+  title: Loud startup warning when auth is enabled but the key env is empty
+  criteria:
+  - With auth enabled and CHIMERA_API_KEY unset, startup emits a warning containing
+    the literal env var name and the auth.mode stanza; set-var and auth-disabled cases
+    emit none
+  - 'RED proof stated: new tests failed against pre-fix source'
+  - Full suite green via PYTHONPATH worktree run (baseline 1810 passed / 62 skipped)
+  - ruff check clean and ruff format idempotent on touched files
+  - docs/INTEGRATION.md notes the startup warning near section 3
+  status: complete
+  created_at: '2026-09-25T19:06:13.959242+00:00'
+  completed_at: '2026-09-25T20:29:26.718592+00:00'
+- id: DF-CHIMERA-V2-57
+  title: model-sync --score survives concatenated-JSON replies
+  criteria:
+  - A reply of two concatenated JSON objects scores from the first object
+  - A reply with no parseable object raises with a named reason including parse error
+    and finish reason
+  - The finish_reason=length doubling ladder still triggers on truncated replies
+  - 'Silent-success hole closed: unparseable non-truncation replies exit non-zero
+    with a named reason, never exit ok with no score file'
+  - 'RED proof stated: relevant new tests failed against pre-fix source'
+  - Full suite green via PYTHONPATH worktree run (baseline 1810 passed / 62 skipped)
+  status: complete
+  created_at: '2026-09-25T19:06:14.402370+00:00'
+  completed_at: '2026-09-25T20:58:05.527110+00:00'

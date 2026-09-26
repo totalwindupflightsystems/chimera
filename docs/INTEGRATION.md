@@ -147,8 +147,13 @@ auth:
 Start the server with the key:
 
 ```bash
-CHIMERA_API_KEY="sk-prod-abc123" chimera serve
+CHIMERA_API_KEY="***" chimera serve
 ```
+
+If you start the server with `auth.enabled: true` and `auth.mode: env` but
+forget to export `CHIMERA_API_KEY`, `chimera serve` prints a loud `warning:`
+line to stderr naming the missing variable before it binds the port — the
+server still starts, but every authenticated call will return `401`.
 
 Clients authenticate with either header:
 

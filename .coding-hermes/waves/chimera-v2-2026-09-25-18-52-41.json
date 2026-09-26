@@ -1,0 +1,40 @@
+{
+  "tick_number": 279,
+  "wave": "chimera-v2-2026-09-25-18-52-41",
+  "action": "wave-composed",
+  "tasks": [
+    "DF-CHIMERA-V2-53",
+    "DF-CHIMERA-V2-56",
+    "DF-CHIMERA-V2-57"
+  ],
+  "workers": [
+    {
+      "task": "DF-CHIMERA-V2-53",
+      "worktree": "~/worktrees/chimera-v2-DF-CHIMERA-V2-53",
+      "branch": "wt/DF-CHIMERA-V2-53",
+      "base": "9f54505",
+      "model": "k3",
+      "provider": "kimi-for-coding"
+    },
+    {
+      "task": "DF-CHIMERA-V2-56",
+      "worktree": "~/worktrees/chimera-v2-DF-CHIMERA-V2-56",
+      "branch": "wt/DF-CHIMERA-V2-56",
+      "base": "9f54505",
+      "model": "k3",
+      "provider": "kimi-for-coding"
+    },
+    {
+      "task": "DF-CHIMERA-V2-57",
+      "worktree": "~/worktrees/chimera-v2-DF-CHIMERA-V2-57",
+      "branch": "wt/DF-CHIMERA-V2-57",
+      "base": "9f54505",
+      "model": "k3",
+      "provider": "kimi-for-coding"
+    }
+  ],
+  "mode": "auto-merge (foreman merges serially, workers never push)",
+  "budget": 4,
+  "composed_at": "2026-09-25T19:05:00Z",
+  "notes": "53/56/57 mutually independent (57 isolated to scripts/model_sync.py; 53 compat-response negotiation; 56 startup auth warning). DF-CHIMERA-V2-55 held back: overlaps 53's compat-response region (same band), serial candidate for next tick. Paths home-relative; worktree dirs are deterministic ~/worktrees/<project>-<taskid>."
+}
