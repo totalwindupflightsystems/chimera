@@ -43,4 +43,5 @@ against the live deployment, **not** a description of current behavior.
 - [dogfood/2026-09-24-integration.md](dogfood/2026-09-24-integration.md) — run 13, docker deploy surface on fresh hardware (2026-09-24)
 - [dogfood/2026-09-25-integration.md](dogfood/2026-09-25-integration.md) — run 14, PyPI wheel install + independent MCP client (2026-09-25)
 - [dogfood/2026-09-25-run15-integration.md](dogfood/2026-09-25-run15-integration.md) — run 15, official OpenAI SDK compat surface (2026-09-25)
+- [dogfood/2026-09-25-run16-integration.md](dogfood/2026-09-25-run16-integration.md) — run 16, custom OpenAI-compatible provider seam focus (2026-09-25)
 - [dogfood/diagnostics.md](dogfood/diagnostics.md) — build/diagnostic trail behind the 2026-08-03 run
