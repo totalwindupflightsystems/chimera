@@ -409,12 +409,16 @@ poll it in a tight loop:
   it is marked unhealthy (one blocked model does not condemn the provider);
   a timeout is terminal for that provider after one model;
 - probes run concurrently, bounded by `server.health_timeout_s` (default
-  `10.0` s); providers still pending at that bound are reported unhealthy with
-  a `timeout:` error — after one bounded `server.health_probe_grace_s` window
-  (default `1.0` s, DF-CHIMERA-V2-17) that lets a merely-cold probe land and
-  report its real verdict instead; set it to `0` for cancel-at-deadline.
-  Slow tail latency is therefore indistinguishable from a
-  dead provider — raise `server.health_timeout_s` if your provider is merely slow.
+  `10.0` s); a probe still pending at that deadline gets one bounded
+  `server.health_probe_grace_s` window (default `1.0` s, DF-CHIMERA-V2-17) to
+  land and report its real verdict — set it to `0` for cancel-at-deadline.
+  A probe still outstanding after the grace window is reported **slow** —
+  `error_class: "slow"` with the measured `latency_s` — and named in
+  `slow_providers` (see above): it does NOT degrade `status` and is NOT in
+  `unhealthy_providers`, so slow tail latency no longer reads as a dead
+  provider (DF-CHIMERA-V2-27). The remedy is
+  `providers.<name>.health_probe: false` (skip the probe entirely) or raising
+  `server.health_timeout_s`.
 - each of those probes is **one** upstream attempt per model — the retry ladder
   is not used (DF-CHIMERA-V2-16), so a provider that answers with a fast
   `429`/`401` is reported as `quota`/`auth` with the provider's own message
