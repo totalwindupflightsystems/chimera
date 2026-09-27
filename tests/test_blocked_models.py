@@ -38,10 +38,10 @@ class _FakeClock:
 # Registry mechanics
 # ---------------------------------------------------------------------------
 
+
 def test_guardrail_error_detection() -> None:
     assert is_guardrail_error(
-        "404 No endpoints available matching your guardrail restrictions "
-        "and data policy"
+        "404 No endpoints available matching your guardrail restrictions and data policy"
     )
     assert is_guardrail_error("blocked by PRIVACY guardrail")
     assert is_guardrail_error("No endpoints available for this model")
@@ -123,9 +123,7 @@ def test_block_survives_restart_with_different_clock_base(tmp_path) -> None:  # 
     """Persisted timestamps are wall-clock: a fresh process whose monotonic
     clock has a completely different base still honors the block."""
     path = tmp_path / "blocked.json"
-    ModelBlockRegistry(state_path=path, clock=_FakeClock(1000.0)).record_failure(
-        "model/a", _GUARDRAIL_ERR
-    )
+    ModelBlockRegistry(state_path=path, clock=_FakeClock(1000.0)).record_failure("model/a", _GUARDRAIL_ERR)
     reg2 = ModelBlockRegistry(state_path=path, clock=_FakeClock(0.0))
     assert reg2.is_blocked("model/a")
 
@@ -207,18 +205,12 @@ def test_selector_excludes_persisted_block_after_restart(tmp_path) -> None:  # t
     from chimera.selector import CategorySelector
 
     path = tmp_path / "blocked.json"
-    ModelBlockRegistry(state_path=path).record_failure(
-        "anthropic/claude-sonnet-4", _GUARDRAIL_ERR
-    )
+    ModelBlockRegistry(state_path=path).record_failure("anthropic/claude-sonnet-4", _GUARDRAIL_ERR)
     # Fresh process: new registry instance reloaded from disk.
     set_shared_registry(ModelBlockRegistry(state_path=path))
     models = {
-        "anthropic/claude-sonnet-4": _FakeEntry(
-            {"technology_code/code_generation/python": 90}
-        ),
-        "deepseek/deepseek-v4-flash": _FakeEntry(
-            {"technology_code/code_generation/python": 88}
-        ),
+        "anthropic/claude-sonnet-4": _FakeEntry({"technology_code/code_generation/python": 90}),
+        "deepseek/deepseek-v4-flash": _FakeEntry({"technology_code/code_generation/python": 88}),
     }
     sel = CategorySelector(models)
     scores = sel.score("Write Python code")
@@ -227,15 +219,11 @@ def test_selector_excludes_persisted_block_after_restart(tmp_path) -> None:  # t
     assert "anthropic/claude-sonnet-4" not in sel.select("Write Python code")
 
 
-def test_dispatcher_catalog_excludes_persisted_block_after_restart(
-    tmp_path, config
-) -> None:  # type: ignore[no-untyped-def]
+def test_dispatcher_catalog_excludes_persisted_block_after_restart(tmp_path, config) -> None:  # type: ignore[no-untyped-def]
     from chimera.dispatcher import build_dispatcher_prompt
 
     path = tmp_path / "blocked.json"
-    ModelBlockRegistry(state_path=path).record_failure(
-        "openrouter/qwen/qwen3-coder", _GUARDRAIL_ERR
-    )
+    ModelBlockRegistry(state_path=path).record_failure("openrouter/qwen/qwen3-coder", _GUARDRAIL_ERR)
     # Fresh process: new registry instance reloaded from disk — the catalog
     # exclusion must happen without any provider call being burned.
     set_shared_registry(ModelBlockRegistry(state_path=path))
@@ -279,18 +267,14 @@ def test_credential_error_detection() -> None:
     assert not is_credential_error("litellm.RateLimitError: 429 rate limit exceeded")
     assert not is_credential_error("500 internal server error")
     assert not is_credential_error("503 Service Unavailable")
-    assert not is_credential_error(
-        "404 No endpoints available matching your guardrail restrictions"
-    )
+    assert not is_credential_error("404 No endpoints available matching your guardrail restrictions")
 
 
 def test_credential_failure_blocks_with_reason_and_fingerprint(tmp_path) -> None:  # type: ignore[no-untyped-def]
     """AC1: record_failure() == True, persisted with reason + fingerprint."""
     path = tmp_path / "blocked.json"
     reg = ModelBlockRegistry(state_path=path)
-    assert reg.record_failure(
-        "openrouter/openai/gpt-5.6-sol", _AUTH_ERR, credential_fingerprint="fp-dead"
-    )
+    assert reg.record_failure("openrouter/openai/gpt-5.6-sol", _AUTH_ERR, credential_fingerprint="fp-dead")
     assert reg.is_blocked("openrouter/openai/gpt-5.6-sol")
     assert reg.block_reason("openrouter/openai/gpt-5.6-sol") == "credential"
     assert reg.credential_fingerprint("openrouter/openai/gpt-5.6-sol") == "fp-dead"
@@ -307,18 +291,14 @@ def test_transient_failures_still_do_not_block_with_fingerprint() -> None:
         "429 rate limit exceeded",
         "500 internal server error",
     ):
-        assert not reg.record_failure(
-            "model/a", transient, credential_fingerprint="fp-whatever"
-        )
+        assert not reg.record_failure("model/a", transient, credential_fingerprint="fp-whatever")
     assert reg.blocked() == set()
 
 
 def test_guardrail_classification_is_unchanged(tmp_path) -> None:  # type: ignore[no-untyped-def]
     """AC6: guardrail still blocks, keeps its class, stores no fingerprint."""
     reg = ModelBlockRegistry(state_path=tmp_path / "blocked.json")
-    assert reg.record_failure(
-        "model/g", _GUARDRAIL_ERR, credential_fingerprint="fp-dead"
-    )
+    assert reg.record_failure("model/g", _GUARDRAIL_ERR, credential_fingerprint="fp-dead")
     assert reg.is_blocked("model/g")
     assert reg.block_reason("model/g") == "guardrail"
     assert reg.credential_fingerprint("model/g") is None
@@ -337,6 +317,34 @@ def test_credential_block_survives_restart(tmp_path) -> None:  # type: ignore[no
     assert reg2.is_blocked("openrouter/openai/gpt-5.6-sol")
     assert reg2.block_reason("openrouter/openai/gpt-5.6-sol") == "credential"
     assert reg2.credential_fingerprint("openrouter/openai/gpt-5.6-sol") == "fp-dead"
+
+
+def test_credential_block_without_fingerprint_self_clears(tmp_path) -> None:
+    """A missing credential at record time must not wedge the block."""
+    path = tmp_path / "blocked.json"
+    reg = ModelBlockRegistry(state_path=path)
+    assert reg.record_failure("openrouter/x", _AUTH_ERR, credential_fingerprint=None)
+    assert reg.is_blocked("openrouter/x")
+    assert reg.credential_fingerprint("openrouter/x") is None
+
+    assert not reg.is_blocked("openrouter/x", credential_fingerprint="fp-new")
+    assert not reg.is_blocked("openrouter/x")
+    assert _read_state(path)["blocked_until_epoch"] == {}
+
+
+def test_no_credential_marker_survives_restart_and_self_clears(tmp_path) -> None:
+    """The no-credential marker survives restart without storing a secret."""
+    from chimera.blocked_models import NO_CREDENTIAL
+
+    path = tmp_path / "blocked.json"
+    ModelBlockRegistry(state_path=path).record_failure("openrouter/y", _AUTH_ERR, credential_fingerprint=None)
+    data = _read_state(path)
+    assert data["credential_fingerprints"]["openrouter/y"] == NO_CREDENTIAL
+
+    reg2 = ModelBlockRegistry(state_path=path)
+    assert reg2.is_blocked("openrouter/y")
+    assert not reg2.is_blocked("openrouter/y", credential_fingerprint="fp-live")
+    assert _read_state(path)["blocked_until_epoch"] == {}
 
 
 def test_replaced_credential_clears_the_block(tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -405,9 +413,7 @@ def test_state_file_never_contains_the_raw_credential(tmp_path) -> None:  # type
     # ...and nothing in the emitted log records carries the credential either.
     assert logs, "expected model_blocked_credential to be logged"
     assert any(entry.get("event") == "model_blocked_credential" for entry in logs)
-    assert all(
-        _DEAD_KEY not in json.dumps(entry, default=str) for entry in logs
-    )
+    assert all(_DEAD_KEY not in json.dumps(entry, default=str) for entry in logs)
 
 
 # ---------------------------------------------------------------------------
@@ -434,23 +440,15 @@ def test_provider_credential_fingerprint_resolution() -> None:
 
     # 1. config.api_keys (env-shortcut mirror) is the first source.
     cfg.api_keys["openrouter"] = _DEAD_KEY
-    assert provider_credential_fingerprint(cfg, "openrouter") == (
-        credential_fingerprint(_DEAD_KEY)
-    )
-    assert model_credential_fingerprint(cfg, "deepseek/deepseek-chat") == (
-        credential_fingerprint(_DEAD_KEY)
-    )
+    assert provider_credential_fingerprint(cfg, "openrouter") == (credential_fingerprint(_DEAD_KEY))
+    assert model_credential_fingerprint(cfg, "deepseek/deepseek-chat") == (credential_fingerprint(_DEAD_KEY))
 
     # 2. providers[x].api_key is the second source …
     cfg2 = ChimeraConfig.model_validate(copy.deepcopy(CONFIG_DICT))
     cfg2.providers["openrouter"].api_key = _LIVE_KEY
-    assert provider_credential_fingerprint(cfg2, "openrouter") == (
-        credential_fingerprint(_LIVE_KEY)
-    )
+    assert provider_credential_fingerprint(cfg2, "openrouter") == (credential_fingerprint(_LIVE_KEY))
     # … and F8 (anthropic → openrouter) resolves the same credential.
-    assert provider_credential_fingerprint(cfg2, "anthropic") == (
-        credential_fingerprint(_LIVE_KEY)
-    )
+    assert provider_credential_fingerprint(cfg2, "anthropic") == (credential_fingerprint(_LIVE_KEY))
 
     # Unknown model / provider → None, never an exception.
     assert model_credential_fingerprint(cfg2, "no/such/model") is None
@@ -553,9 +551,7 @@ async def test_engine_keeps_worker_model_once_the_key_is_replaced() -> None:
 
     reg = ModelBlockRegistry(state_path=None)
     # Block recorded against a PREVIOUS key — stale for the current config.
-    assert reg.record_failure(
-        blocked, _AUTH_ERR, credential_fingerprint=credential_fingerprint("old-key")
-    )
+    assert reg.record_failure(blocked, _AUTH_ERR, credential_fingerprint=credential_fingerprint("old-key"))
     set_shared_registry(reg)
 
     payload = dispatch_json(workers=[("worker_1", blocked), ("worker_2", blocked)])
@@ -576,11 +572,7 @@ async def test_engine_keeps_worker_model_once_the_key_is_replaced() -> None:
 def _failure_result(stage_id: str, model: str, error: str):  # type: ignore[no-untyped-def]
     from types import SimpleNamespace
 
-    trace = SimpleNamespace(
-        worker_failures=[
-            SimpleNamespace(stage_id=stage_id, model=model, error=error)
-        ]
-    )
+    trace = SimpleNamespace(worker_failures=[SimpleNamespace(stage_id=stage_id, model=model, error=error)])
     return SimpleNamespace(trace=trace)
 
 
@@ -612,9 +604,7 @@ def test_warning_names_provider_env_var_and_model_for_credential_failure(config)
 
 def test_warning_prefers_the_configured_api_key_env(config) -> None:  # type: ignore[no-untyped-def]
     config.providers["openrouter"].api_key_env = "CUSTOM_OR_KEY"
-    text = _render_warnings(
-        _failure_result("worker_1", "openrouter/qwen/qwen3-coder", _AUTH_ERR), config
-    )
+    text = _render_warnings(_failure_result("worker_1", "openrouter/qwen/qwen3-coder", _AUTH_ERR), config)
     assert "CUSTOM_OR_KEY" in text
     assert "OPENROUTER_API_KEY" not in text
 
@@ -632,9 +622,7 @@ def test_warning_stays_raw_for_non_credential_failures(config) -> None:  # type:
 
 
 def test_warning_truncates_a_huge_error_text(config) -> None:  # type: ignore[no-untyped-def]
-    text = _render_warnings(
-        _failure_result("worker_1", "openrouter/qwen/qwen3-coder", "boom " * 200), config
-    )
+    text = _render_warnings(_failure_result("worker_1", "openrouter/qwen/qwen3-coder", "boom " * 200), config)
     assert "..." in text
     assert "boom " * 60 not in text
 
@@ -646,9 +634,7 @@ def test_models_command_lists_blocked_models(config_file) -> None:  # type: igno
     from chimera.cli.main import main
 
     reg = ModelBlockRegistry(state_path=None)
-    reg.record_failure(
-        "openrouter/qwen/qwen3-coder", _AUTH_ERR, credential_fingerprint="fp-dead"
-    )
+    reg.record_failure("openrouter/qwen/qwen3-coder", _AUTH_ERR, credential_fingerprint="fp-dead")
     set_shared_registry(reg)
 
     result = CliRunner().invoke(main, ["-c", str(config_file), "models"])

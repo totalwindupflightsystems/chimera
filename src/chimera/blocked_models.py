@@ -92,6 +92,17 @@ CREDENTIAL_ERROR_RE = re.compile(
 REASON_GUARDRAIL = "guardrail"
 REASON_CREDENTIAL = "credential"
 
+#: Persisted marker for a credential-class block recorded when NO credential
+#: fingerprint could be resolved at all (DF-CHIMERA-V2-58: e.g. the engine
+#: had no config, or the failing provider had no key configured).  Stored in
+#: ``credential_fingerprints`` so the entry is distinguishable on load from a
+#: legacy entry that simply has no fingerprint *data*: the marker means "the
+#: failure happened without a resolvable credential", so ANY later non-None
+#: fingerprint proves the situation changed and self-clears the stale block.
+#: It is a constant, non-secret marker — never a credential, never a digest
+#: of one.
+NO_CREDENTIAL = "no-credential"
+
 
 def is_guardrail_error(error: object) -> bool:
     """Return True when *error* looks like a guardrail/404-style rejection."""
@@ -149,6 +160,10 @@ class ModelBlockRegistry:
         *credential_fingerprint* is a non-reversible digest of the credential
         that produced the failure.  It is stored for credential-class blocks
         only, and only as a digest — never the key itself, never logged.
+        ``None`` (no credential could be resolved for the failing model) is
+        recorded as the :data:`NO_CREDENTIAL` marker instead of being dropped
+        by ``_save`` — so the block can still self-heal when a later call
+        supplies a real fingerprint (DF-CHIMERA-V2-58).
         """
         if is_guardrail_error(error):
             reason = REASON_GUARDRAIL
@@ -159,7 +174,10 @@ class ModelBlockRegistry:
         until = self._clock() + self.cooldown_s
         self._blocked_until[model] = until
         self._reasons[model] = reason
-        self._fingerprints[model] = credential_fingerprint if reason == REASON_CREDENTIAL else None
+        if reason == REASON_CREDENTIAL:
+            self._fingerprints[model] = credential_fingerprint or NO_CREDENTIAL
+        else:
+            self._fingerprints[model] = None
         log.warning(
             "model_blocked_guardrail" if reason == REASON_GUARDRAIL else "model_blocked_credential",
             model=model,
@@ -174,11 +192,14 @@ class ModelBlockRegistry:
         """True when *model* is currently inside its block cooldown.
 
         When the entry was recorded for a credential-class failure WITH a
-        stored fingerprint and the caller passes a *different* non-``None``
-        fingerprint, the block is stale — the credential was replaced — so it
-        is cleared and ``False`` is returned (DF-CHIMERA-V2-6 self-heal).
-        Without a fingerprint argument, or with a matching one, TTL behaviour
-        is unchanged.
+        stored fingerprint — or with the :data:`NO_CREDENTIAL` marker, i.e.
+        no credential was resolvable at record time — and the caller passes
+        a *different* non-``None`` fingerprint, the block is stale (the
+        credential was replaced, or one now exists where none did), so it is
+        cleared and ``False`` is returned (DF-CHIMERA-V2-6 self-heal,
+        DF-CHIMERA-V2-58 no-credential case).  Without a fingerprint
+        argument, or with a matching one, TTL behaviour is unchanged.
+        Legacy entries with no fingerprint value at all keep blocking.
         """
         until = self._blocked_until.get(model)
         if until is None:
@@ -189,7 +210,7 @@ class ModelBlockRegistry:
             return False
         if self._reasons.get(model) == REASON_CREDENTIAL and credential_fingerprint is not None:
             stored = self._fingerprints.get(model)
-            if stored is not None and stored != credential_fingerprint:
+            if stored == NO_CREDENTIAL or (stored is not None and stored != credential_fingerprint):
                 log.info(
                     "model_block_cleared_credential_changed",
                     model=model,
@@ -223,9 +244,14 @@ class ModelBlockRegistry:
 
         The digest is non-reversible (see :func:`chimera.config.
         provider_credential_fingerprint`); the credential itself is never
-        stored or returned.
+        stored or returned.  ``None`` also covers the deliberate
+        :data:`NO_CREDENTIAL` case (a credential-class block recorded when no
+        credential could be resolved) — the marker stays an internal,
+        persistence-level detail and is never returned as a digest-shaped
+        value.
         """
-        return self._fingerprints.get(model)
+        stored = self._fingerprints.get(model)
+        return None if stored == NO_CREDENTIAL else stored
 
     # ------------------------------------------------------------------
     # Persistence
@@ -244,7 +270,10 @@ class ModelBlockRegistry:
         starts empty.  ``blocked_until_epoch`` is the load-bearing key and is
         read exactly as before; ``reasons`` / ``credential_fingerprints`` are
         optional additions (a pre-DF-CHIMERA-V2-6 state file loads fine and
-        its entries count as guardrail blocks with no fingerprint).
+        its entries count as guardrail blocks with no fingerprint).  The
+        :data:`NO_CREDENTIAL` marker (DF-CHIMERA-V2-58) loads as a stored
+        marker value; a legacy entry whose fingerprint is missing or empty
+        loads as ``None`` and keeps the legacy never-self-clears behaviour.
         """
         if self._state_path is None:
             return
@@ -296,7 +325,10 @@ class ModelBlockRegistry:
         Best-effort: a filesystem failure logs a warning but never breaks the
         deliberation that just recorded the block.  The credential digest is
         written here and nothing else about the credential — the key itself is
-        never serialized.
+        never serialized.  The :data:`NO_CREDENTIAL` marker (DF-CHIMERA-V2-58)
+        is a constant, non-secret string and is persisted so the deliberate
+        no-credential case survives restarts and self-clears later; entries
+        with no fingerprint value (legacy) are omitted, exactly as before.
         """
         if self._state_path is None:
             return
@@ -348,6 +380,7 @@ __all__ = [
     "DEFAULT_BLOCK_COOLDOWN_S",
     "DEFAULT_STATE_PATH",
     "GUARDRAIL_ERROR_RE",
+    "NO_CREDENTIAL",
     "REASON_CREDENTIAL",
     "REASON_GUARDRAIL",
     "ModelBlockRegistry",
