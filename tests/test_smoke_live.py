@@ -208,19 +208,23 @@ def _run_main(
     routes: dict[str, tuple[int, dict[str, Any]]],
     *,
     git: Any = None,
+    local_head: str | None = COMMIT,
+    argv: tuple[str, ...] = (),
 ) -> int:
     """Run ``main()`` against the stubbed HTTP layer; return the exit code.
 
     ``_git_run`` is replaced too: by default with a fake that reports git as
     UNAVAILABLE, so a test that reaches a commit gap without asking for a
     specific git behaviour gets an honest UNVERIFIABLE instead of silently
-    spawning the enclosing checkout's ``git``.
+    spawning the enclosing checkout's ``git``.  ``local_head`` is the checkout
+    HEAD the script would measure (``None`` = not a git checkout); ``argv`` is
+    appended after ``--base-url``.
     """
     stub = StubHTTP(routes)
     monkeypatch.setattr(smoke_live, "_http_json", stub)
-    monkeypatch.setattr(smoke_live, "_local_head", lambda: COMMIT)
+    monkeypatch.setattr(smoke_live, "_local_head", lambda: local_head)
     monkeypatch.setattr(smoke_live, "_git_run", git if git is not None else FakeGit(fail="unavailable"))
-    monkeypatch.setattr(sys, "argv", ["smoke_live.py", "--base-url", BASE])
+    monkeypatch.setattr(sys, "argv", ["smoke_live.py", "--base-url", BASE, *argv])
     return smoke_live.main()
 
 
@@ -699,20 +703,157 @@ def test_stale_diff_is_path_scoped_and_never_a_shell() -> None:
 def test_stale_gap_evidence_is_prominent_and_requires_a_restart(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """C6 end to end: the gap is reported as STALE with an actionable requirement."""
+    """C6/DF-CHIMERA-V2-60 end to end: STALE is reported AND fails the run by default.
+
+    Before DF-CHIMERA-V2-60 a stale deployment with a healthy deliberation
+    printed ``SMOKE PASS`` and exited 0 — the exact false green this row
+    removes.  The deliberation still runs (it is valuable evidence), but the
+    verdict is a failure unless the operator explicitly opts in with
+    ``--allow-stale``.
+    """
     git = _git_with(diff="\n".join(WAVE_PATHS) + "\n")
     routes = _routes(health=(200, {"status": "alive", "commit": BEHIND, "uptime_models": 42}))
 
     code = _run_main(monkeypatch, routes, git=git)
+    captured = capsys.readouterr()
+
+    assert code == 1, captured.out + captured.err
+    assert "SMOKE PASS" not in captured.out, "a stale deployment must never pass by default"
+    assert "SMOKE FAIL" in captured.err
+    assert "--allow-stale" in captured.err, "the opt-in must be discoverable from the failure"
+    assert "STALE" in captured.out
+    assert WAVE_PATHS[0] in captured.out
+    assert "systemctl restart chimera" in captured.out, "the reload command must be actionable"
+    assert "board-only" not in captured.out, "a material gap is not bookkeeping-only"
+    assert "runs older code" not in captured.out, "the removed generic guess must be gone"
+
+
+# --------------------------------------------------------------------------- #
+# DF-CHIMERA-V2-60 — expected-commit anchor + stale fail-closed
+# --------------------------------------------------------------------------- #
+
+#: A mid-judge checkout HEAD: a worker branch ahead of origin/main with its own
+#: src/ changes.  Parity must NEVER be measured against this commit.
+WIP_HEAD = "wip1234"
+
+
+def test_allow_stale_is_an_explicit_documented_opt_in(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--allow-stale`` passes a STALE deployment, and says loudly that it did."""
+    git = _git_with(diff="\n".join(WAVE_PATHS) + "\n")
+    routes = _routes(health=(200, {"status": "alive", "commit": BEHIND, "uptime_models": 42}))
+
+    code = _run_main(monkeypatch, routes, git=git, argv=("--allow-stale",))
+    captured = capsys.readouterr()
+
+    assert code == 0, captured.out + captured.err
+    assert "SMOKE PASS" in captured.out
+    assert "STALE" in captured.out, "the stale evidence is still printed"
+    assert "--allow-stale" in captured.out, "the pass must be attributed to the explicit opt-in"
+
+
+def test_parity_is_anchored_to_origin_main_not_the_checkout_head(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The mid-judge case: an arbitrary checkout HEAD must not decide parity.
+
+    A judge/worker checkout sits on a task branch whose HEAD carries its own
+    src/ changes.  If parity compared the running commit against THAT HEAD the
+    smoke would cry STALE over the worker's own unmerged WIP.  The canonical
+    anchor is origin/main: the running commit == origin/main, so the verdict is
+    CURRENT and no diff runs at all — even though a diff against the checkout
+    HEAD would be non-empty.
+    """
+    git = FakeGit(
+        resolve={
+            COMMIT: _full_sha(COMMIT),
+            "origin/main": _full_sha(COMMIT),  # origin/main IS the deployed commit
+            WIP_HEAD: _full_sha(WIP_HEAD),
+        },
+        diff="src/chimera/web/routes.py\n",  # the WIP-only delta a HEAD-relative diff would see
+    )
+    routes = _routes()  # service reports COMMIT == origin/main
+
+    code = _run_main(monkeypatch, routes, git=git, local_head=WIP_HEAD)
     out = capsys.readouterr().out
 
     assert code == 0, out
-    assert "STALE" in out
-    assert WAVE_PATHS[0] in out
-    assert "systemctl restart chimera" in out, "the reload command must be actionable"
-    assert "board-only" not in out, "a material gap is not bookkeeping-only"
-    assert "runs older code" not in out, "the removed generic guess must be gone"
-    assert "SMOKE PASS" in out
+    assert "deployment: CURRENT" in out, out
+    assert "STALE" not in out, f"the checkout's WIP must not read as a stale deployment:\n{out}"
+    assert not git.diff_commands(), "running == origin/main needs no diff at all"
+
+
+def test_expected_commit_flag_overrides_the_default_anchor(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An explicit ``--expected-commit`` is the anchor, and the output says so."""
+    git = FakeGit(
+        resolve={
+            COMMIT: _full_sha(COMMIT),
+            "origin/main": _full_sha(COMMIT),
+            "release-2026-09": _full_sha("release99"),
+        },
+        diff="src/chimera/web/routes.py\n",
+    )
+    routes = _routes()  # running COMMIT, behind the expected release tag
+
+    code = _run_main(monkeypatch, routes, git=git, argv=("--expected-commit", "release-2026-09"))
+    captured = capsys.readouterr()
+
+    assert code == 1, captured.out + captured.err
+    assert "--expected-commit release-2026-09" in captured.out, "the anchor's provenance must be printed"
+    assert "STALE" in captured.out, "running is behind the explicitly expected commit"
+
+
+def test_unresolvable_expected_commit_is_unverifiable_never_code_current(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An ``--expected-commit`` git cannot resolve is missing evidence, not an empty diff."""
+    git = _git_with(diff="")  # an EMPTY diff: would read CODE-CURRENT if resolution were skipped
+    routes = _routes(health=(200, {"status": "alive", "commit": BEHIND, "uptime_models": 42}))
+
+    code = _run_main(monkeypatch, routes, git=git, argv=("--expected-commit", "deadbeef"))
+    out = capsys.readouterr().out
+
+    assert code == 0, out
+    assert "UNVERIFIABLE" in out
+    assert "deadbeef" in out, "the unresolvable ref must be named"
+    assert "CODE-CURRENT" not in out, "failed resolution must never read as an empty diff"
+    assert not git.diff_commands(), "an unresolvable anchor must not reach the diff"
+
+
+def test_origin_main_failure_falls_back_to_checkout_head_explicitly(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The fallback exists, but it is LOUD: the output says origin/main failed and HEAD was used."""
+    git = FakeGit(fail="unavailable")  # no ref resolves: origin/main included
+    routes = _routes(health=(200, {"status": "alive", "commit": BEHIND, "uptime_models": 42}))
+
+    code = _run_main(monkeypatch, routes, git=git, local_head=COMMIT)
+    out = capsys.readouterr().out
+
+    assert code == 0, out
+    assert "origin/main" in out, "the failed canonical anchor must be named"
+    assert "FALLBACK" in out.upper(), "the fallback to checkout HEAD must be explicit, never silent"
+    assert "UNVERIFIABLE" in out, "git unavailable after the fallback is still an honest UNVERIFIABLE"
+
+
+def test_total_expected_resolution_failure_is_unverifiable_with_reason(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """origin/main AND checkout HEAD both unusable: UNVERIFIABLE, never a guessed verdict."""
+    git = FakeGit(fail="unavailable")
+    routes = _routes(health=(200, {"status": "alive", "commit": BEHIND, "uptime_models": 42}))
+
+    code = _run_main(monkeypatch, routes, git=git, local_head=None)
+    out = capsys.readouterr().out
+
+    assert code == 0, out
+    assert "UNVERIFIABLE" in out
+    assert "origin/main" in out, "the reason must name what failed to resolve"
+    assert "STALE" not in out and "CODE-CURRENT" not in out
+    assert not git.diff_commands(), "no anchor means no diff is even attempted"
 
 
 # --------------------------------------------------------------------------- #

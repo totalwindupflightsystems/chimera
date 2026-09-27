@@ -442,11 +442,24 @@ CHIMERA_API_KEY=... python scripts/smoke_live.py --base-url http://myhost:8765  
 
 The flag is `--base-url` (there is no `--port`); `CHIMERA_BASE_URL` is the env
 default. Other flags: `--formation` (default `simple`), `--prompt`,
-`--api-key`, `--timeout`. The script checks liveness + running commit (warning
-when the deployed commit diverges from local HEAD), probes `/v1/health`, then
-POSTs a real `/v1/deliberate` and prints the merged answer. Exit `0` = merged
-answer received, `1` = failure with an actionable message, `2` = usage/config
+`--api-key`, `--timeout`, `--expected-commit`, `--allow-stale`. The script
+checks liveness + running commit, classifies the deployment gap against an
+EXPECTED commit (see below), probes `/v1/health`, then POSTs a real
+`/v1/deliberate` and prints the merged answer. Exit `0` = merged answer
+received AND the deployment is not stale, `1` = failure with an actionable
+message (deliberation failure OR a stale deployment), `2` = usage/config
 error. Stdlib-only.
+
+**Deployment parity (DF-CHIMERA-V2-60).** The running commit is compared
+against an expected commit, never silently against the checkout HEAD (a
+mid-judge/worker checkout HEAD is arbitrary and would fabricate stale verdicts
+from unmerged WIP). The anchor: `--expected-commit <ref>` when given, else
+`origin/main`, else the checkout HEAD as an EXPLICIT FALLBACK (printed as
+such). If nothing resolves, parity is `UNVERIFIABLE` — never an empty diff,
+never `CODE-CURRENT`. A `STALE` verdict (a non-empty diff over
+`src/ scripts/ tests/ pyproject.toml`) fails the run by default: no
+`SMOKE PASS`, exit `1`. `--allow-stale` is the documented opt-in for
+intentionally stale deployments; the pass is attributed to the flag.
 
 The provider-health block is **class-aware** (DF-CHIMERA-V2-4), because a fresh
 install and a real degradation used to print the same words:

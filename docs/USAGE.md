@@ -428,7 +428,17 @@ CHIMERA_API_KEY=... python scripts/smoke_live.py --base-url http://myhost:8765
 The flag is `--base-url` (there is no `--port`); `CHIMERA_BASE_URL` sets the
 default. It verifies liveness + the running commit, probes `/v1/health`, then
 POSTs a real `/v1/deliberate` and prints the merged answer. Exit 0 = answer
-received, 1 = failure (auth/formation/busy/provider hints), 2 = usage error.
+received and the deployment is not stale, 1 = failure (deliberation hints, or
+a STALE deployment), 2 = usage error.
+
+**Deployment parity (DF-CHIMERA-V2-60).** The running commit is compared
+against an EXPECTED commit — `--expected-commit <ref>` when given, else
+`origin/main`, else the checkout HEAD as an explicitly labelled FALLBACK —
+never silently against an arbitrary mid-judge checkout HEAD. If the expected
+commit cannot be resolved, parity is `UNVERIFIABLE` (never an empty diff or
+`CODE-CURRENT`). A `STALE` verdict fails the run by default (no `SMOKE PASS`,
+exit 1); `--allow-stale` is the explicit, attributed opt-in for intentionally
+stale deployments.
 
 **How the provider lines read (DF-CHIMERA-V2-4).** The probe's report is split by
 meaning, because a fresh install and a real degradation used to print identical

@@ -20,14 +20,35 @@ its class and, for a quota failure, the provider's own reset-time message.
 NEITHER case changes the exit code: only the deliberation decides pass/fail.
 
 Exit codes:
-    0 — merged answer received and non-empty
-    1 — deliberation failed (clear, actionable diagnostics printed)
+    0 — merged answer received and non-empty, and the deployment is NOT stale
+        (or staleness was explicitly allowed with --allow-stale)
+    1 — deliberation failed (clear, actionable diagnostics printed), OR the
+        deployment is STALE (DF-CHIMERA-V2-60: a stale deployment is never a
+        smoke pass by default)
     2 — usage/config error
+
+Deployment parity (DF-CHIMERA-V2-60): the running commit from /health is
+compared against an EXPECTED commit, never silently against whatever the
+checkout HEAD happens to be — a mid-judge or worker checkout HEAD is arbitrary
+and would either fabricate a stale verdict from unmerged WIP or bless a gap
+nobody measured.  The anchor, in order:
+
+    1. --expected-commit <ref> — an explicit expectation (a release tag, a
+       pinned sha), with its provenance printed;
+    2. origin/main — the canonical default;
+    3. checkout HEAD — an EXPLICIT, loudly-labelled fallback, used only when
+       origin/main cannot be resolved (no remote, no network fetch, a bare
+       checkout).  The fallback is printed as such; it is never silent.
+
+If none of these resolves, parity is UNVERIFIABLE — never an empty diff and
+never CODE-CURRENT.
 
 Usage:
     python scripts/smoke_live.py                 # default: localhost:8765, formation=simple
     python scripts/smoke_live.py --formation auto
     python scripts/smoke_live.py --base-url http://host:port
+    python scripts/smoke_live.py --expected-commit v1.2.3   # explicit anchor
+    python scripts/smoke_live.py --allow-stale   # documented opt-in: pass despite STALE
     CHIMERA_API_KEY=... python scripts/smoke_live.py   # when auth is enabled
 
 Requires only the Python standard library.
@@ -310,6 +331,14 @@ GIT_UNAVAILABLE_REASON = "git unavailable (not a git checkout, or `git` not on P
 #: ``_running_commit``).  It is NOT a commit, so it can never be verified.
 UNKNOWN_COMMIT = "unknown"
 
+#: The canonical ref the deployed commit is expected to match (DF-CHIMERA-V2-60).
+#: Parity is anchored here — NEVER silently to the checkout HEAD: a mid-judge or
+#: worker checkout HEAD is arbitrary (it can carry unmerged WIP), so trusting it
+#: would fabricate STALE verdicts from the judge's own tree or bless a gap nobody
+#: measured.  The checkout HEAD is only ever an explicit, loudly-labelled
+#: fallback when this ref cannot be resolved.
+DEFAULT_EXPECTED_REF = "origin/main"
+
 #: Deployment-parity classification.  ``CURRENT`` and ``CODE_CURRENT`` both mean
 #: no reload is owed — the difference is whether there was a gap at all, which is
 #: what a foreman narrative needs to be able to say.  ``UNVERIFIABLE`` means the
@@ -365,6 +394,60 @@ def _resolve_commit(commit: str, run: object, cwd: str | None) -> str | None:
     return out.splitlines()[0].strip() if code == 0 and out.strip() else None
 
 
+def resolve_expected_commit(
+    explicit: str | None,
+    *,
+    run: object = None,
+    cwd: str | None = None,
+) -> tuple[str | None, str]:
+    """The commit the deployment is compared against, and how it was chosen.
+
+    Returns ``(ref, provenance)``; ``ref`` is None when NOTHING resolved, in
+    which case ``provenance`` is the failure reason for an UNVERIFIABLE verdict.
+
+    Order (DF-CHIMERA-V2-60):
+
+    * ``explicit`` (``--expected-commit``) wins outright — it is returned
+      UNRESOLVED on purpose: the classifier's own resolution is what decides
+      whether it names a real commit, and a ref git cannot resolve must surface
+      as UNVERIFIABLE there, never as an empty diff;
+    * otherwise ``DEFAULT_EXPECTED_REF`` (``origin/main``) is verified with the
+      git runner — only a ref that actually resolves may anchor parity;
+    * otherwise the checkout HEAD, labelled as an EXPLICIT FALLBACK in the
+      provenance so the output can never read as if origin/main had been
+      measured;
+    * otherwise ``(None, reason)`` — missing evidence, not an all-clear.
+    """
+    runner = _git_run if run is None else run
+    if explicit is not None:
+        ref = explicit.strip()
+        if not ref:
+            return None, "an empty --expected-commit was given"
+        return ref, f"--expected-commit {ref}"
+
+    try:
+        code, out = runner(  # type: ignore[operator]
+            ["git", "rev-parse", "--verify", f"{DEFAULT_EXPECTED_REF}^{{commit}}"],
+            cwd,
+        )
+    except Exception:
+        code, out = None, ""
+    if code == 0 and out.strip():
+        return DEFAULT_EXPECTED_REF, f"{DEFAULT_EXPECTED_REF} (resolved to {out.splitlines()[0].strip()})"
+
+    head = _local_head()
+    if head:
+        return head, (
+            f"checkout HEAD {head} (EXPLICIT FALLBACK: {DEFAULT_EXPECTED_REF} could not be "
+            "resolved — no remote-tracking ref in this checkout; parity is anchored to the "
+            "checkout HEAD instead, which a mid-judge/worker checkout makes arbitrary)"
+        )
+    return None, (
+        f"{DEFAULT_EXPECTED_REF} could not be resolved and the checkout HEAD is unusable "
+        f"({GIT_UNAVAILABLE_REASON}) — there is no commit to expect the deployment to match"
+    )
+
+
 def classify_deployment_parity(
     running_commit: object,
     head_commit: object,
@@ -372,13 +455,16 @@ def classify_deployment_parity(
     run: object = None,
     cwd: str | None = None,
 ) -> DeploymentParity:
-    """Classify the gap between the commit ``/health`` reports and local HEAD.
+    """Classify the gap between the commit ``/health`` reports and the expected commit.
 
     The whole point (DF-CHIMERA-V2-45) is that the ANSWER must come from git
     evidence, never from a commit subject or a narrative: the incident had
     ``/health`` at ``0fc54d5`` while HEAD already held an 11-file ``src/`` wave,
     and the gap was written off as "board-only delta, expected" purely because a
-    subject line said so.
+    subject line said so.  And the point of DF-CHIMERA-V2-60 is that
+    ``head_commit`` is an EXPECTED commit (origin/main by default, an explicit
+    ``--expected-commit`` when given, or the loudly-labelled checkout-HEAD
+    fallback) — never silently whatever a mid-judge checkout HEAD happens to be.
 
     The classification, in order:
 
@@ -414,7 +500,7 @@ def classify_deployment_parity(
             DEPLOY_STATUS_UNVERIFIABLE,
             running,
             head,
-            reason=f"local HEAD is not usable ({head_commit!r}) — run this from the checkout",
+            reason=f"expected commit is not usable ({head_commit!r}) — no anchor to compare against",
         )
     if running == head:
         return DeploymentParity(DEPLOY_STATUS_CURRENT, running, head)
@@ -455,8 +541,8 @@ def classify_deployment_parity(
             running,
             head,
             reason=(
-                f"running commit {running} is not an ancestor of HEAD {head} "
-                "(HEAD was rewound or diverged) — the gap cannot be sized"
+                f"running commit {running} is not an ancestor of expected commit {head} "
+                "(the expected ref moved or the trees diverged) — the gap cannot be sized"
             ),
         )
     if code != 0:
@@ -504,23 +590,23 @@ def deployment_parity_lines(parity: DeploymentParity) -> list[str]:
     if parity.status == DEPLOY_STATUS_CURRENT:
         # code-current: no gap at all
         return [
-            f"deployment: CURRENT — running commit {parity.running_commit} == local "
-            f"HEAD {parity.head_commit}: no gap, so no reload is owed."
+            f"deployment: CURRENT — running commit {parity.running_commit} == expected "
+            f"commit {parity.head_commit}: no gap, so no reload is owed."
         ]
 
     scope = ", ".join(MATERIAL_PATHS)
     if parity.status == DEPLOY_STATUS_CODE_CURRENT:
         return [
             f"deployment: CODE-CURRENT — running commit {parity.running_commit} is an "
-            f"ancestor of local HEAD {parity.head_commit}, and the path-scoped diff "
+            f"ancestor of expected commit {parity.head_commit}, and the path-scoped diff "
             f"over {scope} is EMPTY: a bookkeeping/board-only gap, so the service does "
             "NOT run older code and no reload is owed."
         ]
 
     if parity.status == DEPLOY_STATUS_STALE:
         lines = [
-            f"deployment: STALE — running commit {parity.running_commit} is behind local "
-            f"HEAD {parity.head_commit} and {len(parity.material_paths)} material path(s) "
+            f"deployment: STALE — running commit {parity.running_commit} is behind expected "
+            f"commit {parity.head_commit} and {len(parity.material_paths)} material path(s) "
             f"changed under {scope}:",
         ]
         lines.extend(f"  - {path}" for path in parity.material_paths)
@@ -552,6 +638,24 @@ def main() -> int:
         help="API key for protected deployments (or set CHIMERA_API_KEY)",
     )
     parser.add_argument("--timeout", type=float, default=120.0)
+    parser.add_argument(
+        "--expected-commit",
+        default=None,
+        metavar="REF",
+        help=(
+            "commit the deployment is expected to run (default: origin/main; "
+            "falls back to the checkout HEAD — loudly labelled — only when "
+            "origin/main cannot be resolved). Never silently the checkout HEAD."
+        ),
+    )
+    parser.add_argument(
+        "--allow-stale",
+        action="store_true",
+        help=(
+            "explicit opt-in: pass (exit 0) even when the deployment is STALE. "
+            "The stale evidence is still printed and the pass is attributed to this flag."
+        ),
+    )
     args = parser.parse_args()
 
     base = args.base_url.rstrip("/")
@@ -569,12 +673,29 @@ def main() -> int:
     print(f"service: alive  commit={running_commit}  models={health.get('uptime_models')}")
 
     head = _local_head()
-    if running_commit or head:
+    parity: DeploymentParity | None = None
+    if running_commit or head or args.expected_commit:
+        # DF-CHIMERA-V2-60: parity is anchored to an EXPECTED commit — an
+        # explicit --expected-commit, origin/main by default, or the loudly
+        # labelled checkout-HEAD fallback — never silently to an arbitrary
+        # mid-judge checkout HEAD.
         # DF-CHIMERA-V2-45: classify the gap from GIT EVIDENCE — a real code delta
         # (STALE) and a bookkeeping/board-only gap (CODE-CURRENT) are different
-        # findings, and neither is guessed from a commit subject.  The evidence is
-        # printed prominently but never decides the exit code below.
-        for line in deployment_parity_lines(classify_deployment_parity(running_commit, head)):
+        # findings, and neither is guessed from a commit subject.
+        expected, provenance = resolve_expected_commit(args.expected_commit)
+        if expected is None:
+            # Failed expected-commit resolution is UNVERIFIABLE — never an
+            # empty diff, never CODE-CURRENT.
+            parity = DeploymentParity(
+                DEPLOY_STATUS_UNVERIFIABLE,
+                str(running_commit or ""),
+                "",
+                reason=provenance,
+            )
+        else:
+            print(f"expected commit: {provenance}")
+            parity = classify_deployment_parity(running_commit, expected)
+        for line in deployment_parity_lines(parity):
             print(line)
 
     # 2) Provider health battery. The report is class-aware (DF-CHIMERA-V2-4):
@@ -634,6 +755,29 @@ def main() -> int:
     print("---")
     print(answer)
     print("---")
+
+    # DF-CHIMERA-V2-60: a working deliberation does NOT redeem a stale
+    # deployment.  STALE fails the run by default — the only way past it is an
+    # explicit, attributed --allow-stale opt-in (or a reload that makes the
+    # next run classify CURRENT/CODE-CURRENT).
+    if parity is not None and parity.status == DEPLOY_STATUS_STALE:
+        if not args.allow_stale:
+            print(
+                "SMOKE FAIL: the deliberation works, but the deployment is STALE "
+                "(see the deployment evidence above).",
+                file=sys.stderr,
+            )
+            print(
+                f"  {RELOAD_REQUIREMENT}; then re-run this smoke. "
+                "To pass despite staleness, re-run with --allow-stale (explicit opt-in).",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            "NOTE: deployment is STALE but --allow-stale was given — passing by explicit "
+            "opt-in. The reload REQUIREMENT above still stands."
+        )
+
     print("SMOKE PASS: live deliberation returned a merged answer.")
     return 0
 
