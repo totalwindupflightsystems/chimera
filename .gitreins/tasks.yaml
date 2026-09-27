@@ -1813,3 +1813,14 @@ tasks:
   status: complete
   created_at: '2026-09-25T19:06:14.402370+00:00'
   completed_at: '2026-09-25T20:58:05.527110+00:00'
+- id: DF-CHIMERA-V2-58
+  title: Credential block self-heals after missing-key failure
+  criteria:
+  - A credential failure recorded without a fingerprint persists a distinguishable
+    marker and clears when a later fingerprint is supplied
+  - The marker survives registry restart and state removal is persisted
+  - Stored different fingerprints clear, matching fingerprints stay blocked, legacy
+    fingerprintless entries stay blocked, guardrail behavior is unchanged
+  status: complete
+  created_at: '2026-09-27T07:50:10.997448+00:00'
+  completed_at: '2026-09-27T08:15:42.313296+00:00'
