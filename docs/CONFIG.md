@@ -538,3 +538,203 @@ and full response payloads in logs.
 |---|---|---|
 | `host` | `0.0.0.0` | Bind address |
 | `port` | `8765` | Listen port |
+
+---
+
+## `retry`
+
+Exponential backoff retry policy for provider calls (the F7 policy in
+`gateway._complete_with_retry`). A transient provider failure is retried with
+a delay that starts at `base_delay_ms` and is multiplied by
+`backoff_multiplier` after each attempt, capped at `max_delay_ms`, until
+`max_attempts` tries have been made.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `max_attempts` | `int` | `3` | Total tries for one provider call, including the first |
+| `base_delay_ms` | `int` | `500` | Delay before the first retry, in milliseconds |
+| `max_delay_ms` | `int` | `10000` | Upper bound for any single backoff delay, in milliseconds |
+| `backoff_multiplier` | `float` | `2.0` | Factor each successive delay is multiplied by |
+
+```yaml
+retry:
+  max_attempts: 3
+  base_delay_ms: 500
+  max_delay_ms: 10000
+  backoff_multiplier: 2.0
+```
+
+With the defaults the retry delays are 500 ms then 1000 ms — a provider call
+is attempted at most 3 times over roughly 1.5 s of backoff before the failure
+is surfaced (and recorded against the provider's circuit breaker, when one is
+configured).
+
+---
+
+## `queue`
+
+In-memory request queue / backpressure configuration (F5) for the REST API.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `max_concurrent` | `int` | `10` | Maximum requests processed at the same time |
+| `max_queue_depth` | `int` | `100` | Maximum requests held waiting once `max_concurrent` are in flight |
+
+```yaml
+queue:
+  max_concurrent: 10
+  max_queue_depth: 100
+```
+
+Requests beyond `max_concurrent` wait in the queue; once the queue itself is
+full (`max_queue_depth` waiting), further requests are refused rather than
+buffered, so load sheds at the edge instead of growing memory unboundedly.
+
+---
+
+## `auth`
+
+Authentication configuration for the REST API. Disabled by default — every
+request is then served as `anonymous` with no credential check.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | `bool` | `false` | Master switch; `false` serves every request without a key |
+| `mode` | `string` | `env` | Key source: `env` (one shared key) or `list` (named keys from config) |
+| `keys` | `list` | `[]` | `AuthKeyEntry` items used by `list` mode (see below) |
+
+Clients pass the key in the `Authorization: Bearer <key>` header or the
+`X-API-Key` header. A missing key is answered `401 Missing API key`, a wrong
+one `401 Invalid API key`.
+
+**`env` mode** — one shared key read from the `CHIMERA_API_KEY` environment
+variable (never from the YAML file):
+
+```yaml
+auth:
+  enabled: true
+  mode: env
+```
+
+Set `CHIMERA_AUTH_ENABLED=true` to flip `enabled` on without editing the
+file. If `enabled: true` with `mode: env` but `CHIMERA_API_KEY` is not set,
+the server still starts but prints a loud startup warning — every
+authenticated call would be rejected with `401 Invalid API key` — telling you
+to export `CHIMERA_API_KEY` and restart.
+
+**`list` mode** — any number of named keys declared in the config; each
+request is matched against the list and served under that entry's `name`:
+
+```yaml
+auth:
+  enabled: true
+  mode: list
+  keys:
+    - key: ${CHIMERA_KEY_ALICE}   # ${VAR} substitution — never inline a real key
+      name: alice
+    - key: ${CHIMERA_KEY_CI}
+      name: ci-runner
+```
+
+Each `keys` entry is an `AuthKeyEntry`:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `key` | `string` | — (required) | The credential value; use `${VAR}` substitution, never a literal key |
+| `name` | `string` | `default` | Label the request is served under when this key matches |
+
+Use `list` mode when callers should be distinguishable (per-user or
+per-integration keys); use `env` mode for a single shared deployment key.
+Never commit real key values — `${VAR}` tokens resolve from the process
+environment, the repo `.env`, or `~/.hermes/.env` at load time.
+
+---
+
+## `rate_limit`
+
+In-memory token-bucket rate limiting for the REST API. Disabled by default;
+`CHIMERA_RATE_LIMIT_ENABLED=true` flips it on without editing the file.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | `bool` | `false` | Master switch; `false` allows every request |
+| `requests_per_minute` | `int` | `60` | Sustained rate per client — tokens refill at this many per minute |
+| `burst_size` | `int` | `10` | Bucket capacity per client — the maximum burst above the sustained rate |
+
+```yaml
+rate_limit:
+  enabled: true
+  requests_per_minute: 60
+  burst_size: 10
+```
+
+Each client gets its own bucket, created full at `burst_size` tokens and
+refilled steadily at `requests_per_minute / 60` tokens per second. A request
+consumes one token; when the bucket is empty the request is rejected and the
+response carries the estimated seconds until the next token
+(`retry_after`). Buckets are in-memory only — a restart resets every client's
+allowance.
+
+---
+
+## `circuit_breakers`
+
+Per-provider circuit breakers, protecting a deliberation from cascading
+failures when a provider is consistently erroring. The value is a **mapping
+from provider name to a `CircuitBreakerConfig`**; a provider with no entry
+gets no breaker unless a `default` entry is configured, in which case the
+`default` settings are used to create a breaker for it on first use.
+
+```yaml
+circuit_breakers:
+  default:                    # applied to any provider without its own entry
+    failure_threshold: 5
+    recovery_timeout_s: 30
+    half_open_max_requests: 1
+  deepseek:                   # per-provider override
+    failure_threshold: 3
+    recovery_timeout_s: 60
+    half_open_max_requests: 1
+```
+
+Each entry:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `failure_threshold` | `int` | `5` | Consecutive failures that trip the breaker OPEN |
+| `recovery_timeout_s` | `int` | `30` | Seconds an OPEN breaker waits before allowing a trial request |
+| `half_open_max_requests` | `int` | `1` | Trial requests allowed through while testing recovery |
+
+The breaker is a three-state machine per provider:
+
+- **CLOSED** — normal operation; calls proceed and failures are counted.
+- **OPEN** — after `failure_threshold` consecutive failures; calls fail fast
+  without touching the provider.
+- **HALF_OPEN** — after `recovery_timeout_s`; up to `half_open_max_requests`
+  trial calls are let through. A success closes the breaker; a failure
+  re-opens it for another recovery window.
+
+---
+
+## `selector`
+
+Model selection strategy — how the category-weighted selector balances
+quality against cost when it scores models for a task.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `price_sensitivity` | `float` | `0.0` | How much cost influences selection; range `0.0`–`1.0` (enforced at load) |
+
+```yaml
+selector:
+  price_sensitivity: 0.0      # default — matches chimera.yaml.example
+```
+
+- `0.0` — **pure quality**: cost is ignored; the highest category-scored
+  model wins.
+- `0.5` — **balanced**: quality and cost weigh equally.
+- `1.0` — **pure cheapest-that-works**: the cheapest adequate model wins.
+
+Values outside `0.0`–`1.0` are rejected by config validation. Cost figures
+come from the model's `cost_per_1k_*` overrides or its `cost_tier` default
+(see [`models`](#models)).
