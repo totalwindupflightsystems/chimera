@@ -856,3 +856,18 @@ scratch venv + config + raw upstream captures under
 (temp state file, wheel registry); live `~/.chimera/blocked-models.json`
 backed up and restored byte-identical; board rows DF-CHIMERA-V2-58..63;
 no credentials committed.
+
+## Run 17 — Web UI Auth Friction (2026-09-28)
+
+The web UI (`/web/`) loads fine but the session/chat endpoints require `CHIMERA_API_KEY`. A user opening the UI in a browser has no documented way to provide the key.
+
+**Repro:**
+```bash
+curl -s http://localhost:8765/web/ | head -5  # HTML loads
+curl -s -X POST http://localhost:8765/web/sessions -H 'Content-Type: application/json' -d '{"title":"test"}'
+# → 401 unauthorized
+```
+
+**Fix direction:** Exempt `/web/*` from `require_api_key` (local-only bind), or add a one-time "enter API key" modal that sets a cookie.
+
+**Browser tooling note:** The `browser_exec` tool (browser-use CLI) failed repeatedly on this tick (syntax errors, timeouts). Not a Chimera defect, but it blocked the web UI drive. File the blocker, don't burn the tick retrying.
