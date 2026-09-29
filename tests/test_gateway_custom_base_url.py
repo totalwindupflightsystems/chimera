@@ -64,7 +64,9 @@ FAKE_ROUTER9_KEY = "fake-router9-gateway-key-for-tests"
 
 def _entry(provider: str, litellm_model: str | None = None) -> ModelEntry:
     return ModelEntry(
-        categories={}, cost_tier="standard", provider=provider,
+        categories={},
+        cost_tier="standard",
+        provider=provider,
         litellm_model=litellm_model,
     )
 
@@ -114,11 +116,13 @@ def _compat_stub() -> Iterator[tuple[str, list[dict[str, Any]]]]:
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b""
             body = json.loads(raw or b"{}")
-            seen.append({
-                "path": self.path,
-                "authorization": self.headers.get("Authorization"),
-                "body": body,
-            })
+            seen.append(
+                {
+                    "path": self.path,
+                    "authorization": self.headers.get("Authorization"),
+                    "body": body,
+                }
+            )
             payload = {
                 "id": "chatcmpl-stub",
                 "object": "chat.completion",
@@ -165,7 +169,10 @@ def _compat_stub() -> Iterator[tuple[str, list[dict[str, Any]]]]:
 
 def test_custom_base_url_routes_through_the_openai_compatible_provider() -> None:
     model, extra = resolve_litellm_model(
-        MODEL_ID, _entry(PROVIDER), api_key=FAKE_KEY, base_url=GATEWAY_BASE_URL,
+        MODEL_ID,
+        _entry(PROVIDER),
+        api_key=FAKE_KEY,
+        base_url=GATEWAY_BASE_URL,
     )
     assert model == f"openai/{BARE_MODEL}"
     assert extra["api_base"] == GATEWAY_BASE_URL
@@ -190,12 +197,16 @@ def test_custom_base_url_routes_through_the_openai_compatible_provider() -> None
     ],
 )
 def test_catalog_prefix_is_stripped_to_the_upstream_model_id(
-    catalog_id: str, provider: str, expected_upstream: str,
+    catalog_id: str,
+    provider: str,
+    expected_upstream: str,
 ) -> None:
     """The gateway (and every OpenAI-compatible endpoint) wants its own id."""
     model, extra = resolve_litellm_model(
-        catalog_id, _entry(provider),
-        api_key=FAKE_KEY, base_url=GATEWAY_BASE_URL,
+        catalog_id,
+        _entry(provider),
+        api_key=FAKE_KEY,
+        base_url=GATEWAY_BASE_URL,
     )
     assert model == f"openai/{expected_upstream}"
     assert extra["api_base"] == GATEWAY_BASE_URL
@@ -204,7 +215,9 @@ def test_catalog_prefix_is_stripped_to_the_upstream_model_id(
 def test_keyless_custom_endpoint_passes_no_api_key() -> None:
     """No resolved key → no ``api_key`` kwarg (the existing keyless contract)."""
     model, extra = resolve_litellm_model(
-        MODEL_ID, _entry(PROVIDER), base_url=GATEWAY_BASE_URL,
+        MODEL_ID,
+        _entry(PROVIDER),
+        base_url=GATEWAY_BASE_URL,
     )
     assert model == f"openai/{BARE_MODEL}"
     assert "api_key" not in extra
@@ -212,8 +225,10 @@ def test_keyless_custom_endpoint_passes_no_api_key() -> None:
 
 def test_explicit_litellm_model_still_wins_over_base_url() -> None:
     model, extra = resolve_litellm_model(
-        MODEL_ID, _entry(PROVIDER, litellm_model="openrouter/some/model"),
-        api_key=FAKE_KEY, base_url=GATEWAY_BASE_URL,
+        MODEL_ID,
+        _entry(PROVIDER, litellm_model="openrouter/some/model"),
+        api_key=FAKE_KEY,
+        base_url=GATEWAY_BASE_URL,
     )
     assert model == "openrouter/some/model"
     assert "api_base" not in extra
@@ -222,17 +237,21 @@ def test_explicit_litellm_model_still_wins_over_base_url() -> None:
 def test_no_base_url_keeps_the_legacy_passthrough() -> None:
     """A provider with no configured base_url is untouched (mistral-style)."""
     model, extra = resolve_litellm_model(
-        "mistral/mistral-large", _entry("mistral"), api_key=FAKE_KEY,
+        "mistral/mistral-large",
+        _entry("mistral"),
+        api_key=FAKE_KEY,
     )
     assert model == "mistral/mistral-large"
     assert extra == {"api_key": FAKE_KEY}
 
 
 @pytest.mark.parametrize(
-    "provider", ["zai", "deepseek", "openrouter", "anthropic", "google", "openai"],
+    "provider",
+    ["zai", "deepseek", "openrouter", "anthropic", "google", "openai"],
 )
 def test_native_providers_ignore_a_configured_base_url(
-    provider: str, monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """C2: routing for every natively-handled provider is byte-identical.
 
@@ -252,7 +271,9 @@ def test_native_providers_ignore_a_configured_base_url(
 
     without = resolve_litellm_model(name, _entry(provider))
     with_base_url = resolve_litellm_model(
-        name, _entry(provider), base_url="http://127.0.0.1:9999/v1",
+        name,
+        _entry(provider),
+        base_url="http://127.0.0.1:9999/v1",
     )
     assert with_base_url == without
 
@@ -270,8 +291,10 @@ def test_router9_namespaced_id_keeps_its_inner_slash() -> None:
     is not a model that gateway knows.
     """
     model, extra = resolve_litellm_model(
-        ROUTER9_MODEL_ID, _entry(ROUTER9_PROVIDER),
-        api_key=FAKE_ROUTER9_KEY, base_url=ROUTER9_BASE_URL,
+        ROUTER9_MODEL_ID,
+        _entry(ROUTER9_PROVIDER),
+        api_key=FAKE_ROUTER9_KEY,
+        base_url=ROUTER9_BASE_URL,
     )
     assert model == "openai/ds/deepseek-v4-flash"
     assert extra == {
@@ -292,12 +315,15 @@ def test_router9_namespaced_id_keeps_its_inner_slash() -> None:
     ],
 )
 def test_router9_catalog_ids_keep_every_namespace_segment(
-    catalog_id: str, expected_upstream: str,
+    catalog_id: str,
+    expected_upstream: str,
 ) -> None:
     """Every segment after the one catalog prefix survives unchanged."""
     model, extra = resolve_litellm_model(
-        catalog_id, _entry(ROUTER9_PROVIDER),
-        api_key=FAKE_ROUTER9_KEY, base_url=ROUTER9_BASE_URL,
+        catalog_id,
+        _entry(ROUTER9_PROVIDER),
+        api_key=FAKE_ROUTER9_KEY,
+        base_url=ROUTER9_BASE_URL,
     )
     assert model == f"openai/{expected_upstream}"
     assert extra["api_base"] == ROUTER9_BASE_URL
@@ -307,8 +333,10 @@ def test_router9_catalog_ids_keep_every_namespace_segment(
 def test_router9_provider_prefix_match_is_case_insensitive() -> None:
     """A mixed-case catalog provider segment still matches its provider name."""
     model, extra = resolve_litellm_model(
-        "Router9/ds/deepseek-v4-flash", _entry(ROUTER9_PROVIDER),
-        api_key=FAKE_ROUTER9_KEY, base_url=ROUTER9_BASE_URL,
+        "Router9/ds/deepseek-v4-flash",
+        _entry(ROUTER9_PROVIDER),
+        api_key=FAKE_ROUTER9_KEY,
+        base_url=ROUTER9_BASE_URL,
     )
     assert model == "openai/ds/deepseek-v4-flash"
     assert extra["api_base"] == ROUTER9_BASE_URL
@@ -317,7 +345,10 @@ def test_router9_provider_prefix_match_is_case_insensitive() -> None:
 def test_hermes_provider_id_is_unchanged_by_the_namespaced_rule() -> None:
     """Regression guard: the hermes catalog id resolves byte-identically."""
     model, extra = resolve_litellm_model(
-        MODEL_ID, _entry(PROVIDER), api_key=FAKE_KEY, base_url=GATEWAY_BASE_URL,
+        MODEL_ID,
+        _entry(PROVIDER),
+        api_key=FAKE_KEY,
+        base_url=GATEWAY_BASE_URL,
     )
     assert model == f"openai/{BARE_MODEL}"
     assert extra == {
@@ -330,8 +361,10 @@ def test_hermes_provider_id_is_unchanged_by_the_namespaced_rule() -> None:
 def test_other_provider_name_does_not_eat_a_vendor_prefix() -> None:
     """Only the SERVING provider's own name is stripped, never a vendor one."""
     model, _ = resolve_litellm_model(
-        "openrouter/x-ai/grok-4.6", _entry(ROUTER9_PROVIDER),
-        api_key=FAKE_ROUTER9_KEY, base_url=ROUTER9_BASE_URL,
+        "openrouter/x-ai/grok-4.6",
+        _entry(ROUTER9_PROVIDER),
+        api_key=FAKE_ROUTER9_KEY,
+        base_url=ROUTER9_BASE_URL,
     )
     assert model == "openai/grok-4.6"
 
@@ -374,7 +407,8 @@ async def test_complete_passes_base_url_and_resolved_key_to_litellm() -> None:
 
     with patch("litellm.acompletion", new=capture):
         resp = await gateway.complete(
-            MODEL_ID, [{"role": "user", "content": "hi"}],
+            MODEL_ID,
+            [{"role": "user", "content": "hi"}],
         )
 
     assert resp.text == "KWARGS-OK"
@@ -413,8 +447,10 @@ async def test_gateway_completion_reaches_the_configured_base_url_endpoint() -> 
         config = ChimeraConfig.model_validate(_config_dict(base_url=base_url))
         gateway = LiteLLMGateway(config)
         resp = await gateway.complete(
-            MODEL_ID, [{"role": "user", "content": "ping"}],
-            temperature=0, max_tokens=4,
+            MODEL_ID,
+            [{"role": "user", "content": "ping"}],
+            temperature=0,
+            max_tokens=4,
         )
 
         assert resp.text == "STUB-OK"
@@ -431,14 +467,18 @@ async def test_gateway_completion_sends_the_namespaced_upstream_id() -> None:
     with _compat_stub() as (base_url, seen):
         config = ChimeraConfig.model_validate(
             _config_dict(
-                base_url=base_url, api_key=FAKE_ROUTER9_KEY,
-                provider=ROUTER9_PROVIDER, model_id=ROUTER9_MODEL_ID,
+                base_url=base_url,
+                api_key=FAKE_ROUTER9_KEY,
+                provider=ROUTER9_PROVIDER,
+                model_id=ROUTER9_MODEL_ID,
             )
         )
         gateway = LiteLLMGateway(config)
         resp = await gateway.complete(
-            ROUTER9_MODEL_ID, [{"role": "user", "content": "ping"}],
-            temperature=0, max_tokens=4,
+            ROUTER9_MODEL_ID,
+            [{"role": "user", "content": "ping"}],
+            temperature=0,
+            max_tokens=4,
         )
 
         assert resp.text == "STUB-OK"
@@ -463,12 +503,12 @@ async def test_credential_failure_names_the_providers_own_env_var(
 
     monkeypatch.setenv("API_SERVER_KEY", FAKE_KEY)
     # No literal api_key: the seam under test is ``api_key_env``.
-    config = ChimeraConfig.model_validate(
-        _config_dict(api_key=None, api_key_env="API_SERVER_KEY")
-    )
+    config = ChimeraConfig.model_validate(_config_dict(api_key=None, api_key_env="API_SERVER_KEY"))
     gateway = LiteLLMGateway(config)
     exc = litellm.exceptions.AuthenticationError(
-        message="invalid api key", model=BARE_MODEL, llm_provider="openai",
+        message="invalid api key",
+        model=BARE_MODEL,
+        llm_provider="openai",
     )
 
     with (
@@ -488,9 +528,7 @@ async def test_api_key_env_resolved_key_reaches_litellm(
 ) -> None:
     """The whole chain: ``api_key_env`` → provider entry → the LLM call."""
     monkeypatch.setenv("API_SERVER_KEY", FAKE_KEY)
-    config = ChimeraConfig.model_validate(
-        _config_dict(api_key=None, api_key_env="API_SERVER_KEY")
-    )
+    config = ChimeraConfig.model_validate(_config_dict(api_key=None, api_key_env="API_SERVER_KEY"))
     gateway = LiteLLMGateway(config)
     captured: list[dict[str, Any]] = []
 
@@ -562,9 +600,11 @@ def test_every_example_router9_model_resolves_to_its_upstream_id() -> None:
 
     for model_id in namespaced:
         model, extra = resolve_litellm_model(
-            model_id, _entry(ROUTER9_PROVIDER), base_url=base_url,
+            model_id,
+            _entry(ROUTER9_PROVIDER),
+            base_url=base_url,
         )
-        expected = model_id[len(ROUTER9_PROVIDER) + 1:]
+        expected = model_id[len(ROUTER9_PROVIDER) + 1 :]
         assert model == f"openai/{expected}"
         assert extra["api_base"] == base_url
         assert extra["custom_llm_provider"] == "openai"
@@ -612,13 +652,16 @@ def _cold_dotenv(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def test_api_server_key_resolves_from_hermes_dotenv(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _cold_dotenv: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    _cold_dotenv: None,
 ) -> None:
     """``api_key_env: API_SERVER_KEY`` resolves via ~/.hermes/.env — no literal."""
     hermes_dir = tmp_path / ".hermes"
     hermes_dir.mkdir()
     (hermes_dir / ".env").write_text(
-        f"API_SERVER_KEY={FAKE_KEY}\n", encoding="utf-8",
+        f"API_SERVER_KEY={FAKE_KEY}\n",
+        encoding="utf-8",
     )
     monkeypatch.setenv("HOME", str(tmp_path))
 
@@ -629,7 +672,9 @@ def test_api_server_key_resolves_from_hermes_dotenv(
 
 
 def test_hermes_provider_is_unresolved_without_the_env_var(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _cold_dotenv: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    _cold_dotenv: None,
 ) -> None:
     """A box without the key resolves to ``None`` instead of a literal."""
     monkeypatch.setenv("HOME", str(tmp_path))

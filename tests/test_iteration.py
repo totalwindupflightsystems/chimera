@@ -19,24 +19,38 @@ def _iter_responder(config, *, max_iterations: int = 3):  # type: ignore[no-unty
     # Build a DAG with iterate_on on the audit stage.
     # Structure: worker_1 -> aggregator -> audit (iterate_on: [worker_1])
     stages = [
-        {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat",
-         "depends_on": []},
-        {"id": "aggregator", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2",
-         "depends_on": ["worker_1"]},
-        {"id": "audit", "kind": "audit", "model": "zai-coding-plan/glm-5.2",
-         "depends_on": ["aggregator"],
-         "iterate_on": ["worker_1"], "iteration_limit": max_iterations},
+        {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat", "depends_on": []},
+        {
+            "id": "aggregator",
+            "kind": "aggregator",
+            "model": "zai-coding-plan/glm-5.2",
+            "depends_on": ["worker_1"],
+        },
+        {
+            "id": "audit",
+            "kind": "audit",
+            "model": "zai-coding-plan/glm-5.2",
+            "depends_on": ["aggregator"],
+            "iterate_on": ["worker_1"],
+            "iteration_limit": max_iterations,
+        },
     ]
     edges = [["worker_1", "aggregator"], ["aggregator", "audit"]]
-    payload = json.dumps({
-        "formation": {"stages": stages, "edges": edges},
-        "worker_prompts": [
-            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
-             "prompt": "Write the answer.", "expected_output_schema": None},
-        ],
-        "aggregator_instructions": "Merge the answer.",
-        "stage_instructions": {"audit": "Check the answer for correctness."},
-    })
+    payload = json.dumps(
+        {
+            "formation": {"stages": stages, "edges": edges},
+            "worker_prompts": [
+                {
+                    "stage_id": "worker_1",
+                    "model": "deepseek/deepseek-chat",
+                    "prompt": "Write the answer.",
+                    "expected_output_schema": None,
+                },
+            ],
+            "aggregator_instructions": "Merge the answer.",
+            "stage_instructions": {"audit": "Check the answer for correctness."},
+        }
+    )
     _call_count = [0]  # mutable closure
 
     def _responder(model, messages, response_format=None, **kw):
@@ -51,11 +65,15 @@ def _iter_responder(config, *, max_iterations: int = 3):  # type: ignore[no-unty
             if n < max_iterations:
                 return resp(
                     '{"passed": false, "feedback": "Missing details."}',
-                    model, tok_in=30, tok_out=50,
+                    model,
+                    tok_in=30,
+                    tok_out=50,
                 )
             return resp(
                 '{"passed": true, "feedback": "OK.", "answer": "Final answer."}',
-                model, tok_in=30, tok_out=50,
+                model,
+                tok_in=30,
+                tok_out=50,
             )
         # Aggregator
         if "Upstream outputs" in joined or "merge" in joined.lower():
@@ -148,9 +166,7 @@ class TestIterationLoop:
         gw = FakeGateway(_iter_responder(config, max_iterations=1))
         result = await Engine(config, gw).deliberate("test task")
         trace = result.trace
-        assert trace.iteration_count == 1, (
-            f"Expected 1 iteration, got {trace.iteration_count}"
-        )
+        assert trace.iteration_count == 1, f"Expected 1 iteration, got {trace.iteration_count}"
 
     @staticmethod
     async def test_re_iterates_on_audit_failure(config) -> None:  # type: ignore[no-untyped-def]
@@ -159,9 +175,7 @@ class TestIterationLoop:
         result = await Engine(config, gw).deliberate("test task")
         trace = result.trace
         # First audit fails, second passes = 2 passes total
-        assert trace.iteration_count == 2, (
-            f"Expected 2 iterations, got {trace.iteration_count}"
-        )
+        assert trace.iteration_count == 2, f"Expected 2 iterations, got {trace.iteration_count}"
 
     @staticmethod
     async def test_hits_iteration_limit_and_accepts(config) -> None:  # type: ignore[no-untyped-def]
@@ -171,9 +185,7 @@ class TestIterationLoop:
         trace = result.trace
         # With max_iterations=3 and all failing, we should still return
         # the last iteration's result (not loop forever)
-        assert trace.iteration_count == 3, (
-            f"Expected 3 iterations (limit), got {trace.iteration_count}"
-        )
+        assert trace.iteration_count == 3, f"Expected 3 iterations (limit), got {trace.iteration_count}"
         # Answer should exist even after limit reached
         assert result.answer, "Answer should not be empty after iteration limit"
 
@@ -185,8 +197,7 @@ class TestIterationLoop:
         gw = FakeGateway(_engine_responder(config))
         result = await Engine(config, gw).deliberate("task")
         assert result.trace.iteration_count == 1, (
-            f"Expected 1 iteration for non-iterating DAG, "
-            f"got {result.trace.iteration_count}"
+            f"Expected 1 iteration for non-iterating DAG, got {result.trace.iteration_count}"
         )
 
     @staticmethod
@@ -195,13 +206,9 @@ class TestIterationLoop:
         gw = FakeGateway(_iter_responder(config, max_iterations=2))
         await Engine(config, gw).deliberate("test task")
         # Find the worker call with "Previous attempt feedback" in the prompt
-        feedback_calls = [
-            c for c in gw.calls
-            if "Previous attempt feedback" in str(c[1])
-        ]
+        feedback_calls = [c for c in gw.calls if "Previous attempt feedback" in str(c[1])]
         assert len(feedback_calls) >= 1, (
-            "Expected at least one worker call with iteration feedback, "
-            f"got {len(feedback_calls)}"
+            f"Expected at least one worker call with iteration feedback, got {len(feedback_calls)}"
         )
 
     @staticmethod

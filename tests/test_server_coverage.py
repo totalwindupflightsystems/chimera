@@ -31,6 +31,7 @@ from tests.conftest import CONFIG_DICT, FakeGateway, dispatch_json  # noqa: E402
 # Helpers
 # --------------------------------------------------------------------------- #
 
+
 def _resp(text: str, model: str, ti: int = 10, to: int = 20) -> GatewayResponse:
     return GatewayResponse(text=text, model=model, tokens_input=ti, tokens_output=to)
 
@@ -73,6 +74,7 @@ def _config_with_health_timeout(config: ChimeraConfig, health_timeout_s: float) 
 # =========================================================================== #
 # RequestQueue — properties and edge cases
 # =========================================================================== #
+
 
 class TestRequestQueueProperties:
     """Cover current_waiting and max_queue_depth properties."""
@@ -129,6 +131,7 @@ class TestRequestQueueProperties:
 # Health check endpoints
 # =========================================================================== #
 
+
 class TestHealthEndpoints:
     """Cover /v1/health, /v1/health/ready, /v1/health/live."""
 
@@ -142,8 +145,7 @@ class TestHealthEndpoints:
         keys) — which does not exist in CI and made /v1/health return
         'degraded' there (CI red since 2026-07-29).
         """
-        for env_var in ("OPENROUTER_API_KEY", "ZAI_API_KEY",
-                        "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY"):
+        for env_var in ("OPENROUTER_API_KEY", "ZAI_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY"):
             monkeypatch.setenv(env_var, "test-key")
 
     def test_health_live_returns_alive(self, config: ChimeraConfig) -> None:  # type: ignore[no-untyped-def]
@@ -184,7 +186,10 @@ class TestHealthEndpoints:
         repo_root = Path(__file__).resolve().parents[1]
         out = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            cwd=repo_root, capture_output=True, text=True, timeout=3,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=3,
         )
         expected = out.stdout.strip()
         if expected:
@@ -200,7 +205,8 @@ class TestHealthEndpoints:
         assert "providers" in data
 
     def test_health_ready_returns_503_when_no_provider_healthy(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """When gateway always fails, readiness should return 503.
 
@@ -226,9 +232,11 @@ class TestHealthEndpoints:
         assert r.status_code == 503
 
     def test_health_returns_degraded_on_all_unhealthy(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """When all model-bearing providers fail, /v1/health returns degraded."""
+
         def failing(model: str, messages: list, **kw: Any):
             raise RuntimeError("provider down")
 
@@ -240,7 +248,8 @@ class TestHealthEndpoints:
         assert data["status"] == "degraded"
 
     def test_health_returns_healthy_when_all_ok(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """When every provider responds, /v1/health returns healthy.
 
@@ -251,8 +260,7 @@ class TestHealthEndpoints:
         """
         cfg_dict = dict(CONFIG_DICT)
         cfg_dict["providers"] = {
-            name: spec for name, spec in cfg_dict["providers"].items()
-            if name != "anthropic"
+            name: spec for name, spec in cfg_dict["providers"].items() if name != "anthropic"
         }
         config = ChimeraConfig.model_validate(cfg_dict)
 
@@ -267,7 +275,8 @@ class TestHealthEndpoints:
         assert details["providers_configured"] == len(config.providers)
 
     def test_health_marks_note_only_provider_unhealthy(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """CH-GAP-053: a provider with no models proves nothing — degraded.
 
@@ -286,9 +295,11 @@ class TestHealthEndpoints:
         assert entry["note"] == "no models configured for provider"
 
     def test_health_handles_gateway_exception(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """If _check_providers raises unexpectedly, health returns degraded."""
+
         def exploding(model: str, messages: list, **kw: Any):
             raise ConnectionError("boom")
 
@@ -300,7 +311,8 @@ class TestHealthEndpoints:
         assert r.json()["status"] == "degraded"
 
     def test_readiness_handles_unexpected_exception(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """If _check_providers raises unexpectedly, readiness returns 503.
 
@@ -328,26 +340,30 @@ class TestHealthEndpoints:
 # Queue overflow → 503
 # =========================================================================== #
 
+
 class TestQueueOverflow:
     """Cover the 503 path when the request queue is full."""
 
     def test_deliberate_returns_503_when_queue_full(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """When queue.acquire() returns False, /v1/deliberate returns 503."""
         client = _client(config)
+
         # Monkeypatch the app's request queue to always reject
         async def always_reject() -> bool:
             return False
+
         client.app.state.request_queue.acquire = always_reject  # type: ignore[attr-defined]
 
-        r = client.post("/v1/deliberate",
-                        json={"prompt": "overflow", "formation": "auto"})
+        r = client.post("/v1/deliberate", json={"prompt": "overflow", "formation": "auto"})
         assert r.status_code == 503
         assert "Retry-After" in r.headers
 
     def test_chat_completions_returns_503_when_queue_full(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """When queue is full, /v1/chat/completions returns 503."""
         # Mock the queue to always reject
@@ -355,9 +371,11 @@ class TestQueueOverflow:
         config = ChimeraConfig.model_validate(cfg_dict)
 
         client = _client(config)
+
         # Monkeypatch the app's request queue to always reject
         async def always_reject() -> bool:
             return False
+
         client.app.state.request_queue.acquire = always_reject  # type: ignore[attr-defined]
 
         r = client.post(
@@ -371,11 +389,13 @@ class TestQueueOverflow:
 # Chat completions DAG rejection + response_format extraction
 # =========================================================================== #
 
+
 class TestChatCompletionsEdgeCases:
     """Cover DAG rejection and response_format handling in chat completions."""
 
     def test_chat_completions_dag_rejected_without_opt_in(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """dag supplied without allow_custom_dag → HTTP 400."""
         client = _client(config)
@@ -392,7 +412,8 @@ class TestChatCompletionsEdgeCases:
         assert "allow_custom_dag" in r.json()["detail"]
 
     def test_chat_completions_json_schema_response_format(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """json_schema response_format is extracted and passed as output_schema."""
         captured: list[Any] = []
@@ -421,9 +442,11 @@ class TestChatCompletionsEdgeCases:
         assert r.status_code == 200, r.text
 
     def test_chat_completions_json_object_response_format(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """json_object response_format is extracted as generic object schema."""
+
         def grab(model: str, messages: list, response_format=None, **kw: Any):
             if response_format is not None:
                 return _resp(dispatch_json(), model, 10, 10)
@@ -444,11 +467,14 @@ class TestChatCompletionsEdgeCases:
         assert r.status_code == 200, r.text
 
     def test_deliberate_unknown_formation_returns_422(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """Unknown formation on /v1/deliberate → HTTP 422 (VALIDATION-001)."""
+
         def _unused(model: str, messages: list, **kw: Any) -> GatewayResponse:
             raise RuntimeError("not used")
+
         engine = Engine(config, FakeGateway(_unused))
 
         # Patch engine.deliberate to raise ValueError — should never be reached
@@ -469,6 +495,7 @@ class TestChatCompletionsEdgeCases:
 # _check_providers helper — direct unit tests
 # =========================================================================== #
 
+
 class TestCheckProviders:
     """Cover _check_providers directly: success, timeout, exception, empty."""
 
@@ -479,8 +506,7 @@ class TestCheckProviders:
         Same rationale as TestHealthEndpoints._provider_credentials — these
         tests must not depend on ambient env keys from ~/.hermes/.env.
         """
-        for env_var in ("OPENROUTER_API_KEY", "ZAI_API_KEY",
-                        "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY"):
+        for env_var in ("OPENROUTER_API_KEY", "ZAI_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY"):
             monkeypatch.setenv(env_var, "test-key")
 
     @pytest.mark.asyncio
@@ -491,6 +517,7 @@ class TestCheckProviders:
         never probed and is reported unhealthy with the note, so the healthy
         set is exactly the model-bearing providers.
         """
+
         class GoodGateway:
             async def complete(self, model: str, messages: list, **kw: Any):
                 return _resp("ok", model)
@@ -498,8 +525,7 @@ class TestCheckProviders:
         result = await _check_providers(config, GoodGateway())
         assert len(result) == len(config.providers)
         expected_healthy = {
-            name for name in config.providers
-            if any(m.provider == name for m in config.models.values())
+            name for name in config.providers if any(m.provider == name for m in config.models.values())
         }
         for name, status in result.items():
             if name in expected_healthy:
@@ -511,7 +537,8 @@ class TestCheckProviders:
 
     @pytest.mark.asyncio
     async def test_provider_timeout_marked_slow(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """Providers that never answer are marked unhealthy AND ``slow``.
 
@@ -523,6 +550,7 @@ class TestCheckProviders:
         not a bare ``timeout`` — the provider is unmeasured, so a client must
         be able to tell it apart from one that CONNECTED and failed.
         """
+
         class TimeoutGateway:
             async def complete(self, model: str, messages: list, **kw: Any):
                 await asyncio.sleep(100)  # will be cut by wait_for(health_timeout_s)
@@ -541,7 +569,8 @@ class TestCheckProviders:
 
     @pytest.mark.asyncio
     async def test_provider_exception_marked_unhealthy(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """Providers that raise are marked unhealthy.
 
@@ -549,6 +578,7 @@ class TestCheckProviders:
         'anthropic' provider has no models, is never probed, and is reported
         unhealthy with a note (CH-GAP-053), so it is skipped here too.
         """
+
         class ErrorGateway:
             async def complete(self, model: str, messages: list, **kw: Any):
                 raise RuntimeError("connection refused")
@@ -560,7 +590,8 @@ class TestCheckProviders:
 
     @pytest.mark.asyncio
     async def test_provider_with_no_models_reports_note(
-        self, config: ChimeraConfig,  # type: ignore[no-untyped-def]
+        self,
+        config: ChimeraConfig,  # type: ignore[no-untyped-def]
     ) -> None:
         """Provider with no models → healthy=False with the note (CH-GAP-053).
 
@@ -569,6 +600,7 @@ class TestCheckProviders:
         """
         # Add a provider with no associated models
         from chimera.config import Provider
+
         config.providers["orphan"] = Provider(base_url="https://orphan.test")
         config = config.model_copy()
 
@@ -588,7 +620,8 @@ class TestCheckProviders:
         cfg_dict["providers"] = {}
         cfg_dict["models"] = {
             "test/model": {
-                "categories": {"code": 0.5}, "cost_tier": "standard",
+                "categories": {"code": 0.5},
+                "cost_tier": "standard",
                 "provider": "test",
             },
         }
@@ -612,6 +645,7 @@ class TestCheckProviders:
 # run() entrypoint — mocked uvicorn
 # =========================================================================== #
 
+
 class TestRunEntrypoint:
     """Cover run() by mocking uvicorn.run and load_config."""
 
@@ -620,6 +654,7 @@ class TestRunEntrypoint:
         # the cwd walk-up, so clear it (the conftest fresh-checkout fixture sets
         # it when the repo root has no live chimera.yaml).
         import yaml
+
         config_path = tmp_path / "chimera.yaml"
         config_path.write_text(yaml.safe_dump(CONFIG_DICT), encoding="utf-8")
         monkeypatch.delenv("CHIMERA_CONFIG", raising=False)
@@ -634,6 +669,7 @@ class TestRunEntrypoint:
 
         with patch("uvicorn.run", side_effect=fake_uvicorn_run):
             from chimera.api.server import run
+
             run()
 
         assert "app" in uvicorn_called
@@ -642,6 +678,7 @@ class TestRunEntrypoint:
 
     def test_run_with_explicit_host_port(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
         import yaml
+
         config_path = tmp_path / "chimera.yaml"
         config_path.write_text(yaml.safe_dump(CONFIG_DICT), encoding="utf-8")
         monkeypatch.chdir(tmp_path)
@@ -654,6 +691,7 @@ class TestRunEntrypoint:
 
         with patch("uvicorn.run", side_effect=fake_uvicorn_run):
             from chimera.api.server import run
+
             run(host="0.0.0.0", port=9999)
 
         assert uvicorn_called["host"] == "0.0.0.0"
@@ -688,11 +726,14 @@ class TestLifespanAndWebRouter:
             assert r.status_code == 200
 
     def test_web_router_import_error_is_skipped(
-        self, config: ChimeraConfig, monkeypatch: pytest.MonkeyPatch,
+        self,
+        config: ChimeraConfig,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """If ``chimera.web.router`` import fails, create_app still builds."""
         # Remove any cached import of chimera.web and patch to make it raise.
         import sys
+
         monkeypatch.setitem(sys.modules, "chimera.web", None)  # forces ImportError
         engine = Engine(config, FakeGateway(lambda *a, **kw: _resp("ok", "x")))
         app = create_app(config=config, engine=engine)
@@ -701,7 +742,8 @@ class TestLifespanAndWebRouter:
 
 class TestRateLimitedHTTPException:
     def test_deliberate_rate_limited_returns_429(
-        self, config: ChimeraConfig,
+        self,
+        config: ChimeraConfig,
     ) -> None:
         """When the rate limiter denies, /v1/deliberate returns HTTP 429."""
         client = _client(config)
@@ -717,7 +759,8 @@ class TestRateLimitedHTTPException:
         assert r.json()["detail"]["error"] == "rate_limited"
 
     def test_chat_completions_rate_limited_returns_429(
-        self, config: ChimeraConfig,
+        self,
+        config: ChimeraConfig,
     ) -> None:
         """Rate limiter denial on /v1/chat/completions → HTTP 429."""
         client = _client(config)
@@ -737,7 +780,8 @@ class TestRateLimitedHTTPException:
 
 class TestHealthDegradedFallbackPath:
     def test_health_unhealthy_exhausts_all_branches(
-        self, config: ChimeraConfig,
+        self,
+        config: ChimeraConfig,
     ) -> None:
         """A config with one model whose provider always fails → covers the
         fall-through ``return {"status": "degraded", ...}`` (line 259) and
@@ -747,7 +791,8 @@ class TestHealthDegradedFallbackPath:
         cfg_dict["providers"] = {"broken": {"base_url": "https://broken.test"}}
         cfg_dict["models"] = {
             "broken/x": {
-                "categories": {"code": 0.5}, "cost_tier": "standard",
+                "categories": {"code": 0.5},
+                "cost_tier": "standard",
                 "provider": "broken",
             },
         }
@@ -769,7 +814,8 @@ class TestHealthDegradedFallbackPath:
         assert r.json()["status"] == "degraded"
 
     def test_health_outer_except_when_gateway_attribute_missing(
-        self, config: ChimeraConfig,
+        self,
+        config: ChimeraConfig,
     ) -> None:
         """When ``request.app.state.engine.gateway`` itself raises on attribute
         access (e.g. a custom engine stub), the outer except (lines 260-266)
@@ -778,7 +824,8 @@ class TestHealthDegradedFallbackPath:
         cfg_dict["providers"] = {"broken": {"base_url": "https://broken.test"}}
         cfg_dict["models"] = {
             "broken/x": {
-                "categories": {"code": 0.5}, "cost_tier": "standard",
+                "categories": {"code": 0.5},
+                "cost_tier": "standard",
                 "provider": "broken",
             },
         }
@@ -805,14 +852,16 @@ class TestHealthDegradedFallbackPath:
 
 class TestReadinessExceptionPath:
     def test_readiness_503_when_check_providers_raises(
-        self, config: ChimeraConfig,
+        self,
+        config: ChimeraConfig,
     ) -> None:
         """A non-HTTPException from _check_providers → 503 via lines 287-288."""
         cfg_dict = dict(CONFIG_DICT)
         cfg_dict["providers"] = {"x": {"base_url": "https://x"}}
         cfg_dict["models"] = {
             "x/y": {
-                "categories": {"code": 0.5}, "cost_tier": "standard",
+                "categories": {"code": 0.5},
+                "cost_tier": "standard",
                 "provider": "x",
             },
         }
@@ -839,7 +888,8 @@ class TestReadinessExceptionPath:
 
 class TestDeliberateTimeoutHeader:
     def test_invalid_timeout_header_value_is_skipped(
-        self, config: ChimeraConfig,
+        self,
+        config: ChimeraConfig,
     ) -> None:
         """Unparseable timeout values in X-Chimera-Timeout are skipped (lines 374-377)."""
         client = _client(config)
@@ -852,7 +902,8 @@ class TestDeliberateTimeoutHeader:
         assert r.status_code == 200
 
     def test_timeout_exceeds_ceiling_returns_400(
-        self, config: ChimeraConfig,
+        self,
+        config: ChimeraConfig,
     ) -> None:
         """total=10000 > admin ceiling (default 300) → 400."""
         client = _client(config)
@@ -865,7 +916,8 @@ class TestDeliberateTimeoutHeader:
         assert "exceeds admin ceiling" in r.json()["detail"]
 
     def test_per_stage_ceiling_exceeded(
-        self, config: ChimeraConfig,
+        self,
+        config: ChimeraConfig,
     ) -> None:
         """per_stage value exceeding admin ceiling → 400."""
         client = _client(config)
@@ -878,7 +930,8 @@ class TestDeliberateTimeoutHeader:
         assert "per_stage" in r.json()["detail"]
 
     def test_timeout_zero_disables_overrides(
-        self, config: ChimeraConfig,
+        self,
+        config: ChimeraConfig,
     ) -> None:
         """total=0 sets timeout_total_s to None (disables override)."""
         client = _client(config)
@@ -890,7 +943,8 @@ class TestDeliberateTimeoutHeader:
         assert r.status_code == 200
 
     def test_timeout_header_garbage_part_skipped(
-        self, config: ChimeraConfig,
+        self,
+        config: ChimeraConfig,
     ) -> None:
         """Header parts without '=' are ignored — line 370-372."""
         client = _client(config)
@@ -904,7 +958,8 @@ class TestDeliberateTimeoutHeader:
 
 class TestChatCompletionUnknownModel:
     def test_chat_completion_engine_keyerror_returns_400(
-        self, config: ChimeraConfig,
+        self,
+        config: ChimeraConfig,
     ) -> None:
         """engine.deliberate raising KeyError → HTTP 400 from /v1/chat/completions.
 
@@ -920,21 +975,20 @@ class TestChatCompletionUnknownModel:
         client = _client_with_engine(config, engine)
         r = client.post(
             "/v1/chat/completions",
-            json={"model": "auto",
-                  "messages": [{"role": "user", "content": "hi"}]},
+            json={"model": "auto", "messages": [{"role": "user", "content": "hi"}]},
         )
         assert r.status_code == 400
         assert "Unknown model" in r.json()["detail"]
 
     def test_chat_completion_unknown_model_returns_404(
-        self, config: ChimeraConfig,
+        self,
+        config: ChimeraConfig,
     ) -> None:
         """Unknown model → HTTP 404 model_not_found, no silent substitution (CH-GAP-027)."""
         client = _client_with_engine(config, Engine(config, FakeGateway(lambda *a, **kw: _resp("ok", "x"))))
         r = client.post(
             "/v1/chat/completions",
-            json={"model": "unknown-model",
-                  "messages": [{"role": "user", "content": "hi"}]},
+            json={"model": "unknown-model", "messages": [{"role": "user", "content": "hi"}]},
         )
         assert r.status_code == 404
         data = r.json()
@@ -952,6 +1006,7 @@ class TestCheckProvidersOuterExcept:
         raises AttributeError when ``entry.provider`` is missing.
         """
         from chimera.config import Provider
+
         cfg_dict = dict(CONFIG_DICT)
         # Add a provider with no matching model entry → loop hits next() which
         # iterates all entries; we mutate one model's provider attribute to be

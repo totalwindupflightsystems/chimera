@@ -284,9 +284,7 @@ def parse_owned_options(
     )
 
 
-def parse_formation(
-    argv: list[str], env: dict[str, str] | None = None
-) -> tuple[str, list[str]]:
+def parse_formation(argv: list[str], env: dict[str, str] | None = None) -> tuple[str, list[str]]:
     """Backward-compatible single-option view of :func:`parse_owned_options`."""
     options, cmd = parse_owned_options(argv, env)
     return options.formation, cmd
@@ -316,9 +314,7 @@ class ProvisionResult(NamedTuple):
     remaps: tuple[Remap, ...]
 
 
-def plan_config_provision(
-    options: ProbeOptions, *, temp_dir: str | None = None
-) -> ProvisionPlan:
+def plan_config_provision(options: ProbeOptions, *, temp_dir: str | None = None) -> ProvisionPlan:
     """Decide where the child's config/cwd come from (pure).
 
     * ``--config=PATH`` → that file, ``CHIMERA_CONFIG=PATH``, cwd = ``--cwd``
@@ -332,20 +328,12 @@ def plan_config_provision(
     """
     if options.config:
         path = os.path.abspath(os.path.expanduser(options.config))
-        cwd = (
-            os.path.abspath(os.path.expanduser(options.cwd))
-            if options.cwd
-            else os.path.dirname(path)
-        )
+        cwd = os.path.abspath(os.path.expanduser(options.cwd)) if options.cwd else os.path.dirname(path)
         return ProvisionPlan(source="explicit", cwd=cwd, config_path=path, generate=False)
     if options.cwd:
         cwd = os.path.abspath(os.path.expanduser(options.cwd))
         return ProvisionPlan(source="cwd", cwd=cwd, config_path=None, generate=False)
-    directory = (
-        os.path.abspath(temp_dir)
-        if temp_dir
-        else tempfile.mkdtemp(prefix=PROBE_CONFIG_DIR_PREFIX)
-    )
+    directory = os.path.abspath(temp_dir) if temp_dir else tempfile.mkdtemp(prefix=PROBE_CONFIG_DIR_PREFIX)
     return ProvisionPlan(
         source="generated",
         cwd=directory,
@@ -417,8 +405,7 @@ def resolve_child_command(
         return [candidate, *cmd[1:]], None
     return (
         list(cmd),
-        f"child command not found: {cmd[0]} (resolved against {base_dir}); "
-        f"pass an absolute path",
+        f"child command not found: {cmd[0]} (resolved against {base_dir}); pass an absolute path",
     )
 
 
@@ -429,9 +416,7 @@ def _child_bin_dir(child_cmd: Sequence[str]) -> str:
     return os.path.dirname(os.path.abspath(child_cmd[0]))
 
 
-def resolve_child_python(
-    child_cmd: Sequence[str], *, fallback: str | None = None
-) -> str:
+def resolve_child_python(child_cmd: Sequence[str], *, fallback: str | None = None) -> str:
     """The interpreter that owns the child entry point.
 
     ``<bin-dir>/python`` next to ``chimera-mcp`` is the interpreter the child
@@ -446,9 +431,7 @@ def resolve_child_python(
     return fallback or sys.executable
 
 
-def config_init_command(
-    child_cmd: Sequence[str], *, child_python: str | None = None
-) -> list[str]:
+def config_init_command(child_cmd: Sequence[str], *, child_python: str | None = None) -> list[str]:
     """The command that generates a config: the child's sibling CLI.
 
     ``<bin-dir>/chimera config init`` next to ``chimera-mcp`` when it exists
@@ -470,8 +453,7 @@ def config_init_command(
 #: does not know (e.g. ``>-`` chomping), which would corrupt the config we are
 #: about to hand to the server.
 _YAML_TO_JSON_PROGRAM = (
-    "import json,sys,yaml;"
-    "sys.stdout.write(json.dumps(yaml.safe_load(open(sys.argv[1], encoding='utf-8'))))"
+    "import json,sys,yaml;sys.stdout.write(json.dumps(yaml.safe_load(open(sys.argv[1], encoding='utf-8'))))"
 )
 _JSON_TO_YAML_PROGRAM = (
     "import json,sys,yaml;"
@@ -510,8 +492,7 @@ def load_config_document(path: str, *, python_exe: str | None = None) -> dict:
             )
             if proc.returncode != 0:
                 raise ProbeSetupError(
-                    f"failed to parse {path} with {python_exe}: "
-                    f"{proc.stderr.strip()[:400]}"
+                    f"failed to parse {path} with {python_exe}: {proc.stderr.strip()[:400]}"
                 )
             data = json.loads(proc.stdout)
         else:
@@ -526,9 +507,7 @@ def load_config_document(path: str, *, python_exe: str | None = None) -> dict:
     return data
 
 
-def write_config_document(
-    path: str, document: Mapping[str, Any], *, python_exe: str | None = None
-) -> None:
+def write_config_document(path: str, document: Mapping[str, Any], *, python_exe: str | None = None) -> None:
     """Serialise *document* back to *path* (same interpreter policy as load)."""
     if _yaml_available():
         import yaml
@@ -549,9 +528,7 @@ def write_config_document(
         text=True,
     )
     if proc.returncode != 0:
-        raise ProbeSetupError(
-            f"failed to write {path} with {python_exe}: {proc.stderr.strip()[:400]}"
-        )
+        raise ProbeSetupError(f"failed to write {path} with {python_exe}: {proc.stderr.strip()[:400]}")
 
 
 # --------------------------------------------------------------------------- #
@@ -571,10 +548,7 @@ class Remap(NamedTuple):
 
     def evidence_line(self) -> str:
         """The exact stdout evidence line for this substitution."""
-        return (
-            f"FORMATION_MODEL_REMAP={self.model} -> {self.replacement} "
-            f"({self.env_var} unset; {self.role})"
-        )
+        return f"FORMATION_MODEL_REMAP={self.model} -> {self.replacement} ({self.env_var} unset; {self.role})"
 
 
 def _placeholder_env_var(value: Any) -> str | None:
@@ -633,9 +607,7 @@ def _hermes_dotenv_values() -> dict[str, str]:
     return values
 
 
-def provider_credential_env_var(
-    config: Mapping[str, Any], provider: str | None
-) -> str | None:
+def provider_credential_env_var(config: Mapping[str, Any], provider: str | None) -> str | None:
     """The env var name that must be set for *provider*, if the config names one."""
     if not provider:
         return None
@@ -798,15 +770,11 @@ def remap_uncredentialed_models(
     slots = _implicit_worker_slots(preset)
     if slots:
         default_worker = resolve_alias(document, "default_worker")
-        credentialed = provider_credential_resolved(
-            document, model_provider(document, default_worker), env
-        )
+        credentialed = provider_credential_resolved(document, model_provider(document, default_worker), env)
         if not credentialed and fallback_usable:
             preset["worker_models"] = [fallback] * slots
             env_var = (
-                provider_credential_env_var(
-                    document, model_provider(document, default_worker)
-                )
+                provider_credential_env_var(document, model_provider(document, default_worker))
                 or "provider credentials"
             )
             remaps.append(
@@ -840,9 +808,7 @@ def provision_config(
     if plan.source == "generated":
         os.makedirs(plan.cwd, exist_ok=True)
         command = config_init_command(child_cmd)
-        proc = subprocess.run(
-            command, cwd=plan.cwd, env=dict(env), capture_output=True, text=True
-        )
+        proc = subprocess.run(command, cwd=plan.cwd, env=dict(env), capture_output=True, text=True)
         assert plan.config_path is not None
         if proc.returncode != 0 or not os.path.isfile(plan.config_path):
             raise ProbeSetupError(
@@ -1145,9 +1111,7 @@ def main(argv: list[str] | None = None) -> int:
         # cwd mode: let the child discover the directory's own chimera.yaml.
         env.pop("CHIMERA_CONFIG", None)
 
-    stdout_lines, order, responses, err = drive_stdio(
-        cmd, env, provisioned.cwd, options.formation
-    )
+    stdout_lines, order, responses, err = drive_stdio(cmd, env, provisioned.cwd, options.formation)
 
     # The handshake version (DF-CHIMERA-V2-9): always reported, optionally gated.
     handshake_version = server_info_version(responses.get(1, {}).get("result", {}))
@@ -1166,10 +1130,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"CHILD_CMD={' '.join(cmd)}")
     print(f"FORMATION={options.formation}")
     print(f"CONFIG_SOURCE={provisioned.source}")
-    print(
-        "CONFIG_PATH="
-        + (provisioned.config_path or "(unset: child discovers its own config from cwd)")
-    )
+    print("CONFIG_PATH=" + (provisioned.config_path or "(unset: child discovers its own config from cwd)"))
     print(f"PROBE_CWD={provisioned.cwd}")
     print(f"SERVER_VERSION={handshake_version or MISSING_VERSION}")
     if version_mismatch:

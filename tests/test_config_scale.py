@@ -162,10 +162,7 @@ def test_docs_style_model_competes_after_normalisation(tmp_path: Path) -> None:
     # Exact number, not a hand-wave: recompute the expected weighted sum from
     # the task weights and the normalised scores independently of the selector.
     weights = task_to_paths(CODE_TASK)
-    expected = sum(
-        weights[path] * score
-        for path, score in ((PY_PATH, 90.0), (SQL_PATH, 80.0))
-    )
+    expected = sum(weights[path] * score for path, score in ((PY_PATH, 90.0), (SQL_PATH, 80.0)))
     assert post["deepseek/docs-style"] == pytest.approx(expected), post
 
 
@@ -206,9 +203,9 @@ def test_unit_scale_rescale_preserves_ranking_order(tmp_path: Path) -> None:
 
     from chimera.config import ModelEntry
 
-    pre_scores = CategorySelector(
-        {name: ModelEntry(**body) for name, body in _unit_models().items()}
-    ).score(CODE_TASK)
+    pre_scores = CategorySelector({name: ModelEntry(**body) for name, body in _unit_models().items()}).score(
+        CODE_TASK
+    )
     cfg = load_config(path)
     post_scores = CategorySelector(cfg.models).score(CODE_TASK)
 
@@ -238,11 +235,11 @@ def _message(tmp_path: Path, models: dict) -> str:
 def test_out_of_range_score_is_rejected(tmp_path: Path, value: float) -> None:
     message = _message(tmp_path, {"deepseek/bad": _entry({"code": value})})
     assert "invalid category score" in message
-    assert str(tmp_path / "chimera.yaml") in message      # the file being loaded
-    assert "'deepseek/bad'" in message                    # model id
-    assert "'code'" in message                            # category path
-    assert repr(float(value)) in message                  # offending value
-    assert "0-100" in message                             # accepted range
+    assert str(tmp_path / "chimera.yaml") in message  # the file being loaded
+    assert "'deepseek/bad'" in message  # model id
+    assert "'code'" in message  # category path
+    assert repr(float(value)) in message  # offending value
+    assert "0-100" in message  # accepted range
     assert "0.0-1.0" in message and "rescaled" in message  # documented exception
 
 
@@ -307,7 +304,10 @@ def test_shipped_template_values_are_byte_identical(template: str) -> None:
     for model_id, entry in raw["models"].items():
         for category_path, value in (entry.get("categories") or {}).items():
             assert cfg.models[model_id].categories[category_path] == value, (
-                model_id, category_path, value, cfg.models[model_id].categories[category_path]
+                model_id,
+                category_path,
+                value,
+                cfg.models[model_id].categories[category_path],
             )
             assert isinstance(cfg.models[model_id].categories[category_path], float)
             checked += 1
@@ -350,10 +350,13 @@ def test_shared_suite_catalog_fixture_is_already_percent(tmp_path: Path) -> None
 
 def test_boundary_values_one_and_zero_are_normalised_not_rejected(tmp_path: Path) -> None:
     """1.0 is inside the rescaled interval; 0.0 is a legitimate untouched zero."""
-    path = _write(tmp_path, {
-        "deepseek/percent-peer": _entry({"code": 90}),
-        "deepseek/edge": _entry({"code": 1.0, "analysis": 0.0}),
-    })
+    path = _write(
+        tmp_path,
+        {
+            "deepseek/percent-peer": _entry({"code": 90}),
+            "deepseek/edge": _entry({"code": 1.0, "analysis": 0.0}),
+        },
+    )
     with structlog.testing.capture_logs() as logs:
         cfg = load_config(path)
 
@@ -412,8 +415,7 @@ def test_warning_capture_survives_a_structlog_repin(tmp_path: Path) -> None:
 
     # Stand in for any earlier entry point (a CLI test's config load, a
     # create_app()ed server, the MCP stdio pin) re-pinning structlog.
-    configure_logging(Observability(use_stdout=False, langfuse={"enabled": False}),
-                      force_stderr=True)
+    configure_logging(Observability(use_stdout=False, langfuse={"enabled": False}), force_stderr=True)
 
     path = _write(tmp_path, _unit_models())
     with structlog.testing.capture_logs() as logs:

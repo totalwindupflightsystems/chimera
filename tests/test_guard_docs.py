@@ -80,7 +80,7 @@ def test_dev_extra_accepts_the_python_lsp_server() -> None:
     assert dev, "pyproject.toml has no [project.optional-dependencies].dev list"
     assert LSP_SERVER in _requirement_names(dev), (
         f"the dev extra does not declare {LSP_SERVER}: a contributor running the "
-        f"documented `pip install -e \".[dev]\"` would leave the guard's lsp lane "
+        f'documented `pip install -e ".[dev]"` would leave the guard\'s lsp lane '
         f"without its tool (a skip, and a red run while allow_skips stays unset). "
         f"dev extra: {dev}"
     )
@@ -154,8 +154,7 @@ def test_guard_doc_states_the_verdict_semantics() -> None:
     # The ordering trap: tier 1 grades the STAGED diff, so `task complete` after a
     # commit grades an empty index. Both halves of that sentence must be present.
     assert isinstance(re.search(r"task complete", text), re.Match), (
-        "docs/GITREINS.md does not document `gitreins task complete` — the ordering "
-        "trap it must warn about"
+        "docs/GITREINS.md does not document `gitreins task complete` — the ordering trap it must warn about"
     )
     assert re.search(r"staged", text, re.IGNORECASE), (
         "docs/GITREINS.md does not say that tier 1 grades the STAGED diff, which is "

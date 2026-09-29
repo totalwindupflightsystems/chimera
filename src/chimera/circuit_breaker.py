@@ -35,9 +35,10 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger("chimera.circuit_breaker")
 
+
 class CircuitState(Enum):
-    CLOSED = auto()     # Normal
-    OPEN = auto()       # Failing — fast-fail
+    CLOSED = auto()  # Normal
+    OPEN = auto()  # Failing — fast-fail
     HALF_OPEN = auto()  # Testing recovery
 
 
@@ -72,7 +73,8 @@ class ProviderCircuitBreaker:
         if self.state == CircuitState.OPEN:
             if time.monotonic() - self.opened_at >= self.config.recovery_timeout_s:
                 log.info(
-                    "circuit_breaker_half_open", name=self.name,
+                    "circuit_breaker_half_open",
+                    name=self.name,
                     timeout_s=self.config.recovery_timeout_s,
                 )
                 self.state = CircuitState.HALF_OPEN
@@ -109,7 +111,8 @@ class ProviderCircuitBreaker:
             self.half_open_in_flight = max(0, self.half_open_in_flight - 1)
             if self.half_open_in_flight == 0:
                 log.warning(
-                    "circuit_breaker_reopened", name=self.name,
+                    "circuit_breaker_reopened",
+                    name=self.name,
                     failure_count=self.failure_count,
                 )
                 self.state = CircuitState.OPEN
@@ -118,7 +121,8 @@ class ProviderCircuitBreaker:
 
         if self.state == CircuitState.CLOSED and self.failure_count >= self.config.failure_threshold:
             log.warning(
-                "circuit_breaker_opened", name=self.name,
+                "circuit_breaker_opened",
+                name=self.name,
                 failure_count=self.failure_count,
                 threshold=self.config.failure_threshold,
             )

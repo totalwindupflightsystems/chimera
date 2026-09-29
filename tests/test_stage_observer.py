@@ -55,8 +55,7 @@ def _slow_stage_responder(payload: str, delay: float) -> Callable[..., Any]:
 
 def _engine_with_slow_stages(config: Any, delay: float) -> Engine:
     payload = dispatch_json(
-        workers=[("worker_1", "deepseek/deepseek-chat"),
-                 ("worker_2", "openrouter/google/gemini-2.5-flash")],
+        workers=[("worker_1", "deepseek/deepseek-chat"), ("worker_2", "openrouter/google/gemini-2.5-flash")],
     )
     return Engine(config, FakeGateway(_slow_stage_responder(payload, delay)))
 
@@ -123,10 +122,8 @@ async def test_stage_observer_fires_mid_run_with_documented_payloads(config) -> 
 
     # Started always precedes its own completion.
     for stage in ("worker_1", "worker_2", "aggregator"):
-        s_idx = next(i for i, e in enumerate(events)
-                     if e["phase"] == "started" and e["stage"] == stage)
-        c_idx = next(i for i, e in enumerate(events)
-                     if e["phase"] == "completed" and e["stage"] == stage)
+        s_idx = next(i for i, e in enumerate(events) if e["phase"] == "started" and e["stage"] == stage)
+        c_idx = next(i for i, e in enumerate(events) if e["phase"] == "completed" and e["stage"] == stage)
         assert s_idx < c_idx
 
     # Payload contracts.
@@ -135,8 +132,18 @@ async def test_stage_observer_fires_mid_run_with_documented_payloads(config) -> 
     assert w1_start["kind"] == "worker"
     assert w1_start["model"] == "deepseek/deepseek-chat"
     agg_done = next(e for e in events if e["phase"] == "completed" and e["stage"] == "aggregator")
-    assert {"phase", "stage", "kind", "model", "tokens_input", "tokens_output",
-            "latency_ms", "cost", "degraded", "iteration"} <= set(agg_done)
+    assert {
+        "phase",
+        "stage",
+        "kind",
+        "model",
+        "tokens_input",
+        "tokens_output",
+        "latency_ms",
+        "cost",
+        "degraded",
+        "iteration",
+    } <= set(agg_done)
     assert agg_done["kind"] == "aggregator"
     assert agg_done["tokens_input"] > 0
     assert agg_done["tokens_output"] > 0
@@ -191,9 +198,7 @@ def test_deliberate_signature_keeps_observer_optional() -> None:
 
 
 def test_session_chat_broadcasts_stage_events_during_run(config) -> None:  # type: ignore[no-untyped-def]
-    client = TestClient(
-        create_app(config=config, engine=_engine_with_slow_stages(config, 0.15))
-    )
+    client = TestClient(create_app(config=config, engine=_engine_with_slow_stages(config, 0.15)))
     session_id = client.post("/web/sessions").json()["session_id"]
 
     broadcaster = web_routes._sse_broadcaster
@@ -269,8 +274,9 @@ def test_chat_over_real_sse_socket_streams_stage_events_mid_run(config) -> None:
             assert time.monotonic() < deadline, "uvicorn never finished startup"
             time.sleep(0.02)
 
-        created = urllib.request.urlopen(urllib.request.Request(
-            f"{base}/web/sessions", data=b"", method="POST"), timeout=30)
+        created = urllib.request.urlopen(
+            urllib.request.Request(f"{base}/web/sessions", data=b"", method="POST"), timeout=30
+        )
         session_id = json.loads(created.read())["session_id"]
         created.close()
 
@@ -282,7 +288,7 @@ def test_chat_over_real_sse_socket_streams_stage_events_mid_run(config) -> None:
                     for raw in resp:
                         line = raw.decode("utf-8").strip()
                         if line.startswith("event: "):
-                            sse_events.append((time.monotonic(), line[len("event: "):]))
+                            sse_events.append((time.monotonic(), line[len("event: ") :]))
             except Exception:
                 pass  # stream closed by the sentinel — expected
 
@@ -333,9 +339,7 @@ def test_chat_over_real_sse_socket_streams_stage_events_mid_run(config) -> None:
         # the chat POST was still in flight (the old code could never do this).
         started_ts = [ts for ts, name in sse_events if name == "stage_started"]
         assert started_ts, names
-        assert min(started_ts) < chat_done, (
-            "no stage_started arrived before the chat POST returned"
-        )
+        assert min(started_ts) < chat_done, "no stage_started arrived before the chat POST returned"
         assert chat_started < min(started_ts), "stage event before the POST even started"
     finally:
         server.should_exit = True

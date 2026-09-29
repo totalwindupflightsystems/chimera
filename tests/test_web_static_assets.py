@@ -45,8 +45,10 @@ MERMAID_VERSION = "11.17.2"
 
 SCRIPT_TAG_RE = re.compile(r"<script\b[^>]*>", re.IGNORECASE)
 LINK_TAG_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
-ATTR_RE = {"src": re.compile(r"\bsrc\s*=\s*[\"']([^\"']*)[\"']", re.IGNORECASE),
-           "href": re.compile(r"\bhref\s*=\s*[\"']([^\"']*)[\"']", re.IGNORECASE)}
+ATTR_RE = {
+    "src": re.compile(r"\bsrc\s*=\s*[\"']([^\"']*)[\"']", re.IGNORECASE),
+    "href": re.compile(r"\bhref\s*=\s*[\"']([^\"']*)[\"']", re.IGNORECASE),
+}
 
 
 def _page(client: TestClient) -> str:
@@ -110,8 +112,7 @@ def test_vendor_file_exists_is_mermaid_and_version_pinned() -> None:
 def test_served_page_has_no_external_script_or_link_urls(page: str) -> None:
     external = [
         url
-        for url in _tag_urls(page, SCRIPT_TAG_RE, "src")
-        + _tag_urls(page, LINK_TAG_RE, "href")
+        for url in _tag_urls(page, SCRIPT_TAG_RE, "src") + _tag_urls(page, LINK_TAG_RE, "href")
         if url.startswith(("http://", "https://", "//"))
     ]
     assert external == [], f"external loader URLs still referenced: {external}"
@@ -130,12 +131,12 @@ def test_page_references_vendored_path_with_onerror_and_fallback_element(page: s
     assert "onerror=" in page
     assert "DAG renderer unavailable" in page
     # The banner starts hidden and is revealed via the .visible class rule.
-    assert re.search(
-        r"#dag-renderer-unavailable\s*\{[^}]*display:\s*none", page, re.DOTALL
-    ), "fallback banner must start hidden"
-    assert re.search(
-        r"#dag-renderer-unavailable\.visible\s*\{\s*display:\s*block", page
-    ), "fallback banner must be revealed via the .visible class"
+    assert re.search(r"#dag-renderer-unavailable\s*\{[^}]*display:\s*none", page, re.DOTALL), (
+        "fallback banner must start hidden"
+    )
+    assert re.search(r"#dag-renderer-unavailable\.visible\s*\{\s*display:\s*block", page), (
+        "fallback banner must be revealed via the .visible class"
+    )
     # The init guard: a missing window.mermaid must route to the fallback…
     assert "typeof window.mermaid === 'undefined'" in page
     assert "function showDagRendererFallback" in page
@@ -220,18 +221,17 @@ def test_fallback_revealed_when_mermaid_absent(page: str) -> None:
         "const document = { getElementById(id) {"
         " return id === 'dag-renderer-unavailable' ? el : null; } };\n"
         "const window = {};  // vendored bundle absent — the failure under test\n"
-        + show_fn + "\n"  # verbatim from the page
-        + guard_if + "\n"  # the guard's if/else head, verbatim from the page
+        + show_fn
+        + "\n"  # verbatim from the page
+        + guard_if
+        + "\n"  # the guard's if/else head, verbatim from the page
         "}\n"  # close the else branch
         "const guardFired = classes.includes('visible');\n"
-        "classes.length = 0;\n"
-        + onerror_body + "\n"  # verbatim from the page
+        "classes.length = 0;\n" + onerror_body + "\n"  # verbatim from the page
         "const onerrorFired = classes.includes('visible');\n"
         "console.log(JSON.stringify({ guardFired, onerrorFired }));\n"
     )
-    proc = subprocess.run(
-        [node, "-e", driver], capture_output=True, text=True, timeout=30, check=False
-    )
+    proc = subprocess.run([node, "-e", driver], capture_output=True, text=True, timeout=30, check=False)
     assert proc.returncode == 0, f"fallback JS failed under node: {proc.stderr}"
     result = json.loads(proc.stdout.strip().splitlines()[-1])
     assert result["guardFired"], "missing window.mermaid did not reveal the fallback banner"

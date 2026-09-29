@@ -19,8 +19,14 @@ from chimera.selector import (
 class _FakeEntry:
     """Minimal model entry for testing."""
 
-    def __init__(self, categories: dict[str, float], provider: str, cost_tier: str = "standard",
-                 cost_per_1k_input: float | None = None, cost_per_1k_output: float | None = None):
+    def __init__(
+        self,
+        categories: dict[str, float],
+        provider: str,
+        cost_tier: str = "standard",
+        cost_per_1k_input: float | None = None,
+        cost_per_1k_output: float | None = None,
+    ):
         self.categories = categories
         self.provider = provider
         self.cost_tier = cost_tier
@@ -31,38 +37,70 @@ class _FakeEntry:
 
 SAMPLE_MODELS = {
     "deepseek/deepseek-v4-flash": _FakeEntry(
-        {"technology_code/code_generation/python": 88, "technology_code/code_generation/sql": 80,
-         "technology_code/data_science/analysis": 80},
-        "deepseek", "budget",
-        cost_per_1k_input=0.00014, cost_per_1k_output=0.00028,
+        {
+            "technology_code/code_generation/python": 88,
+            "technology_code/code_generation/sql": 80,
+            "technology_code/data_science/analysis": 80,
+        },
+        "deepseek",
+        "budget",
+        cost_per_1k_input=0.00014,
+        cost_per_1k_output=0.00028,
     ),
     "deepseek/deepseek-v4-pro": _FakeEntry(
-        {"technology_code/code_generation/python": 92, "technology_code/code_generation/sql": 87,
-         "technology_code/data_science/analysis": 85, "academic_scientific/mathematics/algebra": 72},
-        "deepseek", "budget",
-        cost_per_1k_input=0.00055, cost_per_1k_output=0.00219,
+        {
+            "technology_code/code_generation/python": 92,
+            "technology_code/code_generation/sql": 87,
+            "technology_code/data_science/analysis": 85,
+            "academic_scientific/mathematics/algebra": 72,
+        },
+        "deepseek",
+        "budget",
+        cost_per_1k_input=0.00055,
+        cost_per_1k_output=0.00219,
     ),
     "google/gemini-3-flash-preview": _FakeEntry(
-        {"technology_code/code_generation/python": 78, "technology_code/data_science/analysis": 85,
-         "general_knowledge/reasoning/explanation": 82, "multimedia_processing/image/analysis": 80},
-        "google", "budget",
+        {
+            "technology_code/code_generation/python": 78,
+            "technology_code/data_science/analysis": 85,
+            "general_knowledge/reasoning/explanation": 82,
+            "multimedia_processing/image/analysis": 80,
+        },
+        "google",
+        "budget",
     ),
     "anthropic/claude-sonnet-4": _FakeEntry(
-        {"technology_code/code_generation/python": 90, "technology_code/data_science/analysis": 92,
-        "creative_conversational/ux_writing/interface_copy": 88, "general_knowledge/reasoning/explanation": 93},  # noqa: E501
-        "anthropic", "premium",
-        cost_per_1k_input=0.003, cost_per_1k_output=0.015,
+        {
+            "technology_code/code_generation/python": 90,
+            "technology_code/data_science/analysis": 92,
+            "creative_conversational/ux_writing/interface_copy": 88,
+            "general_knowledge/reasoning/explanation": 93,
+        },  # noqa: E501
+        "anthropic",
+        "premium",
+        cost_per_1k_input=0.003,
+        cost_per_1k_output=0.015,
     ),
     "openrouter/moonshotai/kimi-k2.7-code": _FakeEntry(
-        {"technology_code/code_generation/python": 95, "technology_code/code_generation/sql": 88,
-         "technology_code/testing_debugging/error_analysis": 80},
-        "openrouter", "standard",
-        cost_per_1k_input=0.0004, cost_per_1k_output=0.001,
+        {
+            "technology_code/code_generation/python": 95,
+            "technology_code/code_generation/sql": 88,
+            "technology_code/testing_debugging/error_analysis": 80,
+        },
+        "openrouter",
+        "standard",
+        cost_per_1k_input=0.0004,
+        cost_per_1k_output=0.001,
     ),
     "zai-coding-plan/glm-5.2": _FakeEntry(
-        {"technology_code/code_generation/python": 94, "technology_code/data_science/analysis": 90,
-         "academic_scientific/mathematics/algebra": 85, "general_knowledge/reasoning/explanation": 93},
-        "zai", "premium",
+        {
+            "technology_code/code_generation/python": 94,
+            "technology_code/data_science/analysis": 90,
+            "academic_scientific/mathematics/algebra": 85,
+            "general_knowledge/reasoning/explanation": 93,
+        },
+        "zai",
+        "premium",
     ),
 }
 
@@ -151,9 +189,7 @@ class TestCategorySelector:
         sel = CategorySelector(SAMPLE_MODELS)
         normal = sel.select("Write Python code", count=1)
         boosted = sel.select("Write Python code", count=1, prefer_budget=True)
-        tiers = [
-            getattr(SAMPLE_MODELS.get(m), "cost_tier", "") for m in (normal[0], boosted[0])
-        ]
+        tiers = [getattr(SAMPLE_MODELS.get(m), "cost_tier", "") for m in (normal[0], boosted[0])]
         assert "budget" in tiers, f"Neither result is budget-tier: {tiers}"
 
     def test_select_returns_at_most_count(self):
@@ -236,28 +272,20 @@ class TestShortFormCategoryAliases:
     def test_short_form_only_model_scores_nonzero_on_python_task(self):
         """A model with ONLY docs/CONFIG.md short-form keys must score > 0.0 on a coding task."""
         models = {
-            "test/short-form-only": _FakeEntry(
-                {"code": 0.90, "analysis": 0.80}, "test", "budget"
-            ),
+            "test/short-form-only": _FakeEntry({"code": 0.90, "analysis": 0.80}, "test", "budget"),
         }
         sel = CategorySelector(models)
         scores = sel.score("Write a Python function to sort a list")
-        assert scores["test/short-form-only"] > 0.0, (
-            f"short-form 'code' did not resolve: {scores}"
-        )
+        assert scores["test/short-form-only"] > 0.0, f"short-form 'code' did not resolve: {scores}"
 
     def test_short_form_analysis_scores_nonzero_on_data_task(self):
         """The documented 'analysis' alias must resolve on a data-analysis task."""
         models = {
-            "test/short-form-only": _FakeEntry(
-                {"code": 0.90, "analysis": 0.80}, "test", "budget"
-            ),
+            "test/short-form-only": _FakeEntry({"code": 0.90, "analysis": 0.80}, "test", "budget"),
         }
         sel = CategorySelector(models)
         scores = sel.score("Analyze this dataset and find patterns in the metrics")
-        assert scores["test/short-form-only"] > 0.0, (
-            f"short-form 'analysis' did not resolve: {scores}"
-        )
+        assert scores["test/short-form-only"] > 0.0, f"short-form 'analysis' did not resolve: {scores}"
 
     def test_short_form_model_is_selected(self):
         """A short-form-only model must actually be selectable for a matching task."""
@@ -266,44 +294,32 @@ class TestShortFormCategoryAliases:
         }
         sel = CategorySelector(models)
         result = sel.select("Write a Flask API endpoint", count=1)
-        assert result == ["test/short-form-only"], (
-            f"short-form model not selected: {result}"
-        )
+        assert result == ["test/short-form-only"], f"short-form model not selected: {result}"
 
     def test_resolve_path_short_form_alias_prefix(self):
         """_resolve_path should apply a short-form alias to any path under its target."""
         model_cats = {"code": 90.0}
-        assert CategorySelector._resolve_path(
-            model_cats, "technology_code/code_generation/python"
-        ) == 90.0
-        assert CategorySelector._resolve_path(
-            model_cats, "technology_code/testing_debugging/unit_tests"
-        ) == 90.0
+        assert CategorySelector._resolve_path(model_cats, "technology_code/code_generation/python") == 90.0
+        assert (
+            CategorySelector._resolve_path(model_cats, "technology_code/testing_debugging/unit_tests") == 90.0
+        )
 
     def test_resolve_path_short_form_alias_exact_target(self):
         """_resolve_path should apply an alias whose target equals the path itself."""
         model_cats = {"analysis": 80.0}
-        assert CategorySelector._resolve_path(
-            model_cats, "technology_code/data_science/analysis"
-        ) == 80.0
+        assert CategorySelector._resolve_path(model_cats, "technology_code/data_science/analysis") == 80.0
 
     def test_resolve_path_exact_and_parent_still_win_over_alias(self):
         """Exact-path and parent-prefix matches must still beat alias resolution."""
         model_cats = {"technology_code/code_generation/python": 95.0, "code": 90.0}
-        assert CategorySelector._resolve_path(
-            model_cats, "technology_code/code_generation/python"
-        ) == 95.0
+        assert CategorySelector._resolve_path(model_cats, "technology_code/code_generation/python") == 95.0
         parent_cats = {"technology_code": 70.0, "code": 90.0}
-        assert CategorySelector._resolve_path(
-            parent_cats, "technology_code/code_generation/python"
-        ) == 70.0
+        assert CategorySelector._resolve_path(parent_cats, "technology_code/code_generation/python") == 70.0
 
     def test_resolve_path_unknown_short_key_ignored(self):
         """A short key with no alias entry must not resolve (stays 0.0)."""
         model_cats = {"nonsense": 90.0}
-        assert CategorySelector._resolve_path(
-            model_cats, "technology_code/code_generation/python"
-        ) == 0.0
+        assert CategorySelector._resolve_path(model_cats, "technology_code/code_generation/python") == 0.0
 
     def test_alias_mapping_covers_documented_keys(self):
         """Every short-form key taught by docs/CONFIG.md must have a mapping."""
@@ -346,7 +362,8 @@ class TestDisabledModelFiltering:
         # Add a disabled clone of the top coder
         models["openrouter/disabled-coder"] = _FakeEntry(
             {"technology_code/code_generation/python": 99},
-            "openrouter", "budget",
+            "openrouter",
+            "budget",
         )
         models["openrouter/disabled-coder"].enabled = False
         sel = CategorySelector(models)
@@ -360,7 +377,8 @@ class TestDisabledModelFiltering:
         models = dict(SAMPLE_MODELS)
         models["openrouter/disabled-coder"] = _FakeEntry(
             {"technology_code/code_generation/python": 99},
-            "openrouter", "budget",
+            "openrouter",
+            "budget",
         )
         models["openrouter/disabled-coder"].enabled = False
         sel = CategorySelector(models)
@@ -413,9 +431,7 @@ class TestCostWeightedSelection:
         # v4-flash is cheapest (0.00021 avg cost) with Python=88
         # v4-pro is more expensive (0.00137 avg cost) with Python=92
         # At sensitivity=1.0, flash's cost advantage should overcome the 4-pt quality gap
-        assert "deepseek/deepseek-v4-flash" in result, (
-            f"Cheapest model should appear: {result}"
-        )
+        assert "deepseek/deepseek-v4-flash" in result, f"Cheapest model should appear: {result}"
 
     def test_sensitivity_half_balances_cost_and_quality(self):
         """At price_sensitivity=0.5, results should be a mix of quality and budget."""
@@ -423,9 +439,7 @@ class TestCostWeightedSelection:
         result = sel.select("Write Python code", count=3)
         assert len(result) == 3
         # Should include at least one budget model
-        tiers = [
-            getattr(SAMPLE_MODELS.get(m), "cost_tier", "") for m in result
-        ]
+        tiers = [getattr(SAMPLE_MODELS.get(m), "cost_tier", "") for m in result]
         assert "budget" in tiers, f"No budget models at sensitivity=0.5: {tiers}"
 
     def test_per_call_sensitivity_overrides_instance(self):
@@ -443,9 +457,7 @@ class TestCostWeightedSelection:
         sel = CategorySelector(SAMPLE_MODELS)
         # gemini-3-flash has no explicit cost, tier=budget
         cost = sel._model_cost_rate("google/gemini-3-flash-preview")
-        assert cost == CategorySelector._DEFAULT_TIER_COSTS["budget"], (
-            f"Tier fallback failed: {cost}"
-        )
+        assert cost == CategorySelector._DEFAULT_TIER_COSTS["budget"], f"Tier fallback failed: {cost}"
 
     def test_model_cost_rate_uses_explicit(self):
         """Models with explicit cost_per_1k should use those values."""
@@ -461,9 +473,7 @@ class TestCostWeightedSelection:
         # Claude Sonnet is premium (0.009 avg) — should be penalized
         top = result[0]
         tier = getattr(SAMPLE_MODELS.get(top), "cost_tier", "")
-        assert tier != "premium", (
-            f"Premium model {top} should not be #1 at sensitivity=1.0"
-        )
+        assert tier != "premium", f"Premium model {top} should not be #1 at sensitivity=1.0"
 
     def test_select_diverse_respects_cost_weighting(self):
         """select_diverse with price_sensitivity should apply cost weighting."""
@@ -472,29 +482,28 @@ class TestCostWeightedSelection:
         providers = [getattr(SAMPLE_MODELS.get(m), "provider", "") for m in result]
         assert len(providers) == len(set(providers)), f"Duplicate providers: {providers}"
         # Cheapest model should be in results
-        assert "deepseek/deepseek-v4-flash" in result, (
-            f"Cheapest should appear in diverse result: {result}"
-        )
+        assert "deepseek/deepseek-v4-flash" in result, f"Cheapest should appear in diverse result: {result}"
 
     def test_cost_weighting_skips_disabled_models(self):
         """Cost weighting must not consider disabled models."""
         models = dict(SAMPLE_MODELS)
         models["openrouter/disabled-coder"] = _FakeEntry(
             {"technology_code/code_generation/python": 99},
-            "openrouter", "budget",
-            cost_per_1k_input=0.00001, cost_per_1k_output=0.00001,
+            "openrouter",
+            "budget",
+            cost_per_1k_input=0.00001,
+            cost_per_1k_output=0.00001,
         )
         models["openrouter/disabled-coder"].enabled = False
         sel = CategorySelector(models, price_sensitivity=1.0)
         result = sel.select("Write Python code", count=5)
-        assert "openrouter/disabled-coder" not in result, (
-            f"Disabled model should not appear: {result}"
-        )
+        assert "openrouter/disabled-coder" not in result, f"Disabled model should not appear: {result}"
 
 
 # --------------------------------------------------------------------------- #
 # Guardrail blocked-model exclusion from selector candidates (C3)
 # --------------------------------------------------------------------------- #
+
 
 class TestBlockedModelExclusion:
     def setup_method(self) -> None:
@@ -511,18 +520,14 @@ class TestBlockedModelExclusion:
         set_shared_registry(self._original)
 
     def test_blocked_model_excluded_from_selection(self) -> None:
-        self._registry.record_failure(
-            "openrouter/moonshotai/kimi-k2.7-code", "guardrail rejection"
-        )
+        self._registry.record_failure("openrouter/moonshotai/kimi-k2.7-code", "guardrail rejection")
         sel = CategorySelector(SAMPLE_MODELS)
         result = sel.select("Write Python code", count=5)
         assert "openrouter/moonshotai/kimi-k2.7-code" not in result
         assert result  # other models still ranked
 
     def test_blocked_model_excluded_from_score(self) -> None:
-        self._registry.record_failure(
-            "anthropic/claude-sonnet-4", "No endpoints available"
-        )
+        self._registry.record_failure("anthropic/claude-sonnet-4", "No endpoints available")
         sel = CategorySelector(SAMPLE_MODELS)
         scores = sel.score("Write Python code")
         assert "anthropic/claude-sonnet-4" not in scores
@@ -542,21 +547,25 @@ class TestNormalisedCatalogEquivalence:
     PERCENT = {
         "deepseek/percent-a": {
             "categories": {"technology_code/code_generation/python": 88},
-            "cost_tier": "budget", "provider": "deepseek",
+            "cost_tier": "budget",
+            "provider": "deepseek",
         },
         "deepseek/percent-b": {
             "categories": {"technology_code/code_generation/python": 82},
-            "cost_tier": "budget", "provider": "deepseek",
+            "cost_tier": "budget",
+            "provider": "deepseek",
         },
     }
     UNIT = {
         "deepseek/unit-a": {
             "categories": {"technology_code/code_generation/python": 0.88},
-            "cost_tier": "budget", "provider": "deepseek",
+            "cost_tier": "budget",
+            "provider": "deepseek",
         },
         "deepseek/unit-b": {
             "categories": {"technology_code/code_generation/python": 0.82},
-            "cost_tier": "budget", "provider": "deepseek",
+            "cost_tier": "budget",
+            "provider": "deepseek",
         },
     }
 
@@ -588,11 +597,13 @@ class TestNormalisedCatalogEquivalence:
         percent_scores = CategorySelector(percent_cfg.models).score(task)
         unit_scores = CategorySelector(unit_cfg.models).score(task)
 
-        assert list(unit_scores.values()) == pytest.approx(
-            list(percent_scores.values())
-        ), (percent_scores, unit_scores)
+        assert list(unit_scores.values()) == pytest.approx(list(percent_scores.values())), (
+            percent_scores,
+            unit_scores,
+        )
         # ...and the ranking order follows, so a docs-written catalog is
         # selectable rather than silently starved.
         assert [n for n, _ in sorted(unit_scores.items(), key=lambda kv: -kv[1])] == [
-            "deepseek/unit-a", "deepseek/unit-b"
+            "deepseek/unit-a",
+            "deepseek/unit-b",
         ]

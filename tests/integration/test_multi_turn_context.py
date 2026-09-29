@@ -74,7 +74,7 @@ async def test_two_turn_calculation_depends_on_prior(live_server: str) -> None:
             f"{live_server}/web/sessions/{session_id}/chat",
             json={
                 "prompt": "Take the answer you just computed, and multiply it by 3. "
-                          "Answer with ONLY the resulting number, nothing else.",
+                "Answer with ONLY the resulting number, nothing else.",
                 "formation": "simple",
                 "allowed_models": BUDGET_MODELS,
             },
@@ -125,8 +125,7 @@ async def test_three_turn_accumulating_context(live_server: str) -> None:
         r2 = await client.post(
             f"{live_server}/web/sessions/{session_id}/chat",
             json={
-                "prompt": "Take your previous answer and multiply it by 4. "
-                          "Reply with JUST the number.",
+                "prompt": "Take your previous answer and multiply it by 4. Reply with JUST the number.",
                 "formation": "simple",
                 "allowed_models": BUDGET_MODELS,
             },
@@ -140,8 +139,7 @@ async def test_three_turn_accumulating_context(live_server: str) -> None:
         r3 = await client.post(
             f"{live_server}/web/sessions/{session_id}/chat",
             json={
-                "prompt": "Take your previous answer and add 7. "
-                          "Reply with JUST the number.",
+                "prompt": "Take your previous answer and add 7. Reply with JUST the number.",
                 "formation": "simple",
                 "allowed_models": BUDGET_MODELS,
             },
@@ -180,7 +178,8 @@ async def test_session_persistence_across_fetches(live_server: str) -> None:
 
         # Verify session history
         r = await client.get(
-            f"{live_server}/web/sessions/{session_id}", timeout=10,
+            f"{live_server}/web/sessions/{session_id}",
+            timeout=10,
         )
         assert r.status_code == 200
         info = r.json()

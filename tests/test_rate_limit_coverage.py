@@ -70,16 +70,14 @@ class TestRateLimiterDiagnostics:
         assert rl.bucket_count() == 0
 
     def test_bucket_count_increments(self) -> None:
-        rl = RateLimiter(RateLimitConfig(enabled=True, requests_per_minute=60,
-                                          burst_size=5))
+        rl = RateLimiter(RateLimitConfig(enabled=True, requests_per_minute=60, burst_size=5))
         rl.allow("key-a")
         assert rl.bucket_count() == 1
         rl.allow("key-b")
         assert rl.bucket_count() == 2
 
     def test_get_bucket_returns_bucket_or_none(self) -> None:
-        rl = RateLimiter(RateLimitConfig(enabled=True, requests_per_minute=60,
-                                          burst_size=5))
+        rl = RateLimiter(RateLimitConfig(enabled=True, requests_per_minute=60, burst_size=5))
         assert rl.get_bucket("nonexistent") is None
         rl.allow("real-key")
         bucket = rl.get_bucket("real-key")
@@ -87,8 +85,7 @@ class TestRateLimiterDiagnostics:
         assert isinstance(bucket, TokenBucket)
 
     def test_clear_removes_all_buckets(self) -> None:
-        rl = RateLimiter(RateLimitConfig(enabled=True, requests_per_minute=60,
-                                          burst_size=5))
+        rl = RateLimiter(RateLimitConfig(enabled=True, requests_per_minute=60, burst_size=5))
         rl.allow("key-a")
         rl.allow("key-b")
         assert rl.bucket_count() == 2
@@ -103,8 +100,7 @@ class TestRateLimiterDiagnostics:
         assert rl.bucket_count() == 0
 
     def test_repeated_key_uses_same_bucket(self) -> None:
-        rl = RateLimiter(RateLimitConfig(enabled=True, requests_per_minute=60,
-                                          burst_size=3))
+        rl = RateLimiter(RateLimitConfig(enabled=True, requests_per_minute=60, burst_size=3))
         rl.allow("key-a")
         rl.allow("key-a")
         rl.allow("key-a")

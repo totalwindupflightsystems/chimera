@@ -115,9 +115,7 @@ def is_workflow_scope_rejection(text: str) -> bool:
 
 def _first_marker_line(text: str) -> str | None:
     """The first output line that triggered the fallback (recorded for the log)."""
-    return next(
-        (ln.strip() for ln in (text or "").splitlines() if is_workflow_scope_rejection(ln)), None
-    )
+    return next((ln.strip() for ln in (text or "").splitlines() if is_workflow_scope_rejection(ln)), None)
 
 
 def _combined_output(proc: subprocess.CompletedProcess[str]) -> str:
@@ -150,9 +148,7 @@ class RemoteResult:
         self.error = "\n".join(part for part in (self.error, message) if part)
 
 
-def push_one(
-    name: str, branch: str, *, ssh_fallback_url: str | None = None, cwd: Cwd = None
-) -> RemoteResult:
+def push_one(name: str, branch: str, *, ssh_fallback_url: str | None = None, cwd: Cwd = None) -> RemoteResult:
     """Push ``branch`` to one remote, recovering from the workflow-scope trap.
 
     Exactly one retry is allowed, and only when git's failure text carries a
@@ -191,8 +187,7 @@ def push_one(
     result.transport = "ssh-fallback"
     if retry.returncode != 0:
         result.reason(
-            f"SSH fallback push also failed (git push {ssh_url} {refspec}):\n"
-            f"{_combined_output(retry)}"
+            f"SSH fallback push also failed (git push {ssh_url} {refspec}):\n{_combined_output(retry)}"
         )
         return result
     result.pushed = True
@@ -252,8 +247,9 @@ def format_details(result: RemoteResult) -> list[str]:
     return lines
 
 
-def print_plan(head: str | None, branch: str, remotes: Sequence[str],
-               ssh_fallback_url: str | None, cwd: Cwd) -> None:
+def print_plan(
+    head: str | None, branch: str, remotes: Sequence[str], ssh_fallback_url: str | None, cwd: Cwd
+) -> None:
     """Dry-run output: local HEAD plus the exact commands that would run, per remote."""
     print(f"local HEAD {head or 'unknown'} (branch {branch})")
     for name in remotes:
@@ -360,9 +356,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not remotes:
         print("FATAL: no remotes to push (git remote is empty; pass --remote)", file=sys.stderr)
         return 1
-    return push_remotes(
-        remotes, branch, ssh_fallback_url=args.ssh_fallback_url, dry_run=args.dry_run
-    )
+    return push_remotes(remotes, branch, ssh_fallback_url=args.ssh_fallback_url, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

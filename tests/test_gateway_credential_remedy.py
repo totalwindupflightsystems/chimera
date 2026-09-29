@@ -73,13 +73,16 @@ def _config(
 def _internal_server_error(text: str) -> Exception:
     """A real LiteLLM 500 (retryable → exercises the retry-exhausted raise)."""
     return litellm.exceptions.InternalServerError(
-        message=text, model="deepseek-v4-flash", llm_provider="openai",
+        message=text,
+        model="deepseek-v4-flash",
+        llm_provider="openai",
     )
 
 
 # --------------------------------------------------------------------------- #
 # credential_remedy — the unit seam
 # --------------------------------------------------------------------------- #
+
 
 def test_remedy_names_the_providers_own_env_var() -> None:
     """The remedy names DEEPSEEK_API_KEY and no other provider's variable."""
@@ -106,7 +109,9 @@ def test_remedy_uses_canonical_env_var_over_convention() -> None:
         "litellm.AuthenticationError: invalid api key",
         model="google/gemini-2.5-flash",
         provider="google",
-        config=_config(providers={"google": {"base_url": "https://generativelanguage.googleapis.com/v1beta"}}),
+        config=_config(
+            providers={"google": {"base_url": "https://generativelanguage.googleapis.com/v1beta"}}
+        ),
     )
     assert "GEMINI_API_KEY" in remedy
     assert "GOOGLE_API_KEY" not in remedy
@@ -143,12 +148,15 @@ def test_remedy_resolves_provider_from_the_catalog() -> None:
 
 def test_remedy_empty_when_no_provider_can_be_resolved() -> None:
     """No provider → no claim (never guess another provider's env var)."""
-    assert credential_remedy(
-        UPSTREAM_MISSING_CREDENTIALS,
-        model="mystery/model",
-        provider=None,
-        config=_config(),
-    ) == ""
+    assert (
+        credential_remedy(
+            UPSTREAM_MISSING_CREDENTIALS,
+            model="mystery/model",
+            provider=None,
+            config=_config(),
+        )
+        == ""
+    )
 
 
 def test_remedy_empty_for_non_credential_failures() -> None:
@@ -159,12 +167,15 @@ def test_remedy_empty_for_non_credential_failures() -> None:
         "litellm.InternalServerError: InternalServerError: upstream exploded",
         "litellm.APIConnectionError: Connection error.",
     ):
-        assert credential_remedy(
-            error,
-            model="deepseek/deepseek-v4-flash",
-            provider="deepseek",
-            config=_config(),
-        ) == "", error
+        assert (
+            credential_remedy(
+                error,
+                model="deepseek/deepseek-v4-flash",
+                provider="deepseek",
+                config=_config(),
+            )
+            == ""
+        ), error
 
 
 def test_keyless_local_provider_cannot_name_an_env_var() -> None:
@@ -177,12 +188,15 @@ def test_keyless_local_provider_cannot_name_an_env_var() -> None:
     )
     assert provider_api_key_env(config, "lmstudio") is None
     assert provider_api_key_env(config, "ollama") is None
-    assert credential_remedy(
-        UPSTREAM_MISSING_CREDENTIALS,
-        model="lmstudio/local-model",
-        provider="lmstudio",
-        config=config,
-    ) == ""
+    assert (
+        credential_remedy(
+            UPSTREAM_MISSING_CREDENTIALS,
+            model="lmstudio/local-model",
+            provider="lmstudio",
+            config=config,
+        )
+        == ""
+    )
 
 
 def test_local_provider_with_explicit_api_key_env_still_names_it() -> None:
@@ -201,6 +215,7 @@ def test_local_provider_with_explicit_api_key_env_still_names_it() -> None:
 # --------------------------------------------------------------------------- #
 # Through LiteLLMGateway.complete — the messages every surface renders
 # --------------------------------------------------------------------------- #
+
 
 class TestGatewayCredentialMessages:
     """The composed GatewayError text, from the real retry path."""
@@ -237,7 +252,8 @@ class TestGatewayCredentialMessages:
         config = _config()
         gateway = LiteLLMGateway(config)
         exc = litellm.exceptions.AuthenticationError(
-            message="invalid api key", model="deepseek-v4-flash",
+            message="invalid api key",
+            model="deepseek-v4-flash",
             llm_provider="deepseek",
         )
 
@@ -272,9 +288,7 @@ class TestGatewayCredentialMessages:
                 [{"role": "user", "content": "hi"}],
             )
 
-        assert str(excinfo.value) == (
-            f"deepseek/deepseek-v4-flash call failed after 2 attempts: {exc}"
-        )
+        assert str(excinfo.value) == (f"deepseek/deepseek-v4-flash call failed after 2 attempts: {exc}")
 
     @pytest.mark.asyncio
     async def test_keyless_local_provider_message_is_unchanged(self) -> None:

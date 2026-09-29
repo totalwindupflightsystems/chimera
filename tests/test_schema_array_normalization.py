@@ -63,9 +63,7 @@ AUDIT_SCHEMA: dict[str, Any] = {
 }
 
 #: The measured CI failure shape: valid JSON, wrong TYPE for ``sources``.
-DELIMITED_SOURCES_ANSWER = json.dumps(
-    {"answer": "The answer is 20.", "sources": "worker_1, worker_2"}
-)
+DELIMITED_SOURCES_ANSWER = json.dumps({"answer": "The answer is 20.", "sources": "worker_1, worker_2"})
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -82,27 +80,48 @@ def _audit_payload(schema: dict[str, Any] | None = AUDIT_SCHEMA) -> str:
     configuration the integration leg uses (``BUDGET_MODELS`` are deepseek).
     """
     stages = [
-        {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat",
-         "depends_on": [], "output_schema": schema},
-        {"id": "aggregator", "kind": "aggregator", "model": "deepseek/deepseek-chat",
-         "depends_on": ["worker_1"]},
-        {"id": "audit", "kind": "audit", "model": "deepseek/deepseek-chat",
-         "depends_on": ["aggregator"], "iterate_on": ["worker_1"],
-         "iteration_limit": 1, "output_schema": schema},
-    ]
-    return json.dumps({
-        "formation": {
-            "stages": stages,
-            "edges": [["worker_1", "aggregator"], ["aggregator", "audit"]],
+        {
+            "id": "worker_1",
+            "kind": "worker",
+            "model": "deepseek/deepseek-chat",
+            "depends_on": [],
+            "output_schema": schema,
         },
-        "worker_prompts": [
-            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
-             "prompt": "hi", "expected_output_schema": None},
-        ],
-        "aggregator_instructions": "merge",
-        "stage_instructions": {"audit": "Check."},
-        "output_schema": schema,
-    })
+        {
+            "id": "aggregator",
+            "kind": "aggregator",
+            "model": "deepseek/deepseek-chat",
+            "depends_on": ["worker_1"],
+        },
+        {
+            "id": "audit",
+            "kind": "audit",
+            "model": "deepseek/deepseek-chat",
+            "depends_on": ["aggregator"],
+            "iterate_on": ["worker_1"],
+            "iteration_limit": 1,
+            "output_schema": schema,
+        },
+    ]
+    return json.dumps(
+        {
+            "formation": {
+                "stages": stages,
+                "edges": [["worker_1", "aggregator"], ["aggregator", "audit"]],
+            },
+            "worker_prompts": [
+                {
+                    "stage_id": "worker_1",
+                    "model": "deepseek/deepseek-chat",
+                    "prompt": "hi",
+                    "expected_output_schema": None,
+                },
+            ],
+            "aggregator_instructions": "merge",
+            "stage_instructions": {"audit": "Check."},
+            "output_schema": schema,
+        }
+    )
 
 
 async def _run_audit(
@@ -332,11 +351,11 @@ def _config_with_anthropic_model(api_keys: dict[str, str] | None = None) -> Chim
 @pytest.mark.parametrize(
     ("model", "expected"),
     [
-        ("zai-coding-plan/glm-5.2", True),          # zai — JSON_SCHEMA
-        ("deepseek/deepseek-chat", False),          # openrouter — NONE
-        ("deepseek/deepseek-v4-flash", False),      # deepseek — NONE (CH-GAP-024)
+        ("zai-coding-plan/glm-5.2", True),  # zai — JSON_SCHEMA
+        ("deepseek/deepseek-chat", False),  # openrouter — NONE
+        ("deepseek/deepseek-v4-flash", False),  # deepseek — NONE (CH-GAP-024)
         ("openrouter/google/gemini-2.5-flash", False),
-        ("not-in-the-catalog/at-all", False),       # unknown model → not enforceable
+        ("not-in-the-catalog/at-all", False),  # unknown model → not enforceable
     ],
 )
 def test_schema_enforceable_per_provider(model: str, expected: bool) -> None:
@@ -373,7 +392,8 @@ def test_schema_enforceable_for_anthropic_without_an_openrouter_fallback() -> No
     """No credential to reroute WITH means no reroute — the catalog provider
     (anthropic, JSON_SCHEMA-capable) stands."""
     assert _schema_enforceable_on_wire(
-        _config_with_anthropic_model(), "anthropic/claude-sonnet-4",
+        _config_with_anthropic_model(),
+        "anthropic/claude-sonnet-4",
     )
 
 
@@ -386,8 +406,7 @@ async def test_aggregator_restates_schema_for_a_none_capability_provider(
     aggregator = Aggregator(config, gw)
     stage = Stage(id="audit", kind="audit", model="deepseek/deepseek-chat")
 
-    await aggregator.execute(stage, _dispatch(), _deps(), "hi",
-                             output_schema=AUDIT_SCHEMA)
+    await aggregator.execute(stage, _dispatch(), _deps(), "hi", output_schema=AUDIT_SCHEMA)
 
     prompt = json.dumps(gw.calls[-1][1])
     assert "## Required output shape" in prompt
@@ -402,8 +421,7 @@ async def test_aggregator_omits_restatement_for_a_schema_capable_provider() -> N
     aggregator = Aggregator(cfg, gw)
     stage = Stage(id="audit", kind="audit", model="zai-coding-plan/glm-5.2")
 
-    await aggregator.execute(stage, _dispatch(), _deps(), "hi",
-                             output_schema=AUDIT_SCHEMA)
+    await aggregator.execute(stage, _dispatch(), _deps(), "hi", output_schema=AUDIT_SCHEMA)
 
     prompt = json.dumps(gw.calls[-1][1])
     assert "## Required output shape" not in prompt
@@ -415,14 +433,13 @@ def test_build_merge_prompt_restatement_is_opt_in_by_capability() -> None:
     dispatch = _dispatch()
     stage = dispatch.formation.stage("audit")
 
-    capable = build_merge_prompt(stage, dispatch, _deps(), "hi",
-                                 output_schema=AUDIT_SCHEMA,
-                                 wire_enforces_schema=True)
-    incapable = build_merge_prompt(stage, dispatch, _deps(), "hi",
-                                   output_schema=AUDIT_SCHEMA,
-                                   wire_enforces_schema=False)
-    default = build_merge_prompt(stage, dispatch, _deps(), "hi",
-                                 output_schema=AUDIT_SCHEMA)
+    capable = build_merge_prompt(
+        stage, dispatch, _deps(), "hi", output_schema=AUDIT_SCHEMA, wire_enforces_schema=True
+    )
+    incapable = build_merge_prompt(
+        stage, dispatch, _deps(), "hi", output_schema=AUDIT_SCHEMA, wire_enforces_schema=False
+    )
+    default = build_merge_prompt(stage, dispatch, _deps(), "hi", output_schema=AUDIT_SCHEMA)
 
     # The capable path is byte-identical to the pre-change behaviour, and the
     # default (existing callers) keeps that behaviour.
@@ -437,7 +454,7 @@ def test_build_merge_prompt_restatement_is_opt_in_by_capability() -> None:
     assert "Required keys: answer." in user
     assert "answer: string" in user
     assert "sources: array of strings" in user
-    assert 'MUST be a JSON ARRAY of strings' in user
+    assert "MUST be a JSON ARRAY of strings" in user
     assert "never a comma-joined string" in user
 
 
@@ -469,16 +486,14 @@ def _dispatch():
     dag = FormationDAG(
         stages=[
             Stage(id="worker_1", kind="worker", model="deepseek/deepseek-chat"),
-            Stage(id="audit", kind="audit", model="deepseek/deepseek-chat",
-                  depends_on=["worker_1"]),
+            Stage(id="audit", kind="audit", model="deepseek/deepseek-chat", depends_on=["worker_1"]),
         ],
         edges=[("worker_1", "audit")],
     )
     return DispatchResult(
         formation=dag,
         worker_prompts=[
-            WorkerPrompt(stage_id="worker_1", model="deepseek/deepseek-chat",
-                         prompt="Answer the question."),
+            WorkerPrompt(stage_id="worker_1", model="deepseek/deepseek-chat", prompt="Answer the question."),
         ],
         aggregator_instructions="Merge the worker outputs.",
         stage_instructions={"audit": "Check."},
@@ -489,7 +504,10 @@ def _deps():
     from chimera.aggregator import StageResult
 
     return [
-        StageResult(stage_id="worker_1", model="deepseek/deepseek-chat",
-                    prompt="Answer the question.",
-                    response=resp("20", "deepseek/deepseek-chat")),
+        StageResult(
+            stage_id="worker_1",
+            model="deepseek/deepseek-chat",
+            prompt="Answer the question.",
+            response=resp("20", "deepseek/deepseek-chat"),
+        ),
     ]

@@ -124,7 +124,7 @@ def release_verify_run_blocks(release_verify_steps: list[dict]) -> str:
 
 def test_install_is_exact_version_pinned(release_verify_run_blocks: str) -> None:
     """The published artifact is installed as ==$VERSION, never unpinned."""
-    assert 'chimera-deliberation[full]==${VERSION}' in release_verify_run_blocks
+    assert "chimera-deliberation[full]==${VERSION}" in release_verify_run_blocks
     # No bare/unpinned install of the package may survive anywhere in the job.
     unpinned = re.findall(r'pip install\s+"chimera-deliberation\[full\]"', release_verify_run_blocks)
     assert not unpinned, f"unpinned install survived: {unpinned}"
@@ -159,7 +159,7 @@ def test_install_retry_is_bounded_and_cannot_fall_through(release_verify_run_blo
     # The pinned requirement appears INSIDE the loop (every attempt exact).
     loop = release_verify_run_blocks[match.start() :]
     loop = loop[: loop.index("done")]
-    assert 'chimera-deliberation[full]==${VERSION}' in loop
+    assert "chimera-deliberation[full]==${VERSION}" in loop
 
 
 # --- deep MCP probe invocation ----------------------------------------------- #
@@ -227,9 +227,7 @@ def test_every_secret_reference_is_in_the_documented_allowlist() -> None:
 
 def test_mcp_probe_step_does_not_depend_on_a_nonexistent_secret() -> None:
     """The exact defect: the probe step must not export OPENROUTER_API_KEY."""
-    step = next(
-        s for s in _release_verify_job_steps() if "probe_mcp_stdio" in s.get("run", "")
-    )
+    step = next(s for s in _release_verify_job_steps() if "probe_mcp_stdio" in s.get("run", ""))
     env = step.get("env") or {}
     assert "OPENROUTER_API_KEY" not in env, (
         "the repo has no OPENROUTER_API_KEY secret; the probe remaps uncredentialed "
@@ -244,9 +242,7 @@ def test_mcp_probe_step_exercises_the_self_provisioning_default() -> None:
     Passing a path would test the operator path instead of the default one that
     a fresh checkout (no untracked chimera.yaml) actually takes.
     """
-    step = next(
-        s for s in _release_verify_job_steps() if "probe_mcp_stdio" in s.get("run", "")
-    )
+    step = next(s for s in _release_verify_job_steps() if "probe_mcp_stdio" in s.get("run", ""))
     run = step["run"]
     assert "--config=" not in run and "--cwd=" not in run
     assert "provisions its OWN config" in run, (
@@ -427,9 +423,7 @@ raise SystemExit(9)
 '''
 
 
-def _make_fake_venv(
-    tmp_path: Path, *, accepts_version: bool = True, version: str = "0.2.5"
-) -> Path:
+def _make_fake_venv(tmp_path: Path, *, accepts_version: bool = True, version: str = "0.2.5") -> Path:
     """A venv-shaped directory whose CLI entry points are the offline stand-in."""
     venv = tmp_path / "fake-venv"
     (venv / "bin").mkdir(parents=True, exist_ok=True)
@@ -482,9 +476,7 @@ def test_battery_wired_into_release_verify_after_the_pinned_install(
         for i, step in enumerate(release_verify_steps)
         if "chimera-deliberation[full]==${VERSION}" in step.get("run", "")
     )
-    e2e_index = next(
-        i for i, step in enumerate(release_verify_steps) if "GATE-OK" in step.get("run", "")
-    )
+    e2e_index = next(i for i, step in enumerate(release_verify_steps) if "GATE-OK" in step.get("run", ""))
     assert install_index < step_index < e2e_index, (
         "the surface battery must run AFTER the pinned install and BEFORE the "
         f"E2E run (install={install_index}, battery={step_index}, e2e={e2e_index})"
@@ -751,9 +743,7 @@ def _write_workflow_copy(tmp_path: Path, doc: dict) -> Path:
     return out
 
 
-def _assert_mutated_copy_fails(
-    tmp_path: Path, mutate: Callable[[dict], None], match: str
-) -> None:
+def _assert_mutated_copy_fails(tmp_path: Path, mutate: Callable[[dict], None], match: str) -> None:
     """A mutated COPY of ci.yml must FAIL the contract (the real file is untouched)."""
     doc = _load_workflow()
     _mutate_test_job_battery_step(doc, mutate)
@@ -834,9 +824,7 @@ def test_bare_python_interpreter_fails_the_pin(tmp_path: Path) -> None:
     """NEGATIVE: the matrix `python` is not the .venv the battery asserts against."""
 
     def use_bare_python(step: dict) -> None:
-        assert "VERSION=$(.venv/bin/python -c " in step["run"], (
-            "premise broken: the derivation changed shape"
-        )
+        assert "VERSION=$(.venv/bin/python -c " in step["run"], "premise broken: the derivation changed shape"
         step["run"] = step["run"].replace("VERSION=$(.venv/bin/python -c ", "VERSION=$(python -c ")
         assert "VERSION=$(python -c " in step["run"]
 
@@ -1090,17 +1078,13 @@ def _assert_release_verify_runs_release_content_check(job: dict) -> dict:
         f"published artifact) with the tag-derived version, got {command}"
     )
 
-    assert not step.get("env"), (
-        f"the release-content check is offline and keyless, got env={step.get('env')}"
-    )
+    assert not step.get("env"), f"the release-content check is offline and keyless, got env={step.get('env')}"
     assert "secrets." not in yaml.safe_dump(step), f"the check is keyless, got {step}"
     assert "curl" not in run and "pip install" not in run, run
 
     content_index = steps.index(step)
     install_index = next(
-        i
-        for i, s in enumerate(steps)
-        if "chimera-deliberation[full]==${VERSION}" in s.get("run", "")
+        i for i, s in enumerate(steps) if "chimera-deliberation[full]==${VERSION}" in s.get("run", "")
     )
     live_indices = [
         i
@@ -1495,9 +1479,7 @@ def test_release_content_reports_a_silent_child_without_hanging(tmp_path: Path) 
 # --- the pin cannot be removed, weakened, or pointed at the checkout ---------- #
 
 
-def _assert_mutated_release_verify_fails(
-    tmp_path: Path, mutate: Callable[[dict], None], match: str
-) -> None:
+def _assert_mutated_release_verify_fails(tmp_path: Path, mutate: Callable[[dict], None], match: str) -> None:
     """A mutated COPY of ci.yml must FAIL the contract (the real file is untouched)."""
     doc = _load_workflow()
     mutate(doc["jobs"]["release-verify"])
@@ -1511,9 +1493,7 @@ def test_release_content_step_removed_fails_the_pin(tmp_path: Path) -> None:
 
     def remove_step(job: dict) -> None:
         before = len(_release_content_steps(job))
-        job["steps"] = [
-            s for s in job["steps"] if "release_content_check.py" not in s.get("run", "")
-        ]
+        job["steps"] = [s for s in job["steps"] if "release_content_check.py" not in s.get("run", "")]
         after = len(_release_content_steps(job))
         assert (before, after) == (1, 0), f"premise broken: {before} -> {after}"
 
@@ -1533,9 +1513,7 @@ def test_pointing_the_release_content_check_at_the_checkout_fails_the_pin(tmp_pa
         step["run"] = step["run"].replace("--venv /tmp/release-venv", "--venv .venv")
         assert "--venv .venv" in step["run"]
 
-    _assert_mutated_release_verify_fails(
-        tmp_path, use_repo_venv, "must run on the pinned /tmp/release-venv"
-    )
+    _assert_mutated_release_verify_fails(tmp_path, use_repo_venv, "must run on the pinned /tmp/release-venv")
 
 
 def test_expected_version_removed_fails_the_release_content_pin(tmp_path: Path) -> None:
@@ -1578,5 +1556,3 @@ def test_release_content_check_after_the_live_gates_fails_the_pin(tmp_path: Path
     _assert_mutated_release_verify_fails(
         tmp_path, move_to_the_end, "AFTER the pinned install and BEFORE the expensive"
     )
-
-

@@ -132,23 +132,16 @@ async def _post_with_retry(
             last_detail = f"timeout on attempt {attempt}/{attempts}: {exc!r}"
         else:
             last_error = None
-            degraded = (
-                _is_validation_failure_object(r)
-                or (check_degraded and _is_degraded_schema_answer(r))
-            )
+            degraded = _is_validation_failure_object(r) or (check_degraded and _is_degraded_schema_answer(r))
             if r.status_code < 500 and not degraded:
                 return r
             why = f"HTTP {r.status_code}" if r.status_code >= 500 else "degraded"
-            last_detail = (
-                f"{why} on attempt {attempt}/{attempts}: {r.text[:300]}"
-            )
+            last_detail = f"{why} on attempt {attempt}/{attempts}: {r.text[:300]}"
         if attempt < attempts:
             await asyncio.sleep(backoff * attempt)
     if last_error is not None:
         raise last_error
-    raise AssertionError(
-        f"POST {url} still failing after {attempts} attempts — {last_detail}"
-    )
+    raise AssertionError(f"POST {url} still failing after {attempts} attempts — {last_detail}")
 
 
 def _assert_valid_html(html: str) -> None:
@@ -170,8 +163,12 @@ def _assert_has_sections(output: str, min_sections: int = 2) -> None:
     sections = 0
     # HTML sectioning elements
     for pattern in [
-        r"<section[>\s]", r"<header[>\s]", r"<footer[>\s]", r"<main[>\s]",
-        r"<div\s+class=", r"<h[1-3]",
+        r"<section[>\s]",
+        r"<header[>\s]",
+        r"<footer[>\s]",
+        r"<main[>\s]",
+        r"<div\s+class=",
+        r"<h[1-3]",
     ]:
         sections += len(re.findall(pattern, output, re.IGNORECASE))
 
@@ -179,11 +176,14 @@ def _assert_has_sections(output: str, min_sections: int = 2) -> None:
     sections += len(re.findall(r"^#{1,3}\s", output, re.MULTILINE))
 
     # Text-mode sections: numbered steps, lemma markers, paragraph breaks
-    text_sections = len(re.findall(
-        r"(?:^\d+[\.\)]\s|Lemma|Step\s+\d|Proof\.|Therefore|Hence|Thus\b|"
-        r"\n\n(?=\S))",
-        output, re.MULTILINE | re.IGNORECASE,
-    ))
+    text_sections = len(
+        re.findall(
+            r"(?:^\d+[\.\)]\s|Lemma|Step\s+\d|Proof\.|Therefore|Hence|Thus\b|"
+            r"\n\n(?=\S))",
+            output,
+            re.MULTILINE | re.IGNORECASE,
+        )
+    )
     sections += text_sections
 
     assert sections >= min_sections, (
@@ -231,7 +231,9 @@ async def test_collaborative_static_website(live_server: str) -> None:
 
     async with httpx.AsyncClient() as client:
         r = await _post_with_retry(
-            client, f"{live_server}/v1/deliberate", payload=payload,
+            client,
+            f"{live_server}/v1/deliberate",
+            payload=payload,
         )
 
     assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text[:500]}"
@@ -244,8 +246,7 @@ async def test_collaborative_static_website(live_server: str) -> None:
     for stage in trace.get("stages", []):
         resp = stage.get("response", "")
         assert "[stage " not in resp.lower() or "unavailable" not in resp.lower(), (
-            f"Stage {stage.get('stage_id', '?')} ({stage.get('kind', '?')}) degraded: "
-            f"{resp[:200]}"
+            f"Stage {stage.get('stage_id', '?')} ({stage.get('kind', '?')}) degraded: {resp[:200]}"
         )
 
     # Verify HTML validity
@@ -265,8 +266,7 @@ async def test_collaborative_static_website(live_server: str) -> None:
     stages = trace.get("stages", [])
     worker_count = sum(1 for s in stages if s.get("kind") == "worker")
     assert worker_count >= 1, (
-        f"Expected at least 1 worker, found {worker_count}. "
-        f"Stage kinds: {[s.get('kind') for s in stages]}"
+        f"Expected at least 1 worker, found {worker_count}. Stage kinds: {[s.get('kind') for s in stages]}"
     )
 
 
@@ -300,7 +300,9 @@ async def test_collaborative_math_proof(live_server: str) -> None:
 
     async with httpx.AsyncClient() as client:
         r = await _post_with_retry(
-            client, f"{live_server}/v1/deliberate", payload=payload,
+            client,
+            f"{live_server}/v1/deliberate",
+            payload=payload,
         )
 
     assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text[:500]}"
@@ -323,10 +325,9 @@ async def test_collaborative_math_proof(live_server: str) -> None:
         f"Proof should reference sqrt: {answer[:300]}"
     )
     # Standard proof elements
-    assert any(term in lower for term in ["contradiction", "assume", "lowest term",
-                                            "even", "a/b", "integer"]), (
-        f"Proof missing key elements. First 300 chars: {answer[:300]}"
-    )
+    assert any(
+        term in lower for term in ["contradiction", "assume", "lowest term", "even", "a/b", "integer"]
+    ), f"Proof missing key elements. First 300 chars: {answer[:300]}"
 
     # Verify logical structure (numbered steps, lemmas, or sections)
     # The answer may be a JSON wrapper like {"answer": "...", "sources": [...]}
@@ -345,9 +346,7 @@ async def test_collaborative_math_proof(live_server: str) -> None:
     # Verify multi-worker collaboration
     stages = trace.get("stages", [])
     worker_count = sum(1 for s in stages if s.get("kind") == "worker")
-    assert worker_count >= 1, (
-        f"Expected at least 1 worker, found {worker_count}"
-    )
+    assert worker_count >= 1, f"Expected at least 1 worker, found {worker_count}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -399,7 +398,9 @@ async def test_website_with_structured_output(live_server: str) -> None:
 
     async with httpx.AsyncClient() as client:
         r = await _post_with_retry(
-            client, f"{live_server}/v1/deliberate", payload=payload,
+            client,
+            f"{live_server}/v1/deliberate",
+            payload=payload,
         )
 
     assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text[:500]}"
@@ -435,8 +436,7 @@ async def test_website_with_structured_output(live_server: str) -> None:
     _assert_valid_html(html)
     lower_html = html.lower()
     assert "alex" in lower_html, f"Name not in HTML: {html[:300]}"
-    assert any(tag in lower_html for tag in ["<section", "<div", "<header",
-                                               "<main", "<article"]), (
+    assert any(tag in lower_html for tag in ["<section", "<div", "<header", "<main", "<article"]), (
         f"No structural elements in HTML: {html[:300]}"
     )
 
@@ -446,6 +446,4 @@ async def test_website_with_structured_output(live_server: str) -> None:
     # Verify multi-worker collaboration
     stages = body["trace"].get("stages", [])
     worker_count = sum(1 for s in stages if s.get("kind") == "worker")
-    assert worker_count >= 1, (
-        f"Expected at least 1 worker, found {worker_count}"
-    )
+    assert worker_count >= 1, f"Expected at least 1 worker, found {worker_count}"

@@ -119,6 +119,15 @@ packages = ["src/chimera"]
 [tool.ruff]
 target-version = "py311"
 line-length = 110
+# Scope the file resolver to Python sources on purpose. Ruff 0.16 widened its
+# DEFAULT `include` to `*.md` (alongside `*.py`, `*.pyi`, `*.ipynb`,
+# `**/pyproject.toml`), so `ruff format` started rewriting the fenced Python
+# blocks inside docs/, specs/ and skills/ — documentation prose that is not
+# ours to restyle, and whose snippets must stay verbatim prose samples.
+# Pinning `include` here keeps both the lint and format lanes over .py files
+# only, which is also what docs/GITREINS.md documents for the lint lane
+# ("ruff check over the staged Python files"). CH-LINT-DRIFT-001.
+include = ["*.py", "*.pyi"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "C4"]

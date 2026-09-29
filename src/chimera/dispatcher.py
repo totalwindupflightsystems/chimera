@@ -420,9 +420,7 @@ def blocked_catalog_models(config: ChimeraConfig) -> set[str]:
     return {
         model
         for model in registry.blocked()
-        if registry.is_blocked(
-            model, credential_fingerprint=model_credential_fingerprint(config, model)
-        )
+        if registry.is_blocked(model, credential_fingerprint=model_credential_fingerprint(config, model))
     }
 
 
@@ -633,9 +631,7 @@ def parse_dispatch_result(
             data = _extract_json_object(raw)
         except (json.JSONDecodeError, ValueError) as exc:
             log.warning("dispatcher_bad_json", error=str(exc))
-            return _fallback_result(
-                config, fallback_dag, user_prompt="", reason="malformed_json"
-            )
+            return _fallback_result(config, fallback_dag, user_prompt="", reason="malformed_json")
 
     try:
         formation_data = data.get("formation") or {}
@@ -679,9 +675,8 @@ def parse_dispatch_result(
         return result
     except (KeyError, TypeError, ValueError, IndexError) as exc:
         log.warning("dispatcher_parse_failed", error=str(exc))
-        return _fallback_result(
-            config, fallback_dag, user_prompt="", reason=f"invalid_dag: {exc}"
-        )
+        return _fallback_result(config, fallback_dag, user_prompt="", reason=f"invalid_dag: {exc}")
+
 
 def _validate_result(result: DispatchResult, config: ChimeraConfig | None = None) -> None:
     """Raise ``ValueError`` if the dispatch plan is structurally unusable.
@@ -705,9 +700,7 @@ def _validate_result(result: DispatchResult, config: ChimeraConfig | None = None
                 raise ValueError(f"stage {stage.id!r} depends on unknown {dep!r}")
 
 
-def _repair_formation(
-    result: DispatchResult, config: ChimeraConfig | None = None
-) -> None:
+def _repair_formation(result: DispatchResult, config: ChimeraConfig | None = None) -> None:
     """Idempotently repair a structurally incomplete formation in place.
 
     Order matters: edges referencing stage ids absent from ``stages`` must
@@ -721,9 +714,7 @@ def _repair_formation(
         _repair_missing_aggregator(result, config)
 
 
-def _repair_missing_edge_targets(
-    result: DispatchResult, config: ChimeraConfig | None = None
-) -> None:
+def _repair_missing_edge_targets(result: DispatchResult, config: ChimeraConfig | None = None) -> None:
     """Inject default-model aggregator stages for edge targets missing from ``stages``.
 
     The auto dispatcher sometimes emits ``edges`` referencing an
@@ -745,13 +736,10 @@ def _repair_missing_edge_targets(
     model = config.defaults.default_aggregator if config is not None else "default"
     for tgt in missing:
         sources = [src for src, t in dag.edges if t == tgt and src in ids]
-        dag.stages.append(
-            Stage(id=tgt, kind="aggregator", model=model, depends_on=list(sources))
-        )
+        dag.stages.append(Stage(id=tgt, kind="aggregator", model=model, depends_on=list(sources)))
     if not result.aggregator_instructions:
         result.aggregator_instructions = (
-            "Merge the worker outputs into a single, coherent final answer "
-            "for the user's request."
+            "Merge the worker outputs into a single, coherent final answer for the user's request."
         )
     n = len(missing)
     result.dispatch_note = (
@@ -771,9 +759,7 @@ def _repair_missing_edge_targets(
     log.info("dispatch_repaired_missing_edge_targets", injected=missing)
 
 
-def _repair_missing_aggregator(
-    result: DispatchResult, config: ChimeraConfig | None = None
-) -> None:
+def _repair_missing_aggregator(result: DispatchResult, config: ChimeraConfig | None = None) -> None:
     """Append a default aggregator stage to a worker-only formation.
 
     The auto dispatcher sometimes designs 2-4 worker stages but omits the
@@ -797,13 +783,10 @@ def _repair_missing_aggregator(
         dag.edges.append((wid, "aggregator"))
     if not result.aggregator_instructions:
         result.aggregator_instructions = (
-            "Merge the worker outputs into a single, coherent final answer "
-            "for the user's request."
+            "Merge the worker outputs into a single, coherent final answer for the user's request."
         )
     n = len(terminal_worker_ids)
-    result.dispatch_note = (
-        f"repaired: added aggregator stage for {n} worker terminal{'s' if n != 1 else ''}"
-    )
+    result.dispatch_note = f"repaired: added aggregator stage for {n} worker terminal{'s' if n != 1 else ''}"
     result.dispatch_repairs.append(
         DispatchRepair(
             kind="missing_aggregator",
@@ -856,9 +839,7 @@ def _normalize_result(result: DispatchResult, config: ChimeraConfig) -> None:
         if stage.kind == "worker":
             existing = result.worker_prompt_for(stage.id)
             if existing is None:
-                result.worker_prompts.append(
-                    WorkerPrompt(stage_id=stage.id, model=stage.model, prompt="")
-                )
+                result.worker_prompts.append(WorkerPrompt(stage_id=stage.id, model=stage.model, prompt=""))
             elif not existing.prompt:
                 existing.model = stage.model
     for wp in result.worker_prompts:
@@ -908,8 +889,7 @@ def _fallback_result(
         formation=dag,
         worker_prompts=worker_prompts,
         aggregator_instructions=(
-            "Merge the worker outputs into a single, coherent final answer "
-            "for the user's request."
+            "Merge the worker outputs into a single, coherent final answer for the user's request."
         ),
         stage_instructions={},
         output_schema={
@@ -972,9 +952,7 @@ class Dispatcher:
             else:
                 preset = self._resolve_preset(formation)
                 if preset is not None and not preset.is_auto:
-                    messages, response, result = await self._dispatch_preset(
-                        user_prompt, formation, preset
-                    )
+                    messages, response, result = await self._dispatch_preset(user_prompt, formation, preset)
                 else:
                     messages, response, result = await self._dispatch_auto(user_prompt)
             # One reading pair serves both the elapsed milliseconds and the

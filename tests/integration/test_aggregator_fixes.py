@@ -41,14 +41,12 @@ def _assert_no_degraded_stages(body: dict) -> None:
     for stage in stages:
         # Integration tests pass raw responses; StageSpan is a plain dict here.
         assert not stage.get("degraded", False), (
-            f"Stage {stage.get('stage_id', '?')} is degraded: "
-            f"{stage.get('response', '')[:200]}"
+            f"Stage {stage.get('stage_id', '?')} is degraded: {stage.get('response', '')[:200]}"
         )
         # The response should NOT contain an unavailable/failed marker.
         resp = stage.get("response", "")
         assert "[stage " not in resp.lower() or "unavailable" not in resp.lower(), (
-            f"Stage {stage.get('stage_id', '?')} response looks degraded: "
-            f"{resp[:200]}"
+            f"Stage {stage.get('stage_id', '?')} response looks degraded: {resp[:200]}"
         )
 
 
@@ -58,15 +56,9 @@ def _assert_has_valid_answer(body: dict, expected_substring: str = "4") -> None:
     assert isinstance(answer, str), f"answer is {type(answer)}, expected str"
     assert answer.strip(), "answer is empty"
     answer_lower = answer.lower()
-    assert "unavailable" not in answer_lower, (
-        f"Answer is a degraded/unavailable message: {answer!r}"
-    )
-    assert "error" not in answer_lower or "json" in answer_lower, (
-        f"Answer contains 'error': {answer!r}"
-    )
-    assert expected_substring in answer_lower, (
-        f"Answer doesn't contain '{expected_substring}': {answer!r}"
-    )
+    assert "unavailable" not in answer_lower, f"Answer is a degraded/unavailable message: {answer!r}"
+    assert "error" not in answer_lower or "json" in answer_lower, f"Answer contains 'error': {answer!r}"
+    assert expected_substring in answer_lower, f"Answer doesn't contain '{expected_substring}': {answer!r}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

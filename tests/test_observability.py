@@ -49,6 +49,7 @@ def test_configure_langfuse_import_error(
     monkeypatch.setattr(obs, "_LANGFUSE_CLIENT", None)
 
     import builtins
+
     original_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):

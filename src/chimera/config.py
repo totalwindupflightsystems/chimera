@@ -49,6 +49,7 @@ def _log_warning(event: str, **fields: Any) -> None:
     """
     structlog.get_logger(_CONFIG_LOGGER_NAME).warning(event, **fields)
 
+
 #: Default per-cost-tier USD rates per 1k tokens (input, output).
 DEFAULT_COST_RATES: dict[str, tuple[float, float]] = {
     "budget": (0.00014, 0.00028),
@@ -249,19 +250,19 @@ class DeliberationOverrides(BaseModel):
     or forced for specific roles without changing the config file.
     """
 
-    allowed_models: list[str] | None = None     # Only these models permitted
-    disallowed_models: list[str] | None = None   # Exclude these models
-    dispatcher_model: str | None = None          # Force dispatcher model
-    aggregator_model: str | None = None               # Force aggregator model
-    worker_model: str | None = None              # Force default worker model
+    allowed_models: list[str] | None = None  # Only these models permitted
+    disallowed_models: list[str] | None = None  # Exclude these models
+    dispatcher_model: str | None = None  # Force dispatcher model
+    aggregator_model: str | None = None  # Force aggregator model
+    worker_model: str | None = None  # Force default worker model
     output_schema: dict[str, Any] | None = None  # JSON Schema for final answer
-    stage_models: dict[str, str] | None = None   # Per-stage model overrides (stage_id → model)
-    timeout_total_s: float | None = None         # Per-request total timeout (≤ admin ceiling)
-    timeout_per_stage_s: float | None = None     # Per-request per-stage timeout
-    progressive: bool = False                     # Enable progressive prompting on worker stages
-    wait_messages: list[str] | None = None       # Context msgs fed one-at-a-time before the main prompt
-    trigger: str | None = None                   # Final msg requesting actual output (replaces task prompt)
-    max_tokens: int | None = None                # Cap output tokens per model call (OpenAI-compat max_tokens)
+    stage_models: dict[str, str] | None = None  # Per-stage model overrides (stage_id → model)
+    timeout_total_s: float | None = None  # Per-request total timeout (≤ admin ceiling)
+    timeout_per_stage_s: float | None = None  # Per-request per-stage timeout
+    progressive: bool = False  # Enable progressive prompting on worker stages
+    wait_messages: list[str] | None = None  # Context msgs fed one-at-a-time before the main prompt
+    trigger: str | None = None  # Final msg requesting actual output (replaces task prompt)
+    max_tokens: int | None = None  # Cap output tokens per model call (OpenAI-compat max_tokens)
 
 
 class SelectorConfig(BaseModel):
@@ -437,12 +438,10 @@ class ChimeraConfig(BaseModel):
             if name in excluded:
                 continue
             cats = ", ".join(
-                f"{cat}={score:.2f}"
-                for cat, score in sorted(entry.categories.items(), key=lambda kv: -kv[1])
+                f"{cat}={score:.2f}" for cat, score in sorted(entry.categories.items(), key=lambda kv: -kv[1])
             )
             lines.append(
-                f"- {name} [provider={entry.provider}, cost_tier={entry.cost_tier}] "
-                f"strengths: {cats}"
+                f"- {name} [provider={entry.provider}, cost_tier={entry.cost_tier}] strengths: {cats}"
             )
         return "\n".join(lines)
 
@@ -451,9 +450,8 @@ class ChimeraConfig(BaseModel):
 # Credential-derived model usability (DF-CHIMERA-0906-3)
 # --------------------------------------------------------------------------- #
 
-def _resolved_credential(
-    config: ChimeraConfig, provider_name: str
-) -> str | None:
+
+def _resolved_credential(config: ChimeraConfig, provider_name: str) -> str | None:
     """The credential string the gateway would use for *provider_name*.
 
     Mirrors the resolution order documented on
@@ -498,9 +496,7 @@ def credential_fingerprint(secret: str | None) -> str | None:
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:_FINGERPRINT_LEN]
 
 
-def provider_credential_fingerprint(
-    config: ChimeraConfig, provider_name: str
-) -> str | None:
+def provider_credential_fingerprint(config: ChimeraConfig, provider_name: str) -> str | None:
     """Non-reversible fingerprint of *provider_name*'s resolved credential.
 
     Same resolution order as :func:`provider_credential_resolved`; returns
@@ -511,9 +507,7 @@ def provider_credential_fingerprint(
     return credential_fingerprint(_resolved_credential(config, provider_name))
 
 
-def model_credential_fingerprint(
-    config: ChimeraConfig, model_name: str
-) -> str | None:
+def model_credential_fingerprint(config: ChimeraConfig, model_name: str) -> str | None:
     """Fingerprint of the credential behind *model_name*'s provider.
 
     ``None`` when the model is not in the catalog (so no provider can be
@@ -573,9 +567,7 @@ _PROVIDER_API_KEY_ENV: dict[str, str] = {
 
 #: Hosts that mean "this endpoint runs on the operator's own machine", where
 #: running without a key is the normal configuration.
-_LOCAL_PROVIDER_HOSTS = frozenset(
-    {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
-)
+_LOCAL_PROVIDER_HOSTS = frozenset({"localhost", "127.0.0.1", "0.0.0.0", "::1"})
 
 
 def _is_local_base_url(base_url: str | None) -> bool:
@@ -609,9 +601,7 @@ def provider_api_key_env(config: ChimeraConfig | None, provider: str) -> str | N
         return entry.api_key_env
     if entry is not None and not entry.api_key and _is_local_base_url(entry.base_url):
         return None
-    return _PROVIDER_API_KEY_ENV.get(provider.lower()) or (
-        f"{provider.upper().replace('-', '_')}_API_KEY"
-    )
+    return _PROVIDER_API_KEY_ENV.get(provider.lower()) or (f"{provider.upper().replace('-', '_')}_API_KEY")
 
 
 def credentialed_enabled_models(config: ChimeraConfig) -> dict[str, ModelEntry]:
@@ -683,9 +673,7 @@ def _load_repo_dotenv(config_path: Path) -> None:
     except Exception as exc:  # pragma: no cover - malformed .env
         import logging
 
-        logging.getLogger("chimera.config").warning(
-            "failed to load repo .env at %s: %s", env_path, exc
-        )
+        logging.getLogger("chimera.config").warning("failed to load repo .env at %s: %s", env_path, exc)
 
 
 def _substitute_env(value: Any) -> Any:
@@ -771,8 +759,7 @@ CATEGORY_SCORE_MAX = 100.0
 
 #: Human-readable accepted-range clause shared by every rejection message.
 _CATEGORY_SCORE_RANGE = (
-    "scores must be percent 0-100 (a 0.0-1.0 catalog is accepted and rescaled "
-    "x100 on load)"
+    "scores must be percent 0-100 (a 0.0-1.0 catalog is accepted and rescaled x100 on load)"
 )
 
 
@@ -796,9 +783,7 @@ def _category_score_error(
     )
 
 
-def _category_scale_validation_error(
-    exc: ValidationError, config_path: Path | None
-) -> ConfigError | None:
+def _category_scale_validation_error(exc: ValidationError, config_path: Path | None) -> ConfigError | None:
     """Translate a category-score ``ValidationError`` into one actionable line.
 
     A *non-numeric* score (``code: high``) never reaches
@@ -815,15 +800,11 @@ def _category_scale_validation_error(
             value = err.get("input")
             if not isinstance(value, (int, float, str)):
                 value = repr(value)
-            return _category_score_error(
-                config_path, str(loc[1]), str(loc[3]), value, "not a number"
-            )
+            return _category_score_error(config_path, str(loc[1]), str(loc[3]), value, "not a number")
     return None
 
 
-def _normalize_category_scales(
-    config: ChimeraConfig, config_path: Path | None = None
-) -> None:
+def _normalize_category_scales(config: ChimeraConfig, config_path: Path | None = None) -> None:
     """Enforce ONE category-score scale (percent) across the whole catalog.
 
     INT-API-002: the docs described 0.0-1.0 scores while the shipped templates,
@@ -854,18 +835,22 @@ def _normalize_category_scales(
     for model_id, entry in config.models.items():
         for category_path, value in entry.categories.items():
             if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise _category_score_error(
-                    config_path, model_id, category_path, value, "not a number"
-                )
+                raise _category_score_error(config_path, model_id, category_path, value, "not a number")
             score = float(value)
             if not math.isfinite(score):
                 raise _category_score_error(
-                    config_path, model_id, category_path, score,
+                    config_path,
+                    model_id,
+                    category_path,
+                    score,
                     "not a finite number",
                 )
             if score < 0.0 or score > CATEGORY_SCORE_MAX:
                 raise _category_score_error(
-                    config_path, model_id, category_path, score,
+                    config_path,
+                    model_id,
+                    category_path,
+                    score,
                     f"outside the accepted range 0.0-{CATEGORY_SCORE_MAX:g}",
                 )
             scored.append((model_id, category_path, score))
@@ -1059,6 +1044,7 @@ def _apply_env_overrides(config: ChimeraConfig) -> None:
             for name, pdata in discovered_providers.items():
                 if name not in config.providers:
                     from chimera.config import Provider as _Provider
+
                     config.providers[name] = _Provider(
                         base_url=pdata["base_url"],
                         api_key_env=pdata.get("api_key_env"),

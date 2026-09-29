@@ -180,7 +180,7 @@ def test_dev_extra_includes_fastapi() -> None:
     """``.[dev]`` alone must provide FastAPI — collection imports the app."""
     assert "fastapi" in _declared_names(_extra_specs("dev")), (
         "the dev extra must declare fastapi: tests/test_engine_coverage.py imports "
-        "chimera.api.server, so `pip install -e \".[dev]\"` would fail collection"
+        'chimera.api.server, so `pip install -e ".[dev]"` would fail collection'
     )
 
 
@@ -218,6 +218,6 @@ def test_dev_extra_covers_collection_target_imports() -> None:
     available = _declared_names(_base_specs()) | _declared_names(_extra_specs("dev"))
     missing = sorted(required - available)
     assert not missing, (
-        f"`pip install -e \".[dev]\"` would be missing {missing} needed to collect "
+        f'`pip install -e ".[dev]"` would be missing {missing} needed to collect '
         f"{_COLLECTION_TARGET.name}; declare them in the dev extra (found: {sorted(required)})"
     )

@@ -50,8 +50,7 @@ def _make_auth_config(
     cfg_dict = dict(CONFIG_DICT)
     if drop_providers:
         cfg_dict["providers"] = {
-            name: spec for name, spec in cfg_dict["providers"].items()
-            if name not in drop_providers
+            name: spec for name, spec in cfg_dict["providers"].items() if name not in drop_providers
         }
     cfg_dict["auth"] = {
         "enabled": True,
@@ -91,8 +90,7 @@ class TestAuthEnvMode:
         # pass. Without these, the test depends on ambient env leakage from
         # tests/integration/conftest.py (_load_hermes_env) and fails in CI
         # (no ~/.hermes/.env there; red since 2026-07-29).
-        for env_var in ("OPENROUTER_API_KEY", "ZAI_API_KEY",
-                        "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY"):
+        for env_var in ("OPENROUTER_API_KEY", "ZAI_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY"):
             monkeypatch.setenv(env_var, "test-key")
 
     def test_health_is_open(self) -> None:
@@ -171,26 +169,35 @@ class TestAuthListMode:
     """Auth with config-defined API keys list."""
 
     def test_valid_key_returns_200(self) -> None:
-        config = _make_auth_config("list", keys=[
-            AuthKeyEntry(key="sk-admin", name="admin"),
-            AuthKeyEntry(key="sk-user", name="user"),
-        ])
+        config = _make_auth_config(
+            "list",
+            keys=[
+                AuthKeyEntry(key="sk-admin", name="admin"),
+                AuthKeyEntry(key="sk-user", name="user"),
+            ],
+        )
         client = _auth_client(config, key="sk-admin")
         r = client.post("/v1/deliberate", json={"prompt": "hello", "formation": "auto"})
         assert r.status_code == 200
 
     def test_invalid_key_returns_401(self) -> None:
-        config = _make_auth_config("list", keys=[
-            AuthKeyEntry(key="sk-admin", name="admin"),
-        ])
+        config = _make_auth_config(
+            "list",
+            keys=[
+                AuthKeyEntry(key="sk-admin", name="admin"),
+            ],
+        )
         client = _auth_client(config, key="sk-evil")
         r = client.post("/v1/deliberate", json={"prompt": "hello"})
         assert r.status_code == 401
 
     def test_missing_key_returns_401(self) -> None:
-        config = _make_auth_config("list", keys=[
-            AuthKeyEntry(key="sk-admin", name="admin"),
-        ])
+        config = _make_auth_config(
+            "list",
+            keys=[
+                AuthKeyEntry(key="sk-admin", name="admin"),
+            ],
+        )
         client = _auth_client(config)
         r = client.post("/v1/deliberate", json={"prompt": "hello"})
         assert r.status_code == 401
@@ -301,10 +308,13 @@ class TestRateLimiter:
 
     def test_different_keys_separate_rate_limits(self) -> None:
         """Two different API keys have independent rate limits."""
-        config = _make_auth_config("list", keys=[
-            AuthKeyEntry(key="sk-a", name="a"),
-            AuthKeyEntry(key="sk-b", name="b"),
-        ])
+        config = _make_auth_config(
+            "list",
+            keys=[
+                AuthKeyEntry(key="sk-a", name="a"),
+                AuthKeyEntry(key="sk-b", name="b"),
+            ],
+        )
         config.rate_limit = RateLimitConfig(enabled=True, requests_per_minute=60, burst_size=2)
         engine = Engine(config, FakeGateway(make_dispatcher_responder(config)))
         app = create_app(config=config, engine=engine)
@@ -344,17 +354,25 @@ class TestCircuitBreakerStates:
         assert cb.state == CircuitState.OPEN
 
     def test_blocked_when_open(self) -> None:
-        cb = ProviderCircuitBreaker("test", CircuitBreakerConfig(
-            failure_threshold=1, recovery_timeout_s=999,
-        ))
+        cb = ProviderCircuitBreaker(
+            "test",
+            CircuitBreakerConfig(
+                failure_threshold=1,
+                recovery_timeout_s=999,
+            ),
+        )
         cb.on_failure()
         assert cb.state == CircuitState.OPEN
         assert cb.before_call() is False
 
     def test_transitions_to_half_open_after_timeout(self) -> None:
-        cb = ProviderCircuitBreaker("test", CircuitBreakerConfig(
-            failure_threshold=1, recovery_timeout_s=0,  # immediate timeout
-        ))
+        cb = ProviderCircuitBreaker(
+            "test",
+            CircuitBreakerConfig(
+                failure_threshold=1,
+                recovery_timeout_s=0,  # immediate timeout
+            ),
+        )
         cb.on_failure()
         assert cb.state == CircuitState.OPEN
         # Force timeout by manipulating opened_at
@@ -363,9 +381,13 @@ class TestCircuitBreakerStates:
         assert cb.state == CircuitState.HALF_OPEN
 
     def test_closes_after_success_in_half_open(self) -> None:
-        cb = ProviderCircuitBreaker("test", CircuitBreakerConfig(
-            failure_threshold=1, recovery_timeout_s=0,
-        ))
+        cb = ProviderCircuitBreaker(
+            "test",
+            CircuitBreakerConfig(
+                failure_threshold=1,
+                recovery_timeout_s=0,
+            ),
+        )
         cb.on_failure()
         cb.opened_at = time.monotonic() - 1.0
         assert cb.before_call() is True
@@ -375,9 +397,13 @@ class TestCircuitBreakerStates:
         assert cb.failure_count == 0
 
     def test_reopens_on_failure_in_half_open(self) -> None:
-        cb = ProviderCircuitBreaker("test", CircuitBreakerConfig(
-            failure_threshold=1, recovery_timeout_s=0,
-        ))
+        cb = ProviderCircuitBreaker(
+            "test",
+            CircuitBreakerConfig(
+                failure_threshold=1,
+                recovery_timeout_s=0,
+            ),
+        )
         cb.on_failure()
         cb.opened_at = time.monotonic() - 1.0
         assert cb.before_call() is True
@@ -403,9 +429,14 @@ class TestCircuitBreakerStates:
         assert cb.state == CircuitState.CLOSED
 
     def test_half_open_limits_concurrent_requests(self) -> None:
-        cb = ProviderCircuitBreaker("test", CircuitBreakerConfig(
-            failure_threshold=1, recovery_timeout_s=0, half_open_max_requests=1,
-        ))
+        cb = ProviderCircuitBreaker(
+            "test",
+            CircuitBreakerConfig(
+                failure_threshold=1,
+                recovery_timeout_s=0,
+                half_open_max_requests=1,
+            ),
+        )
         cb.on_failure()
         cb.opened_at = time.monotonic() - 1.0
         # First request in half_open goes through
@@ -444,6 +475,7 @@ class TestCircuitBreakerGatewayIntegration:
         for _i in range(3):
             try:
                 import asyncio
+
                 asyncio.run(gateway.complete("deepseek/deepseek-chat", [{"role": "user", "content": "hi"}]))
             except GatewayError:
                 pass
@@ -461,9 +493,14 @@ class TestCircuitBreakerGatewayIntegration:
 
     def test_circuit_recovers_after_timeout(self) -> None:
         """Circuit transitions: CLOSED → OPEN → HALF_OPEN → CLOSED."""
-        cb = ProviderCircuitBreaker("test", CircuitBreakerConfig(
-            failure_threshold=2, recovery_timeout_s=0, half_open_max_requests=1,
-        ))
+        cb = ProviderCircuitBreaker(
+            "test",
+            CircuitBreakerConfig(
+                failure_threshold=2,
+                recovery_timeout_s=0,
+                half_open_max_requests=1,
+            ),
+        )
         # Open it
         cb.on_failure()
         cb.on_failure()

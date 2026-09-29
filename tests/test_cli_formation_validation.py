@@ -46,13 +46,24 @@ def _spy(monkeypatch):  # type: ignore[no-untyped-def]
         async def deliberate(self, prompt, formation, **kwargs):  # noqa: ANN003
             record["calls"].append((prompt, formation, kwargs))
             span = SimpleNamespace(
-                stage_id="dispatch", kind="dispatch", model="m",
-                tokens_input=1, tokens_output=2, latency_ms=5, cost=0.0,
+                stage_id="dispatch",
+                kind="dispatch",
+                model="m",
+                tokens_input=1,
+                tokens_output=2,
+                latency_ms=5,
+                cost=0.0,
             )
             trace = SimpleNamespace(
-                request_id="r1", dispatch=span, stages=[], total_tokens=3,
-                total_duration_ms=9, total_cost=0.0, source="auto",
-                answer_stage_id="aggregator", worker_failures=[],
+                request_id="r1",
+                dispatch=span,
+                stages=[],
+                total_tokens=3,
+                total_duration_ms=9,
+                total_cost=0.0,
+                source="auto",
+                answer_stage_id="aggregator",
+                worker_failures=[],
                 dispatch_note=None,
             )
             return SimpleNamespace(answer="ok", trace=trace)
@@ -70,14 +81,14 @@ def _spy(monkeypatch):  # type: ignore[no-untyped-def]
 # The pure helper (unit level)
 # ---------------------------------------------------------------------------
 
+
 def test_validate_formation_accepts_known_name(config) -> None:  # type: ignore[no-untyped-def]
     assert _validate_formation(config, KNOWN, None) is None
 
 
 def test_validate_formation_exempts_explicit_dag(config) -> None:  # type: ignore[no-untyped-def]
     """An explicit DAG replaces formation selection — unknown name is fine."""
-    dag = {"stages": [{"id": "s1", "kind": "worker", "model": "m1",
-                       "depends_on": []}], "edges": []}
+    dag = {"stages": [{"id": "s1", "kind": "worker", "model": "m1", "depends_on": []}], "edges": []}
     assert _validate_formation(config, UNKNOWN, dag) is None
 
 
@@ -95,12 +106,13 @@ def test_validate_formation_rejects_unknown_name(config, capsys) -> None:  # typ
 # CLI end-to-end (CliRunner)
 # ---------------------------------------------------------------------------
 
+
 def test_cli_unknown_formation_exits_2_without_deliberating(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """C1: exit 2, stderr names the value + the available names, no engine."""
     record = _spy(monkeypatch)
     result = CliRunner().invoke(
-        main, ["-c", str(config_file), "-f", UNKNOWN, "--quiet",
-               "reply with the word ok"],
+        main,
+        ["-c", str(config_file), "-f", UNKNOWN, "--quiet", "reply with the word ok"],
     )
     assert result.exit_code == 2, result.output
     assert UNKNOWN in result.stderr
@@ -117,8 +129,8 @@ def test_cli_unknown_formation_keeps_stdout_empty(config_file, monkeypatch) -> N
     """stdout purity (DF-CHIMERA-V2-3): the diagnostic goes to stderr only."""
     _spy(monkeypatch)
     result = CliRunner().invoke(
-        main, ["-c", str(config_file), "-f", UNKNOWN, "--quiet",
-               "reply with the word ok"],
+        main,
+        ["-c", str(config_file), "-f", UNKNOWN, "--quiet", "reply with the word ok"],
     )
     assert result.exit_code == 2
     assert result.stdout == ""
@@ -129,8 +141,8 @@ def test_cli_known_formation_still_deliberates(config_file, monkeypatch) -> None
     """C4: a valid formation proceeds down the normal path, exit 0."""
     record = _spy(monkeypatch)
     result = CliRunner().invoke(
-        main, ["-c", str(config_file), "-f", KNOWN, "--quiet",
-               "reply with the word ok"],
+        main,
+        ["-c", str(config_file), "-f", KNOWN, "--quiet", "reply with the word ok"],
     )
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "ok"
@@ -144,7 +156,8 @@ def test_cli_default_formation_is_accepted(config_file, monkeypatch) -> None:  #
     """No -f at all → the ``auto`` default still validates and runs."""
     record = _spy(monkeypatch)
     result = CliRunner().invoke(
-        main, ["-c", str(config_file), "--quiet", "reply with the word ok"],
+        main,
+        ["-c", str(config_file), "--quiet", "reply with the word ok"],
     )
     assert result.exit_code == 0, result.output
     assert record["calls"][0][1] == "auto"
@@ -154,14 +167,22 @@ def test_cli_dag_bypasses_formation_validation(config_file, monkeypatch) -> None
     """C4: --dag is exempt — the unknown -f value must not block it."""
     record = _spy(monkeypatch)
     dag_dict = {
-        "stages": [{"id": "s1", "kind": "worker", "model": "m1",
-                    "depends_on": []}],
+        "stages": [{"id": "s1", "kind": "worker", "model": "m1", "depends_on": []}],
         "edges": [],
     }
     result = CliRunner().invoke(
-        main, ["-c", str(config_file), "-f", UNKNOWN,
-               "--dag", json.dumps(dag_dict), "--allow-custom-dag",
-               "--quiet", "prompt"],
+        main,
+        [
+            "-c",
+            str(config_file),
+            "-f",
+            UNKNOWN,
+            "--dag",
+            json.dumps(dag_dict),
+            "--allow-custom-dag",
+            "--quiet",
+            "prompt",
+        ],
     )
     assert result.exit_code == 0, result.output
     assert len(record["calls"]) == 1
@@ -174,7 +195,8 @@ def test_cli_unknown_formation_lists_config_names(config_file, monkeypatch) -> N
     """The listed names come from the loaded config, not a hardcoded list."""
     _spy(monkeypatch)
     result = CliRunner().invoke(
-        main, ["-c", str(config_file), "-f", "dabate", "--quiet", "hi"],
+        main,
+        ["-c", str(config_file), "-f", "dabate", "--quiet", "hi"],
     )
     assert result.exit_code == 2
     for name in sorted(CONFIG_DICT["formations"]):

@@ -29,8 +29,16 @@ def _optional_dependencies() -> dict[str, list[str]]:
 def _mcp_specs(extra: str) -> list[str]:
     """Return every requirement string in ``extra`` that targets the mcp package."""
     deps = _optional_dependencies()[extra]
-    return [spec for spec in deps if spec == "mcp" or spec.startswith("mcp<") or spec.startswith("mcp>")
-            or spec.startswith("mcp=") or spec.startswith("mcp!") or spec.startswith("mcp[")]
+    return [
+        spec
+        for spec in deps
+        if spec == "mcp"
+        or spec.startswith("mcp<")
+        or spec.startswith("mcp>")
+        or spec.startswith("mcp=")
+        or spec.startswith("mcp!")
+        or spec.startswith("mcp[")
+    ]
 
 
 def test_mcp_extra_pins_below_2() -> None:

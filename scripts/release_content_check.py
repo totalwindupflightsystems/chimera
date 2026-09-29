@@ -193,9 +193,7 @@ class ReleaseContentProbe:
         name = "installed-dist-version"
         actual = installed_dist_version(self.venv, PACKAGE_DIST)
         self.evidence["CHIMERA_DIST_VERSION"] = actual or MISSING_VALUE
-        self.evidence["MCP_SDK_VERSION"] = (
-            installed_dist_version(self.venv, MCP_DIST) or MISSING_VALUE
-        )
+        self.evidence["MCP_SDK_VERSION"] = installed_dist_version(self.venv, MCP_DIST) or MISSING_VALUE
         if actual == self.expected_version:
             return CheckResult(name, True, f"installed {PACKAGE_DIST} is {actual}")
         return CheckResult(
@@ -242,9 +240,7 @@ class ReleaseContentProbe:
         python = venv_executable(self.venv, "python")
         if not python.exists():
             self.evidence["MISSING_CONFIG_REMEDY"] = f"(no {python})"
-            return CheckResult(
-                name, False, f"{python} does not exist: cannot execute the installed package"
-            )
+            return CheckResult(name, False, f"{python} does not exist: cannot execute the installed package")
         with tempfile.TemporaryDirectory(prefix="chimera-release-content-") as workdir:
             try:
                 proc = subprocess.run(
@@ -319,9 +315,7 @@ def server_info_version(result: Mapping[str, Any] | None) -> str | None:
     return None
 
 
-def handshake_version_problem(
-    expected: str, actual: str | None, sdk_version: str | None
-) -> str | None:
+def handshake_version_problem(expected: str, actual: str | None, sdk_version: str | None) -> str | None:
     """The actionable failure for a handshake that does not advertise *expected*.
 
     ``None`` means the handshake is correct. A handshake reporting the ``mcp``
@@ -439,9 +433,7 @@ def child_env() -> dict[str, str]:
     return env
 
 
-def drive_initialize(
-    cmd: Sequence[str], env: Mapping[str, str], cwd: str, timeout: int
-) -> InitializeOutcome:
+def drive_initialize(cmd: Sequence[str], env: Mapping[str, str], cwd: str, timeout: int) -> InitializeOutcome:
     """Send one ``initialize`` request to *cmd* over stdio and read the answer.
 
     Paced like a real MCP client: stdin stays open while the response is read,
@@ -520,9 +512,7 @@ def parse_args(argv: list[str]) -> tuple[Path, str]:
     i = 0
     while i < len(argv):
         arg = argv[i]
-        if arg in ("--venv", "--expected-version") or arg.startswith(
-            ("--venv=", "--expected-version=")
-        ):
+        if arg in ("--venv", "--expected-version") or arg.startswith(("--venv=", "--expected-version=")):
             if "=" in arg:
                 option, value = arg.split("=", 1)
                 i += 1

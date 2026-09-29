@@ -53,6 +53,7 @@ def __getattr__(name: str) -> _Any:
         return trace_to_mermaid
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
+
 # Single source of truth for the version: pyproject.toml (via installed dist
 # metadata). The fallback only fires for source-tree runs where the
 # ``chimera-deliberation`` dist metadata is missing.

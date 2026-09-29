@@ -100,13 +100,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
-        "markers", "integration: live integration test (requires --run-integration)",
+        "markers",
+        "integration: live integration test (requires --run-integration)",
     )
     config.addinivalue_line("markers", "slow: tests that call remote APIs")
 
 
 def pytest_collection_modifyitems(
-    config: pytest.Config, items: list[pytest.Item],
+    config: pytest.Config,
+    items: list[pytest.Item],
 ) -> None:
     if config.getoption("--run-integration"):
         return
@@ -158,7 +160,10 @@ def _start_server(
         env.update(extra_env)
 
     with tempfile.NamedTemporaryFile(
-        mode="w", prefix=f"chimera-{port}-", suffix=".log", delete=False,
+        mode="w",
+        prefix=f"chimera-{port}-",
+        suffix=".log",
+        delete=False,
     ) as log_fd:
         log_path = log_fd.name
 
@@ -343,10 +348,7 @@ def live_server() -> str:
     )
     try:
         if not _wait_ready(proc, LIVE_PORT):
-            pytest.fail(
-                f"Live server failed to start on port {LIVE_PORT}\n"
-                f"{_dump_server_output(proc)}"
-            )
+            pytest.fail(f"Live server failed to start on port {LIVE_PORT}\n{_dump_server_output(proc)}")
         yield f"http://127.0.0.1:{LIVE_PORT}"
     finally:
         _stop_server(proc)
@@ -364,10 +366,7 @@ def auth_server(tmp_path_factory: pytest.TempPathFactory) -> str:
     )
     try:
         if not _wait_ready(proc, AUTH_PORT):
-            pytest.fail(
-                f"Auth server failed to start on port {AUTH_PORT}\n"
-                f"{_dump_server_output(proc)}"
-            )
+            pytest.fail(f"Auth server failed to start on port {AUTH_PORT}\n{_dump_server_output(proc)}")
         yield f"http://127.0.0.1:{AUTH_PORT}"
     finally:
         _stop_server(proc)

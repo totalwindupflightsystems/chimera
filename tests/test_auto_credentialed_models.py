@@ -66,9 +66,7 @@ def _make_config(
 
 
 def _prompt_catalog(config: ChimeraConfig, **kwargs: Any) -> str:
-    return build_dispatcher_prompt("Design an e-commerce backend", config, **kwargs)[0][
-        "content"
-    ]
+    return build_dispatcher_prompt("Design an e-commerce backend", config, **kwargs)[0]["content"]
 
 
 def _engine_responder(payload: str):  # type: ignore[no-untyped-def]
@@ -255,9 +253,7 @@ def test_remap_helper_syncs_worker_prompt_models(remap) -> None:
         if stage.kind == "worker":
             wp = result.worker_prompt_for(stage.id)
             assert wp is not None
-            assert wp.model == stage.model, (
-                f"worker prompt model for {stage.id} out of sync with stage model"
-            )
+            assert wp.model == stage.model, f"worker prompt model for {stage.id} out of sync with stage model"
 
 
 def test_remap_helper_prefers_default_worker_when_credentialed(remap) -> None:
@@ -348,9 +344,7 @@ async def test_engine_custom_dag_not_remapped() -> None:
         "edges": [["w1", "agg"]],
     }
     gw = FakeGateway(_engine_responder(payload))
-    result = await Engine(cfg, gw).deliberate(
-        "task", "auto", dag=dag, allow_custom_dag=True
-    )
+    result = await Engine(cfg, gw).deliberate("task", "auto", dag=dag, allow_custom_dag=True)
     assert result.trace.source == "custom"
     assert _worker_models(result) == [QWEN]
 

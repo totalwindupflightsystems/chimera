@@ -194,9 +194,7 @@ async def test_rate_limit_burst_429(auth_server: str) -> None:
             statuses.append(None)
 
     # At least one should be rate-limited (429) — this is the core assertion
-    assert 429 in statuses, (
-        f"Expected at least one 429 from burst exhaustion, got statuses: {statuses}"
-    )
+    assert 429 in statuses, f"Expected at least one 429 from burst exhaustion, got statuses: {statuses}"
 
     # Verify the 429 response has the expected error structure
     assert rate_limited_response is not None

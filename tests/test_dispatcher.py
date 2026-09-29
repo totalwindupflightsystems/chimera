@@ -44,9 +44,7 @@ def _client_dag(
     for wid, wmodel in workers:
         stages.append({"id": wid, "kind": "worker", "model": wmodel, "depends_on": []})
         edges.append([wid, "aggregator"])
-    stages.append(
-        {"id": "aggregator", "kind": "aggregator", "model": aggregator, "depends_on": worker_ids}
-    )
+    stages.append({"id": "aggregator", "kind": "aggregator", "model": aggregator, "depends_on": worker_ids})
     for s in extra_stages or []:
         stages.append(s)
         for dep in s.get("depends_on", []):
@@ -78,8 +76,7 @@ def test_preset_debate_dag_has_two_judges_and_merge(config) -> None:  # type: ig
     judges = [s for s in dag.stages if s.kind == "aggregator"]
     assert len(judges) == 2
     aggregator_models = {j.model for j in judges}
-    assert aggregator_models == {"zai-coding-plan/glm-5.2",
-                            "openrouter/anthropic/claude-sonnet-4"}
+    assert aggregator_models == {"zai-coding-plan/glm-5.2", "openrouter/anthropic/claude-sonnet-4"}
     merge = dag.stage("merge")
     assert merge.kind == "merge"
     assert set(merge.depends_on) == {j.id for j in judges}
@@ -115,10 +112,11 @@ def test_preset_speed_dag(config) -> None:  # type: ignore[no-untyped-def]
 
 
 def test_preset_worker_models_override(config) -> None:  # type: ignore[no-untyped-def]
-    preset = FormationPreset(workers=2,
-                             worker_models=["deepseek/deepseek-chat",
-                                            "openrouter/google/gemini-2.5-flash"],
-                             aggregator="default")
+    preset = FormationPreset(
+        workers=2,
+        worker_models=["deepseek/deepseek-chat", "openrouter/google/gemini-2.5-flash"],
+        aggregator="default",
+    )
     dag = build_preset_dag(preset, config)
     workers = sorted(s.model for s in dag.stages if s.kind == "worker")
     assert workers == ["deepseek/deepseek-chat", "openrouter/google/gemini-2.5-flash"]
@@ -194,9 +192,10 @@ def test_dispatcher_prompt_preset_embeds_fixed_dag(config) -> None:  # type: ign
 
 
 def test_parse_dispatch_result_valid_json(config) -> None:  # type: ignore[no-untyped-def]
-    raw = dispatch_json(workers=[("worker_1", "deepseek/deepseek-chat"),
-                                 ("worker_2", "openrouter/google/gemini-2.5-flash")],
-                        aggregator_instructions="Combine code + design parts.")
+    raw = dispatch_json(
+        workers=[("worker_1", "deepseek/deepseek-chat"), ("worker_2", "openrouter/google/gemini-2.5-flash")],
+        aggregator_instructions="Combine code + design parts.",
+    )
     result = parse_dispatch_result(raw, config)
     assert result.source == "auto"
     assert len(result.formation.stages) == 3
@@ -248,8 +247,7 @@ def test_parse_dispatch_result_strips_code_fences(config) -> None:  # type: igno
 @pytest.mark.asyncio
 async def test_dispatcher_auto_flow(config) -> None:  # type: ignore[no-untyped-def]
     payload = dispatch_json(
-        workers=[("worker_1", "deepseek/deepseek-chat"),
-                 ("worker_2", "openrouter/google/gemini-2.5-flash")],
+        workers=[("worker_1", "deepseek/deepseek-chat"), ("worker_2", "openrouter/google/gemini-2.5-flash")],
         aggregator_instructions="Merge the architecture + service boundaries.",
     )
 
@@ -291,6 +289,7 @@ async def test_dispatcher_gateway_failure_falls_back(config) -> None:  # type: i
     class BoomGateway(FakeGateway):
         async def complete(self, *a, **k):
             raise GatewayError("provider down")
+
     gw = BoomGateway()
     outcome = await Dispatcher(config, gw).dispatch("task", "auto")
     assert outcome.result.source == "fallback"
@@ -313,8 +312,7 @@ async def test_dispatcher_unknown_formation_uses_auto(config) -> None:  # type: 
 def test_config_defined_custom_formation_loaded_correctly(config) -> None:  # type: ignore[no-untyped-def]
     """A FormationPreset with `dag` builds that DAG directly via build_preset_dag."""
     dag_dict = _client_dag(
-        workers=[("analyzer", "deepseek/deepseek-chat"),
-                 ("designer", "openrouter/google/gemini-2.5-flash")],
+        workers=[("analyzer", "deepseek/deepseek-chat"), ("designer", "openrouter/google/gemini-2.5-flash")],
         aggregator="zai-coding-plan/glm-5.2",
     )
     preset = FormationPreset(dag=dag_dict)
@@ -346,17 +344,37 @@ def test_config_defined_custom_chain_dag(config) -> None:  # type: ignore[no-unt
     chain = {
         "stages": [
             {"id": "analyzer", "kind": "worker", "model": "deepseek/deepseek-chat"},
-            {"id": "reviewer", "kind": "aggregator",
-             "model": "zai-coding-plan/glm-5.2", "depends_on": ["analyzer"]},
-            {"id": "implementer", "kind": "worker",
-             "model": "openrouter/anthropic/claude-sonnet-4", "depends_on": ["reviewer"]},
-            {"id": "verifier", "kind": "aggregator",
-             "model": "zai-coding-plan/glm-5.2", "depends_on": ["implementer"]},
-            {"id": "finalizer", "kind": "merge",
-             "model": "deepseek/deepseek-chat", "depends_on": ["verifier"]},
+            {
+                "id": "reviewer",
+                "kind": "aggregator",
+                "model": "zai-coding-plan/glm-5.2",
+                "depends_on": ["analyzer"],
+            },
+            {
+                "id": "implementer",
+                "kind": "worker",
+                "model": "openrouter/anthropic/claude-sonnet-4",
+                "depends_on": ["reviewer"],
+            },
+            {
+                "id": "verifier",
+                "kind": "aggregator",
+                "model": "zai-coding-plan/glm-5.2",
+                "depends_on": ["implementer"],
+            },
+            {
+                "id": "finalizer",
+                "kind": "merge",
+                "model": "deepseek/deepseek-chat",
+                "depends_on": ["verifier"],
+            },
         ],
-        "edges": [["analyzer", "reviewer"], ["reviewer", "implementer"],
-                  ["implementer", "verifier"], ["verifier", "finalizer"]],
+        "edges": [
+            ["analyzer", "reviewer"],
+            ["reviewer", "implementer"],
+            ["implementer", "verifier"],
+            ["verifier", "finalizer"],
+        ],
     }
     dag = build_preset_dag(FormationPreset(dag=chain), config)
     order = dag.topo_order()
@@ -379,10 +397,8 @@ def test_client_dag_invalid_model_rejected(config) -> None:  # type: ignore[no-u
 def test_client_dag_cycle_rejected(config) -> None:  # type: ignore[no-untyped-def]
     cyclic = {
         "stages": [
-            {"id": "a", "kind": "worker", "model": "deepseek/deepseek-chat",
-             "depends_on": ["b"]},
-            {"id": "b", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2",
-             "depends_on": ["a"]},
+            {"id": "a", "kind": "worker", "model": "deepseek/deepseek-chat", "depends_on": ["b"]},
+            {"id": "b", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2", "depends_on": ["a"]},
         ],
         "edges": [["a", "b"], ["b", "a"]],
     }
@@ -415,10 +431,13 @@ def test_client_dag_no_aggregator_stages_rejected(config) -> None:  # type: igno
 def test_client_dag_dangling_dependency_rejected(config) -> None:  # type: ignore[no-untyped-def]
     bad = {
         "stages": [
-            {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat",
-             "depends_on": ["ghost"]},
-            {"id": "aggregator", "kind": "aggregator",
-             "model": "zai-coding-plan/glm-5.2", "depends_on": ["worker_1"]},
+            {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat", "depends_on": ["ghost"]},
+            {
+                "id": "aggregator",
+                "kind": "aggregator",
+                "model": "zai-coding-plan/glm-5.2",
+                "depends_on": ["worker_1"],
+            },
         ],
         "edges": [["worker_1", "aggregator"]],
     }
@@ -430,8 +449,7 @@ def test_client_dag_resolves_default_alias(config) -> None:  # type: ignore[no-u
     dag_dict = {
         "stages": [
             {"id": "worker_1", "kind": "worker", "model": "default_worker"},
-            {"id": "aggregator", "kind": "aggregator", "model": "default",
-             "depends_on": ["worker_1"]},
+            {"id": "aggregator", "kind": "aggregator", "model": "default", "depends_on": ["worker_1"]},
         ],
         "edges": [["worker_1", "aggregator"]],
     }
@@ -494,14 +512,22 @@ def _dispatch_payload(
         "formation": {
             "stages": [
                 {"id": "worker_1", "kind": "worker", "model": worker_model, "depends_on": []},
-                {"id": "aggregator", "kind": "aggregator",
-                 "model": aggregator_model, "depends_on": ["worker_1"]},
+                {
+                    "id": "aggregator",
+                    "kind": "aggregator",
+                    "model": aggregator_model,
+                    "depends_on": ["worker_1"],
+                },
             ],
             "edges": [["worker_1", "aggregator"]],
         },
         "worker_prompts": [
-            {"stage_id": worker_stage_id, "model": worker_model,
-             "prompt": worker_prompt, "expected_output_schema": None},
+            {
+                "stage_id": worker_stage_id,
+                "model": worker_model,
+                "prompt": worker_prompt,
+                "expected_output_schema": None,
+            },
         ],
         "aggregator_instructions": "Merge the worker outputs.",
     }
@@ -616,9 +642,11 @@ def test_defaults_lock_flags_default_false(config) -> None:  # type: ignore[no-u
 
 
 def test_lock_aggregator_forces_default_model(config) -> None:  # type: ignore[no-untyped-def]
-    cfg = config.model_copy(update={
-        "defaults": config.defaults.model_copy(update={"lock_aggregator": True}),
-    })
+    cfg = config.model_copy(
+        update={
+            "defaults": config.defaults.model_copy(update={"lock_aggregator": True}),
+        }
+    )
     payload = _dispatch_payload(aggregator_model="openrouter/anthropic/claude-sonnet-4")
     result = parse_dispatch_result(payload, cfg)
     agg = result.formation.stage("aggregator")
@@ -707,8 +735,7 @@ def test_normalize_result_uses_only_enabled_models(config) -> None:  # type: ign
     _normalize_result(result, cfg)
     # Worker model should be remapped to default_worker since v4-chat is disabled
     assert result.formation.stage("worker_1").model == cfg.defaults.default_worker, (
-        f"Disabled model should be remapped to default: "
-        f"{result.formation.stage('worker_1').model}"
+        f"Disabled model should be remapped to default: {result.formation.stage('worker_1').model}"
     )
 
 
@@ -736,8 +763,7 @@ def test_parse_dispatch_result_preserves_progressive_fields(config) -> None:  # 
             "edges": [["worker_1", "aggregator"]],
         },
         "worker_prompts": [
-            {"stage_id": "worker_1", "model": "deepseek/deepseek-v4-pro",
-             "prompt": "Write the spec."},
+            {"stage_id": "worker_1", "model": "deepseek/deepseek-v4-pro", "prompt": "Write the spec."},
         ],
         "aggregator_instructions": "Merge outputs.",
     }
@@ -770,10 +796,7 @@ def _workers_only_payload(
     output_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Hand-crafted auto payload with worker stages only — no aggregator."""
-    stages = [
-        {"id": wid, "kind": "worker", "model": wmodel, "depends_on": []}
-        for wid, wmodel in workers
-    ]
+    stages = [{"id": wid, "kind": "worker", "model": wmodel, "depends_on": []} for wid, wmodel in workers]
     worker_prompts = [
         {
             "stage_id": wid,
@@ -796,10 +819,12 @@ def _workers_only_payload(
 
 def test_parse_dispatch_result_repairs_missing_aggregator(config) -> None:  # type: ignore[no-untyped-def]
     """A sound worker-only DAG is repaired, not discarded."""
-    raw = _workers_only_payload([
-        ("worker_1", "deepseek/deepseek-chat"),
-        ("worker_2", "openrouter/google/gemini-2.5-flash"),
-    ])
+    raw = _workers_only_payload(
+        [
+            ("worker_1", "deepseek/deepseek-chat"),
+            ("worker_2", "openrouter/google/gemini-2.5-flash"),
+        ]
+    )
     result = parse_dispatch_result(raw, config)
 
     # This is a repair, not a fallback: the dispatcher's design survives.
@@ -853,18 +878,29 @@ def test_parse_dispatch_result_repairs_edge_referenced_missing_aggregator(config
     raw = {
         "formation": {
             "stages": [
-                {"id": "worker_1", "kind": "worker",
-                 "model": "deepseek/deepseek-chat", "depends_on": []},
-                {"id": "worker_2", "kind": "worker",
-                 "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+                {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat", "depends_on": []},
+                {
+                    "id": "worker_2",
+                    "kind": "worker",
+                    "model": "openrouter/google/gemini-2.5-flash",
+                    "depends_on": [],
+                },
             ],
             "edges": [["worker_1", "aggregator"], ["worker_2", "aggregator"]],
         },
         "worker_prompts": [
-            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
-             "prompt": "Custom subtask for worker_1", "expected_output_schema": None},
-            {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
-             "prompt": "Custom subtask for worker_2", "expected_output_schema": None},
+            {
+                "stage_id": "worker_1",
+                "model": "deepseek/deepseek-chat",
+                "prompt": "Custom subtask for worker_1",
+                "expected_output_schema": None,
+            },
+            {
+                "stage_id": "worker_2",
+                "model": "openrouter/google/gemini-2.5-flash",
+                "prompt": "Custom subtask for worker_2",
+                "expected_output_schema": None,
+            },
         ],
         "aggregator_instructions": "",
         "stage_instructions": {},
@@ -883,7 +919,8 @@ def test_parse_dispatch_result_repairs_edge_referenced_missing_aggregator(config
 
     # The dispatcher's edges survive (no duplicates appended by the repair).
     assert [tuple(e) for e in result.formation.edges] == [
-        ("worker_1", "aggregator"), ("worker_2", "aggregator"),
+        ("worker_1", "aggregator"),
+        ("worker_2", "aggregator"),
     ]
 
     # Custom worker prompts are preserved, not templated.
@@ -902,18 +939,29 @@ def test_parse_dispatch_result_edge_repair_is_idempotent(config) -> None:  # typ
     raw = {
         "formation": {
             "stages": [
-                {"id": "worker_1", "kind": "worker",
-                 "model": "deepseek/deepseek-chat", "depends_on": []},
-                {"id": "worker_2", "kind": "worker",
-                 "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+                {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat", "depends_on": []},
+                {
+                    "id": "worker_2",
+                    "kind": "worker",
+                    "model": "openrouter/google/gemini-2.5-flash",
+                    "depends_on": [],
+                },
             ],
             "edges": [["worker_1", "aggregator"], ["worker_2", "aggregator"]],
         },
         "worker_prompts": [
-            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
-             "prompt": "p1", "expected_output_schema": None},
-            {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
-             "prompt": "p2", "expected_output_schema": None},
+            {
+                "stage_id": "worker_1",
+                "model": "deepseek/deepseek-chat",
+                "prompt": "p1",
+                "expected_output_schema": None,
+            },
+            {
+                "stage_id": "worker_2",
+                "model": "openrouter/google/gemini-2.5-flash",
+                "prompt": "p2",
+                "expected_output_schema": None,
+            },
         ],
         "aggregator_instructions": "",
         "stage_instructions": {},
@@ -936,10 +984,13 @@ def test_parse_dispatch_result_repairs_missing_non_aggregator_edge_target(config
     raw = {
         "formation": {
             "stages": [
-                {"id": "worker_1", "kind": "worker",
-                 "model": "deepseek/deepseek-chat", "depends_on": []},
-                {"id": "aggregator", "kind": "aggregator",
-                 "model": "zai-coding-plan/glm-5.2", "depends_on": ["worker_1"]},
+                {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat", "depends_on": []},
+                {
+                    "id": "aggregator",
+                    "kind": "aggregator",
+                    "model": "zai-coding-plan/glm-5.2",
+                    "depends_on": ["worker_1"],
+                },
             ],
             "edges": [["worker_1", "aggregator"], ["worker_1", "reviewer"]],
         },
@@ -975,18 +1026,29 @@ def _worker_only_payload(*, edges: list[list[str]]) -> dict[str, Any]:
     return {
         "formation": {
             "stages": [
-                {"id": "worker_1", "kind": "worker",
-                 "model": "deepseek/deepseek-chat", "depends_on": []},
-                {"id": "worker_2", "kind": "worker",
-                 "model": "openrouter/google/gemini-2.5-flash", "depends_on": []},
+                {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat", "depends_on": []},
+                {
+                    "id": "worker_2",
+                    "kind": "worker",
+                    "model": "openrouter/google/gemini-2.5-flash",
+                    "depends_on": [],
+                },
             ],
             "edges": edges,
         },
         "worker_prompts": [
-            {"stage_id": "worker_1", "model": "deepseek/deepseek-chat",
-             "prompt": "Custom subtask for worker_1", "expected_output_schema": None},
-            {"stage_id": "worker_2", "model": "openrouter/google/gemini-2.5-flash",
-             "prompt": "Custom subtask for worker_2", "expected_output_schema": None},
+            {
+                "stage_id": "worker_1",
+                "model": "deepseek/deepseek-chat",
+                "prompt": "Custom subtask for worker_1",
+                "expected_output_schema": None,
+            },
+            {
+                "stage_id": "worker_2",
+                "model": "openrouter/google/gemini-2.5-flash",
+                "prompt": "Custom subtask for worker_2",
+                "expected_output_schema": None,
+            },
         ],
         "aggregator_instructions": "",
         "stage_instructions": {},
@@ -1043,10 +1105,13 @@ def test_dispatch_repairs_record_non_aggregator_edge_target(config) -> None:  # 
     raw = {
         "formation": {
             "stages": [
-                {"id": "worker_1", "kind": "worker",
-                 "model": "deepseek/deepseek-chat", "depends_on": []},
-                {"id": "aggregator", "kind": "aggregator",
-                 "model": "zai-coding-plan/glm-5.2", "depends_on": ["worker_1"]},
+                {"id": "worker_1", "kind": "worker", "model": "deepseek/deepseek-chat", "depends_on": []},
+                {
+                    "id": "aggregator",
+                    "kind": "aggregator",
+                    "model": "zai-coding-plan/glm-5.2",
+                    "depends_on": ["worker_1"],
+                },
             ],
             "edges": [["worker_1", "aggregator"], ["worker_1", "reviewer"]],
         },
@@ -1112,8 +1177,12 @@ def test_parse_dispatch_result_no_workers_sets_reason(config) -> None:  # type: 
     payload = {
         "formation": {
             "stages": [
-                {"id": "aggregator", "kind": "aggregator",
-                 "model": "zai-coding-plan/glm-5.2", "depends_on": []},
+                {
+                    "id": "aggregator",
+                    "kind": "aggregator",
+                    "model": "zai-coding-plan/glm-5.2",
+                    "depends_on": [],
+                },
             ],
             "edges": [],
         },
@@ -1134,9 +1203,7 @@ def test_parse_dispatch_result_repair_preserves_output_schema(config) -> None:  
         "properties": {"answer": {"type": "string"}},
         "required": ["answer"],
     }
-    raw = _workers_only_payload(
-        [("worker_1", "deepseek/deepseek-chat")], output_schema=schema
-    )
+    raw = _workers_only_payload([("worker_1", "deepseek/deepseek-chat")], output_schema=schema)
     result = parse_dispatch_result(raw, config)
     assert result.source == "auto"
     assert result.output_schema == schema
@@ -1167,9 +1234,7 @@ async def test_dispatch_model_override_routes_call(config) -> None:  # type: ign
 
     gw = FakeGateway(responder)
     dispatcher = Dispatcher(config, gw)
-    outcome = await dispatcher.dispatch(
-        "task", "auto", model_override="openrouter/anthropic/claude-sonnet-4"
-    )
+    outcome = await dispatcher.dispatch("task", "auto", model_override="openrouter/anthropic/claude-sonnet-4")
     assert len(gw.calls) == 1
     assert gw.calls[0][0] == "openrouter/anthropic/claude-sonnet-4"
     assert outcome.response.model == "openrouter/anthropic/claude-sonnet-4"
@@ -1195,6 +1260,7 @@ async def test_dispatch_no_model_override_uses_default(config) -> None:  # type:
 # --------------------------------------------------------------------------- #
 # Guardrail blocked-model exclusion from the dispatcher catalog (C3)
 # --------------------------------------------------------------------------- #
+
 
 def test_dispatcher_catalog_excludes_blocked_model(config) -> None:  # type: ignore[no-untyped-def]
     from chimera import blocked_models
@@ -1223,13 +1289,9 @@ def test_dispatcher_catalog_unblocked_after_cooldown(config) -> None:  # type: i
 
     clock_now = [1000.0]
     original = blocked_models.shared_registry
-    set_shared_registry(
-        ModelBlockRegistry(cooldown_s=0.5, clock=lambda: clock_now[0], state_path=None)
-    )
+    set_shared_registry(ModelBlockRegistry(cooldown_s=0.5, clock=lambda: clock_now[0], state_path=None))
     try:
-        blocked_models.shared_registry.record_failure(
-            "openrouter/qwen/qwen3-coder", "guardrail rejection"
-        )
+        blocked_models.shared_registry.record_failure("openrouter/qwen/qwen3-coder", "guardrail rejection")
         blocked_catalog = build_dispatcher_prompt("task", config)[0]["content"]
         assert "openrouter/qwen/qwen3-coder" not in blocked_catalog
         clock_now[0] += 1.0  # past the cooldown — no sleeping required

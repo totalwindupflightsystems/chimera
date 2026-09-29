@@ -94,7 +94,8 @@ def _stage(stages: list, stage_id: str):  # type: ignore[no-untyped-def]
 
 @pytest.mark.asyncio
 async def test_progressive_true_without_wait_messages_sets_worker_stages(
-    config, monkeypatch: pytest.MonkeyPatch,
+    config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:  # type: ignore[no-untyped-def]
     """C1: the explicit flag alone must set progressive on the worker stages.
 
@@ -107,7 +108,8 @@ async def test_progressive_true_without_wait_messages_sets_worker_stages(
     engine, gw, seen = _capture_stages(config, monkeypatch)
 
     result = await engine.deliberate(
-        "design a thing", "auto",
+        "design a thing",
+        "auto",
         overrides=DeliberationOverrides(progressive=True),
     )
 
@@ -132,7 +134,8 @@ async def test_progressive_true_without_wait_messages_sets_worker_stages(
 
 @pytest.mark.asyncio
 async def test_progressive_true_alone_does_not_change_worker_calls(
-    config, monkeypatch: pytest.MonkeyPatch,
+    config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:  # type: ignore[no-untyped-def]
     """progressive without wait_messages adds no provider call — documented.
 
@@ -145,7 +148,8 @@ async def test_progressive_true_alone_does_not_change_worker_calls(
 
     engine_a, gw_a, _ = _capture_stages(config, monkeypatch)
     await engine_a.deliberate(
-        "design a thing", "auto",
+        "design a thing",
+        "auto",
         overrides=DeliberationOverrides(progressive=True),
     )
     engine_b, gw_b, _ = _capture_stages(config, monkeypatch)
@@ -154,14 +158,13 @@ async def test_progressive_true_alone_does_not_change_worker_calls(
     def shape(calls):  # type: ignore[no-untyped-def]
         return [(m, json.dumps(msgs, sort_keys=True)) for m, msgs, _ in calls]
 
-    assert shape(gw_a.calls) == shape(gw_b.calls), (
-        "progressive=True alone changed the provider call sequence"
-    )
+    assert shape(gw_a.calls) == shape(gw_b.calls), "progressive=True alone changed the provider call sequence"
 
 
 @pytest.mark.asyncio
 async def test_progressive_true_overrides_a_non_progressive_custom_dag(
-    config, monkeypatch: pytest.MonkeyPatch,
+    config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:  # type: ignore[no-untyped-def]
     """A custom DAG that declares progressive=False is still flipped ON.
 
@@ -175,15 +178,22 @@ async def test_progressive_true_overrides_a_non_progressive_custom_dag(
     engine, _, seen = _capture_stages(config, monkeypatch)
     dag = {
         "stages": [
-            {"id": "w1", "kind": "worker", "model": "deepseek/deepseek-chat",
-             "depends_on": [], "progressive": False},
-            {"id": "agg", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2",
-             "depends_on": ["w1"]},
+            {
+                "id": "w1",
+                "kind": "worker",
+                "model": "deepseek/deepseek-chat",
+                "depends_on": [],
+                "progressive": False,
+            },
+            {"id": "agg", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2", "depends_on": ["w1"]},
         ],
         "edges": [["w1", "agg"]],
     }
     result = await engine.deliberate(
-        "test", "auto", dag=dag, allow_custom_dag=True,
+        "test",
+        "auto",
+        dag=dag,
+        allow_custom_dag=True,
         overrides=DeliberationOverrides(progressive=True),
     )
 
@@ -252,14 +262,17 @@ def test_deliberate_tool_still_declares_all_progressive_parameters(config) -> No
 
 @pytest.mark.asyncio
 async def test_default_overrides_leave_stages_non_progressive(
-    config, monkeypatch: pytest.MonkeyPatch,
+    config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:  # type: ignore[no-untyped-def]
     """C3: ``progressive=False`` (default) must not turn progressive on."""
     from chimera.config import DeliberationOverrides
 
     engine, gw, seen = _capture_stages(config, monkeypatch)
     await engine.deliberate(
-        "design a thing", "auto", overrides=DeliberationOverrides(),
+        "design a thing",
+        "auto",
+        overrides=DeliberationOverrides(),
     )
     stages = seen[0]
     assert stages, "no stages captured"
@@ -271,7 +284,8 @@ async def test_default_overrides_leave_stages_non_progressive(
 
 @pytest.mark.asyncio
 async def test_progressive_false_is_wire_identical_to_a_bare_run(
-    config, monkeypatch: pytest.MonkeyPatch,
+    config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A default override run and a no-override run make the same calls.
 
@@ -290,9 +304,7 @@ async def test_progressive_false_is_wire_identical_to_a_bare_run(
         return [(m, json.dumps(msgs, sort_keys=True)) for m, msgs, _ in calls]
 
     assert shape(gw_a.calls) == shape(gw_b.calls)
-    assert [c[2].get("temperature") for c in gw_a.calls] == [
-        c[2].get("temperature") for c in gw_b.calls
-    ]
+    assert [c[2].get("temperature") for c in gw_a.calls] == [c[2].get("temperature") for c in gw_b.calls]
 
 
 # --------------------------------------------------------------------------- #
@@ -302,14 +314,16 @@ async def test_progressive_false_is_wire_identical_to_a_bare_run(
 
 @pytest.mark.asyncio
 async def test_wait_messages_alone_still_enables_progressive(
-    config, monkeypatch: pytest.MonkeyPatch,
+    config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:  # type: ignore[no-untyped-def]
     """Pre-existing behavior: wait_messages implies progressive + arms the feed."""
     from chimera.config import DeliberationOverrides
 
     engine, gw, seen = _capture_stages(config, monkeypatch)
     await engine.deliberate(
-        "test", "auto",
+        "test",
+        "auto",
         overrides=DeliberationOverrides(
             wait_messages=["OVERRIDE MSG 1", "OVERRIDE MSG 2"],
             trigger="OVERRIDE TRIGGER: answer now",
@@ -323,32 +337,30 @@ async def test_wait_messages_alone_still_enables_progressive(
 
     temp03 = [c for c in gw.calls if c[2].get("temperature") == 0.3]
     wait_calls = [
-        c for c in temp03
-        if c[1] in ([{"role": "user", "content": "OVERRIDE MSG 1"}],
-                    [{"role": "user", "content": "OVERRIDE MSG 2"}])
+        c
+        for c in temp03
+        if c[1]
+        in ([{"role": "user", "content": "OVERRIDE MSG 1"}], [{"role": "user", "content": "OVERRIDE MSG 2"}])
     ]
-    assert len(wait_calls) == 4, (
-        f"expected 2 wait calls per worker × 2 workers, got {len(wait_calls)}"
-    )
+    assert len(wait_calls) == 4, f"expected 2 wait calls per worker × 2 workers, got {len(wait_calls)}"
     trigger_calls = [
-        c for c in temp03
-        if c[1] == [{"role": "user", "content": "OVERRIDE TRIGGER: answer now"}]
+        c for c in temp03 if c[1] == [{"role": "user", "content": "OVERRIDE TRIGGER: answer now"}]
     ]
-    assert len(trigger_calls) == 2, (
-        f"expected one trigger call per worker, got {len(trigger_calls)}"
-    )
+    assert len(trigger_calls) == 2, f"expected one trigger call per worker, got {len(trigger_calls)}"
 
 
 @pytest.mark.asyncio
 async def test_progressive_true_plus_wait_messages_sets_both(
-    config, monkeypatch: pytest.MonkeyPatch,
+    config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:  # type: ignore[no-untyped-def]
     """The explicit flag and wait_messages together are not a conflict."""
     from chimera.config import DeliberationOverrides
 
     engine, _, seen = _capture_stages(config, monkeypatch)
     await engine.deliberate(
-        "test", "auto",
+        "test",
+        "auto",
         overrides=DeliberationOverrides(progressive=True, wait_messages=["CTX 1"]),
     )
     for stage in seen[0]:
@@ -364,7 +376,8 @@ async def test_progressive_true_plus_wait_messages_sets_both(
 
 @pytest.mark.asyncio
 async def test_mcp_deliberate_forwards_progressive_to_the_stages(
-    config, monkeypatch: pytest.MonkeyPatch,
+    config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:  # type: ignore[no-untyped-def]
     """C1 on the MCP surface: tools/call progressive=true → progressive stages.
 
@@ -401,6 +414,5 @@ async def test_mcp_deliberate_forwards_progressive_to_the_stages(
     workers = [s for s in seen[0] if s.kind == "worker"]
     assert workers
     assert all(s.progressive is True for s in workers), (
-        f"stages after the MCP call: "
-        f"{[(s.id, s.progressive) for s in seen[0]]}"
+        f"stages after the MCP call: {[(s.id, s.progressive) for s in seen[0]]}"
     )

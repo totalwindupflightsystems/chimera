@@ -135,9 +135,7 @@ def test_root_help_lists_quiet_and_json() -> None:
 
 
 @pytest.mark.parametrize("flags", [("--quiet", "--json"), ("--json", "--quiet")])
-def test_quiet_and_json_are_mutually_exclusive(
-    config_file, monkeypatch, flags: tuple[str, str]
-) -> None:  # type: ignore[no-untyped-def]
+def test_quiet_and_json_are_mutually_exclusive(config_file, monkeypatch, flags: tuple[str, str]) -> None:  # type: ignore[no-untyped-def]
     """Acceptance 1: both flags together → click usage error, exit code 2."""
     captured: dict = {}
     _stub_engine(monkeypatch, _result(), captured)
@@ -321,9 +319,7 @@ def test_json_preserves_unicode_answer(config_file, monkeypatch) -> None:  # typ
 
 def test_json_keeps_degradation_warnings_on_stderr(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """Acceptance 3: warnings do not corrupt the JSON document on stdout."""
-    failure = WorkerFailure(
-        stage_id="researcher", model="m", error="No endpoints available"
-    )
+    failure = WorkerFailure(stage_id="researcher", model="m", error="No endpoints available")
     _stub_engine(
         monkeypatch,
         _result(

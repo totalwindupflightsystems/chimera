@@ -73,9 +73,7 @@ def _config_dict(
     """
     config = copy.deepcopy(CONFIG_DICT)
     config["retry"] = dict(_FAST_RETRY)
-    config["api_keys"] = (
-        api_keys if api_keys is not None else {"openrouter": FAKE_OPENROUTER_KEY}
-    )
+    config["api_keys"] = api_keys if api_keys is not None else {"openrouter": FAKE_OPENROUTER_KEY}
     if circuit_breakers is not None:
         config["circuit_breakers"] = circuit_breakers
     config["providers"][ROUTER9_PROVIDER] = {
@@ -109,16 +107,19 @@ def _dag(worker_model: str, aggregator_model: str = OPENROUTER_MODEL) -> dict[st
     return {
         "stages": [
             {"id": "researcher", "kind": "worker", "model": worker_model},
-            {"id": "finalizer", "kind": "aggregator", "model": aggregator_model,
-             "depends_on": ["researcher"]},
+            {
+                "id": "finalizer",
+                "kind": "aggregator",
+                "model": aggregator_model,
+                "depends_on": ["researcher"],
+            },
         ],
         "edges": [["researcher", "finalizer"]],
     }
 
 
 def _payload(worker_model: str, aggregator_model: str = OPENROUTER_MODEL) -> str:
-    return dispatch_json(workers=[("researcher", worker_model)],
-                         aggregator=aggregator_model)
+    return dispatch_json(workers=[("researcher", worker_model)], aggregator=aggregator_model)
 
 
 class _StubResult:
@@ -168,9 +169,7 @@ async def _deliberate(config: ChimeraConfig, dag: dict[str, Any], payload: str):
     """Run a real deliberate through the real gateway (LiteLLM stubbed)."""
     gateway = LiteLLMGateway(config)
     with patch("litellm.acompletion", new=_scripted_acompletion(payload)):
-        return await Engine(config, gateway).deliberate(
-            "task", "auto", dag=dag, allow_custom_dag=True
-        )
+        return await Engine(config, gateway).deliberate("task", "auto", dag=dag, allow_custom_dag=True)
 
 
 def _spans(result) -> dict[str, StageSpan]:  # type: ignore[no-untyped-def]
@@ -188,7 +187,8 @@ async def test_native_route_stamps_provider_and_wire_model() -> None:
 
     with patch("litellm.acompletion", new=_scripted_acompletion("WORKER OUTPUT")):
         response = await gateway.complete(
-            OPENROUTER_MODEL, [{"role": "user", "content": "hi"}],
+            OPENROUTER_MODEL,
+            [{"role": "user", "content": "hi"}],
         )
 
     assert response.metadata["provider"] == "openrouter"
@@ -202,7 +202,8 @@ async def test_custom_base_url_route_stamps_api_base() -> None:
 
     with patch("litellm.acompletion", new=_scripted_acompletion("WORKER OUTPUT")):
         response = await gateway.complete(
-            ROUTER9_MODEL, [{"role": "user", "content": "hi"}],
+            ROUTER9_MODEL,
+            [{"role": "user", "content": "hi"}],
         )
 
     assert response.metadata == {
@@ -218,7 +219,8 @@ async def test_fallback_route_stamps_the_serving_provider_not_the_prefix() -> No
 
     with patch("litellm.acompletion", new=_scripted_acompletion("WORKER OUTPUT")):
         response = await gateway.complete(
-            ANTHROPIC_MODEL, [{"role": "user", "content": "hi"}],
+            ANTHROPIC_MODEL,
+            [{"role": "user", "content": "hi"}],
         )
 
     assert ANTHROPIC_MODEL.split("/", 1)[0] == "anthropic"  # the prefix
@@ -231,10 +233,13 @@ async def test_circuit_fast_fail_carries_the_route_it_refused() -> None:
     """The route is resolved before the breaker check, so the skipped provider
     is attributable instead of invisible."""
     config = _config(
-        circuit_breakers={"default": {
-            "failure_threshold": 1, "recovery_timeout_s": 60,
-            "half_open_max_requests": 1,
-        }},
+        circuit_breakers={
+            "default": {
+                "failure_threshold": 1,
+                "recovery_timeout_s": 60,
+                "half_open_max_requests": 1,
+            }
+        },
     )
     gateway = LiteLLMGateway(config)
 
@@ -258,15 +263,13 @@ async def test_route_attribution_defaults_are_empty_without_metadata() -> None:
     bare = GatewayResponse(text="x", model=ROUTER9_MODEL, tokens_input=0, tokens_output=0)
     assert _route_attribution(bare) == ("", "", "")
 
-    nulled = GatewayResponse(text="x", model=ROUTER9_MODEL, tokens_input=0,
-                             tokens_output=0, metadata=None)  # type: ignore[arg-type]
+    nulled = GatewayResponse(text="x", model=ROUTER9_MODEL, tokens_input=0, tokens_output=0, metadata=None)  # type: ignore[arg-type]
     assert _route_attribution(nulled) == ("", "", "")
 
 
 def test_stage_span_attribution_fields_default_to_empty() -> None:
     """Backward compatibility: existing constructions stay valid and empty."""
-    span = StageSpan(stage_id="w", kind="worker", model=ROUTER9_MODEL,
-                     prompt="p", response="r")
+    span = StageSpan(stage_id="w", kind="worker", model=ROUTER9_MODEL, prompt="p", response="r")
     assert (span.provider, span.wire_model, span.api_base) == ("", "", "")
 
 
@@ -327,14 +330,12 @@ async def test_fallback_route_reports_the_serving_provider_in_the_trace() -> Non
     result = await _deliberate(_config(), _dag(ANTHROPIC_MODEL), _payload(ANTHROPIC_MODEL))
 
     worker = _spans(result)["researcher"]
-    assert worker.model == ANTHROPIC_MODEL          # the catalog id (prefix: anthropic)
-    assert worker.provider == "openrouter"          # the provider that served it
+    assert worker.model == ANTHROPIC_MODEL  # the catalog id (prefix: anthropic)
+    assert worker.provider == "openrouter"  # the provider that served it
     assert worker.wire_model == ANTHROPIC_WIRE_MODEL
 
     # The aggregate here would be exactly the "eyeball the prefix" mistake.
-    serialized = {
-        s["stage_id"]: s for s in result.trace.model_dump(mode="json")["stages"]
-    }
+    serialized = {s["stage_id"]: s for s in result.trace.model_dump(mode="json")["stages"]}
     assert serialized["researcher"]["provider"] != "anthropic"
 
 
@@ -365,20 +366,16 @@ async def test_dispatch_span_carries_the_dispatcher_routes_own_attribution() -> 
         )
 
     dispatch = result.trace.dispatch
-    assert dispatch.model == ROUTER9_MODEL          # the catalog id the caller forced
-    assert dispatch.provider == ROUTER9_PROVIDER    # the provider that served it
+    assert dispatch.model == ROUTER9_MODEL  # the catalog id the caller forced
+    assert dispatch.provider == ROUTER9_PROVIDER  # the provider that served it
     assert dispatch.wire_model == ROUTER9_WIRE_MODEL
     assert dispatch.api_base == ROUTER9_BASE_URL
 
     # The dispatcher route is genuinely one of the attributed routes: the same
     # triple the gateway stamps on a direct call for this model (Layer 1).
     with patch("litellm.acompletion", new=_scripted_acompletion("x")):
-        direct = await LiteLLMGateway(config).complete(
-            ROUTER9_MODEL, [{"role": "user", "content": "hi"}]
-        )
-    assert (dispatch.provider, dispatch.wire_model, dispatch.api_base) == _route_attribution(
-        direct
-    )
+        direct = await LiteLLMGateway(config).complete(ROUTER9_MODEL, [{"role": "user", "content": "hi"}])
+    assert (dispatch.provider, dispatch.wire_model, dispatch.api_base) == _route_attribution(direct)
 
     # ...and it is not what the model-id prefix alone would have produced.
     assert dispatch.api_base != ""
@@ -419,9 +416,7 @@ async def test_dispatch_latency_ms_is_unchanged_by_the_timestamps() -> None:
     from chimera.dispatcher import Dispatcher  # noqa: PLC0415
 
     config = _config()
-    gateway = FakeGateway(lambda model, messages, **kw: resp(
-        _payload(ROUTER9_MODEL), model, 100, 200
-    ))
+    gateway = FakeGateway(lambda model, messages, **kw: resp(_payload(ROUTER9_MODEL), model, 100, 200))
     outcome = await Dispatcher(config, gateway).dispatch("design a system", "auto")
 
     assert isinstance(config, ChimeraConfig)
@@ -477,6 +472,7 @@ async def test_failed_dispatcher_call_keeps_empty_attribution() -> None:
     the real bracket of the failed call.  Attribution is read from the
     response metadata, never reconstructed.
     """
+
     def responder(model, messages, response_format=None, **kw):  # type: ignore[no-untyped-def]
         if response_format is not None:  # the dispatcher call — upstream is down
             raise GatewayError("dispatcher provider down")
@@ -538,16 +534,27 @@ async def test_api_trace_payload_exposes_the_resolved_route() -> None:
     assert trace["dispatch"]["wire_model"] == OPENROUTER_MODEL
     assert trace["dispatch"]["api_base"] == ""
     assert trace["dispatch"]["started_at"] > 0
-    assert (
-        trace["dispatch"]["ended_at"] >= trace["dispatch"]["started_at"] > 0
-    )
+    assert trace["dispatch"]["ended_at"] >= trace["dispatch"]["started_at"] > 0
 
     # Additive only: every pre-existing key survives, with its old meaning.
     assert stages["researcher"]["model"] == ROUTER9_MODEL
     assert set(stages["researcher"]) >= {
-        "stage_id", "kind", "model", "provider", "wire_model", "api_base",
-        "prompt", "response", "tokens_input", "tokens_output", "latency_ms",
-        "cost", "depends_on", "iteration", "started_at", "ended_at",
+        "stage_id",
+        "kind",
+        "model",
+        "provider",
+        "wire_model",
+        "api_base",
+        "prompt",
+        "response",
+        "tokens_input",
+        "tokens_output",
+        "latency_ms",
+        "cost",
+        "depends_on",
+        "iteration",
+        "started_at",
+        "ended_at",
     }
 
 
@@ -557,21 +564,35 @@ async def test_api_trace_payload_exposes_the_resolved_route() -> None:
 
 
 def test_trace_viz_surfaces_the_resolved_provider() -> None:
-    mermaid = trace_to_mermaid({
-        "stages": [{
-            "stage_id": "w1", "kind": "worker", "model": ROUTER9_MODEL,
-            "provider": ROUTER9_PROVIDER, "prompt": "p", "response": "r",
-        }],
-    })
+    mermaid = trace_to_mermaid(
+        {
+            "stages": [
+                {
+                    "stage_id": "w1",
+                    "kind": "worker",
+                    "model": ROUTER9_MODEL,
+                    "provider": ROUTER9_PROVIDER,
+                    "prompt": "p",
+                    "response": "r",
+                }
+            ],
+        }
+    )
     assert "via router9" in mermaid
 
 
 def test_trace_viz_label_is_unchanged_without_a_provider() -> None:
     """Older traces / internal spans keep their existing label byte-for-byte."""
-    mermaid = trace_to_mermaid({
-        "stages": [{
-            "stage_id": "w1", "kind": "worker", "model": "deepseek/deepseek-chat",
-        }],
-    })
+    mermaid = trace_to_mermaid(
+        {
+            "stages": [
+                {
+                    "stage_id": "w1",
+                    "kind": "worker",
+                    "model": "deepseek/deepseek-chat",
+                }
+            ],
+        }
+    )
     assert 'w1["worker\\ndeepseek-chat"]' in mermaid
     assert "via" not in mermaid

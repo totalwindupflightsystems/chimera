@@ -11,8 +11,7 @@ from chimera.gateway import GatewayResponse, LiteLLMGateway, resolve_litellm_mod
 
 
 def _entry(provider: str, litellm_model: str | None = None) -> ModelEntry:
-    return ModelEntry(categories={}, cost_tier="standard", provider=provider,
-                      litellm_model=litellm_model)
+    return ModelEntry(categories={}, cost_tier="standard", provider=provider, litellm_model=litellm_model)
 
 
 def test_zai_provider_uses_openai_compat_with_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -43,9 +42,7 @@ def test_anthropic_and_deepseek_prefixes() -> None:
 
 
 def test_explicit_litellm_model_override() -> None:
-    model, extra = resolve_litellm_model(
-        "anything", _entry("zai", litellm_model="openrouter/some/model")
-    )
+    model, extra = resolve_litellm_model("anything", _entry("zai", litellm_model="openrouter/some/model"))
     assert model == "openrouter/some/model"
     assert extra == {}
 
@@ -65,9 +62,7 @@ def test_extract_text_handles_missing_content() -> None:
     assert _extract_text(empty) == ""
     no_msg = SimpleNamespace(choices=[SimpleNamespace()])
     assert _extract_text(no_msg) == ""
-    with_content = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content="hello"))]
-    )
+    with_content = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="hello"))])
     assert _extract_text(with_content) == "hello"
 
 
@@ -176,7 +171,10 @@ def test_token_limit_field_on_response() -> None:
     from chimera.gateway import GatewayResponse
 
     r = GatewayResponse(
-        text="partial", model="m", tokens_input=100, tokens_output=4096,
+        text="partial",
+        model="m",
+        tokens_input=100,
+        tokens_output=4096,
         finish_reason="length",
     )
     assert r.finish_reason == "length"

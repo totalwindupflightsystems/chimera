@@ -103,7 +103,7 @@ def test_parse_real_mermaid_output() -> None:
         '{"mermaid": "flowchart TB\\n    worker_1\\n\\n    '
         'subgraph Legend\\n    end", "formation": "simple", "stage_count": 3}'
     )
-    raw = 'event: dag_designed\n' + 'data: ' + mermaid_json + '\n'
+    raw = "event: dag_designed\n" + "data: " + mermaid_json + "\n"
 
     events = _parse_sse_events(raw)
     assert len(events) == 1, f"Should be 1 event, got {len(events)}: {events}"
@@ -166,7 +166,7 @@ def test_parse_data_only_no_event() -> None:
 
     This is SSE-spec-legal for unnamed events.
     """
-    raw = "data: {\"silent\": true}\n"
+    raw = 'data: {"silent": true}\n'
     events = _parse_sse_events(raw)
     assert len(events) == 1
     assert "event" not in events[0]

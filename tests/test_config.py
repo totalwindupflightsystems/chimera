@@ -52,8 +52,9 @@ def test_cost_rates_by_tier(config: ChimeraConfig) -> None:
     assert budget.cost_rate_input() == DEFAULT_COST_RATES["budget"][0]
     assert premium.cost_rate_output() == DEFAULT_COST_RATES["premium"][1]
     # explicit override wins
-    override = ModelEntry(categories={}, cost_tier="budget", provider="x",
-                          cost_per_1k_input=0.5, cost_per_1k_output=1.5)
+    override = ModelEntry(
+        categories={}, cost_tier="budget", provider="x", cost_per_1k_input=0.5, cost_per_1k_output=1.5
+    )
     assert override.cost_rate_input() == 0.5
     assert override.cost_rate_output() == 1.5
 
@@ -62,17 +63,20 @@ def test_env_substitution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("CHIMERA_TEST_KEY", "super-secret")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "ds-key")
     doc = {
-        "api_keys": {"deepseek": "${DEEPSEEK_API_KEY}",
-                      "other": "${CHIMERA_TEST_KEY}"},
+        "api_keys": {"deepseek": "${DEEPSEEK_API_KEY}", "other": "${CHIMERA_TEST_KEY}"},
         "providers": {"openrouter": {"base_url": "https://x/${MISSING_VAR}/v1"}},
         "models": {
             "deepseek/deepseek-chat": {
-                "categories": {"code": 90.0}, "cost_tier": "budget", "provider": "openrouter"
+                "categories": {"code": 90.0},
+                "cost_tier": "budget",
+                "provider": "openrouter",
             }
         },
-        "defaults": {"dispatcher": "deepseek/deepseek-chat",
-                     "default_worker": "deepseek/deepseek-chat",
-                     "default_aggregator": "deepseek/deepseek-chat"},
+        "defaults": {
+            "dispatcher": "deepseek/deepseek-chat",
+            "default_worker": "deepseek/deepseek-chat",
+            "default_aggregator": "deepseek/deepseek-chat",
+        },
         "formations": {"auto": {"mode": "auto"}},
     }
     path = tmp_path / "chimera.yaml"
@@ -149,9 +153,7 @@ def test_load_config_normalises_docs_scale_catalog(tmp_path: Path) -> None:
 
 def test_find_config_path_walks_upwards(tmp_path: Path) -> None:
     models_line = (
-        'models:\n'
-        '  "deepseek/deepseek-chat": '
-        "{categories: {}, cost_tier: budget, provider: deepseek}\n"
+        'models:\n  "deepseek/deepseek-chat": {categories: {}, cost_tier: budget, provider: deepseek}\n'
     )
     (tmp_path / "chimera.yaml").write_text(
         'defaults: {dispatcher: "deepseek/deepseek-chat", '
@@ -181,10 +183,7 @@ def test_find_config_path_missing_message_is_actionable(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError) as excinfo:
         find_config_path(tmp_path)
     message = str(excinfo.value)
-    assert (
-        "No chimera.yaml found. Copy chimera.yaml.example to chimera.yaml."
-        in message
-    )
+    assert "No chimera.yaml found. Copy chimera.yaml.example to chimera.yaml." in message
     assert "chimera config init" in message
     assert "\n" not in message
 
@@ -222,9 +221,7 @@ def test_find_example_config_path_package_copy(tmp_path: Path, monkeypatch) -> N
     fake_pkg = tmp_path / "chimera"
     fake_pkg.mkdir()
     (fake_pkg / "chimera.yaml.example").write_text("defaults: {}\n", encoding="utf-8")
-    monkeypatch.setattr(
-        "chimera.config.__file__", str(fake_pkg / "__init__.py")
-    )
+    monkeypatch.setattr("chimera.config.__file__", str(fake_pkg / "__init__.py"))
     empty = tmp_path / "empty"
     empty.mkdir()
     assert find_example_config_path(empty) == fake_pkg / "chimera.yaml.example"
@@ -232,9 +229,7 @@ def test_find_example_config_path_package_copy(tmp_path: Path, monkeypatch) -> N
 
 def test_find_example_config_path_missing(tmp_path: Path, monkeypatch) -> None:
     """No local copy and no package copy → actionable FileNotFoundError."""
-    monkeypatch.setattr(
-        "chimera.config.__file__", str(tmp_path / "config.py")
-    )
+    monkeypatch.setattr("chimera.config.__file__", str(tmp_path / "config.py"))
     with pytest.raises(FileNotFoundError) as excinfo:
         find_example_config_path(tmp_path)
     assert "chimera.yaml.example not found" in str(excinfo.value)
@@ -268,9 +263,7 @@ def test_find_example_config_path_cwd_walk_up_wins_over_repo(tmp_path: Path) -> 
     assert find_example_config_path(nested) == local
 
 
-def test_find_example_config_path_package_location_walk_up(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_find_example_config_path_package_location_walk_up(tmp_path: Path, monkeypatch) -> None:
     """Step 3: walking up from the module location finds a repo template.
 
     Simulates an editable install whose package lives at
@@ -280,12 +273,8 @@ def test_find_example_config_path_package_location_walk_up(
     fake_repo = tmp_path / "fake-repo"
     fake_pkg = fake_repo / "src" / "chimera"
     fake_pkg.mkdir(parents=True)
-    (fake_repo / "chimera.yaml.example").write_text(
-        "defaults: {}\n", encoding="utf-8"
-    )
-    monkeypatch.setattr(
-        "chimera.config.__file__", str(fake_pkg / "config.py")
-    )
+    (fake_repo / "chimera.yaml.example").write_text("defaults: {}\n", encoding="utf-8")
+    monkeypatch.setattr("chimera.config.__file__", str(fake_pkg / "config.py"))
     empty = tmp_path / "empty"
     empty.mkdir()
     assert find_example_config_path(empty) == fake_repo / "chimera.yaml.example"
@@ -330,15 +319,19 @@ def test_config_dag_preset_round_trips(config_file: Path) -> None:
     """A config-defined DAG formation loads through load_config unchanged."""
     # add a dag preset to the raw dict via a fresh file
     import copy
+
     raw = yaml.safe_load(config_file.read_text(encoding="utf-8"))
     raw2 = copy.deepcopy(raw)
     raw2["formations"]["custom-chain"] = {
         "dag": {
             "stages": [
-                {"id": "analyzer", "kind": "worker",
-                 "model": "deepseek/deepseek-chat"},
-                {"id": "finalizer", "kind": "aggregator",
-                 "model": "zai-coding-plan/glm-5.2", "depends_on": ["analyzer"]},
+                {"id": "analyzer", "kind": "worker", "model": "deepseek/deepseek-chat"},
+                {
+                    "id": "finalizer",
+                    "kind": "aggregator",
+                    "model": "zai-coding-plan/glm-5.2",
+                    "depends_on": ["analyzer"],
+                },
             ],
             "edges": [["analyzer", "finalizer"]],
         }
@@ -537,8 +530,7 @@ def test_formation_models_exist_in_catalog() -> None:
             for agg in fm_config.get("aggregators", []):
                 if isinstance(agg, str) and agg not in known_models:
                     raise AssertionError(
-                        f"Formation '{name}' aggregators list references "
-                        f"unknown model '{agg}'."
+                        f"Formation '{name}' aggregators list references unknown model '{agg}'."
                     )
 
 
@@ -558,6 +550,7 @@ class TestModelEnabled:
     def test_enabled_false_parsed_from_yaml(self, tmp_path):
         """YAML with enabled: false should load correctly."""
         import yaml
+
         doc = {
             "api_keys": {},
             "providers": {"deepseek": {"base_url": "https://x.com/v1"}},
@@ -591,12 +584,23 @@ class TestModelEnabled:
     def test_enabled_models_filters_disabled(self, tmp_path):
         """enabled_models property should exclude disabled models."""
         import yaml
+
         doc = {
             "api_keys": {},
             "providers": {"deepseek": {"base_url": "https://x.com/v1"}},
             "models": {
-                "deepseek/a": {"categories": {}, "cost_tier": "budget", "provider": "deepseek", "enabled": False},  # noqa: E501
-                "deepseek/b": {"categories": {}, "cost_tier": "budget", "provider": "deepseek", "enabled": True},  # noqa: E501
+                "deepseek/a": {
+                    "categories": {},
+                    "cost_tier": "budget",
+                    "provider": "deepseek",
+                    "enabled": False,
+                },  # noqa: E501
+                "deepseek/b": {
+                    "categories": {},
+                    "cost_tier": "budget",
+                    "provider": "deepseek",
+                    "enabled": True,
+                },  # noqa: E501
                 "deepseek/c": {"categories": {}, "cost_tier": "budget", "provider": "deepseek"},
             },
             "defaults": {
@@ -617,17 +621,22 @@ class TestModelEnabled:
     def test_catalog_description_excludes_disabled(self, tmp_path):
         """catalog_description() must not mention disabled models."""
         import yaml
+
         doc = {
             "api_keys": {},
             "providers": {"deepseek": {"base_url": "https://x.com/v1"}},
             "models": {
                 "deepseek/disabled-one": {
-                    "categories": {"code": 50.0}, "cost_tier": "budget",
-                    "provider": "deepseek", "enabled": False,
+                    "categories": {"code": 50.0},
+                    "cost_tier": "budget",
+                    "provider": "deepseek",
+                    "enabled": False,
                 },
                 "deepseek/enabled-one": {
-                    "categories": {"code": 90.0}, "cost_tier": "budget",
-                    "provider": "deepseek", "enabled": True,
+                    "categories": {"code": 90.0},
+                    "cost_tier": "budget",
+                    "provider": "deepseek",
+                    "enabled": True,
                 },
             },
             "defaults": {

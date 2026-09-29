@@ -156,6 +156,4 @@ async def test_formations(live_server: str) -> None:
     assert body["auto"].get("mode") == "auto", f"auto formation mode wrong: {body['auto']}"
 
     # simple formation should have workers >= 1
-    assert body["simple"].get("workers", 0) >= 1, (
-        f"simple formation workers wrong: {body['simple']}"
-    )
+    assert body["simple"].get("workers", 0) >= 1, f"simple formation workers wrong: {body['simple']}"

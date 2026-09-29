@@ -206,9 +206,7 @@ def run_check(check: Check, expected_version: str, timeout: int = CHECK_TIMEOUT_
         if proc.returncode != 0:
             return failed(f"exited {proc.returncode} (expected 0): {_one_line(output)}")
         if check.version_expected and not version_token_present(output, expected_version):
-            return failed(
-                f"exit 0 but output lacks version {expected_version!r}: {_one_line(output)}"
-            )
+            return failed(f"exit 0 but output lacks version {expected_version!r}: {_one_line(output)}")
         if check.expect_file is not None and not (Path(workdir) / check.expect_file).is_file():
             return failed(f"exit 0 but {check.expect_file} was not created in the cwd")
 
@@ -243,9 +241,7 @@ def parse_args(argv: list[str]) -> tuple[Path, str]:
     i = 0
     while i < len(argv):
         arg = argv[i]
-        if arg in ("--venv", "--expected-version") or arg.startswith(
-            ("--venv=", "--expected-version=")
-        ):
+        if arg in ("--venv", "--expected-version") or arg.startswith(("--venv=", "--expected-version=")):
             if "=" in arg:
                 option, value = arg.split("=", 1)
                 i += 1

@@ -39,6 +39,7 @@ def _make_server(config):  # type: ignore[no-untyped-def]
 
 def _resp(text, model, ti, to):  # type: ignore[no-untyped-def]
     from chimera.gateway import GatewayResponse
+
     return GatewayResponse(text=text, model=model, tokens_input=ti, tokens_output=to)
 
 
@@ -89,8 +90,10 @@ async def test_mcp_deliberate_progressive(config) -> None:  # type: ignore[no-un
     """Progressive params are accepted by the tool."""
     server = _make_server(config)
     data = await _call(
-        server, "chimera_deliberate",
-        prompt="hello", formation="simple",
+        server,
+        "chimera_deliberate",
+        prompt="hello",
+        formation="simple",
         progressive=True,
         wait_messages=["context chunk 1", "context chunk 2"],
         trigger="Now answer the question",
@@ -102,6 +105,7 @@ async def test_mcp_deliberate_progressive(config) -> None:  # type: ignore[no-un
 # ---------------------------------------------------------------------------
 # DF-CHIMERA-V2-7 — unknown formation on the MCP surface
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_mcp_deliberate_unknown_formation_returns_error(config) -> None:  # type: ignore[no-untyped-def]
@@ -145,17 +149,18 @@ async def test_mcp_explicit_dag_bypasses_formation_validation(config) -> None:  
             calls.append((prompt, formation, kwargs))
             return SimpleNamespace(
                 answer="dag answer",
-                trace=SimpleNamespace(
-                    model_dump=lambda mode: {"formation": formation}
-                ),
+                trace=SimpleNamespace(model_dump=lambda mode: {"formation": formation}),
             )
 
     server = build_server(config=config, engine=DagEngine())
-    dag = {"stages": [{"id": "s1", "kind": "worker", "model": "m",
-                       "depends_on": []}], "edges": []}
+    dag = {"stages": [{"id": "s1", "kind": "worker", "model": "m", "depends_on": []}], "edges": []}
     data = await _call(
-        server, "chimera_deliberate", prompt="hello", formation="nope",
-        dag=dag, allow_custom_dag=True,
+        server,
+        "chimera_deliberate",
+        prompt="hello",
+        formation="nope",
+        dag=dag,
+        allow_custom_dag=True,
     )
     assert data["answer"] == "dag answer"
     assert len(calls) == 1
@@ -175,6 +180,7 @@ def test_mcp_run_with_explicit_config_path(tmp_path) -> None:
     build_mock.assert_called_once()
     # The config passed to build_server must be the one loaded from cfg_file.
     from chimera.config import ChimeraConfig
+
     cfg_arg = build_mock.call_args.args[0]
     assert isinstance(cfg_arg, ChimeraConfig)
     fake_server.run.assert_called_once()
@@ -281,7 +287,8 @@ def test_run_parse_argv_flag(monkeypatch) -> None:  # type: ignore[no-untyped-de
 
 
 def test_build_server_forces_stderr_ignoring_config_use_stdout(
-    monkeypatch, config  # type: ignore[no-untyped-def]
+    monkeypatch,
+    config,  # type: ignore[no-untyped-def]
 ) -> None:
     """The MCP path pins every log sink to stderr even when the injected
     config says ``use_stdout=True`` — a STRUCTURAL override for the stdio
@@ -294,11 +301,7 @@ def test_build_server_forces_stderr_ignoring_config_use_stdout(
     monkeypatch.setattr(obs_mod, "_CONFIGURED_LEVEL", None)
 
     cfg = config.model_copy(
-        update={
-            "observability": config.observability.model_copy(
-                update={"use_stdout": True}
-            )
-        }
+        update={"observability": config.observability.model_copy(update={"use_stdout": True})}
     )
     assert cfg.observability.use_stdout is True
     server = _make_server(cfg)
@@ -389,8 +392,12 @@ async def test_mcp_config_less_deliberate_still_accepts_an_explicit_dag() -> Non
     server = build_server(config=cfg, engine=DagEngine())
     dag = {"stages": [{"id": "s1", "kind": "worker", "model": "m", "depends_on": []}], "edges": []}
     data = await _call(
-        server, "chimera_deliberate", prompt="hello", formation="nope",
-        dag=dag, allow_custom_dag=True,
+        server,
+        "chimera_deliberate",
+        prompt="hello",
+        formation="nope",
+        dag=dag,
+        allow_custom_dag=True,
     )
     assert data["answer"] == "dag answer"
 

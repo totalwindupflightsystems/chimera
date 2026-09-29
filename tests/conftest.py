@@ -73,13 +73,12 @@ def _isolate_blocked_model_registry(
 
     original = blocked_models.shared_registry
     state_path = tmp_path_factory.mktemp("blocked-models") / "blocked-models.json"
-    blocked_models.set_shared_registry(
-        blocked_models.ModelBlockRegistry(state_path=state_path)
-    )
+    blocked_models.set_shared_registry(blocked_models.ModelBlockRegistry(state_path=state_path))
     try:
         yield
     finally:
         blocked_models.set_shared_registry(original)
+
 
 # A compact, deterministic model catalog + formations mirroring chimera.yaml.example
 # (category scores are PERCENT 0-100, the canonical scale the shipped templates,
@@ -95,38 +94,32 @@ CONFIG_DICT: dict[str, Any] = {
     },
     "models": {
         "zai-coding-plan/glm-5.2": {
-            "categories": {"code": 92.0, "analysis": 90.0, "design": 85.0,
-                           "audit": 88.0, "reasoning": 95.0},
+            "categories": {"code": 92.0, "analysis": 90.0, "design": 85.0, "audit": 88.0, "reasoning": 95.0},
             "cost_tier": "premium",
             "provider": "zai",
         },
         "deepseek/deepseek-chat": {
-            "categories": {"code": 95.0, "analysis": 85.0, "design": 40.0,
-                           "audit": 60.0, "reasoning": 80.0},
+            "categories": {"code": 95.0, "analysis": 85.0, "design": 40.0, "audit": 60.0, "reasoning": 80.0},
             "cost_tier": "budget",
             "provider": "openrouter",
         },
         "deepseek/deepseek-v4-flash": {
-            "categories": {"code": 88.0, "analysis": 80.0, "design": 50.0,
-                           "audit": 55.0, "reasoning": 75.0},
+            "categories": {"code": 88.0, "analysis": 80.0, "design": 50.0, "audit": 55.0, "reasoning": 75.0},
             "cost_tier": "budget",
             "provider": "deepseek",
         },
         "openrouter/qwen/qwen3-coder": {
-            "categories": {"code": 91.0, "analysis": 72.0, "design": 45.0,
-                           "audit": 50.0, "reasoning": 68.0},
+            "categories": {"code": 91.0, "analysis": 72.0, "design": 45.0, "audit": 50.0, "reasoning": 68.0},
             "cost_tier": "budget",
             "provider": "openrouter",
         },
         "openrouter/google/gemini-2.5-flash": {
-            "categories": {"code": 70.0, "analysis": 75.0, "design": 90.0,
-                           "audit": 50.0, "reasoning": 65.0},
+            "categories": {"code": 70.0, "analysis": 75.0, "design": 90.0, "audit": 50.0, "reasoning": 65.0},
             "cost_tier": "budget",
             "provider": "openrouter",
         },
         "openrouter/anthropic/claude-sonnet-4": {
-            "categories": {"code": 90.0, "analysis": 92.0, "design": 88.0,
-                           "audit": 85.0, "reasoning": 93.0},
+            "categories": {"code": 90.0, "analysis": 92.0, "design": 88.0, "audit": 85.0, "reasoning": 93.0},
             "cost_tier": "premium",
             "provider": "openrouter",
         },
@@ -158,8 +151,7 @@ CONFIG_DICT: dict[str, Any] = {
             "aggregator": "deepseek/deepseek-v4-flash",
         },
     },
-    "observability": {"log_level": "warning", "trace_enabled": False,
-                      "langfuse": {"enabled": False}},
+    "observability": {"log_level": "warning", "trace_enabled": False, "langfuse": {"enabled": False}},
     "server": {"host": "127.0.0.1", "port": 8000},
 }
 
@@ -197,16 +189,19 @@ class FakeGateway:
         response_format: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> GatewayResponse:
-        self.calls.append((model, messages, {"temperature": temperature,
-                                             "response_format": response_format, **kwargs}))
+        self.calls.append(
+            (model, messages, {"temperature": temperature, "response_format": response_format, **kwargs})
+        )
         if self.responder is not None:
-            result = self.responder(model, messages, response_format=response_format,
-                                    temperature=temperature, **kwargs)
+            result = self.responder(
+                model, messages, response_format=response_format, temperature=temperature, **kwargs
+            )
             if asyncio.iscoroutine(result):
                 return await result
             return result
-        return GatewayResponse(text=f"[fake response from {model}]",
-                               model=model, tokens_input=10, tokens_output=20)
+        return GatewayResponse(
+            text=f"[fake response from {model}]", model=model, tokens_input=10, tokens_output=20
+        )
 
 
 def resp(text: str, model: str, tok_in: int = 12, tok_out: int = 34) -> GatewayResponse:
@@ -224,8 +219,10 @@ def dispatch_json(
 
     ``workers`` is a list of ``(stage_id, model)`` pairs.
     """
-    workers = workers or [("worker_1", "deepseek/deepseek-chat"),
-                          ("worker_2", "openrouter/google/gemini-2.5-flash")]
+    workers = workers or [
+        ("worker_1", "deepseek/deepseek-chat"),
+        ("worker_2", "openrouter/google/gemini-2.5-flash"),
+    ]
     stages: list[dict[str, Any]] = []
     edges: list[list[str]] = []
     worker_ids = []
@@ -233,8 +230,9 @@ def dispatch_json(
         stages.append({"id": wid, "kind": "worker", "model": wmodel, "depends_on": []})
         worker_ids.append(wid)
         edges.append([wid, "aggregator"])
-    stages.append({"id": "aggregator", "kind": "aggregator", "model": aggregator,
-                   "depends_on": list(worker_ids)})
+    stages.append(
+        {"id": "aggregator", "kind": "aggregator", "model": aggregator, "depends_on": list(worker_ids)}
+    )
     worker_prompts = [
         {"stage_id": wid, "model": wm, "prompt": f"Custom subtask for {wid}", "expected_output_schema": None}
         for wid, wm in workers
@@ -256,8 +254,9 @@ def dispatch_json(
     return json.dumps(payload)
 
 
-def make_dispatcher_responder(config: ChimeraConfig,
-                              payload: str | None = None) -> Callable[..., GatewayResponse]:
+def make_dispatcher_responder(
+    config: ChimeraConfig, payload: str | None = None
+) -> Callable[..., GatewayResponse]:
     """A responder that returns ``payload`` JSON for dispatcher calls, canned
     text for everything else (workers/judges)."""
     dispatcher_model = config.defaults.dispatcher

@@ -123,9 +123,7 @@ def _python() -> str:
     return sys.executable
 
 
-def _rule(
-    match: list[str], *, returncode: int = 0, stdout: str = "", stderr: str = ""
-) -> dict[str, Any]:
+def _rule(match: list[str], *, returncode: int = 0, stdout: str = "", stderr: str = "") -> dict[str, Any]:
     return {"match": match, "returncode": returncode, "stdout": stdout, "stderr": stderr}
 
 
@@ -203,8 +201,9 @@ def _run_helper(stub: StubGit, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _github_rules(*, push_rc: int = 0, push_stderr: str = "", ls_remote_sha: str = LOCAL_SHA,
-                  with_discovery: bool = False) -> list[dict[str, Any]]:
+def _github_rules(
+    *, push_rc: int = 0, push_stderr: str = "", ls_remote_sha: str = LOCAL_SHA, with_discovery: bool = False
+) -> list[dict[str, Any]]:
     """Scripted answers for the ``github`` remote (HTTPS URL, SSH fallback)."""
     rules = [
         _rule(["rev-parse", "HEAD"], stdout=f"{LOCAL_SHA}\n"),
@@ -224,9 +223,7 @@ def test_stub_git_shadows_the_real_git(stub_git: StubGit) -> None:
     """The stub is the ONLY git on PATH — for us and for a spawned helper."""
     assert shutil.which("git") == str(stub_git.git_path)
     assert shutil.which("git", path=stub_git.env()["PATH"]) == str(stub_git.git_path)
-    proc = subprocess.run(
-        ["git", "remote"], capture_output=True, text=True, check=False, env=stub_git.env()
-    )
+    proc = subprocess.run(["git", "remote"], capture_output=True, text=True, check=False, env=stub_git.env())
     assert proc.returncode == 1  # unscripted invocation fails loudly by design
     assert "no scripted rule" in proc.stderr
     assert stub_git.argv_list() == [["remote"]]
@@ -261,9 +258,7 @@ def test_ssh_fallback_honours_explicit_ssh_url_override(stub_git: StubGit) -> No
     ]
     stub_git.script(rules)
 
-    proc = _run_helper(
-        stub_git, "--branch", "main", "--remote", "github", "--ssh-fallback-url", override
-    )
+    proc = _run_helper(stub_git, "--branch", "main", "--remote", "github", "--ssh-fallback-url", override)
 
     assert proc.returncode == 0, f"stdout={proc.stdout}\nstderr={proc.stderr}"
     assert ["push", override, "main:refs/heads/main"] in stub_git.argv_list()
@@ -273,12 +268,14 @@ def test_ssh_fallback_honours_explicit_ssh_url_override(stub_git: StubGit) -> No
 def test_ssh_fallback_unavailable_fails_actionably(stub_git: StubGit) -> None:
     """A non-GitHub URL cannot be mangled into an SSH URL: fail, name both options."""
     gitlab_https = "https://gitlab.readydedis.com/totalwindup/chimera.git"
-    stub_git.script([
-        _rule(["rev-parse", "HEAD"], stdout=f"{LOCAL_SHA}\n"),
-        _rule(["push", "origin", "main"], returncode=1, stderr=WORKFLOW_REJECTION),
-        _rule(["remote", "get-url", "origin"], stdout=f"{gitlab_https}\n"),
-        _rule(["ls-remote", "origin", "refs/heads/main"], stdout=f"{LOCAL_SHA}\trefs/heads/main\n"),
-    ])
+    stub_git.script(
+        [
+            _rule(["rev-parse", "HEAD"], stdout=f"{LOCAL_SHA}\n"),
+            _rule(["push", "origin", "main"], returncode=1, stderr=WORKFLOW_REJECTION),
+            _rule(["remote", "get-url", "origin"], stdout=f"{gitlab_https}\n"),
+            _rule(["ls-remote", "origin", "refs/heads/main"], stdout=f"{LOCAL_SHA}\trefs/heads/main\n"),
+        ]
+    )
 
     proc = _run_helper(stub_git, "--branch", "main", "--remote", "origin")
 
@@ -293,8 +290,7 @@ def test_ssh_fallback_unavailable_fails_actionably(stub_git: StubGit) -> None:
 
 def test_parity_mismatch_exits_nonzero_and_names_both_shas(stub_git: StubGit) -> None:
     """A remote that did not receive the commit is a failure, not a warning."""
-    stub_git.script(_github_rules(push_rc=1, push_stderr=WORKFLOW_REJECTION,
-                                  ls_remote_sha=REMOTE_SHA))
+    stub_git.script(_github_rules(push_rc=1, push_stderr=WORKFLOW_REJECTION, ls_remote_sha=REMOTE_SHA))
 
     proc = _run_helper(stub_git, "--branch", "main", "--remote", "github")
 
@@ -310,8 +306,13 @@ def test_parity_failure_on_unreadable_ref_counts_as_failure(stub_git: StubGit) -
     """A failed/unreadable ls-remote is a parity failure, never a silent skip."""
     rules = _github_rules(push_rc=1, push_stderr=WORKFLOW_REJECTION)
     rules = [r for r in rules if r["match"][:1] != ["ls-remote"]]
-    rules.append(_rule(["ls-remote", "github", "refs/heads/main"], returncode=128,
-                       stderr="fatal: could not read from remote repository\n"))
+    rules.append(
+        _rule(
+            ["ls-remote", "github", "refs/heads/main"],
+            returncode=128,
+            stderr="fatal: could not read from remote repository\n",
+        )
+    )
     stub_git.script(rules)
 
     proc = _run_helper(stub_git, "--branch", "main", "--remote", "github")
@@ -326,11 +327,13 @@ def test_parity_failure_on_unreadable_ref_counts_as_failure(stub_git: StubGit) -
 
 def test_unrelated_push_failure_never_falls_back(stub_git: StubGit) -> None:
     """A non-fast-forward rejection must be reported verbatim, with no SSH retry."""
-    stub_git.script([
-        _rule(["rev-parse", "HEAD"], stdout=f"{LOCAL_SHA}\n"),
-        _rule(["push", "origin", "main"], returncode=1, stderr=NON_FAST_FORWARD),
-        _rule(["ls-remote", "origin", "refs/heads/main"], stdout=f"{LOCAL_SHA}\trefs/heads/main\n"),
-    ])
+    stub_git.script(
+        [
+            _rule(["rev-parse", "HEAD"], stdout=f"{LOCAL_SHA}\n"),
+            _rule(["push", "origin", "main"], returncode=1, stderr=NON_FAST_FORWARD),
+            _rule(["ls-remote", "origin", "refs/heads/main"], stdout=f"{LOCAL_SHA}\trefs/heads/main\n"),
+        ]
+    )
 
     proc = _run_helper(stub_git, "--branch", "main", "--remote", "origin")
 

@@ -114,18 +114,14 @@ async def test_independent_workers_run_concurrently(config) -> None:  # type: ig
 
     # Span of the worker wave: parallel ≈ sleep; sequential ≈ 2 * sleep.
     wave_span = max(w["end"] for w in workers) - min(w["start"] for w in workers)
-    assert wave_span < 0.28, (
-        f"workers appear sequential: wave_span={wave_span:.3f}s "
-        f"(timings={workers})"
-    )
+    assert wave_span < 0.28, f"workers appear sequential: wave_span={wave_span:.3f}s (timings={workers})"
 
     # Every pair of workers should overlap substantially.
     for i in range(len(workers)):
         for j in range(i + 1, len(workers)):
             ov = _pairwise_overlap(workers[i], workers[j])
             assert ov > 0.08, (
-                f"no overlap between {workers[i]['label']} and "
-                f"{workers[j]['label']}: overlap={ov:.3f}s"
+                f"no overlap between {workers[i]['label']} and {workers[j]['label']}: overlap={ov:.3f}s"
             )
 
     # StageSpan timestamps also prove overlap.
@@ -193,16 +189,13 @@ async def test_custom_dag_parallel_workers_overlap(config) -> None:  # type: ign
 
     wave_span = max(w["end"] for w in workers) - min(w["start"] for w in workers)
     # Sequential would be ~0.36s; parallel ~0.12s.
-    assert wave_span < 0.22, (
-        f"3-worker wave sequential: wave_span={wave_span:.3f}s timings={workers}"
-    )
+    assert wave_span < 0.22, f"3-worker wave sequential: wave_span={wave_span:.3f}s timings={workers}"
 
     # All three must share a common overlap window.
     latest_start = max(w["start"] for w in workers)
     earliest_end = min(w["end"] for w in workers)
     assert earliest_end - latest_start > 0.05, (
-        f"no common overlap window among 3 workers: "
-        f"latest_start={latest_start}, earliest_end={earliest_end}"
+        f"no common overlap window among 3 workers: latest_start={latest_start}, earliest_end={earliest_end}"
     )
 
     assert result.answer
@@ -253,9 +246,7 @@ async def test_dependent_stages_run_sequentially(config) -> None:  # type: ignor
     # worker_2 must start after worker_1 ends (no true overlap).
     w1 = next(w for w in workers if w["label"] == "worker_1")
     w2 = next(w for w in workers if w["label"] == "worker_2")
-    assert w2["start"] >= w1["end"] - 0.01, (
-        f"dependent worker overlapped predecessor: w1={w1} w2={w2}"
-    )
+    assert w2["start"] >= w1["end"] - 0.01, f"dependent worker overlapped predecessor: w1={w1} w2={w2}"
 
 
 @pytest.mark.asyncio

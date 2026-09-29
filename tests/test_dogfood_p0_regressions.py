@@ -117,9 +117,7 @@ def test_repo_dotenv_beats_hermes_dotenv(monkeypatch, tmp_path) -> None:  # type
     )
     (tmp_path / ".env").write_text(f"{_ENV_KEY}=from-repo-dotenv\n", encoding="utf-8")
     # Seed the hermes dotenv cache directly with a competing value.
-    monkeypatch.setattr(
-        chimera_config, "_hermes_dotenv_cache", {_ENV_KEY: "from-hermes-dotenv"}
-    )
+    monkeypatch.setattr(chimera_config, "_hermes_dotenv_cache", {_ENV_KEY: "from-hermes-dotenv"})
     cfg = chimera_config.load_config(tmp_path / "chimera.yaml")
     assert _provider_key(cfg) == "from-repo-dotenv"
 
@@ -127,6 +125,7 @@ def test_repo_dotenv_beats_hermes_dotenv(monkeypatch, tmp_path) -> None:  # type
 # --------------------------------------------------------------------------- #
 # Bug 2 — no usable answer → HTTP 502 with structured error
 # --------------------------------------------------------------------------- #
+
 
 def _make_client(config, responder):  # type: ignore[no-untyped-def]
     engine = Engine(config, FakeGateway(responder))

@@ -40,9 +40,9 @@ from tests.conftest import CONFIG_DICT
 # Helpers
 # --------------------------------------------------------------------------- #
 
+
 def _entry(provider: str, litellm_model: str | None = None) -> ModelEntry:
-    return ModelEntry(categories={}, cost_tier="standard", provider=provider,
-                      litellm_model=litellm_model)
+    return ModelEntry(categories={}, cost_tier="standard", provider=provider, litellm_model=litellm_model)
 
 
 def _litellm_result(
@@ -62,14 +62,14 @@ def _litellm_result(
         message.reasoning = reasoning
     return SimpleNamespace(
         choices=[SimpleNamespace(finish_reason=finish_reason, message=message)],
-        usage=SimpleNamespace(prompt_tokens=prompt_tokens,
-                              completion_tokens=completion_tokens),
+        usage=SimpleNamespace(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens),
     )
 
 
 # =========================================================================== #
 # F6: Format capability classification
 # =========================================================================== #
+
 
 class TestGetFormatCapability:
     """Cover _get_format_capability for every provider tier."""
@@ -98,6 +98,7 @@ class TestGetFormatCapability:
 # =========================================================================== #
 # F6: Response format negotiation
 # =========================================================================== #
+
 
 class TestNegotiateResponseFormat:
     """Cover negotiate_response_format branches."""
@@ -146,6 +147,7 @@ class TestNegotiateResponseFormat:
 # Model resolution — additional branches
 # =========================================================================== #
 
+
 class TestResolveLiteLLMModel:
     """Cover every provider branch in resolve_litellm_model."""
 
@@ -161,7 +163,8 @@ class TestResolveLiteLLMModel:
 
     def test_anthropic_already_prefixed(self) -> None:
         model, _ = resolve_litellm_model(
-            "anthropic/claude-sonnet-4", _entry("anthropic"),
+            "anthropic/claude-sonnet-4",
+            _entry("anthropic"),
         )
         assert model == "anthropic/claude-sonnet-4"
 
@@ -172,7 +175,9 @@ class TestResolveLiteLLMModel:
 
     def test_api_key_passthrough(self) -> None:
         model, extra = resolve_litellm_model(
-            "gpt-4o", _entry("openai"), api_key="sk-test",
+            "gpt-4o",
+            _entry("openai"),
+            api_key="sk-test",
         )
         assert extra == {"api_key": "sk-test"}
 
@@ -202,11 +207,13 @@ class TestResolveLiteLLMModel:
 # F7: _is_retryable classification
 # =========================================================================== #
 
+
 class TestIsRetryable:
     """Cover _is_retryable across httpx, generic, and non-retryable cases."""
 
     def test_httpx_429_retryable(self) -> None:
         import httpx
+
         req = httpx.Request("POST", "https://api.test.com/v1")
         resp = httpx.Response(429, request=req)
         exc = httpx.HTTPStatusError("rate limited", request=req, response=resp)
@@ -214,6 +221,7 @@ class TestIsRetryable:
 
     def test_httpx_503_retryable(self) -> None:
         import httpx
+
         req = httpx.Request("POST", "https://api.test.com/v1")
         resp = httpx.Response(503, request=req)
         exc = httpx.HTTPStatusError("unavailable", request=req, response=resp)
@@ -221,6 +229,7 @@ class TestIsRetryable:
 
     def test_httpx_401_not_retryable(self) -> None:
         import httpx
+
         req = httpx.Request("POST", "https://api.test.com/v1")
         resp = httpx.Response(401, request=req)
         exc = httpx.HTTPStatusError("unauthorized", request=req, response=resp)
@@ -228,6 +237,7 @@ class TestIsRetryable:
 
     def test_httpx_400_not_retryable(self) -> None:
         import httpx
+
         req = httpx.Request("POST", "https://api.test.com/v1")
         resp = httpx.Response(400, request=req)
         exc = httpx.HTTPStatusError("bad request", request=req, response=resp)
@@ -235,14 +245,17 @@ class TestIsRetryable:
 
     def test_httpx_timeout_retryable(self) -> None:
         import httpx
+
         assert _is_retryable(httpx.TimeoutException("timeout")) is True
 
     def test_httpx_network_error_retryable(self) -> None:
         import httpx
+
         assert _is_retryable(httpx.NetworkError("conn reset")) is True
 
     def test_httpx_connect_error_retryable(self) -> None:
         import httpx
+
         assert _is_retryable(httpx.ConnectError("refused")) is True
 
     def test_generic_exception_not_retryable(self) -> None:
@@ -254,6 +267,7 @@ class TestIsRetryable:
 # =========================================================================== #
 # _litellm_sync_complete (mocked litellm.completion)
 # =========================================================================== #
+
 
 class TestLitellmSyncComplete:
     """Cover _litellm_sync_complete by mocking litellm.completion."""
@@ -327,6 +341,7 @@ class TestLitellmAComplete:
 # _build_response + _extract_text edge cases
 # =========================================================================== #
 
+
 class TestBuildResponseEdgeCases:
     """Cover _build_response and _extract_text edge cases."""
 
@@ -344,10 +359,12 @@ class TestBuildResponseEdgeCases:
 
     def test_build_response_missing_usage(self) -> None:
         result = SimpleNamespace(
-            choices=[SimpleNamespace(
-                finish_reason="stop",
-                message=SimpleNamespace(content="x"),
-            )],
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(content="x"),
+                )
+            ],
         )
         resp = _build_response(result, "m")
         assert resp.tokens_input == 0
@@ -364,10 +381,12 @@ class TestBuildResponseEdgeCases:
     def test_extract_text_reasoning_field_fallback(self) -> None:
         """Cover the 'reasoning' attribute (MiniMax/Kimi)."""
         result = SimpleNamespace(
-            choices=[SimpleNamespace(
-                finish_reason="stop",
-                message=SimpleNamespace(content=None, reasoning="kimi thought"),
-            )],
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(content=None, reasoning="kimi thought"),
+                )
+            ],
         )
         assert _extract_text(result) == "kimi thought"
 
@@ -377,10 +396,12 @@ class TestBuildResponseEdgeCases:
         Non-string content falls through to the str() coercion at the end.
         """
         result = SimpleNamespace(
-            choices=[SimpleNamespace(
-                finish_reason="stop",
-                message=SimpleNamespace(content=42),
-            )],
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(content=42),
+                )
+            ],
         )
         # Non-string content is coerced via str()
         assert _extract_text(result) == "42"
@@ -402,10 +423,12 @@ class TestBuildResponseEdgeCases:
 
     def test_extract_text_whitespace_content_is_empty(self) -> None:
         result = SimpleNamespace(
-            choices=[SimpleNamespace(
-                finish_reason="stop",
-                message=SimpleNamespace(content="   "),
-            )],
+            choices=[
+                SimpleNamespace(
+                    finish_reason="stop",
+                    message=SimpleNamespace(content="   "),
+                )
+            ],
         )
         assert _extract_text(result) == "   "
 
@@ -414,21 +437,25 @@ class TestBuildResponseEdgeCases:
 # _is_budget_exhausted — additional keyword coverage
 # =========================================================================== #
 
+
 class TestIsBudgetExhaustedKeywords:
     """Cover remaining keywords in _is_budget_exhausted."""
 
-    @pytest.mark.parametrize("kw", [
-        "insufficient_quota",
-        "billing",
-        "payment required",
-        "quota exceeded",
-        "rate limit exceeded",
-        "you exceeded your current quota",
-        "insufficient_credits",
-        "account balance",
-        "billing issue",
-        "spending limit",
-    ])
+    @pytest.mark.parametrize(
+        "kw",
+        [
+            "insufficient_quota",
+            "billing",
+            "payment required",
+            "quota exceeded",
+            "rate limit exceeded",
+            "you exceeded your current quota",
+            "insufficient_credits",
+            "account balance",
+            "billing issue",
+            "spending limit",
+        ],
+    )
     def test_all_keywords_detected(self, kw: str) -> None:
         assert _is_budget_exhausted(f"Error: {kw} happened") is True
 
@@ -440,10 +467,13 @@ class TestIsBudgetExhaustedKeywords:
 # _sleep_ms helper
 # =========================================================================== #
 
+
 def test_sleep_ms_divides_by_1000() -> None:
     """Cover _sleep_ms — verifies it actually awaits."""
+
     async def _run() -> float:
         import time
+
         start = time.monotonic()
         await _sleep_ms(50)
         return time.monotonic() - start
@@ -455,6 +485,7 @@ def test_sleep_ms_divides_by_1000() -> None:
 # =========================================================================== #
 # LiteLLMGateway.complete — integration with mocked litellm
 # =========================================================================== #
+
 
 def _gateway_config(**overrides: Any) -> ChimeraConfig:
     """Build a config suitable for LiteLLMGateway tests."""
@@ -508,7 +539,9 @@ class TestLiteLLMGatewayComplete:
         config = _gateway_config()
         # Add a model whose provider is 'moonshot' (JSON_OBJECT capability)
         config.models["moonshot/test-chat"] = ModelEntry(
-            categories={"code": 0.9}, cost_tier="budget", provider="moonshot",
+            categories={"code": 0.9},
+            cost_tier="budget",
+            provider="moonshot",
         )
         gw = LiteLLMGateway(config)
         fake_result = _litellm_result('{"answer": "x"}')
@@ -522,8 +555,7 @@ class TestLiteLLMGatewayComplete:
             await gw.complete(
                 "moonshot/test-chat",
                 [{"role": "user", "content": "hi"}],
-                response_format={"type": "json_schema",
-                                 "json_schema": {"name": "x", "schema": {}}},
+                response_format={"type": "json_schema", "json_schema": {"name": "x", "schema": {}}},
             )
 
         assert captured_kwargs["response_format"] == {"type": "json_object"}
@@ -541,7 +573,9 @@ class TestLiteLLMGatewayComplete:
         config = _gateway_config()
         # Add a text-only model (mistral → NONE capability)
         config.models["test/mistral"] = ModelEntry(
-            categories={"code": 0.5}, cost_tier="standard", provider="mistral",
+            categories={"code": 0.5},
+            cost_tier="standard",
+            provider="mistral",
         )
         gw = LiteLLMGateway(config)
 
@@ -549,8 +583,7 @@ class TestLiteLLMGatewayComplete:
             await gw.complete(
                 "test/mistral",
                 [{"role": "user", "content": "hi"}],
-                response_format={"type": "json_schema",
-                                 "json_schema": {"name": "x", "schema": {}}},
+                response_format={"type": "json_schema", "json_schema": {"name": "x", "schema": {}}},
             )
 
         assert "response_format" not in captured_kwargs
@@ -559,6 +592,7 @@ class TestLiteLLMGatewayComplete:
     async def test_non_retryable_error_raises_gateway_error(self) -> None:
         """400 error → GatewayError immediately, no retry."""
         import httpx
+
         config = _gateway_config(retry={"max_attempts": 3, "base_delay_ms": 1})
         gw = LiteLLMGateway(config)
 
@@ -579,9 +613,14 @@ class TestLiteLLMGatewayComplete:
     async def test_retryable_error_retries_then_succeeds(self) -> None:
         """503 → retry → success on second attempt."""
         import httpx
-        config = _gateway_config(retry={
-            "max_attempts": 3, "base_delay_ms": 1, "max_delay_ms": 5,
-        })
+
+        config = _gateway_config(
+            retry={
+                "max_attempts": 3,
+                "base_delay_ms": 1,
+                "max_delay_ms": 5,
+            }
+        )
         gw = LiteLLMGateway(config)
 
         req = httpx.Request("POST", "https://api.test.com/v1")
@@ -590,6 +629,7 @@ class TestLiteLLMGatewayComplete:
         fake_result = _litellm_result("recovered")
 
         call_count = 0
+
         def flaky(**kwargs: Any) -> Any:
             nonlocal call_count
             call_count += 1
@@ -610,9 +650,14 @@ class TestLiteLLMGatewayComplete:
     async def test_retry_exhausted_raises_gateway_error(self) -> None:
         """All retries fail → GatewayError."""
         import httpx
-        config = _gateway_config(retry={
-            "max_attempts": 2, "base_delay_ms": 1, "max_delay_ms": 5,
-        })
+
+        config = _gateway_config(
+            retry={
+                "max_attempts": 2,
+                "base_delay_ms": 1,
+                "max_delay_ms": 5,
+            }
+        )
         gw = LiteLLMGateway(config)
 
         req = httpx.Request("POST", "https://api.test.com/v1")
@@ -641,13 +686,19 @@ class TestLiteLLMGatewayComplete:
         keeps the provider's status code.
         """
         import httpx
-        config = _gateway_config(retry={
-            "max_attempts": 3, "base_delay_ms": 500, "max_delay_ms": 1000,
-        })
+
+        config = _gateway_config(
+            retry={
+                "max_attempts": 3,
+                "base_delay_ms": 500,
+                "max_delay_ms": 1000,
+            }
+        )
         gw = LiteLLMGateway(config)
 
         req = httpx.Request(
-            "POST", "https://api.z.ai/api/coding/paas/v4/chat/completions",
+            "POST",
+            "https://api.z.ai/api/coding/paas/v4/chat/completions",
         )
         resp_429 = httpx.Response(429, request=req)
         exc = httpx.HTTPStatusError("rate limited", request=req, response=resp_429)
@@ -680,7 +731,10 @@ class TestLiteLLMGatewayComplete:
         config = _gateway_config(retry={"max_attempts": 3, "base_delay_ms": 500})
         gw = LiteLLMGateway(config)
         fake_result = _litellm_result(
-            "pong", finish_reason="length", prompt_tokens=7, completion_tokens=1,
+            "pong",
+            finish_reason="length",
+            prompt_tokens=7,
+            completion_tokens=1,
         )
 
         with patch("litellm.acompletion", return_value=fake_result) as mock:
@@ -699,9 +753,14 @@ class TestLiteLLMGatewayComplete:
     async def test_non_probe_retryable_error_still_uses_full_ladder(self) -> None:
         """The retry ladder is unchanged when probe is False (criterion 3)."""
         import httpx
-        config = _gateway_config(retry={
-            "max_attempts": 3, "base_delay_ms": 500, "max_delay_ms": 1000,
-        })
+
+        config = _gateway_config(
+            retry={
+                "max_attempts": 3,
+                "base_delay_ms": 500,
+                "max_delay_ms": 1000,
+            }
+        )
         gw = LiteLLMGateway(config)
 
         req = httpx.Request("POST", "https://api.z.ai/api/coding/paas/v4/chat/completions")
@@ -731,9 +790,14 @@ class TestLiteLLMGatewayComplete:
     async def test_non_probe_auth_error_short_circuits_without_retry(self) -> None:
         """A 401 stays non-retryable: one attempt, no backoff (criterion 3)."""
         import httpx
-        config = _gateway_config(retry={
-            "max_attempts": 3, "base_delay_ms": 500, "max_delay_ms": 1000,
-        })
+
+        config = _gateway_config(
+            retry={
+                "max_attempts": 3,
+                "base_delay_ms": 500,
+                "max_delay_ms": 1000,
+            }
+        )
         gw = LiteLLMGateway(config)
 
         req = httpx.Request("POST", "https://api.z.ai/api/coding/paas/v4/chat/completions")
@@ -822,6 +886,7 @@ class TestLiteLLMGatewayComplete:
         assert breaker is not None
         breaker.on_failure()
         from chimera.circuit_breaker import CircuitState
+
         assert breaker.state == CircuitState.OPEN
 
         # Now the next call should fast-fail without hitting litellm
@@ -862,6 +927,7 @@ class TestLiteLLMGatewayComplete:
     async def test_circuit_breaker_failure_on_error(self) -> None:
         """Gateway error marks the circuit breaker on_failure."""
         import httpx
+
         cfg_dict = dict(CONFIG_DICT)
         cfg_dict["circuit_breakers"] = {
             "default": {"failure_threshold": 5, "recovery_timeout_s": 30},
@@ -950,7 +1016,8 @@ class TestResolveGoogleProvider:
     def test_google_provider_strips_google_prefix(self) -> None:
         """``google/gemini-2.5-pro`` → ``gemini/gemini-2.5-pro``."""
         model, extra = resolve_litellm_model(
-            "google/gemini-2.5-pro", _entry("google"),
+            "google/gemini-2.5-pro",
+            _entry("google"),
         )
         assert model == "gemini/gemini-2.5-pro"
         assert extra == {}
@@ -967,7 +1034,8 @@ class TestResolveGoogleProvider:
         # segment to literally start with 'gemini/'. This isn't reachable in
         # practice, so we just confirm the routing function is robust.
         model, extra = resolve_litellm_model(
-            "google/gemini-2.5-pro", _entry("google"),
+            "google/gemini-2.5-pro",
+            _entry("google"),
         )
         assert model == "gemini/gemini-2.5-pro"
         assert extra == {}
@@ -979,6 +1047,7 @@ class TestIsRetryableOpenAIErrors:
     def _fake_request(self) -> Any:
         """Build a real httpx.Request for openai exception constructors."""
         import httpx
+
         return httpx.Request("POST", "https://api.test.com/v1")
 
     def test_openai_apiconnection_error_is_retryable(self) -> None:
@@ -1004,6 +1073,7 @@ class TestIsRetryableOpenAIErrors:
             import openai
         except ImportError:
             pytest.skip("openai not installed")
+
         class FakeStatusError(openai.OpenAIError):
             status_code = 429
 
@@ -1017,6 +1087,7 @@ class TestIsRetryableOpenAIErrors:
             import openai
         except ImportError:
             pytest.skip("openai not installed")
+
         class FakeStatusError(openai.OpenAIError):
             status_code = 401
 
@@ -1045,9 +1116,11 @@ class TestIsRetryableLiteLLMErrors:
         import types
 
         fake = types.ModuleType("openai")
+
         # Provide a base class so the inner isinstance still finds something.
         class _BaseError(Exception):
             pass
+
         fake.OpenAIError = _BaseError
         fake.APIConnectionError = type("APIConnectionError", (_BaseError,), {})
         fake.APITimeoutError = type("APITimeoutError", (_BaseError,), {})
@@ -1057,7 +1130,8 @@ class TestIsRetryableLiteLLMErrors:
         monkeypatch.setitem(sys.modules, "openai", fake)
 
     def test_litellm_apierror_with_retryable_status(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         self._stub_openai(monkeypatch)
         try:
@@ -1068,21 +1142,25 @@ class TestIsRetryableLiteLLMErrors:
         # ``openai.OpenAIError`` (the stub's base class), so the openai branch
         # is skipped → we fall through to the litellm branch.
         err = lexc.APIError(
-            status_code=503, message="boom",
-            llm_provider="x", model="m",
+            status_code=503,
+            message="boom",
+            llm_provider="x",
+            model="m",
         )
         # The litellm branch hits ``isinstance APIError and has status_code`` →
         # ``status_code in _RETRYABLE`` → returns True.
         assert _is_retryable(err) is True
 
     def test_litellm_apiconnection_is_retryable(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         self._stub_openai(monkeypatch)
         try:
             import litellm.exceptions  # noqa: F401 — import is the availability check
         except ImportError:
             pytest.skip("litellm not installed")
+
         # Build an APIConnectionError whose real base is openai.OpenAIError,
         # but the stub's openai.OpenAIError is the small base class — so
         # isinstance(err, openai.OpenAIError) checks via the stub are False.
@@ -1091,6 +1169,7 @@ class TestIsRetryableLiteLLMErrors:
         # but not the openai check.
         class FakeConn:
             pass
+
         # We cannot use lexc.APIConnectionError because its mro includes
         # openai.OpenAIError regardless of the stub. Skip the literal
         # APIConnectionError test; instead we test the litellm branch via
@@ -1100,7 +1179,8 @@ class TestIsRetryableLiteLLMErrors:
         pytest.skip("litellm.APIConnectionError still inherits from real openai.OpenAIError")
 
     def test_litellm_apierror_without_retryable_status_not_retryable(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """APIError with non-retryable status_code via the litellm branch → False."""
         self._stub_openai(monkeypatch)
@@ -1109,8 +1189,10 @@ class TestIsRetryableLiteLLMErrors:
         except ImportError:
             pytest.skip("litellm not installed")
         err = lexc.APIError(
-            status_code=400, message="bad request",
-            llm_provider="x", model="m",
+            status_code=400,
+            message="bad request",
+            llm_provider="x",
+            model="m",
         )
         assert _is_retryable(err) is False
 
@@ -1132,7 +1214,8 @@ class TestAnthropicFallback:
         }
         cfg_dict["models"] = {
             "anthropic/claude-sonnet-4": {
-                "categories": {}, "cost_tier": "premium",
+                "categories": {},
+                "cost_tier": "premium",
                 "provider": "anthropic",
             },
         }
@@ -1153,10 +1236,13 @@ class TestAnthropicFallback:
         # Patch via the gateway's internals so we can inspect model routing.
         with patch("litellm.acompletion", side_effect=capture_acomplete):
             import asyncio
-            response = asyncio.run(gw.complete(
-                "anthropic/claude-sonnet-4",
-                [{"role": "user", "content": "hi"}],
-            ))
+
+            response = asyncio.run(
+                gw.complete(
+                    "anthropic/claude-sonnet-4",
+                    [{"role": "user", "content": "hi"}],
+                )
+            )
         assert response.text == "ok"
         # The model should have been routed via openrouter.
         assert captured, "acompletion should have been called"
@@ -1168,6 +1254,7 @@ class TestExtractTextEdgeCases:
 
     def test_choices_object_with_zero_len_but_truthy(self) -> None:
         """A choices object with __len__==0 but __bool__==True hits line 610."""
+
         # Build a list subclass whose bool is True but len is 0.
         class StrangeChoices(list):  # type: ignore[type-arg]
             def __bool__(self) -> bool:
@@ -1188,6 +1275,7 @@ class TestGatewayExecutorNoRunningLoop:
         """When there's no running event loop, the executor setup falls through
         the ``RuntimeError`` branch (lines 49-50)."""
         import chimera.gateway as gw_mod
+
         # Reset module state to force re-init.
         gw_mod._GATEWAY_EXECUTOR = None
         # Call without a running loop — should not raise.

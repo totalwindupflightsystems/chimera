@@ -16,18 +16,28 @@ def _make_dispatch(aggregator_instructions: str = "Merge A and B.") -> DispatchR
         stages=[
             Stage(id="worker_1", kind="worker", model="deepseek/deepseek-chat"),
             Stage(id="worker_2", kind="worker", model="openrouter/google/gemini-2.5-flash"),
-            Stage(id="aggregator", kind="aggregator", model="zai-coding-plan/glm-5.2",
-                  depends_on=["worker_1", "worker_2"]),
+            Stage(
+                id="aggregator",
+                kind="aggregator",
+                model="zai-coding-plan/glm-5.2",
+                depends_on=["worker_1", "worker_2"],
+            ),
         ],
         edges=[("worker_1", "aggregator"), ("worker_2", "aggregator")],
     )
     return DispatchResult(
         formation=dag,
         worker_prompts=[
-            WorkerPrompt(stage_id="worker_1", model="deepseek/deepseek-chat",
-                         prompt="Implement the service boundaries."),
-            WorkerPrompt(stage_id="worker_2", model="openrouter/google/gemini-2.5-flash",
-                         prompt="Design the system architecture."),
+            WorkerPrompt(
+                stage_id="worker_1",
+                model="deepseek/deepseek-chat",
+                prompt="Implement the service boundaries.",
+            ),
+            WorkerPrompt(
+                stage_id="worker_2",
+                model="openrouter/google/gemini-2.5-flash",
+                prompt="Design the system architecture.",
+            ),
         ],
         aggregator_instructions=aggregator_instructions,
     )
@@ -35,12 +45,18 @@ def _make_dispatch(aggregator_instructions: str = "Merge A and B.") -> DispatchR
 
 def _make_deps() -> list[StageResult]:
     return [
-        StageResult(stage_id="worker_1", model="deepseek/deepseek-chat",
-                    prompt="Implement the service boundaries.",
-                    response=resp("order-service, payment-service", "deepseek/deepseek-chat")),
-        StageResult(stage_id="worker_2", model="openrouter/google/gemini-2.5-flash",
-                    prompt="Design the system architecture.",
-                    response=resp("API gateway + microservices", "openrouter/google/gemini-2.5-flash")),
+        StageResult(
+            stage_id="worker_1",
+            model="deepseek/deepseek-chat",
+            prompt="Implement the service boundaries.",
+            response=resp("order-service, payment-service", "deepseek/deepseek-chat"),
+        ),
+        StageResult(
+            stage_id="worker_2",
+            model="openrouter/google/gemini-2.5-flash",
+            prompt="Design the system architecture.",
+            response=resp("API gateway + microservices", "openrouter/google/gemini-2.5-flash"),
+        ),
     ]
 
 
@@ -99,10 +115,7 @@ async def test_aggregator_execute_calls_correct_model(config) -> None:  # type: 
 def _make_big_dispatch(worker_count: int = 3) -> DispatchResult:
     """A 3-worker dispatch with customisable per-worker output sizes."""
     dag = FormationDAG(
-        stages=[
-            Stage(id=f"worker_{i}", kind="worker", model="m")
-            for i in range(1, worker_count + 1)
-        ]
+        stages=[Stage(id=f"worker_{i}", kind="worker", model="m") for i in range(1, worker_count + 1)]
         + [
             Stage(
                 id="aggregator",
@@ -111,9 +124,7 @@ def _make_big_dispatch(worker_count: int = 3) -> DispatchResult:
                 depends_on=[f"worker_{i}" for i in range(1, worker_count + 1)],
             )
         ],
-        edges=[
-            (f"worker_{i}", "aggregator") for i in range(1, worker_count + 1)
-        ],
+        edges=[(f"worker_{i}", "aggregator") for i in range(1, worker_count + 1)],
     )
     return DispatchResult(
         formation=dag,
@@ -148,7 +159,11 @@ def test_no_truncation_when_outputs_fit_budget() -> None:
 
     with structlog.testing.capture_logs() as logs:
         msgs = build_merge_prompt(
-            stage, dispatch, deps, "user prompt", max_prompt_tokens=10_000,
+            stage,
+            dispatch,
+            deps,
+            "user prompt",
+            max_prompt_tokens=10_000,
         )
     user_msg = msgs[1]["content"]
 
@@ -158,9 +173,7 @@ def test_no_truncation_when_outputs_fit_budget() -> None:
     assert "short output C" in user_msg
     # No [TRUNCATED] tag is emitted and no warning is logged.
     assert "[TRUNCATED]" not in user_msg
-    assert all(
-        ev.get("event") != "aggregator_prompt_truncated" for ev in logs
-    )
+    assert all(ev.get("event") != "aggregator_prompt_truncated" for ev in logs)
 
 
 def test_truncation_when_outputs_exceed_budget() -> None:
@@ -172,7 +185,11 @@ def test_truncation_when_outputs_exceed_budget() -> None:
 
     with structlog.testing.capture_logs() as logs:
         msgs = build_merge_prompt(
-            stage, dispatch, deps, "user prompt", max_prompt_tokens=500,
+            stage,
+            dispatch,
+            deps,
+            "user prompt",
+            max_prompt_tokens=500,
         )
     user_msg = msgs[1]["content"]
 
@@ -191,9 +208,7 @@ def test_truncation_when_outputs_exceed_budget() -> None:
     assert "A" * 10_000 not in user_msg
 
     # A warning log was emitted with the right shape.
-    trunc_events = [
-        ev for ev in logs if ev.get("event") == "aggregator_prompt_truncated"
-    ]
+    trunc_events = [ev for ev in logs if ev.get("event") == "aggregator_prompt_truncated"]
     assert len(trunc_events) == 1
     ev = trunc_events[0]
     assert ev["stage"] == "aggregator"
@@ -219,7 +234,11 @@ def test_degraded_outputs_preserved_through_truncation() -> None:
 
     with structlog.testing.capture_logs():
         msgs = build_merge_prompt(
-            stage, dispatch, deps, "user prompt", max_prompt_tokens=300,
+            stage,
+            dispatch,
+            deps,
+            "user prompt",
+            max_prompt_tokens=300,
         )
     user_msg = msgs[1]["content"]
 
@@ -239,7 +258,11 @@ def test_truncation_warning_log_contains_diagnostics() -> None:
 
     with structlog.testing.capture_logs() as logs:
         build_merge_prompt(
-            stage, dispatch, deps, "user prompt", max_prompt_tokens=200,
+            stage,
+            dispatch,
+            deps,
+            "user prompt",
+            max_prompt_tokens=200,
         )
 
     events = [ev for ev in logs if ev.get("event") == "aggregator_prompt_truncated"]
@@ -277,24 +300,29 @@ def test_max_prompt_tokens_default_is_unlimited() -> None:
 def test_chimera_config_has_max_aggregator_context_tokens() -> None:
     """The config field exists and defaults to None (no cap)."""
     from chimera.config import ChimeraConfig
-    cfg = ChimeraConfig.model_validate({
-        "defaults": {
-            "dispatcher": "m",
-            "default_worker": "m",
-            "default_aggregator": "m",
+
+    cfg = ChimeraConfig.model_validate(
+        {
+            "defaults": {
+                "dispatcher": "m",
+                "default_worker": "m",
+                "default_aggregator": "m",
+            }
         }
-    })
+    )
     assert hasattr(cfg, "max_aggregator_context_tokens")
     assert cfg.max_aggregator_context_tokens is None
     # And can be set to an int.
-    cfg2 = ChimeraConfig.model_validate({
-        "defaults": {
-            "dispatcher": "m",
-            "default_worker": "m",
-            "default_aggregator": "m",
-        },
-        "max_aggregator_context_tokens": 8000,
-    })
+    cfg2 = ChimeraConfig.model_validate(
+        {
+            "defaults": {
+                "dispatcher": "m",
+                "default_worker": "m",
+                "default_aggregator": "m",
+            },
+            "max_aggregator_context_tokens": 8000,
+        }
+    )
     assert cfg2.max_aggregator_context_tokens == 8000
 
 
@@ -308,11 +336,15 @@ async def test_aggregator_uses_config_max_aggregator_context_tokens(config) -> N
     deps = _make_deps()
     # Blow up the deps' outputs.
     deps[0] = StageResult(
-        stage_id="worker_1", model=deps[0].model, prompt=deps[0].prompt,
+        stage_id="worker_1",
+        model=deps[0].model,
+        prompt=deps[0].prompt,
         response=resp("X" * 8_000, deps[0].model),
     )
     deps[1] = StageResult(
-        stage_id="worker_2", model=deps[1].model, prompt=deps[1].prompt,
+        stage_id="worker_2",
+        model=deps[1].model,
+        prompt=deps[1].prompt,
         response=resp("Y" * 8_000, deps[1].model),
     )
 

@@ -75,9 +75,9 @@ async def test_e2e_full_pipeline(config) -> None:  # type: ignore[no-untyped-def
     # ---- Correct model assignments (category-weighted routing) ----
     code_worker = next(w for w in trace.workers if w.stage_id == "worker_code")
     design_worker = next(w for w in trace.workers if w.stage_id == "worker_design")
-    assert code_worker.model == "deepseek/deepseek-chat"      # code=95.0
+    assert code_worker.model == "deepseek/deepseek-chat"  # code=95.0
     assert design_worker.model == "openrouter/google/gemini-2.5-flash"  # design=90.0
-    assert trace.aggregator.model == "zai-coding-plan/glm-5.2"     # premium reasoning
+    assert trace.aggregator.model == "zai-coding-plan/glm-5.2"  # premium reasoning
 
     # ---- Custom (non-identical) worker prompts ----
     assert code_worker.prompt != design_worker.prompt
@@ -96,8 +96,8 @@ async def test_e2e_full_pipeline(config) -> None:  # type: ignore[no-untyped-def
 
     # ---- The dispatcher saw the model catalog with category weights ----
     dispatch_prompt = dispatcher_calls[0][1][0]["content"]
-    assert "code=95.00" in dispatch_prompt       # DeepSeek strength
-    assert "design=90.00" in dispatch_prompt     # Gemini strength
+    assert "code=95.00" in dispatch_prompt  # DeepSeek strength
+    assert "design=90.00" in dispatch_prompt  # Gemini strength
     assert "reasoning=95.00" in dispatch_prompt  # GLM strength
 
 

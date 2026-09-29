@@ -52,8 +52,7 @@ _RATE_METHOD = {
 
 def _client(config):  # type: ignore[no-untyped-def]
     def responder(model, messages, response_format=None, **kw):
-        return GatewayResponse(text=f"worker {model}", model=model,
-                               tokens_input=1, tokens_output=1)
+        return GatewayResponse(text=f"worker {model}", model=model, tokens_input=1, tokens_output=1)
 
     app = create_app(config=config, engine=Engine(config, FakeGateway(responder)))
     return TestClient(app)
@@ -79,9 +78,7 @@ def test_models_top_level_is_list_envelope(config) -> None:  # type: ignore[no-u
     assert isinstance(body["data"], list)
     assert isinstance(body["catalog"], dict)
     # The old shape put model ids at the top level; none may remain.
-    assert not any(k in body for k in config.models), [
-        k for k in config.models if k in body
-    ]
+    assert not any(k in body for k in config.models), [k for k in config.models if k in body]
 
 
 def test_models_is_json_serializable_with_no_none_data(config) -> None:  # type: ignore[no-untyped-def]
@@ -111,9 +108,7 @@ def test_models_data_entries_are_openai_model_objects(config) -> None:  # type: 
         assert isinstance(entry["created"], int)
         assert not isinstance(entry["created"], bool)  # bool is an int subclass
         assert isinstance(entry["owned_by"], str) and entry["owned_by"]
-        assert set(entry["categories"]) == set(
-            config.models[entry["id"]].categories
-        )
+        assert set(entry["categories"]) == set(config.models[entry["id"]].categories)
 
 
 def test_models_ids_match_catalog_keys_and_config(config) -> None:  # type: ignore[no-untyped-def]
@@ -176,10 +171,10 @@ def test_models_iterating_data_yields_the_legacy_id_set(config) -> None:  # type
 #: tiers) so the fix stays anchored to the real defect, not to a fixture that
 #: happens to be convenient.
 _LIVE_NULL_IDS = {
-    "router9/ds/deepseek-v4-flash": "budget",      # → 0.00014 / 0.00028
+    "router9/ds/deepseek-v4-flash": "budget",  # → 0.00014 / 0.00028
     "router9/ds/deepseek-v4-pro": "budget",
     "router9/mmx/MiniMax-M3": "budget",
-    "router9/xai/grok-4": "standard",              # → 0.0005 / 0.0015
+    "router9/xai/grok-4": "standard",  # → 0.0005 / 0.0015
     "router9/openrouter/x-ai/grok-4.6": "premium",  # → 0.003 / 0.015
 }
 #: One of the 7 live-null ids plus an explicit-rate id, an unknown-tier id and
@@ -277,12 +272,8 @@ def test_live_null_ids_serve_the_tier_default_they_are_billed_at() -> None:
     config = _chgap055_config()
     body = _fetch(_client(config))
 
-    assert body["catalog"]["router9/ds/deepseek-v4-flash"]["cost_per_1k_input"] == (
-        pytest.approx(0.00014)
-    )
-    assert body["catalog"]["router9/ds/deepseek-v4-flash"]["cost_per_1k_output"] == (
-        pytest.approx(0.00028)
-    )
+    assert body["catalog"]["router9/ds/deepseek-v4-flash"]["cost_per_1k_input"] == (pytest.approx(0.00014))
+    assert body["catalog"]["router9/ds/deepseek-v4-flash"]["cost_per_1k_output"] == (pytest.approx(0.00028))
 
     for model_id, tier in _LIVE_NULL_IDS.items():
         payload = body["catalog"][model_id]
@@ -312,12 +303,8 @@ def test_explicit_rates_still_win_over_the_tier_default() -> None:
     config.models["deepseek/deepseek-v4-flash"].cost_per_1k_output = 0.0299
     body = _fetch(_client(config))
 
-    assert body["catalog"]["deepseek/deepseek-v4-flash"]["cost_per_1k_input"] == (
-        pytest.approx(0.0099)
-    )
-    assert body["catalog"]["deepseek/deepseek-v4-flash"]["cost_per_1k_output"] == (
-        pytest.approx(0.0299)
-    )
+    assert body["catalog"]["deepseek/deepseek-v4-flash"]["cost_per_1k_input"] == (pytest.approx(0.0099))
+    assert body["catalog"]["deepseek/deepseek-v4-flash"]["cost_per_1k_output"] == (pytest.approx(0.0299))
     assert body["catalog"]["deepseek/deepseek-v4-flash"]["cost_per_1k_input"] == (
         pytest.approx(entry.cost_rate_input())
     )
@@ -356,10 +343,7 @@ def test_served_price_equals_the_billed_price_via_engine_stage_cost() -> None:
 
     for model_id, payload in body["catalog"].items():
         charged = _stage_cost(model_id, config, tokens_input=1000, tokens_output=1000)
-        served = (
-            payload["cost_per_1k_input"] * 1000 / 1000.0
-            + payload["cost_per_1k_output"] * 1000 / 1000.0
-        )
+        served = payload["cost_per_1k_input"] * 1000 / 1000.0 + payload["cost_per_1k_output"] * 1000 / 1000.0
         assert served == pytest.approx(charged), model_id
         assert charged > 0.0, model_id
 
@@ -378,11 +362,7 @@ def test_shared_fixture_catalog_prices_through_the_route(config) -> None:  # typ
     """The repo-wide ``config`` fixture (no explicit rates anywhere) prices too."""
     body = _fetch(_client(config))
 
-    explicit_free = [
-        model_id
-        for model_id, entry in config.models.items()
-        if entry.cost_per_1k_input is None
-    ]
+    explicit_free = [model_id for model_id, entry in config.models.items() if entry.cost_per_1k_input is None]
     assert explicit_free, (
         "fixture premise: at least one model must declare no explicit rate, "
         "or this test cannot observe the fallback"

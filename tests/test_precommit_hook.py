@@ -289,9 +289,7 @@ def test_degraded_run_warns_by_name_and_still_commits(tmp_path: Path) -> None:
 
     assert run.rc == 0, f"a DEGRADED run must not block the commit:\n{run.output}"
     assert "DEGRADED" in run.stderr, run.output
-    assert "no LSP tool on PATH" in run.stderr, (
-        f"the warning does not name the skipped lane:\n{run.stderr}"
-    )
+    assert "no LSP tool on PATH" in run.stderr, f"the warning does not name the skipped lane:\n{run.stderr}"
     assert "lsp" in run.stderr, run.output
 
 
@@ -305,9 +303,7 @@ def test_missing_engine_warns_and_still_commits(tmp_path: Path) -> None:
 
     assert run.rc == 0, f"a missing engine must not block the commit:\n{run.output}"
     assert "engine not found" in run.stderr.lower(), run.output
-    assert "did NOT run" in run.stderr, (
-        f"the warning does not say the harness was skipped:\n{run.stderr}"
-    )
+    assert "did NOT run" in run.stderr, f"the warning does not say the harness was skipped:\n{run.stderr}"
     assert _stub_calls(env) == [], "no engine was on PATH, so nothing should have run"
 
 
@@ -367,9 +363,7 @@ def test_installer_installs_a_byte_identical_hook(tmp_path: Path) -> None:
 
     again = _run(INSTALLER, repo, env)
     assert again.rc == 0, again.output
-    assert "Already installed" in again.stdout, (
-        f"re-running the installer is not a no-op:\n{again.stdout}"
-    )
+    assert "Already installed" in again.stdout, f"re-running the installer is not a no-op:\n{again.stdout}"
     assert dest.read_bytes() == HOOK_SOURCE.read_bytes()
 
     # The installer must never hijack git's hook lookup: core.hooksPath would
@@ -404,9 +398,7 @@ def test_installer_check_detects_drift_and_dry_run_writes_nothing(tmp_path: Path
     repaired = _run(INSTALLER, repo, env)
     assert repaired.rc == 0, repaired.output
     assert "Installed" in repaired.stdout or "restored" in repaired.stdout, repaired.output
-    assert dest.read_bytes() == HOOK_SOURCE.read_bytes(), (
-        "the installer did not restore the drifted hook"
-    )
+    assert dest.read_bytes() == HOOK_SOURCE.read_bytes(), "the installer did not restore the drifted hook"
     assert drifted != HOOK_SOURCE.read_bytes()
     assert _run(INSTALLER, repo, env, "--check").rc == 0
 
@@ -426,9 +418,7 @@ def test_tracked_hook_delegates_to_the_guard() -> None:
         ".gitreins/pre-commit never invokes `gitreins guard` — the commit-time "
         "gate cannot block on a graded FAIL without it"
     )
-    assert "COMMIT BLOCKED: gitreins guard reported FAIL" in text, (
-        "the hook does not block on a graded FAIL"
-    )
+    assert "COMMIT BLOCKED: gitreins guard reported FAIL" in text, "the hook does not block on a graded FAIL"
     for advisory in ("ISSUES FOUND (non-blocking)", "Tests — FAILED"):
         assert advisory not in text, (
             f"the advisory arm {advisory!r} is back in .gitreins/pre-commit — "
@@ -444,15 +434,9 @@ def test_docs_state_the_commit_time_policy() -> None:
     assert "scripts/install_hooks.sh" in agents, (
         "AGENTS.md does not tell a contributor how the pre-commit hook is installed"
     )
-    assert "scripts/install_hooks.sh" in doc, (
-        "docs/GITREINS.md does not document the installer"
-    )
-    assert "## The pre-commit hook" in doc, (
-        "docs/GITREINS.md has no `## The pre-commit hook` section"
-    )
-    assert "--no-verify" in doc, (
-        "docs/GITREINS.md does not name the only bypass (`git commit --no-verify`)"
-    )
+    assert "scripts/install_hooks.sh" in doc, "docs/GITREINS.md does not document the installer"
+    assert "## The pre-commit hook" in doc, "docs/GITREINS.md has no `## The pre-commit hook` section"
+    assert "--no-verify" in doc, "docs/GITREINS.md does not name the only bypass (`git commit --no-verify`)"
     assert "core.hooksPath" in doc, (
         "docs/GITREINS.md does not explain why the hook is copied rather than "
         "installed through core.hooksPath"

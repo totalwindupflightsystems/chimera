@@ -37,13 +37,10 @@ def _parse_init_imports() -> tuple[set[str], list[str]]:
                     and target.id == "__all__"
                     and isinstance(node.value, ast.List)
                 ):
-                    all_entries = [
-                        str(e.value)
-                        for e in node.value.elts
-                        if isinstance(e, ast.Constant)
-                    ]
+                    all_entries = [str(e.value) for e in node.value.elts if isinstance(e, ast.Constant)]
 
     return imported, all_entries
+
 
 # Names in __all__ that aren't imports (module-level variables)
 _MODULE_LEVEL_ALLOWLIST = {"__version__"}
@@ -59,8 +56,7 @@ def test_all_exports_match_imports() -> None:
 
     missing = [name for name in all_entries if name not in imported and name not in _MODULE_LEVEL_ALLOWLIST]
     assert not missing, (
-        f"__all__ contains names not imported in __init__.py: {missing}\n"
-        f"Imported names: {sorted(imported)}"
+        f"__all__ contains names not imported in __init__.py: {missing}\nImported names: {sorted(imported)}"
     )
 
 
@@ -75,8 +71,7 @@ def test_imports_are_in_all() -> None:
     # __version__ is a module-level str, not an import — handled specially
     not_exported = sorted(imported - set(all_entries))
     assert not not_exported, (
-        f"Imported names not in __all__: {not_exported}\n"
-        f"Add them to __all__ in src/chimera/__init__.py"
+        f"Imported names not in __all__: {not_exported}\nAdd them to __all__ in src/chimera/__init__.py"
     )
 
 

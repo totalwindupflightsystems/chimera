@@ -26,7 +26,8 @@ import yaml
 _CONFTEST_PATH = Path(__file__).resolve().parent / "integration" / "conftest.py"
 
 _spec = importlib.util.spec_from_file_location(
-    "chimera_integration_conftest_under_test", _CONFTEST_PATH,
+    "chimera_integration_conftest_under_test",
+    _CONFTEST_PATH,
 )
 if _spec is None or _spec.loader is None:  # pragma: no cover - defensive
     raise RuntimeError(f"cannot load the integration conftest from {_CONFTEST_PATH}")
@@ -36,13 +37,7 @@ _spec.loader.exec_module(it_conftest)
 resolve_config_path = it_conftest._resolve_config_path
 
 #: Minimal but realistic config body — parsed by ``yaml.safe_load`` in the tests.
-EXAMPLE_TEXT = (
-    "server:\n"
-    "  host: 127.0.0.1\n"
-    "  port: 8810\n"
-    "auth:\n"
-    "  enabled: false\n"
-)
+EXAMPLE_TEXT = "server:\n  host: 127.0.0.1\n  port: 8810\nauth:\n  enabled: false\n"
 
 
 def _fake_root(tmp_path: Path) -> Path:
@@ -69,7 +64,8 @@ def test_env_var_wins_when_the_file_exists(tmp_path: Path) -> None:
     env_file.write_text("explicit: true\n")
 
     resolved = resolve_config_path(
-        project_root=root, env={"CHIMERA_CONFIG": str(env_file)},
+        project_root=root,
+        env={"CHIMERA_CONFIG": str(env_file)},
     )
 
     assert resolved == env_file
@@ -174,7 +170,8 @@ def test_missing_config_everywhere_raises_with_the_remedy(tmp_path: Path) -> Non
 
 
 def test_env_defaults_to_the_process_environment(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``env=None`` reads ``os.environ``; passing *env* overrides it."""
     root = _fake_root(tmp_path)

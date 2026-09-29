@@ -30,84 +30,141 @@ from chimera import blocked_models
 #: category tree (32 leaf paths).
 PATH_PATTERNS: list[tuple[str, str]] = [
     # ── technology_code ──
-    ("technology_code/code_generation/python",
-     r"(?i)\b(python|py|django|flask|fastapi|pydantic|pip|poetry)\b"),
-    ("technology_code/code_generation/javascript",
-     r"(?i)\b(javascript|js|typescript|ts|node|react|vue|angular|svelte|next|nuxt|npm|yarn)\b"),
-    ("technology_code/code_generation/sql",
-     r"(?i)\b(sql|query|select|insert|update|delete|join|migration|schema|postgres|mysql|sqlite)\b"),
-    ("technology_code/code_generation/shell",
-     r"(?i)\b(shell|bash|sh|zsh|script|cli|terminal|command.*line|awk|sed|grep)\b"),
-    ("technology_code/system_design/architecture",
-     r"(?i)\b(architecture|system.*design|microservice|monolith|scal|distributed|design.*pattern|component|module|layer|abstraction)\b"),
-    ("technology_code/system_design/devops",
-     r"(?i)\b(devops|ci.*cd|deploy|docker|kubernetes|k8s|terraform|ansible|pipeline|infrastructure|cloud|aws|gcp|azure)\b"),
-    ("technology_code/testing_debugging/unit_tests",
-     r"(?i)\b(test|pytest|unittest|jest|mocha|coverage|mock|stub|fixture|assert|tdd)\b"),
-    ("technology_code/testing_debugging/error_analysis",
-     r"(?i)\b(debug|traceback|stack.?trace|exception|error|crash|bug|fix|root.?cause|diagnose|vulnerability|security|exploit|audit.*code|code.*review)\b"),
-    ("technology_code/data_science/analysis",
-     r"(?i)\b(data|dataset|analysis|analytics|statistics|csv|pandas|numpy|jupyter|notebook|visualization|chart|graph|plot|dashboard|metrics|pattern)\b"),
-    ("technology_code/data_science/modeling",
-     r"(?i)\b(model|train|inference|ml|machine.*learning|ai|neural|deep.*learning|regression|classification|clustering|pytorch|tensorflow|sklearn|fine.?tune)\b"),
-    ("technology_code/data_interaction/database/sql",
-     r"(?i)\b(database|db|sql|nosql|mongo|redis|postgres|mysql|sqlite|orm|query)\b"),
-    ("technology_code/data_interaction/file_based/json",
-     r"(?i)\b(json|yaml|toml|csv|xml|parse|serialize|deserialize|marshal|encode|decode)\b"),
-
+    (
+        "technology_code/code_generation/python",
+        r"(?i)\b(python|py|django|flask|fastapi|pydantic|pip|poetry)\b",
+    ),
+    (
+        "technology_code/code_generation/javascript",
+        r"(?i)\b(javascript|js|typescript|ts|node|react|vue|angular|svelte|next|nuxt|npm|yarn)\b",
+    ),
+    (
+        "technology_code/code_generation/sql",
+        r"(?i)\b(sql|query|select|insert|update|delete|join|migration|schema|postgres|mysql|sqlite)\b",
+    ),
+    (
+        "technology_code/code_generation/shell",
+        r"(?i)\b(shell|bash|sh|zsh|script|cli|terminal|command.*line|awk|sed|grep)\b",
+    ),
+    (
+        "technology_code/system_design/architecture",
+        r"(?i)\b(architecture|system.*design|microservice|monolith|scal|distributed|design.*pattern|component|module|layer|abstraction)\b",
+    ),
+    (
+        "technology_code/system_design/devops",
+        r"(?i)\b(devops|ci.*cd|deploy|docker|kubernetes|k8s|terraform|ansible|pipeline|infrastructure|cloud|aws|gcp|azure)\b",
+    ),
+    (
+        "technology_code/testing_debugging/unit_tests",
+        r"(?i)\b(test|pytest|unittest|jest|mocha|coverage|mock|stub|fixture|assert|tdd)\b",
+    ),
+    (
+        "technology_code/testing_debugging/error_analysis",
+        r"(?i)\b(debug|traceback|stack.?trace|exception|error|crash|bug|fix|root.?cause|diagnose|vulnerability|security|exploit|audit.*code|code.*review)\b",
+    ),
+    (
+        "technology_code/data_science/analysis",
+        r"(?i)\b(data|dataset|analysis|analytics|statistics|csv|pandas|numpy|jupyter|notebook|visualization|chart|graph|plot|dashboard|metrics|pattern)\b",
+    ),
+    (
+        "technology_code/data_science/modeling",
+        r"(?i)\b(model|train|inference|ml|machine.*learning|ai|neural|deep.*learning|regression|classification|clustering|pytorch|tensorflow|sklearn|fine.?tune)\b",
+    ),
+    (
+        "technology_code/data_interaction/database/sql",
+        r"(?i)\b(database|db|sql|nosql|mongo|redis|postgres|mysql|sqlite|orm|query)\b",
+    ),
+    (
+        "technology_code/data_interaction/file_based/json",
+        r"(?i)\b(json|yaml|toml|csv|xml|parse|serialize|deserialize|marshal|encode|decode)\b",
+    ),
     # ── complex_reasoning_agency ──
-    ("complex_reasoning_agency/multi_step_planning/task_decomposition",
-     r"(?i)\b(plan|decompose|break.*down|subtask|step|workflow|pipeline|orchestrat|coordinate|multi.?step|sequence)\b"),
-    ("complex_reasoning_agency/tool_use/code_execution",
-     r"(?i)\b(tool|execute|run|automate|agent|autonomous|call|invoke|dispatch|trigger)\b"),
-    ("complex_reasoning_agency/self_correction/debugging",
-     r"(?i)\b(self.?correct|iterate|revise|improve|refine|debug|fix.*error|retry|feedback|learn)\b"),
-
+    (
+        "complex_reasoning_agency/multi_step_planning/task_decomposition",
+        r"(?i)\b(plan|decompose|break.*down|subtask|step|workflow|pipeline|orchestrat|coordinate|multi.?step|sequence)\b",
+    ),
+    (
+        "complex_reasoning_agency/tool_use/code_execution",
+        r"(?i)\b(tool|execute|run|automate|agent|autonomous|call|invoke|dispatch|trigger)\b",
+    ),
+    (
+        "complex_reasoning_agency/self_correction/debugging",
+        r"(?i)\b(self.?correct|iterate|revise|improve|refine|debug|fix.*error|retry|feedback|learn)\b",
+    ),
     # ── academic_scientific ──
-    ("academic_scientific/formal_writing/research_paper",
-     r"(?i)\b(research|paper|thesis|dissertation|academic|journal|cite|reference|literature.*review|bibliography|abstract|methodology)\b"),
-    ("academic_scientific/mathematics/statistics",
-     r"(?i)\b(statistics|probability|distribution|regression|hypothesis|p.?value|confidence|variance|std|deviation|bayesian)\b"),
-    ("academic_scientific/mathematics/algebra",
-     r"(?i)\b(algebra|equation|polynomial|linear|matrix|vector|eigen|determinant|quadratic|factor|proof|prove|theorem|lemma|corollary|number.*theory)\b"),
-    ("academic_scientific/mathematics/calculus",
-     r"(?i)\b(calculus|derivative|integral|limit|differential|gradient|optimization|convergence|series|taylor|rigorous|analysis.*proof)\b"),
-
+    (
+        "academic_scientific/formal_writing/research_paper",
+        r"(?i)\b(research|paper|thesis|dissertation|academic|journal|cite|reference|literature.*review|bibliography|abstract|methodology)\b",
+    ),
+    (
+        "academic_scientific/mathematics/statistics",
+        r"(?i)\b(statistics|probability|distribution|regression|hypothesis|p.?value|confidence|variance|std|deviation|bayesian)\b",
+    ),
+    (
+        "academic_scientific/mathematics/algebra",
+        r"(?i)\b(algebra|equation|polynomial|linear|matrix|vector|eigen|determinant|quadratic|factor|proof|prove|theorem|lemma|corollary|number.*theory)\b",
+    ),
+    (
+        "academic_scientific/mathematics/calculus",
+        r"(?i)\b(calculus|derivative|integral|limit|differential|gradient|optimization|convergence|series|taylor|rigorous|analysis.*proof)\b",
+    ),
     # ── creative_conversational ──
-    ("creative_conversational/creative_writing/storytelling",
-     r"(?i)\b(story|narrative|fiction|character|plot|dialogue|novel|poem|poetry|creative.*writing|world.?build)\b"),
-    ("creative_conversational/ux_writing/interface_copy",
-     r"(?i)\b(ux|ui|interface|copy|button|label|tooltip|onboarding|microcopy|error.*message|toast|notification|landing.*page|layout|design|responsive|wireframe|mockup|prototype)\b"),
-
+    (
+        "creative_conversational/creative_writing/storytelling",
+        r"(?i)\b(story|narrative|fiction|character|plot|dialogue|novel|poem|poetry|creative.*writing|world.?build)\b",
+    ),
+    (
+        "creative_conversational/ux_writing/interface_copy",
+        r"(?i)\b(ux|ui|interface|copy|button|label|tooltip|onboarding|microcopy|error.*message|toast|notification|landing.*page|layout|design|responsive|wireframe|mockup|prototype)\b",
+    ),
     # ── general_knowledge ──
-    ("general_knowledge/reasoning/explanation",
-     r"(?i)\b(explain|why|how|what.*is|describe|elaborate|clarify|define|meaning|concept)\b"),
-    ("general_knowledge/reasoning/logic_puzzle",
-     r"(?i)\b(puzzle|riddle|brain.?teaser|lateral.*thinking|paradox|syllogism|deduction|logic.*problem)\b"),
-    ("general_knowledge/fact_retrieval/definitions",
-     r"(?i)\b(definition|define|meaning|term|acronym|glossary|what.*does|stands.*for)\b"),
-    ("general_knowledge/fact_retrieval/historical_events",
-     r"(?i)\b(history|when.*did|who.*was|event|date|timeline|era|century|ancient|medieval|modern.*history)\b"),
-
+    (
+        "general_knowledge/reasoning/explanation",
+        r"(?i)\b(explain|why|how|what.*is|describe|elaborate|clarify|define|meaning|concept)\b",
+    ),
+    (
+        "general_knowledge/reasoning/logic_puzzle",
+        r"(?i)\b(puzzle|riddle|brain.?teaser|lateral.*thinking|paradox|syllogism|deduction|logic.*problem)\b",
+    ),
+    (
+        "general_knowledge/fact_retrieval/definitions",
+        r"(?i)\b(definition|define|meaning|term|acronym|glossary|what.*does|stands.*for)\b",
+    ),
+    (
+        "general_knowledge/fact_retrieval/historical_events",
+        r"(?i)\b(history|when.*did|who.*was|event|date|timeline|era|century|ancient|medieval|modern.*history)\b",
+    ),
     # ── business_finance ──
-    ("business_finance/marketing/copywriting",
-     r"(?i)\b(marketing|copy|ad|advertisement|slogan|tagline|pitch|sales|landing.*page|conversion|seo|email.*campaign)\b"),
-    ("business_finance/legal_document/analysis",
-     r"(?i)\b(legal|law|contract|agreement|compliance|regulation|policy|gdpr|privacy|terms.*service|liability)\b"),
-
+    (
+        "business_finance/marketing/copywriting",
+        r"(?i)\b(marketing|copy|ad|advertisement|slogan|tagline|pitch|sales|landing.*page|conversion|seo|email.*campaign)\b",
+    ),
+    (
+        "business_finance/legal_document/analysis",
+        r"(?i)\b(legal|law|contract|agreement|compliance|regulation|policy|gdpr|privacy|terms.*service|liability)\b",
+    ),
     # ── language_translation ──
-    ("language_translation/translation/language_to_language",
-     r"(?i)\b(translate|translation|localize|locale|i18n|l10n|language.*to|english.*to|spanish|french|german|chinese|japanese)\b"),
-    ("language_translation/summarization/abstractive",
-     r"(?i)\b(summarize|summary|tldr|condense|digest|abstract|synopsis|overview|recap|brief)\b"),
-    ("language_translation/linguistic_analysis/sentiment",
-     r"(?i)\b(sentiment|tone|emotion|polarity|positive|negative|neutral|opinion|attitude|mood)\b"),
-
+    (
+        "language_translation/translation/language_to_language",
+        r"(?i)\b(translate|translation|localize|locale|i18n|l10n|language.*to|english.*to|spanish|french|german|chinese|japanese)\b",
+    ),
+    (
+        "language_translation/summarization/abstractive",
+        r"(?i)\b(summarize|summary|tldr|condense|digest|abstract|synopsis|overview|recap|brief)\b",
+    ),
+    (
+        "language_translation/linguistic_analysis/sentiment",
+        r"(?i)\b(sentiment|tone|emotion|polarity|positive|negative|neutral|opinion|attitude|mood)\b",
+    ),
     # ── multimedia_processing ──
-    ("multimedia_processing/image/analysis",
-     r"(?i)\b(image|photo|picture|analyze.*image|ocr|object.*detection|classify.*image|describe.*image|what.*in.*(image|picture|photo))\b"),
-    ("multimedia_processing/image/generation",
-     r"(?i)\b(generate.*image|create.*image|draw|illustrat|render|banner|logo|poster|artwork|dall.?e|midjourney|stable.*diffusion)\b"),
+    (
+        "multimedia_processing/image/analysis",
+        r"(?i)\b(image|photo|picture|analyze.*image|ocr|object.*detection|classify.*image|describe.*image|what.*in.*(image|picture|photo))\b",
+    ),
+    (
+        "multimedia_processing/image/generation",
+        r"(?i)\b(generate.*image|create.*image|draw|illustrat|render|banner|logo|poster|artwork|dall.?e|midjourney|stable.*diffusion)\b",
+    ),
 ]
 
 
@@ -123,14 +180,10 @@ PATH_PATTERNS: list[tuple[str, str]] = [
 #: silently scores 0.0 on every task.
 CATEGORY_ALIASES: dict[str, tuple[str, ...]] = {
     "code": ("technology_code",),
-    "analysis": ("technology_code/data_science",
-                 "academic_scientific/mathematics/statistics"),
-    "reasoning": ("general_knowledge/reasoning",
-                  "complex_reasoning_agency"),
-    "design": ("creative_conversational/ux_writing/interface_copy",
-               "technology_code/system_design"),
-    "audit": ("technology_code/testing_debugging/error_analysis",
-              "business_finance/legal_document/analysis"),
+    "analysis": ("technology_code/data_science", "academic_scientific/mathematics/statistics"),
+    "reasoning": ("general_knowledge/reasoning", "complex_reasoning_agency"),
+    "design": ("creative_conversational/ux_writing/interface_copy", "technology_code/system_design"),
+    "audit": ("technology_code/testing_debugging/error_analysis", "business_finance/legal_document/analysis"),
 }
 
 
@@ -180,9 +233,9 @@ class CategorySelector:
     #: Default cost rates per tier (input, output) per 1k tokens — fallback
     #: when a model entry doesn't have explicit cost_per_1k_* fields.
     _DEFAULT_TIER_COSTS: dict[str, float] = {
-        "budget": 0.00021,    # avg of (0.00014, 0.00028)
-        "standard": 0.001,     # avg of (0.0005, 0.0015)
-        "premium": 0.009,      # avg of (0.003, 0.015)
+        "budget": 0.00021,  # avg of (0.00014, 0.00028)
+        "standard": 0.001,  # avg of (0.0005, 0.0015)
+        "premium": 0.009,  # avg of (0.003, 0.015)
     }
 
     def __init__(self, models: dict[str, Any], price_sensitivity: float = 0.0) -> None:
@@ -277,9 +330,7 @@ class CategorySelector:
         tier = getattr(entry, "cost_tier", "standard")
         return self._DEFAULT_TIER_COSTS.get(tier, 0.001)
 
-    def _apply_cost_weighting(
-        self, quality_scores: dict[str, float]
-    ) -> dict[str, float]:
+    def _apply_cost_weighting(self, quality_scores: dict[str, float]) -> dict[str, float]:
         """Transform quality scores into cost-effectiveness scores.
 
         Formula: ``ce = quality / (relative_cost ^ sensitivity)``
@@ -292,10 +343,7 @@ class CategorySelector:
             return quality_scores
 
         # Find the cheapest enabled model for normalization
-        min_cost = min(
-            self._model_cost_rate(mid)
-            for mid in quality_scores
-        )
+        min_cost = min(self._model_cost_rate(mid) for mid in quality_scores)
         if min_cost <= 0:
             min_cost = 0.000001  # avoid division by zero
 
@@ -305,7 +353,7 @@ class CategorySelector:
             relative_cost = cost / min_cost
             # At sensitivity=1: ce = quality / relative_cost
             # At sensitivity=0: ce = quality / 1 = quality
-            penalty = relative_cost ** self.price_sensitivity
+            penalty = relative_cost**self.price_sensitivity
             result[mid] = quality / penalty if penalty > 0 else quality
 
         return result
@@ -338,11 +386,7 @@ class CategorySelector:
                     scores[mid] = scores.get(mid, 0.0) * 1.15
 
         # Cost-weighted effectiveness (only if sensitivity > 0)
-        sensitivity = (
-            price_sensitivity
-            if price_sensitivity is not None
-            else self.price_sensitivity
-        )
+        sensitivity = price_sensitivity if price_sensitivity is not None else self.price_sensitivity
         if sensitivity > 0.0:
             # Temporarily set sensitivity for cost weighting
             saved = self.price_sensitivity
@@ -374,11 +418,7 @@ class CategorySelector:
         scores = self.score(task)
 
         # Cost weighting
-        sensitivity = (
-            price_sensitivity
-            if price_sensitivity is not None
-            else self.price_sensitivity
-        )
+        sensitivity = price_sensitivity if price_sensitivity is not None else self.price_sensitivity
         if sensitivity > 0.0:
             saved = self.price_sensitivity
             self.price_sensitivity = sensitivity
@@ -418,8 +458,11 @@ class CategorySelector:
         for i, mid in enumerate(selected):
             entry = self._models.get(mid)
             cats = getattr(entry, "categories", {}) if entry else {}
-            relevant = {p: s for p, s in cats.items()
-                       if any(p.startswith(tp) or tp.startswith(p) for tp in task_weights)}
+            relevant = {
+                p: s
+                for p, s in cats.items()
+                if any(p.startswith(tp) or tp.startswith(p) for tp in task_weights)
+            }
             lines.append(
                 f"  {i + 1}. {mid} — score={scores.get(mid, 0):.1f}  "
                 f"relevant={dict(list(relevant.items())[:3])}"

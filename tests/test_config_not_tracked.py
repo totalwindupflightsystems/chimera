@@ -42,9 +42,7 @@ TEMPLATE = "chimera.yaml.example"
 
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
     """Run git in the repo root; a non-zero exit is data, not an exception."""
-    return subprocess.run(
-        ["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=False
-    )
+    return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=False)
 
 
 def _require_git_checkout() -> None:

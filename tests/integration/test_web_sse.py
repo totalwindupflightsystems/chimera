@@ -105,16 +105,12 @@ async def _post_with_retry(
             if r.status_code < 500 and not degraded:
                 return r
             why = f"HTTP {r.status_code}" if r.status_code >= 500 else "degraded"
-            last_detail = (
-                f"{why} on attempt {attempt}/{attempts}: {r.text[:300]}"
-            )
+            last_detail = f"{why} on attempt {attempt}/{attempts}: {r.text[:300]}"
         if attempt < attempts:
             await asyncio.sleep(backoff * attempt)
     if last_error is not None:
         raise last_error
-    raise AssertionError(
-        f"POST {url} still failing after {attempts} attempts — {last_detail}"
-    )
+    raise AssertionError(f"POST {url} still failing after {attempts} attempts — {last_detail}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -132,9 +128,7 @@ def _create_session(base_url: str) -> str:
     return data["session_id"]
 
 
-def _deliberate_sync(
-    client: httpx.Client, base_url: str, session_id: str, prompt: str
-) -> dict:
+def _deliberate_sync(client: httpx.Client, base_url: str, session_id: str, prompt: str) -> dict:
     """POST to the web chat endpoint and return the JSON body."""
     r = client.post(
         f"{base_url}/web/sessions/{session_id}/chat",
@@ -233,9 +227,7 @@ async def test_sse_receives_all_events(live_server: str) -> None:
     assert "deliberation_started" in event_types, (
         f"Missing deliberation_started. Got: {event_types}\nRaw: {raw[:500]}"
     )
-    assert "dag_designed" in event_types, (
-        f"Missing dag_designed. Got: {event_types}\nRaw: {raw[:500]}"
-    )
+    assert "dag_designed" in event_types, f"Missing dag_designed. Got: {event_types}\nRaw: {raw[:500]}"
     assert "deliberation_done" in event_types, (
         f"Missing deliberation_done — this causes 'SSE reconnecting…' stuck.\n"
         f"Got: {event_types}\nRaw: {raw[:500]}"
@@ -326,8 +318,7 @@ async def test_sse_multiple_clients_no_crash(live_server: str) -> None:
             events = _parse_sse_events(raw)
             event_types = [e["event"] for e in events]
             assert "deliberation_done" in event_types, (
-                f"Subscriber missed deliberation_done.\nEvents: {event_types}\n"
-                f"Raw (first 500): {raw[:500]}"
+                f"Subscriber missed deliberation_done.\nEvents: {event_types}\nRaw (first 500): {raw[:500]}"
             )
 
 
@@ -429,9 +420,7 @@ async def test_sse_deliberation_done_has_all_metrics(live_server: str) -> None:
     assert "total_cost" in done_data, f"Missing total_cost: {done_data}"
     assert done_data["total_cost"] > 0, "total_cost should be > 0"
 
-    assert "elapsed_ms" in done_data, (
-        f"Missing elapsed_ms — causes blank TIME in dashboard: {done_data}"
-    )
+    assert "elapsed_ms" in done_data, f"Missing elapsed_ms — causes blank TIME in dashboard: {done_data}"
     assert done_data["elapsed_ms"] > 0, "elapsed_ms should be > 0"
 
     assert "answer" in done_data, f"Missing answer: {done_data}"
@@ -693,10 +682,7 @@ async def test_spa_index_has_no_cache_header(live_server: str) -> None:
         r = await client.get(f"{live_server}/web/")
         assert r.status_code == 200
         cache_control = r.headers.get("cache-control", "").lower()
-        assert any(
-            directive in cache_control
-            for directive in ("no-store", "no-cache", "must-revalidate")
-        ), (
+        assert any(directive in cache_control for directive in ("no-store", "no-cache", "must-revalidate")), (
             f"Expected Cache-Control header with no-store/no-cache/must-revalidate, "
             f"got: {r.headers.get('cache-control', '(missing)')}"
         )
@@ -719,8 +705,7 @@ async def test_spa_index_contains_fixed_javascript(live_server: str) -> None:
             "this means the SSE reconnect fix is not in the deployed file"
         )
         assert "currentMermaid" in body, (
-            "Served index.html is missing 'currentMermaid' — "
-            "DAG+mermaid pass-through fix not deployed"
+            "Served index.html is missing 'currentMermaid' — DAG+mermaid pass-through fix not deployed"
         )
 
 
@@ -936,8 +921,7 @@ async def test_sse_events_never_duplicated(live_server: str) -> None:
     for evt_name in ("deliberation_started", "dag_designed", "deliberation_done"):
         count = event_types.count(evt_name)
         assert count == 1, (
-            f"Event '{evt_name}' appeared {count} times (expected exactly 1). "
-            f"All events: {event_types}"
+            f"Event '{evt_name}' appeared {count} times (expected exactly 1). All events: {event_types}"
         )
 
 
@@ -973,9 +957,7 @@ async def test_chat_response_trace_includes_elapsed_ms(live_server: str) -> None
             f"trace missing elapsed_ms. Keys: {list(trace.keys())}\n"
             f"Full trace: {json.dumps(trace, default=str)[:300]}"
         )
-        assert trace["elapsed_ms"] > 0, (
-            f"elapsed_ms should be > 0, got: {trace['elapsed_ms']}"
-        )
+        assert trace["elapsed_ms"] > 0, f"elapsed_ms should be > 0, got: {trace['elapsed_ms']}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1046,7 +1028,7 @@ async def test_chat_special_characters_prompt(live_server: str) -> None:
             client,
             f"{live_server}/web/sessions/{sid}/chat",
             payload={
-                "prompt": 'What is 2+2? Unicode: café • naïveté — "quoted" \'single\' <tag>',
+                "prompt": "What is 2+2? Unicode: café • naïveté — \"quoted\" 'single' <tag>",
                 "formation": "simple",
                 "allowed_models": BUDGET_MODELS,
             },
@@ -1209,11 +1191,8 @@ async def test_sse_response_headers(live_server: str) -> None:
         ) as r:
             assert r.status_code == 200
             content_type = r.headers.get("content-type", "")
-            assert "text/event-stream" in content_type, (
-                f"Wrong Content-Type: {content_type}"
-            )
+            assert "text/event-stream" in content_type, f"Wrong Content-Type: {content_type}"
             cache_control = r.headers.get("cache-control", "")
             assert "no-cache" in cache_control.lower(), (
                 f"Missing no-cache in SSE Cache-Control: {cache_control}"
             )
-

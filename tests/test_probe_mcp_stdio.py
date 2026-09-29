@@ -625,9 +625,7 @@ def test_config_option_with_cwd_option_uses_that_cwd(tmp_path: Path) -> None:
     config.write_text("formations: {}\n", encoding="utf-8")
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
-    options, _ = probe.parse_owned_options(
-        [f"{CONFIG_OPTION}{config}", f"{CWD_OPTION}{elsewhere}"], env={}
-    )
+    options, _ = probe.parse_owned_options([f"{CONFIG_OPTION}{config}", f"{CWD_OPTION}{elsewhere}"], env={})
     plan = probe.plan_config_provision(options)
     assert plan.config_path == str(config)
     assert plan.cwd == str(elsewhere)
@@ -754,9 +752,7 @@ def test_provision_config_generates_remaps_and_writes_the_config(tmp_path: Path)
     """End-to-end offline: generate → remap → write, with the evidence returned."""
     bin_dir = _fake_child_bin(tmp_path)
     child_cmd = [str(bin_dir / "chimera-mcp")]
-    plan = probe.plan_config_provision(
-        probe.ProbeOptions(formation="speed"), temp_dir=str(tmp_path / "cfg")
-    )
+    plan = probe.plan_config_provision(probe.ProbeOptions(formation="speed"), temp_dir=str(tmp_path / "cfg"))
     result = probe.provision_config(
         plan,
         child_cmd=child_cmd,
@@ -786,9 +782,7 @@ def test_provision_config_generates_remaps_and_writes_the_config(tmp_path: Path)
 def test_provision_config_leaves_a_credentialed_formation_untouched(tmp_path: Path) -> None:
     """With the key present nothing is substituted — the leak leg stays exercised."""
     bin_dir = _fake_child_bin(tmp_path)
-    plan = probe.plan_config_provision(
-        probe.ProbeOptions(formation="speed"), temp_dir=str(tmp_path / "cfg")
-    )
+    plan = probe.plan_config_provision(probe.ProbeOptions(formation="speed"), temp_dir=str(tmp_path / "cfg"))
     result = probe.provision_config(
         plan,
         child_cmd=[str(bin_dir / "chimera-mcp")],
@@ -813,13 +807,9 @@ def test_provision_config_fails_loudly_when_generation_fails(tmp_path: Path) -> 
     cli = bin_dir / "chimera"
     cli.write_text("#!/bin/sh\necho 'boom' >&2\nexit 3\n", encoding="utf-8")
     cli.chmod(0o755)
-    plan = probe.plan_config_provision(
-        probe.ProbeOptions(formation="simple"), temp_dir=str(tmp_path / "cfg")
-    )
+    plan = probe.plan_config_provision(probe.ProbeOptions(formation="simple"), temp_dir=str(tmp_path / "cfg"))
     with pytest.raises(probe.ProbeSetupError, match="failed"):
-        probe.provision_config(
-            plan, child_cmd=[str(bin_dir / "chimera-mcp")], formation="simple", env={}
-        )
+        probe.provision_config(plan, child_cmd=[str(bin_dir / "chimera-mcp")], formation="simple", env={})
 
 
 def test_provision_config_rejects_a_missing_explicit_config(tmp_path: Path) -> None:
@@ -831,9 +821,7 @@ def test_provision_config_rejects_a_missing_explicit_config(tmp_path: Path) -> N
 
 
 def test_provision_config_rejects_a_missing_cwd(tmp_path: Path) -> None:
-    plan = probe.plan_config_provision(
-        probe.ProbeOptions(formation="simple", cwd=str(tmp_path / "nope"))
-    )
+    plan = probe.plan_config_provision(probe.ProbeOptions(formation="simple", cwd=str(tmp_path / "nope")))
     with pytest.raises(probe.ProbeSetupError, match="not a directory"):
         probe.provision_config(plan, child_cmd=["/fake/bin/chimera-mcp"], formation="simple", env={})
 
@@ -915,9 +903,7 @@ def test_remap_substitutes_an_uncredentialed_model_and_reports_it() -> None:
 
 
 def test_remap_is_never_silent_evidence_line_shape() -> None:
-    _, remaps = probe.remap_uncredentialed_models(
-        _REMAP_DOC, {"DEEPSEEK_API_KEY": "d"}, formation="speed"
-    )
+    _, remaps = probe.remap_uncredentialed_models(_REMAP_DOC, {"DEEPSEEK_API_KEY": "d"}, formation="speed")
     assert remaps[0].evidence_line() == (
         "FORMATION_MODEL_REMAP=openrouter/qwen/qwen3-coder -> deepseek/deepseek-v4-flash "
         "(OPENROUTER_API_KEY unset; speed.worker_models[1])"
@@ -1341,9 +1327,7 @@ def test_resolve_child_command_leaves_the_empty_command_alone() -> None:
 def test_resolve_child_command_keeps_an_absolute_token_verbatim() -> None:
     """The release gate's absolute form is byte-for-byte what the operator passed."""
     absolute = "/tmp/release-venv/bin/chimera-mcp"
-    resolved, problem = probe.resolve_child_command(
-        [absolute, "--flag", "value"], base_dir="/somewhere/else"
-    )
+    resolved, problem = probe.resolve_child_command([absolute, "--flag", "value"], base_dir="/somewhere/else")
     assert problem is None
     assert resolved == [absolute, "--flag", "value"]
 
@@ -1360,9 +1344,7 @@ def test_resolve_child_command_absolutizes_an_existing_relative_path(tmp_path: P
 def test_resolve_child_command_absolutizes_a_dotted_relative_path(tmp_path: Path) -> None:
     """``./venv/bin/chimera-mcp`` is the same path, spelled with a leading ``./``."""
     target = _fake_child(tmp_path)
-    resolved, problem = probe.resolve_child_command(
-        [f"./{RELATIVE_CHILD}"], base_dir=str(tmp_path)
-    )
+    resolved, problem = probe.resolve_child_command([f"./{RELATIVE_CHILD}"], base_dir=str(tmp_path))
     assert problem is None
     assert resolved == [os.path.normpath(str(target))]
 
@@ -1371,9 +1353,7 @@ def test_resolve_child_command_never_rewrites_the_rest_of_the_argv(tmp_path: Pat
     """Only the executable token is resolved — the child's own argv is untouched."""
     target = _fake_child(tmp_path)
     tail = ["--config=/tmp/x.yaml", "mcp", "extra"]
-    resolved, problem = probe.resolve_child_command(
-        [RELATIVE_CHILD, *tail], base_dir=str(tmp_path)
-    )
+    resolved, problem = probe.resolve_child_command([RELATIVE_CHILD, *tail], base_dir=str(tmp_path))
     assert problem is None
     assert resolved == [str(target), *tail]
 
@@ -1388,13 +1368,10 @@ def test_resolve_child_command_leaves_a_bare_name_for_path_lookup(tmp_path: Path
 
 def test_resolve_child_command_missing_relative_path_is_a_named_error(tmp_path: Path) -> None:
     """A relative path with no such file is a named usage error, not an exception."""
-    resolved, problem = probe.resolve_child_command(
-        ["nope/bin/chimera-mcp"], base_dir=str(tmp_path)
-    )
+    resolved, problem = probe.resolve_child_command(["nope/bin/chimera-mcp"], base_dir=str(tmp_path))
     assert resolved == ["nope/bin/chimera-mcp"]
     assert problem == (
-        f"child command not found: nope/bin/chimera-mcp (resolved against {tmp_path}); "
-        f"pass an absolute path"
+        f"child command not found: nope/bin/chimera-mcp (resolved against {tmp_path}); pass an absolute path"
     )
 
 
@@ -1414,9 +1391,7 @@ def test_resolve_child_command_uses_the_injected_existence_predicate(tmp_path: P
     assert seen == [os.path.join(str(tmp_path), "ghost", "chimera-mcp")]
 
 
-def test_main_resolves_a_relative_child_before_provisioning(
-    capsys, monkeypatch, tmp_path: Path
-) -> None:  # type: ignore[no-untyped-def]
+def test_main_resolves_a_relative_child_before_provisioning(capsys, monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     """The usage-example form now drives the probe: absolute token, both steps.
 
     The resolved token must reach the PROVISIONING step (which runs the child's
@@ -1449,9 +1424,7 @@ def test_main_resolves_a_relative_child_before_provisioning(
     assert "PROBE OK" in out
 
 
-def test_main_missing_relative_child_is_a_usage_error(
-    capsys, monkeypatch, tmp_path: Path
-) -> None:  # type: ignore[no-untyped-def]
+def test_main_missing_relative_child_is_a_usage_error(capsys, monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     """A relative path that is not on disk: exit 2 + named message, no traceback."""
 
     def explode(*args, **kwargs):  # noqa: ANN002, ANN003
@@ -1515,4 +1488,3 @@ def test_main_passes_an_absolute_child_token_through_unchanged(capsys, monkeypat
     assert captured["provision_child_cmd"] == [absolute]
     assert captured["cmd"] == [absolute]
     assert f"CHILD_CMD={absolute}" in out
-
