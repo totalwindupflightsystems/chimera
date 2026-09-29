@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 import structlog
 import yaml
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from chimera.exceptions import ConfigError
 
@@ -131,7 +131,15 @@ class FormationPreset(BaseModel):
     When ``dag`` is provided it is a full client/config-defined DAG (a mapping
     with ``stages`` and ``edges`` keys, matching the runtime DAG shape). It wins
     over the legacy ``workers``/``aggregator`` fields.
+
+    Unknown keys are rejected at config load (``model_config = ConfigDict(extra="forbid")``).
+    Without it, pydantic silently drops a typo'd key — ``stages: 2`` instead of
+    ``workers: 2`` left the preset all-``None``, and the user only saw the
+    misleading "Cannot build a structural DAG from an auto preset" error later
+    (DF-CHIMERA-V2-59).
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     mode: str | None = None
     workers: int | None = None

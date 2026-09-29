@@ -262,7 +262,11 @@ def build_preset_dag(preset: FormationPreset, config: ChimeraConfig) -> Formatio
         return build_dag_from_dict(preset.dag, config)
 
     if preset.is_auto or preset.workers is None:
-        raise ValueError("Cannot build a structural DAG from an auto preset")
+        raise ValueError(
+            "Cannot build a structural DAG from an auto preset — set "
+            "`workers: <N>` (and optionally `aggregator:`) on this formation, "
+            "or provide an explicit `dag:` block"
+        )
 
     worker_models = _resolve_worker_models(preset, config)
     n_workers = preset.workers
