@@ -1832,3 +1832,29 @@ tasks:
   status: complete
   created_at: '2026-09-28T02:59:28.463411+00:00'
   completed_at: '2026-09-28T03:38:16.556260+00:00'
+- id: DF-CHIMERA-V2-64
+  title: model-sync seen filter dedupe
+  criteria:
+  - scripts/model_sync.py --diff no longer re-reports models when lane-resolved id
+    shape changes
+  - seen comparison uses basename resolution
+  - regression test asserts both id shapes match seen entry
+  status: complete
+  created_at: '2026-09-29T00:57:35.313580+00:00'
+  completed_at: '2026-09-29T01:10:34.184187+00:00'
+- id: DF-CHIMERA-V2-59
+  title: formation yaml validation
+  criteria:
+  - unknown formation keys rejected at config load
+  - structural-DAG error names the flag it needs
+  - test asserts malformed yaml exits non-zero with actionable message
+  status: in_progress
+  created_at: '2026-09-29T00:57:35.807358+00:00'
+- id: DF-CHIMERA-V2-55
+  title: max_tokens degraded merge marker
+  criteria:
+  - token-capped degraded merges are marked in dispatch_note/trace
+  - compat response carries visible degraded field
+  - test asserts small max_tokens produces marked response
+  status: in_progress
+  created_at: '2026-09-29T00:57:36.539860+00:00'
