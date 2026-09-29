@@ -29,6 +29,14 @@ never resolves to that exact catalog key from its bare row, so it re-reported
 as new. It is now SKIPPED, recorded in .seen_models.json with the basename
 match marker, and stated on the report as an explicit SKIP line instead of
 inflating the headline.
+
+Since DF-CHIMERA-V2-64 the ``--diff`` SEEN comparison resolves basenames too
+(the same one ``_basename`` helper): a candidate's ``chimera_id`` is the
+LANE-resolved id, so the same model can reach a later run under a different
+id shape (``openai/gpt-6-sol`` one day, ``openai/openai/gpt-6-sol`` the next)
+and re-reported as a new find even though it was already seen. The comparison
+remains an equality on the whole trailing segment — never a prefix — so an
+entry for ``foo-v2`` still never covers ``foo-v3``.
 """
 
 from __future__ import annotations
@@ -319,6 +327,68 @@ def _basename_match(model_id: str, catalog: set[str] | frozenset[str] | None = N
         if _basename(cid).lower() == target:
             return cid
     return None
+
+
+#: Marker appended to a seen entry when a candidate was skipped by the
+#: catalog-basename comparison (DF-CHIMERA-V2-50): ``<id> [basename=<catalog-id>]``.
+#: One constant pair so the writer (``format_report``) and the reader
+#: (``_seen_entry_id``) can never disagree about the encoding.
+SEEN_MARKER_PREFIX: str = " [basename="
+SEEN_MARKER_SUFFIX: str = "]"
+
+
+def _seen_entry_id(entry: str) -> str:
+    """The candidate id a seen-file entry records, with any marker stripped.
+
+    Pre-DF-CHIMERA-V2-50 files hold plain ids; the DF-CHIMERA-V2-50 writer
+    appends ``SEEN_MARKER_PREFIX <catalog-id> SEEN_MARKER_SUFFIX`` to the entry
+    it records for a basename-skipped candidate. Both shapes load as plain
+    strings (backward compatible), so any comparison on the id half must strip
+    the marker first.
+    """
+    return entry.split(SEEN_MARKER_PREFIX, 1)[0]
+
+
+def _seen_match(model_id: str, seen: set[str] | frozenset[str]) -> str | None:
+    """Return the seen entry that already covers ``model_id``, or ``None``.
+
+    Three comparisons, in order (DF-CHIMERA-V2-64):
+
+    1. EXACT — the original filter: ``model_id`` itself is a seen entry.
+    2. MARKER — a seen entry that IS this candidate's id followed by the
+       DF-CHIMERA-V2-50 marker (``<id> [basename=<catalog-id>]``). The id must
+       occupy the whole entry up to the marker's leading space, so the marker
+       branch can never prefix-match a longer id either.
+    3. BASENAME — the trailing segment after the last ``/``, compared for
+       WHOLE-segment equality and case-insensitively — the same rule
+       ``_basename_match`` applies to the catalog, via the one ``_basename``
+       helper, so the two dedupe paths cannot drift.
+
+    Why 3 is needed: ``chimera_id`` is the LANE-resolved id, while the seen
+    file records the id shape a model happened to carry on the day it was
+    first seen. A later lane resolving a different shape therefore never
+    matched by string equality and re-reported the model as new — measured
+    2026-09-26: 7 diff rows, 6 of them re-reports (``openai/openai/gpt-6-sol``
+    after ``openai/gpt-6-sol``, ``xai/x-ai/grok-4.7`` after ``xai/grok-4.7``,
+    ``zai/z-ai/glm-5.3-flashx`` after ``zai/glm-5.3-flashx``).
+
+    The comparison stays an EQUALITY, never a prefix, so the filter is exactly
+    as strict as before: a plain entry for ``openai/gpt-6-sol`` still does not
+    cover ``openai/gpt-6-sol-mini`` — a different, longer basename. When
+    several seen entries share the basename the FIRST in sorted order wins, so
+    the answer is deterministic across runs.
+    """
+    if model_id in seen:
+        return model_id
+    marker = f"{model_id} "
+    target = _basename(model_id).lower()
+    basename_hit: str | None = None
+    for entry in sorted(seen):
+        if entry.startswith(marker):
+            return entry
+        if basename_hit is None and _basename(_seen_entry_id(entry)).lower() == target:
+            basename_hit = entry
+    return basename_hit
 
 
 def _load_seen() -> set[str]:
@@ -1053,17 +1123,17 @@ def format_report(
     for provider_id, models in candidates.items():
         provider_name = PROVIDER_NAMES.get(provider_id, provider_id)
 
-        # Filter for --diff mode: exact seen entries first, then a seen
-        # basename-marker entry (``<id> [basename=<catalog-id>]``) filters by
-        # prefix match on the candidate's resolved id — so a basename-skipped
-        # candidate stays filtered on later runs without weakening the
-        # exact-id filter (a plain entry can never prefix-match a longer id).
+        # Filter for --diff mode: the seen comparison is ``_seen_match()`` —
+        # exact id, then a seen basename-marker entry (``<id>
+        # [basename=<catalog-id>]``), then BASENAME resolution
+        # (DF-CHIMERA-V2-64). ``chimera_id`` is the LANE-resolved id, so the
+        # same model reaches a later run under a different prefix shape
+        # (``openai/gpt-6-sol`` → ``openai/openai/gpt-6-sol``,
+        # ``zai/glm-5.3-flashx`` → ``zai/z-ai/glm-5.3-flashx``) and exact
+        # string equality alone re-reported it as new. A plain entry still
+        # cannot prefix-match a longer id (equality on the whole basename).
         if diff_only:
-            models = [
-                m
-                for m in models
-                if m["chimera_id"] not in seen and not any(s.startswith(f"{m['chimera_id']} ") for s in seen)
-            ]
+            models = [m for m in models if _seen_match(m["chimera_id"], seen) is None]
             if not models:
                 continue
 
@@ -1087,7 +1157,10 @@ def format_report(
             if markdown:
                 lines.append(f"| `{m['model_id']}` | `{m['chimera_id']}` | {rec:.0f} | {inp} | {out} |")
             else:
-                tag = " [NEW]" if m["chimera_id"] not in seen else ""
+                # Same seen comparison as the --diff filter (DF-CHIMERA-V2-64):
+                # a model first seen under another lane-resolved id shape is
+                # not NEW any more.
+                tag = " [NEW]" if _seen_match(m["chimera_id"], seen) is None else ""
                 lines.append(f"  {m['chimera_id']:50s} recency={rec:.0f}  inp={inp}  out={out}{tag}")
 
             total_new += 1
@@ -1105,7 +1178,7 @@ def format_report(
         lines.append("")
         for skip in LAST_BASENAME_SKIPS:
             catalog_id = skip["catalog_id"]
-            note = f" [basename={catalog_id}]"
+            note = f"{SEEN_MARKER_PREFIX}{catalog_id}{SEEN_MARKER_SUFFIX}"
             if markdown:
                 lines.append(
                     f"- SKIP `{skip['chimera_id']}` — already admitted as `{catalog_id}` (basename match)"
@@ -1202,11 +1275,14 @@ def main() -> None:
     if args.diff_json:
         # Save the NEW finds (the same set --diff would report) before
         # format_report() marks them seen, so step 3 of the cron pipeline can
-        # score exactly this set instead of re-deriving an empty diff.
+        # score exactly this set instead of re-deriving an empty diff. The
+        # filter is the SAME `_seen_match()` comparison `--diff` uses
+        # (DF-CHIMERA-V2-64) — otherwise the saved file would still carry the
+        # lane-id re-reports the printed report drops.
         seen_ids = _load_seen()
         diff_set: dict[str, list[dict[str, Any]]] = {}
         for provider_id, models in candidates.items():
-            fresh = [m for m in models if m["chimera_id"] not in seen_ids]
+            fresh = [m for m in models if _seen_match(m["chimera_id"], seen_ids) is None]
             if fresh:
                 diff_set[provider_id] = fresh
         diff_json_path = Path(args.diff_json)
