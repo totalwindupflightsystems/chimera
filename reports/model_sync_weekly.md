@@ -1,183 +1,201 @@
 # Chimera Model Sync — Weekly Report
 
-**Date:** 2026-09-29 (cron run 17:00 UTC / 12:00 local −05)
-**Run:** `scripts/model_sync_cron.py` → `model_sync.py --diff --output reports/latest.md` (diff json `/tmp/chimera-model-sync-diff-1058170.json`), then step 3 `--score`
-**Diff result:** `reports/latest.md` line 4 reads `**Candidates:** 1 new models across 13 providers` — **1 row, and it is a genuine first appearance** (§1)
-**Score step:** **OK** — `reports/model_scores_20260929_1200.yaml` written (1 entry, **30** path scores, 0 unknown paths, 0 out-of-bounds, 0 scores <60; min 68, max 88).
-**`.seen_models.json`:** **471 → 472 entries** (+1 = this row only; the `openai/gpt-5.6` basename skip is byte-identical to 09-28, so the arithmetic is unambiguous). The ledger is **untracked/gitignored**, which is finding §4.
-**Registry input:** `source=task-router`, `data/tables/models.jsonl`, **25 providers** (unchanged from 09-28); provider cache hit `age_s=1086` then `stale=False`; `provider_discovery_done models=5149 providers=10`.
-**Catalog:** **42 models / 13 providers**, untouched by this run (recommend-only mandate; `load_config()` re-read to confirm: `models=42 enabled=42`). Nothing written to `chimera.yaml`, `chimera.yaml.example` or `chimera.yaml.docker`.
-**Deployment:** HEAD `3f32a87`, `/health` `commit: 3f32a87`, `version 0.2.7`, `uptime_models: 42` → **CURRENT** (identical commits; the running process also reports the same 42 models that are on disk). No reload owed, none claimed.
-**Archive:** yesterday's file copied to `reports/model_sync_weekly_20260928_archive.md` before this file replaced it.
+**Date:** 2026-09-30 (cron run 17:00 UTC / 12:00 local −05)
+**Run:** `scripts/model_sync_cron.py` → `model_sync.py --diff --output reports/latest.md` (diff json `/tmp/chimera-model-sync-diff-484517.json`)
+**Diff result:** `reports/latest.md` line 4 reads `**Candidates:** 0 new models across 9 providers, plus 3 task-router lane finds` — the 3 lane rows are first appearances, and **one of them is a real OpenAI release that the new lane/core split demoted out of the core headline** (§2).
+**Score step:** run by this tick — `--score-from` on a curated 2-row set (the cron wrapper skips step 3 when the headline is 0). Output `reports/model_scores_20260930_1203.yaml`, copied to `reports/model_sync_candidates_20260930.yaml`: **34 path scores, 0 unknown paths, 0 below the 60 floor, 0 above 100** (min 70, max 90).
+**`.seen_models.json`:** **472 → 472 entries** — today's run recorded nothing, and none of the three printed lane ids is in the ledger (§1, §5).
+**Registry input:** `source=task-router`, `data/tables/models.jsonl`, **29 provider blocks** (the log line says `providers=25` — see §4.3); provider cache hit `age_s=217`, `stale=False`; `provider_discovery_done models=5185 providers=10`.
+**Catalog:** **42 models / 13 providers**, untouched by this run (recommend-only mandate; `load_config()` re-read: `models=42 enabled=42`). Nothing written to `chimera.yaml`, `chimera.yaml.example` or `chimera.yaml.docker`.
+**Deployment:** HEAD `45fe276`, `/health` `commit: 958d7ca` → material diff **NON-EMPTY** ⇒ **STALE**, explicit deferral recorded in this tick (§7). No reload claimed.
+**Archive:** yesterday's file copied to `reports/model_sync_weekly_20260929_archive.md` before this file replaced it.
+
+**First run on new code:** DF-CHIMERA-V2-65 (`23cd355`, landed 2026-09-30 04:06) split lane-provider SKUs out of the core-lab sections. Its intent is right; it also introduced a false negative measured below (§2), filed as **DF-CHIMERA-V2-67** (§8).
 
 ---
 
-## 1. Diff honesty check: 1 row, 1 first appearance
+## 1. Diff honesty check: 3 rows, 3 first appearances, 0 ledger entries
 
-`--diff` filters on the lane-resolved id (`model_sync.py:1063-1065`, with `_seen_match()` doing exact-then-basename matching — the DF-CHIMERA-V2-64 fix). Today's ledger grew by exactly **one** entry and the report printed exactly **one** row, so the row is new rather than re-surfaced:
+`--diff` filters on `_seen_match()` (exact id → basename-marker → basename resolution). All three printed rows are absent from the 472-entry ledger, and none matches a ledger entry's basename:
 
-| Row id printed today | Ledger evidence | Class |
-|---|---|---|
-| `anthropic/claude-sonnet-5-5` | `anthropic/claude-sonnet-5-5` was **absent** from the ledger before this run; it is present after (471 → 472) | **first appearance** |
+| Row id printed today | Provider (lane) | In ledger? | Class |
+|---|---|---|---|
+| `openai/gpt-6.1-sol` | `commandcode` | no (`gpt-6.1` → 0 ledger hits) | first appearance |
+| `openai/openai/gpt-6.1-sol` | `xkiro` | no | first appearance (same model, second lane) |
+| `deepseek/deepseek/deepseek-v4.1-flash-fast` | `commandcode` | no (ledger has `…v4-flash-fast`, not `v4.1`) | first appearance |
 
-The only other candidate-shaped output was the `## Basename Skips` line (`openai/gpt-5.6` — already admitted as `openrouter/openai/gpt-5.6`), byte-identical to the 09-28 report, so it contributed no new ledger entry. **No re-reports today** — the DF-CHIMERA-V2-64 class did not reproduce.
+The only other candidate-shaped output was the `## Basename Skips` line (`openai/gpt-5.6` — already admitted as `openrouter/openai/gpt-5.6`), byte-identical to the 09-28/09-29 reports. **No DF-64-class re-reports today.**
 
-Note the shape of the row: `anthropic/claude-sonnet-5-5` is the **core models.dev row shape** (dashes, `family=claude-sonnet`, a description string, `provider=anthropic`), *not* a lane-resolved shape. Unlike 09-28 — where 5 of 7 rows were lane SKUs (§4 of last week's report, DF-CHIMERA-V2-65, still `pending`) — today's single row came from a core lab and names a real model.
+**The ledger did not grow** (472 → 472, mtime 2026-09-30 12:00): lane rows are never written to `.seen_models.json` (§5). The row count therefore cannot be used to date a lane find — only the `_seen_match` filter can, and only for ids written by pre-`23cd355` runs.
 
 ---
 
-## 2. What is genuinely new — verification this tick
+## 2. What is genuinely new — and what the lane/core split hid
 
-Method: live OpenRouter catalogue (`GET /api/v1/models`, **460 ids**, key read from `~/chimera-v2/.env` at runtime, never printed) + the models.dev cache + the vendor's own product page + independent press. No report field was treated as evidence on its own.
+### 2.1 `openai/gpt-6.1-sol` is a real, day-old OpenAI release, not a lane SKU
 
-| Id | Evidence | Verdict |
-|---|---|---|
-| `anthropic/claude-sonnet-5.5` (OR) / `claude-sonnet-5-5` (models.dev) | **OR-live**: created **2026-09-28 18:04 UTC**, ctx **1,000,000**, **$2/M in, $10/M out**; batch variant `:batch` live at $1/$5. **models.dev core row**: `claude-sonnet-5-5`, release_date **2026-09-28**, cost in 2 / out 10 / cache_read 0.2 / cache_write 2.5. **Vendor page** (`anthropic.com/claude/sonnet`): "$2 per million input tokens and $10 per million output tokens", 1M ctx, 90% caching / 50% batch savings. **Press, all 2026-09-28**: VentureBeat, SiliconANGLE, 9to5Mac, Thurrott, Benzinga (+ llm-stats/alphacorp: 1M ctx, 128k max output). | **ADD** (family completion + price cut) |
+| Evidence | Content |
+|---|---|
+| OpenRouter `/api/v1/models` | `openai/gpt-6.1-sol`, name **"OpenAI: GPT-6.1 Sol"**, created `1790702882` = **2026-09-29 17:28 UTC**, ctx **1,050,000**, **$2/M in, $10/M out**, plus `openai/gpt-6.1-sol-pro` (created 17:28:06) and `:batch` forms |
+| OR description | "GPT-6.1 Sol is an upgrade to GPT-6 Sol from OpenAI, positioned below the flagship GPT-6 Astra in the GPT-6 series. It is suited for agentic coding, computer use, document-heavy professional…" |
+| models.dev cache, **core `openai` block** | row `gpt-6.1-sol` present (also azure, azure-cognitive-services, github-copilot, opencode, requesty, cortecs, edenai, llmgateway, merge-gateway) |
+| task-router registry | `{provider: openai-codex, model: gpt-6.1-sol, release_date: 2026-09-29, price_evidence: "…official $2 in / $0.10 cached / $10 out per 1M, DevDay release 09-29; upgrade of gpt-6-sol at the SAME official sticker with cache rate halved $0.20→$0.10"}` |
+| **paid route proof** | `POST /chat/completions`, `max_tokens=4`, wire id `openai/gpt-6.1-sol` → **HTTP 200**, served as `openai/gpt-6.1-sol`, billed **1.6e-05 for 8 prompt tokens (= $2/M)** and **5e-05 for 5 completion tokens (= $10/M)** |
 
-### 2.1 The three facts that decide this week
+The sticker price is confirmed by the actual bill, not inferred from a table. Catalogue state: **no GPT-6 entry of any kind** — the newest catalogued sol is `openrouter/openai/gpt-5.6-sol`.
 
-- **It is real, shipped yesterday, and the catalogue has no Sonnet 5 at all.** The newest sonnet entry in `chimera.yaml` is **`anthropic/claude-sonnet-4.6`** at **$3/$15 per Mtok** (OR-created 2026-02-17). Sonnet 5.5 is seven months newer **and cheaper per token** — the rare case where the successor dominates rather than displaces. There is no Sonnet 5 (June 2026) entry to step over, so this is a straight family jump.
-- **The route is proven with paid calls, both shapes, not inferred from the config.** Two wire ids were probed live against OpenRouter: `anthropic/claude-sonnet-5.5` (what the explicit `openrouter/…` key shape produces) and `claude-sonnet-5.5` (what the native `anthropic` shape produces after the F8 reroute). **Both returned HTTP 200 and were served as `anthropic/claude-sonnet-5.5`** (~$0.0001 of tokens in total). The detailed trace is in §3.
-- **The 1M context is worth stating on its own.** Bane's floor is 500k; 5.5 clears it at 1M with 128k max output, matching Opus 5.5 — so an add here is a mid-tier seat that can take whole-repo prompts, not just a cheaper chat model.
+### 2.2 Root cause: a core-lab candidate now needs a core-lab block in the scan source
 
-**Two independent sources agree on price, and the third-party coverage is unanimous on the date.** No "coming soon" or rumour class here — this is a shipped model with a vendor pricing statement.
+`format_report()` splits per **candidate** — `provider` in `CORE_PROVIDERS` → core section, else lane section (`model_sync.py:1223-1230`), and the headline counts core only (`:1383-1389`). Correct for lane SKUs. But the core scan can only see labs that have **their own provider block in the task-router registry**, and the registry has no `openai` block:
+
+```
+registry blocks (29): aws-bedrock clinepass commandcode commandcode-2 crof deepseek
+  deepseek-duckbrain-sync deepseek-foreman fireworks-ai grok-build groq gw-deepseek
+  kimi-for-coding meta-model minimax muse-code myrouter:zai-glm neuralwatt ollama-cloud
+  openai-codex opencode-go opencode-go-2 openrouter sambanova stepfun synthetic xkiro xkiro-2 zai-glm
+```
+
+No `openai`, `anthropic`, `google` or `alibaba` block exists — so every OpenAI/Anthropic/Google/Alibaba release can arrive **only** through a lane row, and post-`23cd355` every lane row is excluded from the headline. The measured consequence: the very model the tick should have headlined sat in the lane section while line 4 read "0 new models".
+
+Which registry rows carry it: `clinepass` ×4, `commandcode` ×2, `openai-codex` ×1, `openrouter` ×4, `xkiro`, `xkiro-2` — every one of them lane- or reseller-class.
 
 ---
 
 ## 3. Recommendation: **1 ADD**
 
-Scored artifact: `reports/model_sync_candidates_20260929.yaml` — 1 entry, 30 path scores reproduced verbatim from the scorer, validated against the canonical path list read from the code (`{p for p, _ in chimera.selector.PATH_PATTERNS}` = **32** paths): **0 unknown, 0 out-of-bounds, 0 below the 60 floor.**
+Scored artifact: `reports/model_sync_candidates_20260930.yaml`. Scores are DeepSeek-generated against the canonical path list read from the code (`{p for p, _ in chimera.selector.PATH_PATTERNS}` = **32**), then validated: 0 unknown, 0 out of bounds, 0 under the 60 floor.
 
-| Proposed key | ← predecessor | tier | $/1k in–out | status |
-|---|---|---|---:|---|
-| `openrouter/anthropic/claude-sonnet-5.5` | `anthropic/claude-sonnet-4.6` | standard † | 0.002 / 0.010 | **recommend-add** |
+| Proposed key | ← predecessor | tier | $/1k in–out | paths | status |
+|---|---|---|---:|---:|---|
+| `openrouter/openai/gpt-6.1-sol` | `openrouter/openai/gpt-5.6-sol` | **premium** | 0.002 / 0.010 | 19 (70–90) | **recommend-add** |
 
-† **Open question, named rather than resolved:** the scorer says `standard`, while the sibling entry it would sit beside (`anthropic/claude-sonnet-4.6`) is `premium` in the catalogue. The measured average is **(0.002 + 0.010)/2 = 0.006 $/1k**, which sits between the tier defaults (`standard` 0.001, `premium` 0.009). Because `selector.price_sensitivity = 0.0`, the tier feeds only the cost model and **does not influence model selection** — so either choice is selection-neutral and this is a bookkeeping decision, not a performance one.
+Top paths: `technology_code/code_generation/python` 90, `complex_reasoning_agency/tool_use/code_execution` 88, `complex_reasoning_agency/multi_step_planning/task_decomposition` 87, `technology_code/code_generation/javascript` 86, `technology_code/testing_debugging/error_analysis` 85, `…/self_correction/debugging` 84.
 
-**Which key shape?** Both work; the difference is what the entry *depends on*:
+**Why this one.** It is the same $2/$10 sticker as the catalogued `gpt-5.6-sol` with a cheaper cache-read rate, twice the context (1.05M vs the 5.6 series' entry), and it is the current OpenAI agentic-coding tier at DevDay pricing — a straight successor add, not a new cost line. The key shape is `openrouter/…` because that is the route the catalogue already uses for the whole GPT-5.6 family (the explicit `openrouter` branch in `gateway.py` returns the id verbatim, and the probe above proves the wire id resolves).
 
-| Shape | Key | Wiring | Wire id sent | Probed |
-|---|---|---|---|---|
-| A (explicit) | `openrouter/anthropic/claude-sonnet-5.5` | `provider: openrouter` → `gateway.py:322-325` returns the id verbatim | `anthropic/claude-sonnet-5.5` | **200** |
-| B (native) | `anthropic/claude-sonnet-5.5` | `provider: anthropic` → no Anthropic credential → **F8** (`gateway.py:622-634`) reroutes to OpenRouter with `fallback_provider="openrouter"` → same literal-passthrough branch | `anthropic/claude-sonnet-5.5` | **200** |
-
-Shape A is recommended because it states the route the call actually takes instead of relying on a credential-fallback. Shape B matches the three existing native entries (`claude-opus-4.8`, `claude-sonnet-4.6`, `claude-haiku-4.5`) and is equally functional — a legitimate choice if family symmetry is preferred.
-
-**Verified credential fact behind that choice:** `load_config()` returns `api_keys = {anthropic: False, deepseek: True, google: True, openai: True, openrouter: True, xai: True, zai: True}`. `ANTHROPIC_API_KEY` is absent from both `~/chimera-v2/.env` (which holds **only** `OPENROUTER_API_KEY`) and `~/.hermes/.env`. So **the three "native anthropic" catalogue entries are today 100 % OpenRouter-routed via F8** — by design, not a defect, and it means a Sonnet 5.5 add lands on OpenRouter whichever shape is chosen.
-
-**A hunch, tested and refuted (recorded because the next tick should not re-raise it):** I expected `anthropic/claude-opus-4.7` (whose key shape and `provider: openrouter` do not match, so it cannot be caught by the `openrouter/` passthrough) to resolve through the generic `base_url` branch at `gateway.py:357-379` to a **bare** wire id. Reading the code, the explicit `provider == "openrouter"` branch at **`gateway.py:322-325` returns first** and emits `openrouter/anthropic/claude-opus-4.7`; and as a second check the bare id `claude-opus-4.7` **returned HTTP 200 from OpenRouter anyway** (OR normalises it). No defect — no row filed.
-
-**Accounted-for and not carried:** the single `Basename Skips` row (`openai/gpt-5.6`, already admitted) and the ~300 Reseller Watch / Blind Spot rows (informational by design, deliberately not recorded in the ledger). Reasons recorded in the candidates file → `not_carried`.
-
-Nothing was written to `chimera.yaml`, `chimera.yaml.example` or `chimera.yaml.docker`.
+**Open question, named not resolved:** the `-pro` and `:batch` siblings exist and are not recommended separately — batch ids have never been admitted to this catalogue, and `-pro` needs its own benchmark story rather than a copy of the base model's scores.
 
 ---
 
-## 4. The coverage number behind the recommendations (measured this tick, new section)
+## 4. Verified this tick, not carried
 
-Recommendations only mean something against the catalogue's real coverage, so this tick measured it directly: the live OpenRouter catalogue has **460 ids** against a **42-model** Chimera catalogue.
+1. **`deepseek/deepseek-v4.1-flash`** — real and uncatalogued, but **not a new find**: OpenRouter-live since **2026-09-10** (ctx 1,048,576, first DeepSeek model on the CED architecture, 8B/16B activated), and it has been in the ledger since at least 09-21, so no `--diff` run will ever print it again (DF-66 class). Scored anyway this tick for a future decision: tier **budget**, 15 paths (70–84; strongest `academic_scientific/mathematics/algebra` 84, `technology_code/code_generation/python` 82).
+   **Pricing is unresolved and must be checked before any entry:** earlier ticks' reseller tables show $0.15/M in / $0.60/M out, OpenRouter's current `/models` payload advertises **$0.0198/M in / $0.396/M out**, and the paid probe billed `upstream_inference_prompt_cost` 3.648e-06 for 32 tokens = **$0.114/M**. Three different numbers from three sources — do not admit on any of them without a pricing pass.
+2. **`deepseek/deepseek-v4.1-flash-fast`** (the lane row) — **not a candidate**: no OpenRouter id exists (`-fast` → 0 OR rows); it is a reseller speed variant (models.dev carries `baseten/…DeepSeek-V4.1-Flash-Fast` and `coralbricks/deepseek-v4.1-flash-fast-fp4`).
+3. **Registry provider count.** The log says `providers=25`; the file holds **29 blocks**. The scope line lists only the lane blocks it printed (22); the count in the log and the count in the file disagree — recorded here, not chased.
 
-| lab | OR-live | catalogued | missing | missing, **non-batch, released since 2026-08-01** |
-|---|---:|---:|---:|---:|
-| `anthropic/` | 29 | 5 | 24 | **3** |
-| `openai/` | 100 | 5 | 95 | **6** |
-| `google/` | 41 | 4 | 37 | **2** |
-| `deepseek/` | 15 | 2 | 13 | **3** |
-| `z-ai/` | 18 | 2 | 16 | **4** |
-| `qwen/` | 54 | 4 | 50 | **7** |
-| `moonshotai/` | 8 | 2 | 6 | 0 |
-| `minimax/` | 8 | 1 | 7 | 0 |
-| `x-ai/` | 8 | 4 | 4 | **2** |
-| `mistralai/` | 25 | **0** | 25 | 0 |
-| **totals** | | | **277** | **27** |
+---
 
-The honest reading of that table: most of the 277 are batch variants, `:free` tiers, superseded point releases and legacy ids — that is what a curated catalogue is *for*. The sharp number is the last column: **27 non-batch models released since 2026-08-01 are live and uncatalogued**, and they are the ones the last four ticks have been recommending one at a time. Two entries of note: **`mistralai/` has 25 live models and zero catalogue entries**, and the newest uncatalogued items per lab are `anthropic/claude-sonnet-5.5` (today), `z-ai/glm-5.3-prime`, `qwen/qwen3.8-max-prime`, `anthropic/claude-opus-5.5`, `openai/gpt-6-sol` / `gpt-6-luna`, `x-ai/grok-4.7`, `z-ai/glm-5.3-flashx`, `deepseek/deepseek-v4.1-flash`.
+## 5. The lane half of the ledger problem (measured, filed with DF-67)
 
-### 4.1 The decision queue is now the real story (state it plainly)
+`.seen_models.json` is written from `new_seen`, which is updated **only** in the core loop (`:1254`) and by basename-skip markers (`:1344`). The lane section filters with the same `_seen_match()` (`:1292`) but nothing records lane ids — so for any id no pre-`23cd355` run happened to record, that filter is inert and the row re-reports **every run**.
 
-The catalogue has stayed at **42 models across five consecutive ticks** while verified additions accumulate. Every one of these was verified live on the date shown and **none will re-appear in a future `--diff` report** — the ledger silences them the moment they are first seen (§5):
+Measured today: ledger **472 entries before and after** the run (16,565 bytes), 3 lane rows printed, **all three ids absent** from the ledger. And the report's own tracking-policy footnote names only *Reseller Watch / Blind Spot* — so a reader cannot tell a lane row's first appearance from its fifth.
+
+**Input for the pending DF-CHIMERA-V2-66 fix:** a naive "seen but not catalogued" section (ledger ∩ live catalogue, basename-normalised) yields **430 rows** on today's ledger — overwhelmingly registry lane SKUs and `:free`/`:batch` variants. That section needs the provider-class filter or it will be unreadable.
+
+---
+
+## 6. Coverage behind the recommendation (re-measured this tick)
+
+OpenRouter 464 ids; per-lab, excluding `:batch`/`:…` variants, catalogue lab resolved from the key's second-to-last segment:
+
+| lab | OR-live | catalogued | missing | new non-batch since 2026-08-01 | newest uncatalogued |
+|---|---:|---:|---:|---:|---|
+| `openai` | 65 | 6 | 59 | **8** | `gpt-6.1-sol-pro`, `gpt-6.1-sol` (09-29) |
+| `qwen` | 53 | 4 | 49 | **6** | `qwen3.8-max-prime`, `qwen3.8-omni-flash` |
+| `google` | 28 | 5 | 23 | **2** | `gemini-3.8-flash`, `gemini-3.7-flash` |
+| `mistralai` | 19 | **0** | 19 | 0 | — |
+| `z-ai` | 16 | 2 | 14 | **4** | `glm-5.3-prime`, `glm-5.3-flashx` |
+| `anthropic` | 15 | 5 | 10 | **3** | `claude-sonnet-5.5`, `claude-opus-5.5` |
+| `deepseek` | 14 | 2 | 12 | **3** | `deepseek-v4.1-flash` |
+| `minimax` | 8 | 1 | 7 | 0 | — |
+| `moonshotai` | 7 | 2 | 5 | 0 | — |
+| `x-ai` | 7 | 5 | 2 | **2** | `grok-4.7`, `grok-4.6` |
+| `tencent` | 7 | 1 | 6 | **4** | `hy4-preview`, `hy-mt2-*` |
+| `meta` | 6 | 0 | 6 | **5** | `muse-spark-1.3*`, `muse-glimmer-30b` |
+| `nvidia` | 5 | 0 | 5 | 1 | `nemotron-3.5-lightning` |
+| `cohere` | 5 | 0 | 5 | 1 | `command-a-plus` |
+| **totals** | **255** | **33** | **222** | **39** | |
+
+The honest reading is unchanged: most of the 222 are batch variants, `:free` tiers, superseded point releases and legacy ids — that is what a curated catalogue is *for*. The sharp number is **39 non-batch ids released since 2026-08-01 that are live and uncatalogued** — and 6 of them are already-verified, already-recommended adds that the `--diff` ledger can no longer surface.
+
+### 6.1 The decision backlog (unchanged for the 6th consecutive tick)
 
 | Verified add | First recommended | Today's state |
 |---|---|---|
-| `openrouter/openai/gpt-6-sol`, `openrouter/openai/gpt-6-luna` | 2026-09-24 | uncatalogued (re-verified OR-live: `openai/gpt-6-sol` created 2026-09-22) |
+| `openrouter/openai/gpt-6-sol`, `…/gpt-6-luna` | 2026-09-24 | uncatalogued (OR-created 2026-09-21) |
 | `openrouter/anthropic/claude-opus-5.5` | 2026-09-24 | uncatalogued (OR-created 2026-09-22, $4/$20 — undercuts `claude-opus-4.8` $5/$25) |
 | `openrouter/x-ai/grok-4.7` | 2026-09-24 | uncatalogued (OR-created 2026-09-21, $2/$6) |
 | `openrouter/z-ai/glm-5.3-flashx` | 2026-09-24 | uncatalogued (OR-created 2026-09-18) |
 | `openrouter/qwen/qwen3.7-flash` | 2026-09-28 | uncatalogued |
-| `openrouter/anthropic/claude-sonnet-5.5` | **today** | uncatalogued (recommend-add, §3) |
+| `openrouter/anthropic/claude-sonnet-5.5` | 2026-09-29 | uncatalogued (OR-created 2026-09-28) |
+| **`openrouter/openai/gpt-6.1-sol`** | **today** | uncatalogued (OR-created 2026-09-29) |
 
-That is a **decision backlog, not a discovery backlog** — and it is the one thing this cron cannot fix for itself (mandate: recommend-only). If only part of it is ever approved, the order that maximises value per approval is unchanged from 09-24: `gpt-6-sol` → `gpt-6-luna` (replace incumbents at no new cost) → `claude-opus-5.5` (a price cut on a flagship seat) → **`claude-sonnet-5.5`** (newer *and* cheaper than the sonnet 4.6 it would replace) → `grok-4.7` → `glm-5.3-flashx`.
-
----
-
-## 5. The ledger half that is still unfixed (finding, filed this tick)
-
-`.seen_models.json` is the **only** record of what has been seen, and it has two properties that matter together:
-
-1. **It cannot distinguish "seen and admitted" from "seen and ignored".** The filter suppresses a row once its id is in the ledger, so a verified-but-unapplied find is silent forever. Measured instance: `anthropic/claude-opus-5.5` (verified ADD on 09-24/25/26) is in the ledger and **not** in the catalogue — today's `--diff` cannot report it, and no run ever will again. The only thing keeping it alive is prose in weekly reports.
-2. **It is untracked and gitignored.** `git ls-files --error-unmatch .seen_models.json` fails, so the ledger has no history, cannot be diffed against a known state, and a lost or stale copy silently changes what counts as "new" — the failure mode the skill's own *seen-file trap* note describes.
-
-DF-CHIMERA-V2-64 fixed the *other* half (id-shape matching, `status: done`). This half is filed as **DF-CHIMERA-V2-66** (§7) with a concrete fix: a "seen but not catalogued" section derived at run time by intersecting the ledger with the live catalogue.
+Catalogue has stayed at **42 models across six consecutive ticks**. Value order if only part is approved: `gpt-6.1-sol` (newest, same sticker as the catalogued sol) → `gpt-6-sol` → `gpt-6-luna` → `claude-opus-5.5` (price cut on a flagship seat) → `claude-sonnet-5.5` (newer *and* cheaper than the sonnet 4.6 it would replace) → `grok-4.7` → `glm-5.3-flashx`.
 
 ---
 
-## 6. Deployment check
+## 7. Deployment check — **STALE**, explicit deferral recorded
 
 | Field | Value |
 |---|---|
-| `/health` running commit | `3f32a87` |
-| HEAD | `3f32a87` |
-| ancestry / material diff | **identical commits** — no diff run; nothing can be unreleased |
+| `/health` running commit | `958d7ca` |
+| HEAD | `45fe276` |
+| ancestry | `958d7ca` **is** an ancestor of HEAD |
+| material diff (`src/ scripts/ tests/ pyproject.toml`) | **`scripts/model_sync.py`, `tests/test_model_sync_provider_class.py`** — NON-EMPTY |
+| classification | **STALE** |
 | `/health` `version` / `uptime_models` | `0.2.7` / `42` (= the 42 models on disk) |
-| classification | **CURRENT** |
-| action | **none owed** — no reload claimed, none required |
+| service start | 2026-09-29 23:19:26 −05 (predates `23cd355`, 04:06) |
 
-The catalogue itself is untracked/local-only by design (AGENTS.md), so a catalogue edit could never be inferred from git; the `uptime_models: 42` read-back is the available evidence that the running process matches the on-disk file.
-
-Working-tree note (not this job's to fix, recorded so it is not mistaken for a sync artifact): untracked leftovers exist at the repo root and board dir — `gaps.json`, `.coding-hermes/board/.lock`, and three `*.jsonl.bak*` files, plus a modified `.gitreins/tasks.yaml`. Nothing in this run wrote to any of them.
+**Explicit deferral, with the reason.** The only material change since the running commit is the standalone model-sync script and its test — `grep -rn model_sync src/` returns nothing, so `chimera serve` does not import or execute either; the served API surface is byte-identical to the running process. The cron path this job owns already executed the new code from disk (it runs `.venv/bin/python scripts/model_sync.py` as a fresh process). A restart would interrupt any in-flight deliberation to load code the server never runs, so this tick **defers the reload** rather than claiming a deployment: the next foreman tick on this repo should reload (`sudo systemctl restart chimera`) or record its own deferral, and until then the deployment is **not** current.
 
 ---
 
-## 7. Board row filed this run
+## 8. Board row filed this run
 
 | Row | Priority | Finding |
 |---|---|---|
-| **DF-CHIMERA-V2-66** | P3 | `scripts/model_sync.py`'s `.seen_models.json` ledger suppresses a candidate permanently once seen, so verified-but-unapplied finds stop being reported (measured: `anthropic/claude-opus-5.5` verified ADD 2026-09-24, still uncatalogued 09-29, cannot re-surface), and the ledger is untracked/gitignored so it has no auditable history. Fix direction: emit a "Pending — seen, not catalogued" section each run by intersecting the ledger with the live catalogue (normalising `openrouter/*`), so an approved-but-unapplied add keeps appearing until admitted or explicitly dismissed. |
+| **DF-CHIMERA-V2-67** | P2 | The DF-65 lane/core split demotes a genuine core-lab release: `openai/gpt-6.1-sol` (OpenAI DevDay, 2026-09-29) reaches the scan only via `xkiro`/`commandcode`/`openai-codex` lane rows, so the 2026-09-30 run headlined "0 new models" while a day-old real OpenAI model sat in the lane section. Fix direction: promote a candidate whose id resolves to a core-lab models.dev block into the core section (counter-verified by the paid probe + OR row), keep block-less lane SKUs where they are, and record promoted ids in the ledger so they cannot re-report. |
 
-Board census before append: **269 rows, 269 unique ids, 0 duplicates, max `DF-CHIMERA-V2-65`** (verified by parsing every line, not by grep count). Appended with `~/.hermes/scripts/board_append.py` (O_APPEND, fusion guard, post-write re-read).
+Board census before append: **274 rows, 274 unique ids, 0 duplicates, max `DF-CHIMERA-V2-66`** (parsed line-wise, not grep-counted). Appended with `~/.hermes/scripts/board_append.py` (single-line compact JSON — a pretty-printed row is rejected as "not valid JSON" because the writer splits argv words on newlines). After: **275 rows, 275 unique, 0 dups; 33 pending.**
+
+Related, still open: **DF-CHIMERA-V2-66** (ledger cannot distinguish admitted from ignored) — §5 supplies its missing filter requirement; DF-65 **complete** this morning (`23cd355`, tier-2 3/3).
 
 ---
 
-## 8. Method / reproducibility
+## 9. Method / reproducibility
 
 ```bash
-# the run (cron wrapper does both steps)
+# the run (cron wrapper did step 1)
 cd ~/chimera-v2 && .venv/bin/python scripts/model_sync_cron.py
-#   -> reports/latest.md (+ latest_20260929_1200.md), /tmp/chimera-model-sync-diff-1058170.json,
-#      reports/model_scores_20260929_1200.yaml
+#   -> reports/latest.md (+ latest_20260930_1200.md), /tmp/chimera-model-sync-diff-484517.json
 
-# verification this tick (read-only; no catalogue writes anywhere):
-#   OR catalogue        GET https://openrouter.ai/api/v1/models   (460 ids, key from .env at runtime)
-#   route proof         POST /chat/completions max_tokens=4 for wire ids
-#                       'anthropic/claude-sonnet-5.5' and 'claude-sonnet-5.5'  (both 200)
-#   score validation    against {p for p, _ in chimera.selector.PATH_PATTERNS}  (32 canonical paths)
-#   credentials         load_config().api_keys -> booleans only; ANTHROPIC_API_KEY absent
-#   coverage            per-lab OR-live vs catalogue ids, non-batch cutoff 2026-08-01
-#   suppression proof   ledger presence of anthropic/claude-opus-5.5 vs its absence in chimera.yaml
-#   deployment          /health commit vs HEAD (identical) + uptime_models vs on-disk count
+# this tick (read-only unless stated; no catalogue writes anywhere):
+#   candidate truth   OR GET https://openrouter.ai/api/v1/models   (464 ids, key from .env at runtime)
+#   route proof       POST /chat/completions max_tokens=4 for wire id 'openai/gpt-6.1-sol' (200; $2/M/$10/M billed)
+#                     and 'deepseek/deepseek-v4.1-flash' (200)
+#   core-row proof    models.dev cache -> core `openai` block row `gpt-6.1-sol`
+#   registry proof    grep '"model": "gpt-6.1-sol"' task-router/data/tables/models.jsonl (clinepass/commandcode/
+#                     openai-codex/openrouter/xkiro/xkiro-2 rows; no `openai` block in the file)
+#   scoring           set -a; . ./.env; . ~/.hermes/.env; set +a
+#                     .venv/bin/python scripts/model_sync.py --score-from /tmp/chimera-curated-diff-20260930.json
+#   score validation  against {p for p, _ in chimera.selector.PATH_PATTERNS}  (32 canonical paths)
+#   ledger proof      472 entries before/after; none of the 3 printed ids present
+#   deployment        /health commit vs HEAD + git diff --name-only <running>..HEAD -- src/ scripts/ tests/ pyproject.toml
 ```
 
-Artifacts: `reports/latest.md` (+ `latest_20260929_1200.md`), `/tmp/chimera-model-sync-diff-1058170.json`, `reports/model_scores_20260929_1200.yaml`, `reports/model_sync_candidates_20260929.yaml`, this file, `reports/model_sync_weekly_20260928_archive.md`. Throwaway diagnostics (`/tmp/_diag_*.py`) were removed.
+Artifacts: `reports/latest.md` (+ `latest_20260930_1200.md`), `/tmp/chimera-model-sync-diff-484517.json`, `/tmp/chimera-curated-diff-20260930.json`, `reports/model_scores_20260930_1203.yaml`, `reports/model_sync_candidates_20260930.yaml`, this file, `reports/model_sync_weekly_20260929_archive.md`. Throwaway diagnostics (`/tmp/_diag_*.py`) removed.
 
-**Skill hygiene, still open:** `chimera-development` cites `references/category-paths.md`, which does not exist in the repo. Repoint it at `chimera.selector.PATH_PATTERNS` **and** record the tuple-unpacking step (`{p for p, _ in PATH_PATTERNS}` — unpacking wrong makes every score read as an unknown path).
+**Skill hygiene, still open (third tick):** `chimera-development` cites `references/category-paths.md`, which does not exist in the repo. Repoint it at `chimera.selector.PATH_PATTERNS` **and** record the tuple-unpacking step (`{p for p, _ in PATH_PATTERNS}` — unpacking wrong makes every score read as an unknown path).
 
 ---
 
-## 9. Action items
+## 10. Action items
 
-1. **Decide today's ADD:** `openrouter/anthropic/claude-sonnet-5.5` (tier question in §3†: scorer `standard` vs sibling `premium`; selection-neutral either way).
-2. **Decide the backlog (§4.1):** 6 verified adds spanning five ticks, all invisible to future `--diff` runs. Suggested order recorded there.
-3. **DF-CHIMERA-V2-66** (§5/§7) — the ledger cannot distinguish admitted from ignored, and is untracked. P3.
-4. **DF-CHIMERA-V2-65** (09-28, still `pending`) — lane-provider SKUs and vendor aliases printed as core-lab candidates. Not reproduced today (today's row is a core row), but unfixed.
-5. **Still open from previous ticks:** DF-CHIMERA-V2-61, -62, -63 (`pending`); DF-CHIMERA-V2-28 (StepFun native key vs OR); `mistralai/` is 25-live / 0-catalogued if Mistral coverage is ever wanted.
-6. **Carried gaps, still unscored:** `moonshotai/kimi-k3` (OR-live), `qwen/qwen3.8-flash` (OR-live) — both uncatalogued, neither surfaced today (both long since in the ledger).
+1. **Decide today's ADD:** `openrouter/openai/gpt-6.1-sol` (tier premium per the scorer; the sibling `gpt-5.6-sol` is premium too, so no tier question this time).
+2. **Decide the backlog (§6.1):** 7 verified adds spanning seven ticks, the last five invisible to future `--diff` runs.
+3. **DF-CHIMERA-V2-67** (§2/§8) — the lane split now hides real core-lab releases; P2, this is the first run affected.
+4. **DF-CHIMERA-V2-66** — still pending; §5 gives the filter requirement so its "pending" section is usable.
+5. **Reload owed** (§7) — `scripts/model_sync.py` is in the material diff while `chimera serve` runs the pre-fix tree; next tick reload or re-defer explicitly.
+6. **Still open from previous ticks:** DF-61, -62, -63 (`pending`); DF-28 (StepFun native key vs OR); `mistralai/` 19-live / 0-catalogued; `deepseek-v4.1-flash` pricing needs three-way reconciliation before it can ever be admitted.
