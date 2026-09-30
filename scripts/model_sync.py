@@ -37,6 +37,20 @@ id shape (``openai/gpt-6-sol`` one day, ``openai/openai/gpt-6-sol`` the next)
 and re-reported as a new find even though it was already seen. The comparison
 remains an equality on the whole trailing segment — never a prefix — so an
 entry for ``foo-v2`` still never covers ``foo-v3``.
+
+Since DF-CHIMERA-V2-65 the report separates PROVIDER CLASSES. The task-router
+registry also carries the fleet's scheduling LANES (xkiro, openai-codex, ...),
+and lane SKUs attributed to a core lab were printed under the lab's header and
+counted in the "N new models across M providers" headline (measured 09-28:
+5 of 7 rows were lane rows, yet the headline claimed 13 providers). Candidates
+whose ``provider`` is not a core lab now render in a separate "Task-Router
+Lane Providers" section with the lane named — never dropped (the lane registry
+surfaced real releases such as kimi-k2.8-preview) — and the headline counts
+core-lab candidates only, with lane finds stated as a separate count. Registry
+ALIAS rows (``alias_of`` set — e.g. the openai-codex ``gpt-daybreak-*-latest``
+pointers to already-catalogued ids) are never counted as new models: they are
+skipped with a stated trail and rendered in an explicit "Alias Skips" section
+naming ``alias_of``.
 """
 
 from __future__ import annotations
@@ -349,6 +363,22 @@ def _seen_entry_id(entry: str) -> str:
     return entry.split(SEEN_MARKER_PREFIX, 1)[0]
 
 
+def _alias_of(model_info: Any) -> str | None:
+    """The id a registry model row aliases (``alias_of`` field), or ``None``.
+
+    DF-CHIMERA-V2-65: task-router vendor-program rows carry ``alias_of`` (e.g.
+    ``gpt-daybreak-blue-latest`` → ``gpt-5.6-sol``), a MOVING pointer — an
+    alias must never be counted as a new model. Accepts the model-info dict a
+    scan loop already holds; a non-dict or absent/blank field is not an alias.
+    """
+    if not isinstance(model_info, dict):
+        return None
+    alias = model_info.get("alias_of")
+    if isinstance(alias, str) and alias.strip():
+        return alias.strip()
+    return None
+
+
 def _seen_match(model_id: str, seen: set[str] | frozenset[str]) -> str | None:
     """Return the seen entry that already covers ``model_id``, or ``None``.
 
@@ -604,12 +634,19 @@ def select_top_candidates(
 # ── Main logic ───────────────────────────────────────────────────────────────
 
 
-#: Basename skips from the LAST ``scan_models_dev()`` call — the report trail
-#: that keeps the headline honest (each skipped candidate is STATED, not
-#: silently dropped). One entry per skip:
-#: ``{model_id, chimera_id, provider, catalog_id}``. Cleared at the start of
-#: every scan; ``format_report()`` renders it and never writes it.
-LAST_BASENAME_SKIPS: list[dict[str, Any]] = []
+#: Skips from the LAST ``scan_models_dev()`` call — the report trail that
+#: keeps the headline honest (each skipped candidate is STATED, not silently
+#: dropped). One entry per skip: basename skips carry
+#: ``{model_id, chimera_id, provider, catalog_id}`` (DF-CHIMERA-V2-50); alias
+#: skips carry ``{model_id, chimera_id, provider, alias_of}``
+#: (DF-CHIMERA-V2-65). Cleared at the start of every scan;
+#: ``format_report()`` renders it and never writes it.
+LAST_SCAN_SKIPS: list[dict[str, Any]] = []
+
+#: Historical name of ``LAST_SCAN_SKIPS`` (the trail held only basename skips
+#: before DF-CHIMERA-V2-65). The alias keeps the existing seam name working —
+#: both names always reference the SAME list object.
+LAST_BASENAME_SKIPS: list[dict[str, Any]] = LAST_SCAN_SKIPS
 
 
 def scan_models_dev(
@@ -669,7 +706,7 @@ def scan_models_dev(
     chimera_models = _load_chimera_models()
 
     candidates: dict[str, list[dict[str, Any]]] = {}
-    LAST_BASENAME_SKIPS.clear()
+    LAST_SCAN_SKIPS.clear()
 
     # Router-covered (lab, model_id) pairs, computed BEFORE the block scan so
     # a models.dev fill row for an id the router also carries (under a lane)
@@ -706,6 +743,21 @@ def scan_models_dev(
 
             # Skip non-chat models
             if not _is_chat_model(model_id, family):
+                continue
+
+            # An ALIAS row is a moving pointer to another model id
+            # (DF-CHIMERA-V2-65) — never a new model. Stated, not dropped:
+            # the skip lands on the report's Alias Skips section.
+            alias_target = _alias_of(model_info)
+            if alias_target is not None:
+                LAST_SCAN_SKIPS.append(
+                    {
+                        "model_id": model_id,
+                        "chimera_id": _resolve_model_id(provider_id, model_id),
+                        "provider": provider_id,
+                        "alias_of": alias_target,
+                    }
+                )
                 continue
 
             # A models.dev fill row for an id the router also carries (under a
@@ -799,6 +851,18 @@ def scan_models_dev(
                     continue
                 already.add(model_id)
                 if not _is_chat_model(model_id, model_info.get("family", "")):
+                    continue
+                # Alias guard mirrors the core loop (DF-CHIMERA-V2-65).
+                alias_target = _alias_of(model_info)
+                if alias_target is not None:
+                    LAST_SCAN_SKIPS.append(
+                        {
+                            "model_id": model_id,
+                            "chimera_id": _resolve_model_id(lab, model_id),
+                            "provider": lane_id,
+                            "alias_of": alias_target,
+                        }
+                    )
                     continue
                 # Resolve against the ATTRIBUTED lab so the chimera id matches
                 # the catalog key shape (deepseek/..., not ollama-cloud/...).
@@ -1025,9 +1089,23 @@ def scan_all() -> tuple[
     } | _load_chimera_models() or set()
     watch, blind = scan_reseller_watch(cache, core_basenames)
 
+    # MEASURED lanes (DF-CHIMERA-V2-65): under a task-router source, every
+    # non-lab provider row IS a scheduling lane (xkiro, openai-codex, ...);
+    # the report must state them separately so a lane flood can never inflate
+    # the core-lab headline. A models.dev source contributes no lane rows.
+    if snapshot is not None and snapshot.source == "task-router":
+        measured_lanes = sorted(
+            pid
+            for pid, block in snapshot.data.items()
+            if pid != "_fetched_at" and pid not in CORE_PROVIDERS and isinstance(block, dict)
+        )
+    else:
+        measured_lanes = []
+
     scope: dict[str, Any] = {
         "core": sorted(measured_labs),
         "reseller": sorted(RESELLER_WATCH),
+        "lanes": measured_lanes,
         "out_of_scope": sum(1 for pid in cache if pid not in CORE_PROVIDERS and pid not in RESELLER_WATCH),
     }
     return candidates, watch, blind, scope
@@ -1038,9 +1116,12 @@ def _format_scope_statement(scope: dict[str, Any] | None, markdown: bool) -> lis
 
     Printed on EVERY run (header + footer). ``scope=None`` falls back to the
     configured lists — used when the report is formatted without a cache pass.
+    Since DF-CHIMERA-V2-65 the statement also names the task-router LANE ids
+    in scope separately from the core labs.
     """
     core = sorted(scope["core"]) if scope else sorted(CORE_PROVIDERS)
     reseller = sorted(scope["reseller"]) if scope else sorted(RESELLER_WATCH)
+    lanes = sorted(scope.get("lanes", [])) if scope else []
     out_count = int(scope["out_of_scope"]) if scope else 0
 
     scope_line = (
@@ -1048,14 +1129,30 @@ def _format_scope_statement(scope: dict[str, Any] | None, markdown: bool) -> lis
         f"reseller watch ({', '.join(reseller)}). "
         f"OUT: {out_count} other models.dev rows (not scanned)."
     )
+    lane_line: str | None = None
+    if lanes:
+        scope_line += f" Task-router lanes scanned ({', '.join(lanes)})."
+        lane_line = (
+            "Task-router lane finds are scheduling-lane SKUs, not core-lab "
+            "candidates: they are reported in their own section with the lane "
+            "named and are never counted in the core-lab headline."
+        )
     policy_line = (
         "Reseller Watch / Blind Spot sections are informational and NOT recorded "
         "in .seen_models.json — reseller-only finds are re-reported on every run "
         "until they appear in a core row or are admitted to the catalog."
     )
     if markdown:
-        return [f"**{scope_line}**", "", f"*{policy_line}*", ""]
-    return [scope_line, policy_line, ""]
+        out = [f"**{scope_line}**"]
+        if lane_line:
+            out.append(f"*{lane_line}*")
+        out.extend(["", f"*{policy_line}*", ""])
+        return out
+    out = [scope_line]
+    if lane_line:
+        out.append(lane_line)
+    out.extend([policy_line, ""])
+    return out
 
 
 def _format_reseller_section(
@@ -1115,12 +1212,30 @@ def format_report(
     blind_spot = blind_spot or []
     seen = _load_seen()
 
+    # Provider-class split (DF-CHIMERA-V2-65): the core loop attributes lane
+    # SKUs (candidates whose ``provider`` is a scheduling lane id, not a lab)
+    # into the lab's bucket — honest attribution, wrong REPORT surface. The
+    # split is per CANDIDATE (a mixed bucket holds both): a row whose
+    # ``provider`` is not in CORE_PROVIDERS is a LANE find — rendered in the
+    # dedicated lane section with the lane named, never dropped, never counted
+    # in the core-lab headline. A lab key with only lane rows behind it
+    # renders NO core section at all.
+    core_candidates: dict[str, list[dict[str, Any]]] = {}
+    lane_candidates: dict[str, list[dict[str, Any]]] = {}
+    for provider_id, models in candidates.items():
+        for m in models:
+            if m.get("provider") in CORE_PROVIDERS:
+                core_candidates.setdefault(provider_id, []).append(m)
+            else:
+                lane_candidates.setdefault(m.get("provider") or provider_id, []).append(m)
+
     lines: list[str] = []
     new_seen: set[str] = set()
 
-    total_new = 0
+    core_new = 0
+    lane_new = 0
 
-    for provider_id, models in candidates.items():
+    for provider_id, models in core_candidates.items():
         provider_name = PROVIDER_NAMES.get(provider_id, provider_id)
 
         # Filter for --diff mode: the seen comparison is ``_seen_match()`` —
@@ -1136,7 +1251,6 @@ def format_report(
             models = [m for m in models if _seen_match(m["chimera_id"], seen) is None]
             if not models:
                 continue
-
         new_seen.update(m["chimera_id"] for m in models)
 
         if markdown:
@@ -1163,20 +1277,62 @@ def format_report(
                 tag = " [NEW]" if _seen_match(m["chimera_id"], seen) is None else ""
                 lines.append(f"  {m['chimera_id']:50s} recency={rec:.0f}  inp={inp}  out={out}{tag}")
 
-            total_new += 1
+            core_new += 1
 
         if markdown:
             lines.append("")
 
+    # Task-router LANE finds (DF-CHIMERA-V2-65): their own section, provider
+    # named, separated from every core-lab section. --diff filters with the
+    # same _seen_match comparison the core loop uses; a lane with nothing
+    # fresh renders nothing (the headline still states the lane totals).
+    if lane_candidates:
+        lane_fresh: dict[str, list[dict[str, Any]]] = {}
+        for lane_id, models in lane_candidates.items():
+            fresh = [m for m in models if not diff_only or _seen_match(m["chimera_id"], seen) is None]
+            if fresh:
+                lane_fresh[lane_id] = fresh
+        if lane_fresh:
+            lines.append("## Task-Router Lane Providers (fleet scheduling lanes — not core labs)")
+            lines.append("")
+            for lane_id in sorted(lane_fresh):
+                models = lane_fresh[lane_id]
+                if markdown:
+                    lines.append(f"### Lane `{lane_id}`")
+                    lines.append("")
+                    lines.append("| Model | Chimera ID | Recency | Input/1k | Output/1k |")
+                    lines.append("|-------|-----------|---------|----------|-----------|")
+                else:
+                    lines.append(f"\n{'-' * 70}")
+                    lines.append(f"  Lane {lane_id} — {len(models)} candidates")
+                    lines.append(f"{'-' * 70}")
+                for m in models:
+                    inp = f"${m['input_per_1k']:.6f}" if m["input_per_1k"] else "N/A"
+                    out = f"${m['output_per_1k']:.6f}" if m["output_per_1k"] else "N/A"
+                    rec = m["recency_score"]
+                    if markdown:
+                        lines.append(
+                            f"| `{m['model_id']}` | `{m['chimera_id']}` | {rec:.0f} | {inp} | {out} |"
+                        )
+                    else:
+                        tag = " [NEW]" if _seen_match(m["chimera_id"], seen) is None else ""
+                        lines.append(f"  {m['chimera_id']:50s} recency={rec:.0f}  inp={inp}  out={out}{tag}")
+                    lane_new += 1
+                if markdown:
+                    lines.append("")
+            if not markdown:
+                lines.append("")
+
     # Basename skips (DF-CHIMERA-V2-50): stated, never silently dropped — the
     # headline counts only NEW finds, and the SKIP lines name the catalog
     # entry each candidate already matches by basename. The trail is read
-    # from the LAST scan (LAST_BASENAME_SKIPS); tests that format reports
+    # from the LAST scan (LAST_SCAN_SKIPS); tests that format reports
     # without a scan simply see none.
-    if LAST_BASENAME_SKIPS:
+    basename_skips = [s for s in LAST_SCAN_SKIPS if "alias_of" not in s]
+    if basename_skips:
         lines.append("## Basename Skips (already admitted under another prefix)")
         lines.append("")
-        for skip in LAST_BASENAME_SKIPS:
+        for skip in basename_skips:
             catalog_id = skip["catalog_id"]
             note = f"{SEEN_MARKER_PREFIX}{catalog_id}{SEEN_MARKER_SUFFIX}"
             if markdown:
@@ -1186,6 +1342,27 @@ def format_report(
             else:
                 lines.append(f"  SKIP {skip['chimera_id']:50s} basename-match → {catalog_id}")
             new_seen.add(f"{skip['chimera_id']}{note}")
+        lines.append("")
+
+    # Alias skips (DF-CHIMERA-V2-65): a registry row carrying ``alias_of`` is
+    # a MOVING pointer to another model id, never a new model. Stated with the
+    # alias target so the underlying release stays visible; never counted in
+    # the headline and never recorded in .seen_models.json.
+    alias_skips = [s for s in LAST_SCAN_SKIPS if "alias_of" in s]
+    if alias_skips:
+        lines.append("## Alias Skips (registry alias rows — never counted as new models)")
+        lines.append("")
+        for skip in alias_skips:
+            if markdown:
+                lines.append(
+                    f"- SKIP `{skip['chimera_id']}` (provider `{skip['provider']}`) — "
+                    f"alias_of `{skip['alias_of']}`"
+                )
+            else:
+                lines.append(
+                    f"  SKIP {skip['chimera_id']:50s} alias_of → {skip['alias_of']}"
+                    f"  (provider: {skip['provider']})"
+                )
         lines.append("")
 
     # Reseller watch + blind spot — informational, never tracked in .seen_models.json
@@ -1199,20 +1376,26 @@ def format_report(
     lines.append(policy)
     lines.append("")
 
-    # Summary
+    # Summary (DF-CHIMERA-V2-65): the headline counts CORE-lab candidates and
+    # core providers only — a lane flood can never inflate "across N providers"
+    # again — and states the lane finds as an explicit separate count right
+    # beside it ("plus K task-router lane finds").
+    lane_clause = f", plus {lane_new} task-router lane find" + ("s" if lane_new != 1 else "")
     if markdown:
         header = [
             "# Chimera Model Sync Report",
             "",
             f"**Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}",
-            f"**Candidates:** {total_new} new models across {len(candidates)} providers",
+            f"**Candidates:** {core_new} new models across {len(core_candidates)} providers{lane_clause}",
             "",
         ]
         header.extend(_format_scope_statement(scope, markdown=True))
         lines = header + lines
     else:
         header = [f"Chimera Model Sync — {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}"]
-        header.append(f"Candidates: {total_new} new models across {len(candidates)} providers")
+        header.append(
+            f"Candidates: {core_new} new models across {len(core_candidates)} providers{lane_clause}"
+        )
         header.append("")
         header.extend(_format_scope_statement(scope, markdown=False))
         lines = header + lines
@@ -1228,7 +1411,7 @@ def format_report(
     # watch/blind ids are still deliberately NOT recorded: they are
     # re-reported every run until the model surfaces in a core row or is
     # admitted to the catalog.
-    if diff_only or candidates or LAST_BASENAME_SKIPS:
+    if diff_only or candidates or LAST_SCAN_SKIPS:
         all_seen = seen | new_seen
         _save_seen(all_seen)
 
