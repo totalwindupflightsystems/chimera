@@ -80,6 +80,38 @@ def _isolate_blocked_model_registry(
         blocked_models.set_shared_registry(original)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _strip_ambient_proxy_env() -> Any:
+    """Keep ambient proxy settings out of the suite (QA-CHIMERA-V2-35).
+
+    Every network-touching test here talks to LOOPBACK endpoints (stdlib
+    stubs, in-process uvicorn) and was written against a box with no proxy
+    env. On a host where the network is cut via proxy variables
+    (``HTTP_PROXY=http://127.0.0.1:9`` etc.), httpx/aiohttp/urllib honour
+    them and route even 127.0.0.1 through the dead proxy, so the gateway
+    custom-base-url and SSE socket tests hard-error with
+    ``ClientProxyConnectionError`` / ``ConnectionRefusedError`` instead of
+    passing. Delete the ambient proxy variables for the whole session so the
+    suite runs in the no-proxy environment it was written against.
+    """
+    monkeypatch = pytest.MonkeyPatch()
+    for var in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "NO_PROXY",
+        "no_proxy",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    try:
+        yield
+    finally:
+        monkeypatch.undo()
+
+
 # A compact, deterministic model catalog + formations mirroring chimera.yaml.example
 # (category scores are PERCENT 0-100, the canonical scale the shipped templates,
 # the live catalog and GET /v1/models all carry — see chimera.config

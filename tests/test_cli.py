@@ -528,6 +528,17 @@ def _stub_engine_with_failures(monkeypatch, failures):  # type: ignore[no-untype
 
     monkeypatch.setattr("chimera.cli.main.Engine", StubEngine)
     monkeypatch.setattr("chimera.cli.main.LiteLLMGateway", lambda *a, **k: None)
+    # QA-CHIMERA-V2-35: ``load_config`` runs provider auto-discovery, which
+    # reads the ambient models.dev cache / task-router registry and fetches
+    # over the network on a miss — its structured log lines (e.g. a
+    # ``provider_fetch_failed`` warning when the network is cut) leak into
+    # stderr and break these tests' stderr-purity assertions with ambient
+    # machine inventory. The warning contract under test comes from the stub
+    # engine, so sandbox discovery to a deterministic no-op.
+    monkeypatch.setattr(
+        "chimera.provider_discovery.discover_providers",
+        lambda **kwargs: ({}, {}),
+    )
 
 
 def test_cli_warns_about_dropped_workers_without_verbose(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]

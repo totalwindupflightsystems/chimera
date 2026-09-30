@@ -115,6 +115,17 @@ def _stub_engine(monkeypatch, result: DeliberationResult, captured: dict | None 
 
     monkeypatch.setattr("chimera.cli.main.Engine", StubEngine)
     monkeypatch.setattr("chimera.cli.main.LiteLLMGateway", lambda *a, **k: None)
+    # QA-CHIMERA-V2-35: ``load_config`` runs provider auto-discovery, which
+    # reads the ambient models.dev cache / task-router registry and fetches
+    # over the network on a miss — its structured log lines (e.g. a
+    # ``provider_fetch_failed`` warning when the network is cut) leak into
+    # stderr and break the stream-purity assertions below with ambient
+    # machine inventory. The warning contract under test comes from the stub
+    # engine, so sandbox discovery to a deterministic no-op.
+    monkeypatch.setattr(
+        "chimera.provider_discovery.discover_providers",
+        lambda **kwargs: ({}, {}),
+    )
 
 
 def _invoke(config_file, *args: str):  # type: ignore[no-untyped-def]
@@ -494,12 +505,19 @@ _DRIVER = textwrap.dedent(
     import sys
 
     import chimera.cli.main as cli
+    import chimera.provider_discovery as provider_discovery
     from chimera.engine import (
         DeliberationResult,
         DeliberationTrace,
         StageSpan,
         WorkerFailure,
     )
+
+    # QA-CHIMERA-V2-35: monkeypatch does not reach this fresh interpreter, so
+    # sandbox provider auto-discovery here too — otherwise ``load_config``
+    # reads the ambient models.dev cache / task-router registry and its log
+    # lines (e.g. ``provider_fetch_failed`` on a cut network) pollute stderr.
+    provider_discovery.discover_providers = lambda **kwargs: ({}, {})
 
 
     def _span(stage_id="worker_1", kind="worker", model="deepseek/deepseek-chat"):
