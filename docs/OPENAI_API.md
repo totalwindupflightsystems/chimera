@@ -429,7 +429,10 @@ Any OpenAI SDK works — just change `base_url`:
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8765/v1", api_key="not-needed")
+client = OpenAI(
+    base_url="http://localhost:8765/v1",
+    api_key="not-needed"
+)
 
 response = client.chat.completions.create(
     model="auto",
@@ -437,8 +440,8 @@ response = client.chat.completions.create(
     # Chimera extras via extra_body:
     extra_body={
         "allowed_models": ["deepseek/deepseek-v4-pro", "zai-coding-plan/glm-5.2"],
-        "stage_models": {"aggregator": "anthropic/claude-sonnet-4.6"},
-    },
+        "stage_models": {"aggregator": "anthropic/claude-sonnet-4.6"}
+    }
 )
 
 print(response.choices[0].message.content)
@@ -566,11 +569,10 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8765/v1", api_key="not-needed")
 
 page = client.models.list()
-print(len(page.data), page.data[0].id)  # -> 42 deepseek/deepseek-v4-pro
+print(len(page.data), page.data[0].id)   # -> 42 deepseek/deepseek-v4-pro
 
 # Chimera extension: the keyed catalog map, same payloads as data[].
 import httpx
-
 catalog = httpx.get("http://localhost:8765/v1/models").json()["catalog"]
 ```
 
