@@ -204,6 +204,16 @@ class DeliberationTrace(BaseModel):
     """Worker (and other) stages that degraded with an upstream error — the
     machine-readable form of the CLI's dropped-worker warning. Empty when
     every stage succeeded."""
+    degraded_reasons: list[str] = Field(default_factory=list)
+    """Stage truncations that silently degrade the merged answer — one
+    ``"<stage_id>: token_limit"`` entry per stage span whose call ended with
+    ``finish_reason == "length"`` (its ``max_tokens`` cap cut the output off).
+    Empty when no stage was truncated. A truncated worker's fragment still
+    reaches the aggregator, so the final answer can read as clean prose while
+    silently lacking whatever the truncated stage never produced — this list
+    is the machine-readable marker that distinguishes such a merge from a
+    good one (DF-CHIMERA-V2-55). The dispatch span never contributes: its
+    small structured design call is uncapped and produces no answer text."""
 
 
 class DeliberationResult(BaseModel):
@@ -1806,6 +1816,15 @@ class Engine:
         all_spans: list[StageSpan] = [dispatch_span, *stage_spans.values()]
         total_cost = round(sum(s.cost for s in all_spans), 6)
         total_tokens = sum(s.tokens_input + s.tokens_output for s in all_spans)
+        # DF-CHIMERA-V2-55: name every stage the token cap cut off. A capped
+        # worker's fragment still reaches the aggregator and the merged answer
+        # reads as clean prose — these entries are the visible marker that it
+        # is silently incomplete. The dispatch span is excluded by construction
+        # (it is not in ``stage_spans``): its design call produces no answer
+        # text.
+        degraded_reasons = [
+            f"{span.stage_id}: token_limit" for span in stage_spans.values() if span.finish_reason == "length"
+        ]
         return DeliberationTrace(
             request_id=request_id,
             formation=formation,
@@ -1826,6 +1845,7 @@ class Engine:
             dispatch_fallback_reason=dispatch.fallback_reason,
             dispatch_repairs=list(dispatch.dispatch_repairs),
             worker_failures=list(worker_failures or []),
+            degraded_reasons=degraded_reasons,
         )
 
     @staticmethod

@@ -128,6 +128,46 @@ answer it received may be cut short.
 The per-stage detail — including each span's own finish reason — is on
 `POST /v1/deliberate`'s `trace`.
 
+### `chimera_degraded_reasons`: WHICH stages were truncated
+
+`finish_reason: "length"` says *that* something was cut off; the
+`chimera_degraded_reasons` field on the same response says *what*: one
+`"<stage_id>: token_limit"` entry per stage whose call hit its `max_tokens`
+cap. When nothing was truncated the field is **absent** — clean responses are
+byte-identical:
+
+```json
+{
+  "id": "chatcmpl-...",
+  "object": "chat.completion",
+  "choices": [ ... ],
+  "usage": { ... },
+  "chimera_degraded_reasons": ["worker_1: token_limit", "worker_2: token_limit"]
+}
+```
+
+This marker exists because a token-capped merge is silent garbage by
+construction: a worker cut off mid-protocol (its output ends as a fragment
+like `"We need answer user. Output:"`) still feeds the aggregator, the
+aggregator merges its own reasoning about those fragments, and the final
+answer reads as clean, well-formed prose. A cost-bounding client that sets a
+small `max_tokens` cannot tell that merge from a good one by looking at the
+answer — `chimera_degraded_reasons` is the check:
+
+```python
+resp = client.chat.completions.create(...)
+body = resp.model_dump() if hasattr(resp, "model_dump") else resp
+if body.get("chimera_degraded_reasons"):
+    # At least one stage was truncated at the token cap: the answer may be
+    # well-formed prose built from fragments. Raise the cap and retry, or
+    # treat the answer as partial.
+    ...
+```
+
+OpenAI-strict clients ignore the unknown field; SDK wrappers that hide it
+still expose the coarser `finish_reason: "length"` signal on the choice.
+`POST /v1/deliberate` carries the same list as `trace.degraded_reasons`.
+
 The following standard OpenAI fields are accepted for drop-in compatibility
 but are **documented no-ops** (never errors, never silently misapplied):
 
@@ -389,10 +429,7 @@ Any OpenAI SDK works — just change `base_url`:
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    base_url="http://localhost:8765/v1",
-    api_key="not-needed"
-)
+client = OpenAI(base_url="http://localhost:8765/v1", api_key="not-needed")
 
 response = client.chat.completions.create(
     model="auto",
@@ -400,8 +437,8 @@ response = client.chat.completions.create(
     # Chimera extras via extra_body:
     extra_body={
         "allowed_models": ["deepseek/deepseek-v4-pro", "zai-coding-plan/glm-5.2"],
-        "stage_models": {"aggregator": "anthropic/claude-sonnet-4.6"}
-    }
+        "stage_models": {"aggregator": "anthropic/claude-sonnet-4.6"},
+    },
 )
 
 print(response.choices[0].message.content)
@@ -529,10 +566,11 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8765/v1", api_key="not-needed")
 
 page = client.models.list()
-print(len(page.data), page.data[0].id)   # -> 42 deepseek/deepseek-v4-pro
+print(len(page.data), page.data[0].id)  # -> 42 deepseek/deepseek-v4-pro
 
 # Chimera extension: the keyed catalog map, same payloads as data[].
 import httpx
+
 catalog = httpx.get("http://localhost:8765/v1/models").json()["catalog"]
 ```
 

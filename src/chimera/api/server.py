@@ -337,6 +337,18 @@ class ChatCompletionResponse(BaseModel):
     (not null) when the format was honored or none was requested, so existing
     responses are byte-identical. The field is Chimera-specific; OpenAI-strict
     clients ignore unknown response fields."""
+    chimera_degraded_reasons: list[str] | None = None
+    """Present ONLY when at least one answer-contributing stage was truncated
+    at its ``max_tokens`` cap — one ``"<stage_id>: token_limit"`` entry per
+    truncated stage, mirroring ``trace.degraded_reasons`` (DF-CHIMERA-V2-55).
+    A capped worker's fragment still reaches the aggregator, so the merged
+    answer can read as clean, well-formed prose while silently lacking
+    whatever the truncated stage never produced; this marker is how a
+    cost-bounding client tells that garbage merge from a good one. Absent
+    (not null) when no stage was truncated, so clean responses stay
+    byte-identical. Chimera-specific; OpenAI-strict clients ignore unknown
+    response fields. The choice's ``finish_reason`` carries the coarser
+    ``"length"`` signal (DF-CHIMERA-V2-54); this field names the stages."""
 
 
 def _compat_format_negotiation(trace: DeliberationTrace) -> dict[str, Any] | None:
@@ -941,6 +953,11 @@ def _register_routes(app: FastAPI) -> None:
                 # response instead of living only in the logs. Present only
                 # when the requested format was weakened; omitted otherwise.
                 chimera_format_negotiation=_compat_format_negotiation(trace),
+                # DF-CHIMERA-V2-55: name the stages the token cap cut off —
+                # a worker capped mid-protocol merges into clean-looking
+                # garbage. ``or None`` keeps the field absent on clean runs
+                # (response_model_exclude_none), mirroring the field above.
+                chimera_degraded_reasons=trace.degraded_reasons or None,
             )
         finally:
             queue.release()
