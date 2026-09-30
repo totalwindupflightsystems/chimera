@@ -1850,3 +1850,43 @@ tasks:
   status: complete
   created_at: '2026-09-29T07:47:42.921647+00:00'
   completed_at: '2026-09-29T07:48:41.405369+00:00'
+- id: CH-LINT-DRIFT-001
+  title: Fix ruff format drift
+  criteria:
+  - ruff format --check reports 0 files would be reformatted
+  - tests pass after formatting
+  - no behavior change beyond formatting
+  status: complete
+  created_at: '2026-09-29T08:02:45.554643+00:00'
+  completed_at: '2026-09-29T08:13:18.075018+00:00'
+- id: CHIMERA-V2-REVIEW-01
+  title: Restart stale :8765 deployment (running 65ab18d vs HEAD 09b1dec)
+  criteria:
+  - systemctl restart chimera executed; /health reports running commit == HEAD 09b1dec;
+    scripts/smoke_live.py exit 0 (deployment CURRENT, live deliberation merged)
+  status: complete
+  created_at: '2026-09-29T08:59:13.912335+00:00'
+  completed_at: '2026-09-29T08:59:14.482880+00:00'
+- id: DF-CHIMERA-V2-59
+  title: Reject unknown formation preset keys; actionable auto-preset error
+  criteria:
+  - Unknown formation preset key raises ValidationError at config load naming the
+    key
+  - Valid workers:2 preset builds structural DAG unchanged; auto-preset error mentions
+    workers
+  status: complete
+  created_at: '2026-09-29T15:40:25.979451+00:00'
+  completed_at: '2026-09-29T15:40:30.484898+00:00'
+- id: QA-CHIMERA-V2-35
+  title: 'Clean-machine brittleness under a cut network: proxy env + ambient log lines'
+  criteria:
+  - 'Under HTTP_PROXY/HTTPS_PROXY/ALL_PROXY pointing at a dead proxy, the full suite
+    does not hard-error on connection failures: tests/test_gateway_custom_base_url.py
+    and the SSE mid-run tests fail gracefully or expect a clean offline failure, not
+    ClientProxyConnectionError tracebacks'
+  - 'The 3 CLI stderr-purity tests sandbox their inventory: they pass regardless of
+    ambient provider_cache_hit JSON log lines from a live dev-box cache'
+  - Without proxy env, the suite stays green (no regression from the fix)
+  status: complete
+  created_at: '2026-09-29T23:15:16.134778+00:00'
+  completed_at: '2026-09-30T00:09:49.073676+00:00'
