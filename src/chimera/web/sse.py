@@ -38,6 +38,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -196,7 +197,7 @@ class SSEBroadcaster:
             with contextlib.suppress(asyncio.QueueFull):
                 sub.queue.put_nowait(event)
 
-    async def event_stream(self, session_id: str, sub: SSESubscriber):
+    async def event_stream(self, session_id: str, sub: SSESubscriber) -> AsyncIterator[str]:
         """Async generator yielding SSE-formatted strings.
 
         Yields events until the subscriber is unsubscribed (sentinel None),

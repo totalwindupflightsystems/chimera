@@ -118,7 +118,7 @@ class ChimeraGroup(click.Group):
     subcommands like ``chimera formations``.
     """
 
-    def resolve_command(self, ctx: click.Context, args: list[str]):
+    def resolve_command(self, ctx: click.Context, args: list[str]) -> tuple[str, click.Command, list[str]]:
         cmd_name = args[0] if args else ""
         if cmd_name in self.commands:
             return super().resolve_command(ctx, args)

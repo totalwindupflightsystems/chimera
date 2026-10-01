@@ -30,12 +30,13 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 from chimera.api.dependencies import require_api_key, require_api_key_or_query
@@ -578,7 +579,7 @@ async def get_session(session_id: str) -> SessionInfo:
 
 
 @router.post("/debug/reset")
-async def debug_reset():
+async def debug_reset() -> dict[str, str]:
     """Reset singleton state between integration tests.
 
     Destructive: rebinds the shared session manager and SSE broadcaster so
@@ -612,7 +613,7 @@ async def sse_stream(
             )
         ),
     ] = None,
-):
+) -> StreamingResponse:
     """SSE event stream for a session.
 
     The client opens this as an EventSource and receives real-time updates
@@ -710,7 +711,7 @@ async def sse_stream(
             _sse_broadcaster.deliver(sub, SSEEvent(event=event_name, data=event_data))
         _sse_broadcaster.close_subscriber(session_id, sub)
 
-    async def generate():
+    async def generate() -> AsyncIterator[str]:
         async for event_str in _sse_broadcaster.event_stream(session_id, sub):
             yield event_str
 
@@ -725,7 +726,7 @@ async def sse_stream(
     )
 
 
-def _unknown_session_stream(session_id: str):
+def _unknown_session_stream(session_id: str) -> StreamingResponse:
     """A terminal SSE stream for a session id that no longer exists.
 
     Sends the ``error`` frame (reason ``unknown_session``) followed by the
@@ -733,9 +734,8 @@ def _unknown_session_stream(session_id: str):
     instead of a JSON 404 body it can only report as a retryable drop. No
     subscriber is ever registered, so nothing leaks into the broadcaster.
     """
-    from starlette.responses import StreamingResponse
 
-    def generate():
+    def generate() -> AsyncIterator[str]:
         yield SSEEvent(
             event="error",
             data={"reason": "unknown_session", "session_id": session_id},
@@ -762,7 +762,7 @@ def _unknown_session_stream(session_id: str):
 
 
 @ui_router.get("/")
-async def serve_spa():
+async def serve_spa() -> HTMLResponse:
     """Serve the single-page web UI.
 
     DF-CHIMERA-V2-41: public even with ``auth.enabled=true``.  The shell is
@@ -772,8 +772,6 @@ async def serve_spa():
     (sessions, chat, history, SSE) keeps its key requirement.
     """
     from pathlib import Path
-
-    from fastapi.responses import HTMLResponse
 
     static_dir = Path(__file__).parent / "static"
     index_path = static_dir / "index.html"
