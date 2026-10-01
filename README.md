@@ -667,3 +667,22 @@ another prefix's model rather than re-dispatching at the same one.
 See [docs/CONFIG.md](docs/CONFIG.md#custom-openai-compatible-endpoints) for the
 full contract.
 
+## Contributing
+
+Thanks to everyone who has filed an issue, reported a provider regression, or
+sent a patch — Chimera gets better because of it.
+
+The full guide lives in [CONTRIBUTING.md](./CONTRIBUTING.md). In short:
+
+- Fork the repository
+- Create a feature branch: `git checkout -b feature/my-change`
+- Make your changes, and add tests where they apply
+- Run the test suite: `.venv/bin/python -m pytest -x --tb=short -q`
+- Run the linter: `ruff check .`
+- Open a Pull Request against `main` with a clear description of the change
+
+Every PR is reviewed, and CI must pass before it can merge: the workflow runs
+`ruff` plus the unit-test matrix on Python 3.11, 3.12 and 3.13. Commit messages
+follow the repo convention (`feat:`, `fix:`, `docs:`, …), also described in
+[CONTRIBUTING.md](./CONTRIBUTING.md).
+
