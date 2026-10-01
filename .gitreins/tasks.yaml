@@ -1924,3 +1924,43 @@ tasks:
   status: complete
   created_at: '2026-09-30T23:41:25.305849+00:00'
   completed_at: '2026-10-01T00:18:08.506449+00:00'
+- id: PYTYP-2605
+  title: Python typing annotation audit
+  criteria:
+  - At least 50 public functions in core modules have return type annotations
+  - "ruff ANN violation count reduced by at least 100 from baseline (1522 \u2192 \u2264\
+    1422)"
+  - No new test failures introduced
+  status: complete
+  created_at: '2026-10-01T06:10:53.778030+00:00'
+  completed_at: '2026-10-01T06:38:24.389072+00:00'
+- id: GAP-001
+  title: Add Contributing section to README
+  criteria:
+  - README.md contains a Contributing section with a link to CONTRIBUTING.md and basic
+    contribution steps
+  status: in_progress
+  created_at: '2026-10-01T06:45:54.922597+00:00'
+- id: DEPS-008
+  title: 'Python deps refresh: 21 outdated packages in groups'
+  criteria:
+  - Minor/patch drift group landed with full suite green and pip check clean
+  - openai 3.x group landed OR reverted with root cause documented
+  - mcp 2.x group landed OR reverted with root cause documented
+  - huggingface_hub 2.0 group landed OR reverted with root cause documented
+  - Remaining outdated census printed with reasons for any not-bumped packages
+  status: complete
+  created_at: '2026-10-01T08:06:15.711185+00:00'
+  completed_at: '2026-10-01T09:15:04.567465+00:00'
+- id: CH-MAINT-007
+  title: Automated freshness check for the litellm<1.100 pin
+  criteria:
+  - A check script exists that tests whether litellm>=1.100 still pollutes stdout
+    via ANSI provider prints, and reports whether the pin can be lifted
+  - The script is stdlib+litellm-only, runs green in the repo venv against the installed
+    pin, and is wired into the scheduler cron shape per scripts/model_sync_cron.py
+    precedent
+  - A test covers the script's verdict logic
+  status: complete
+  created_at: '2026-10-01T21:27:58.538678+00:00'
+  completed_at: '2026-10-01T22:30:16.998496+00:00'
