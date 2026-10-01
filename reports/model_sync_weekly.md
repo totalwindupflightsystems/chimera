@@ -7,7 +7,7 @@
 **`.seen_models.json`:** **472 → 474 entries** (474 unique, 0 dups, sorted) — the run appended exactly the two ids it printed, and both are present (§5). Yesterday's archived report recorded 472 pre- and post-run.
 **Registry input:** `source=task-router`, `data/tables/models.jsonl` (1,877 rows, mtime 2026-10-01 11:45), **29 provider blocks**; provider cache hit `age_s=1020`, `stale=False`; `provider_discovery_done models=5196 providers=10`. The log's `providers=25` still disagrees with the file's 29 (§6).
 **Catalog:** **42 models / 42 enabled / 13 providers**, untouched by this run (recommend-only mandate; `load_config()` re-read after the reload).
-**Deployment:** HEAD `897dbd0`, running commit at tick start `628fc2d`, material diff **NON-EMPTY** ⇒ **STALE** ⇒ **reloaded this tick** and verified — post-restart `/health` = `897dbd0` and `smoke_live.py` exit 0 (§7).
+**Deployment:** HEAD `897dbd0`, running commit at tick start `628fc2d`, material diff **NON-EMPTY** ⇒ **STALE** ⇒ **reloaded this tick** and verified — post-restart `/health` = `897dbd0` and `smoke_live.py` exit 0 (§7). This tick's own commit `02f5765` (board + report only) sits on top of it; the material diff `897dbd0..02f5765` is **empty** ⇒ bookkeeping-only gap, running code is current.
 **Archive:** yesterday's file copied to `reports/model_sync_weekly_20260930_archive.md` before this file replaced it.
 
 **DF-CHIMERA-V2-67 verified fixed.** The lane/core split that demoted yesterday's model now promotes it: the diff json carries `"core_lab_member": true`, the row renders in the **OpenAI** core section, and the headline counts it. Both halves of the fix are confirmed by observation, not by the commit message (§1, §5).
@@ -125,6 +125,8 @@ The wrapper's log line says `providers=25`; `data/tables/models.jsonl` holds **2
 | smoke | `.venv/bin/python scripts/smoke_live.py` → `deployment: CURRENT — running commit 897dbd0 == expected commit origin/main`, `SMOKE PASS: live deliberation returned a merged answer`, **exit 0** |
 
 Both halves of the evidence contract are met (post-restart `/health` shows the new commit **and** the smoke test passes), so this tick claims the reload rather than deferring it. No in-flight deliberation was interrupted (the only calls in the 60s before the restart were `/v1/health` probes).
+
+After the reload this tick committed `02f5765` (board row + this report, no code). Material diff `897dbd0..02f5765` over `src/ scripts/ tests/ pyproject.toml` is **empty** ⇒ the resulting one-commit gap is **CODE-CURRENT** (bookkeeping-only), not a new staleness finding. Running code remains `897dbd0`; the next tick should read that as CODE-CURRENT, not STALE.
 
 ---
 
