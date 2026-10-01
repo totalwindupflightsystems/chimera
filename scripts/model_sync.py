@@ -649,6 +649,29 @@ LAST_SCAN_SKIPS: list[dict[str, Any]] = []
 LAST_BASENAME_SKIPS: list[dict[str, Any]] = LAST_SCAN_SKIPS
 
 
+def _core_lab_member(lab_block: Any, model_id: str) -> bool:
+    """True when the lab's OWN registry block carries this model id.
+
+    DF-CHIMERA-V2-67: the report splits candidates by the row's ``provider``
+    field, but a genuine core-lab release can reach a run ONLY through lane
+    provider rows (the core block's models.dev fill row is deliberately
+    skipped in favour of the router row — router pricing is the authority,
+    DF-CHIMERA-V2-49). Membership in the lab's merged block is the promotion
+    signal. Compared at BASENAME level (case-insensitive, the same shared
+    helper both dedupe paths use): lane rows arrive under different prefix
+    shapes for one model (``gpt-6.1-sol``, ``openai/gpt-6.1-sol``,
+    ``openai/openai/gpt-6.1-sol``) while the lab block carries one of those
+    shapes — whole-basename equality keeps ``foo-v3`` from matching ``foo-v2``.
+    """
+    if not isinstance(lab_block, dict):
+        return False
+    models = lab_block.get("models", {})
+    if not isinstance(models, dict):
+        return False
+    target = _basename(model_id).lower()
+    return any(_basename(block_id).lower() == target for block_id in models)
+
+
 def scan_models_dev(
     cache: dict[str, Any] | None = None,
     snapshot: Any = None,
@@ -846,6 +869,14 @@ def scan_models_dev(
         for lab, rows in lane_rows.items():
             lane_candidates: list[dict[str, Any]] = []
             already = {c["model_id"] for c in candidates.get(lab, [])}
+            # Basename-level twins (DF-CHIMERA-V2-67): one release re-carried
+            # by several lanes under different prefix shapes (``gpt-6.1-sol``
+            # vs ``openai/gpt-6.1-sol``) counts ONCE — measured 09-30, the
+            # same openai release arrived via commandcode AND xkiro. Seeded
+            # with the lab bucket's existing basenames so a lane twin of a
+            # core-scan row is dropped too.
+            already_base = {_basename(c["model_id"]).lower() for c in candidates.get(lab, [])}
+            admitted_base: dict[str, int] = {}  # basename -> index in lane_candidates
             for lane_id, model_id, model_info in rows:
                 if model_id in already:
                     continue
@@ -874,21 +905,42 @@ def scan_models_dev(
                 output_cost = cost.get("output") if isinstance(cost, dict) else None
                 recency = _model_recency_score({}, model_id)
                 recency_ts = _model_recency_timestamp({}, model_id)
-                lane_candidates.append(
-                    {
-                        "model_id": model_id,
-                        "chimera_id": chimera_id,
-                        "family": model_info.get("family", ""),
-                        "description": model_info.get("description", ""),
-                        "input_cost_mtok": input_cost,
-                        "output_cost_mtok": output_cost,
-                        "input_per_1k": _mtok_to_per_1k(input_cost) if input_cost else None,
-                        "output_per_1k": _mtok_to_per_1k(output_cost) if output_cost else None,
-                        "recency_score": recency,
-                        "recency_ts": recency_ts,
-                        "provider": lane_id,
-                    }
-                )
+                entry: dict[str, Any] = {
+                    "model_id": model_id,
+                    "chimera_id": chimera_id,
+                    "family": model_info.get("family", ""),
+                    "description": model_info.get("description", ""),
+                    "input_cost_mtok": input_cost,
+                    "output_cost_mtok": output_cost,
+                    "input_per_1k": _mtok_to_per_1k(input_cost) if input_cost else None,
+                    "output_per_1k": _mtok_to_per_1k(output_cost) if output_cost else None,
+                    "recency_score": recency,
+                    "recency_ts": recency_ts,
+                    "provider": lane_id,
+                }
+                # DF-CHIMERA-V2-67 promotion signal: the model id resolves to
+                # the attributed lab's OWN (merged) registry block, so this is
+                # a lane-CARRIED core-lab release, not a lane-only SKU. The
+                # report promotes it to the core section; ``provider`` keeps
+                # the lane id so the row's provenance stays visible.
+                if _core_lab_member(merged_cache.get(lab), model_id):
+                    entry["core_lab_member"] = True
+                base = _basename(model_id).lower()
+                twin_idx = admitted_base.get(base)
+                if base in already_base or twin_idx is not None:
+                    # Same release under another prefix shape: keep ONE row.
+                    # The row carrying pricing wins over a priceless twin
+                    # (the 09-30 commandcode row had no cost, the xkiro twin
+                    # did); a twin of a core-scan row is simply dropped.
+                    if (
+                        twin_idx is not None
+                        and lane_candidates[twin_idx]["input_cost_mtok"] is None
+                        and input_cost is not None
+                    ):
+                        lane_candidates[twin_idx] = entry
+                    continue
+                admitted_base[base] = len(lane_candidates)
+                lane_candidates.append(entry)
             if lane_candidates:
                 lane_candidates.sort(key=_recency_sort_key)
                 existing = candidates.get(lab, [])
@@ -1135,7 +1187,10 @@ def _format_scope_statement(scope: dict[str, Any] | None, markdown: bool) -> lis
         lane_line = (
             "Task-router lane finds are scheduling-lane SKUs, not core-lab "
             "candidates: they are reported in their own section with the lane "
-            "named and are never counted in the core-lab headline."
+            "named and are never counted in the core-lab headline — except a "
+            "lane row whose model id resolves to the owning lab's own "
+            "registry block (a lane-carried core release), which is promoted "
+            "to that lab's core section (DF-CHIMERA-V2-67)."
         )
     policy_line = (
         "Reseller Watch / Blind Spot sections are informational and NOT recorded "
@@ -1220,11 +1275,17 @@ def format_report(
     # dedicated lane section with the lane named, never dropped, never counted
     # in the core-lab headline. A lab key with only lane rows behind it
     # renders NO core section at all.
+    #
+    # Promotion (DF-CHIMERA-V2-67): a lane row the scanner flagged
+    # ``core_lab_member`` — its model id resolves to the attributed lab's OWN
+    # registry block — is a lane-CARRIED core-lab release, not a lane SKU. It
+    # renders in the lab's core section and counts in the core headline;
+    # ``provider`` keeps the lane id so the row's provenance stays visible.
     core_candidates: dict[str, list[dict[str, Any]]] = {}
     lane_candidates: dict[str, list[dict[str, Any]]] = {}
     for provider_id, models in candidates.items():
         for m in models:
-            if m.get("provider") in CORE_PROVIDERS:
+            if m.get("provider") in CORE_PROVIDERS or m.get("core_lab_member"):
                 core_candidates.setdefault(provider_id, []).append(m)
             else:
                 lane_candidates.setdefault(m.get("provider") or provider_id, []).append(m)
@@ -1286,12 +1347,15 @@ def format_report(
     # named, separated from every core-lab section. --diff filters with the
     # same _seen_match comparison the core loop uses; a lane with nothing
     # fresh renders nothing (the headline still states the lane totals).
+    # Rendered lane ids are recorded in new_seen (DF-CHIMERA-V2-67) so a lane
+    # find reports ONCE instead of re-reporting on every run.
     if lane_candidates:
         lane_fresh: dict[str, list[dict[str, Any]]] = {}
         for lane_id, models in lane_candidates.items():
             fresh = [m for m in models if not diff_only or _seen_match(m["chimera_id"], seen) is None]
             if fresh:
                 lane_fresh[lane_id] = fresh
+        new_seen.update(m["chimera_id"] for models in lane_fresh.values() for m in models)
         if lane_fresh:
             lines.append("## Task-Router Lane Providers (fleet scheduling lanes — not core labs)")
             lines.append("")
@@ -1405,12 +1469,13 @@ def format_report(
     lines.append("")
     lines.extend(_format_scope_statement(scope, markdown))
 
-    # Update seen models — CORE finds only, plus the basename-skips trail
-    # (each skip is recorded as ``<id> [basename=<catalog-id>]`` so tomorrow's
-    # run filters the diff honestly instead of re-reporting it). Reseller
-    # watch/blind ids are still deliberately NOT recorded: they are
-    # re-reported every run until the model surfaces in a core row or is
-    # admitted to the catalog.
+    # Update seen models — core finds (including promoted lane-carried core
+    # releases), rendered LANE finds (DF-CHIMERA-V2-67 — a lane find reports
+    # once, not every run), plus the basename-skips trail (each skip is
+    # recorded as ``<id> [basename=<catalog-id>]`` so tomorrow's run filters
+    # the diff honestly instead of re-reporting it). Reseller watch/blind ids
+    # are still deliberately NOT recorded: they are re-reported every run
+    # until the model surfaces in a core row or is admitted to the catalog.
     if diff_only or candidates or LAST_SCAN_SKIPS:
         all_seen = seen | new_seen
         _save_seen(all_seen)
