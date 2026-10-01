@@ -1899,3 +1899,28 @@ tasks:
   status: complete
   created_at: '2026-09-30T04:06:46.734285+00:00'
   completed_at: '2026-09-30T04:08:50.174177+00:00'
+- id: DF-CHIMERA-V2-65
+  title: model-sync lane/alias attribution
+  criteria:
+  - Lane-provider registry rows are reported in a separate section, not counted in
+    core-lab attribution
+  - Alias rows (alias_of set) are never reported as new models
+  - Unit tests cover both; full suite passes; guard PASS
+  status: complete
+  created_at: '2026-09-30T08:01:26.454683+00:00'
+  completed_at: '2026-09-30T09:13:28.346926+00:00'
+- id: DF-CHIMERA-V2-67
+  title: model-sync lane/carried core-lab release promotion
+  criteria:
+  - 'A candidate whose model id resolves to a CORE-lab models.dev block is promoted
+    to the core-lab section and counted in the core headline even when the row arrived
+    through a lane provider (fixture: openai/gpt-6.1-sol via xkiro+commandcode renders
+    as 1 core candidate under openai)'
+  - 'A lane-only SKU with no core-lab block and no OpenRouter row stays in the lane
+    section and is not counted as core (fixture: deepseek/deepseek-v4.1-flash-fast)'
+  - A promoted lane row is recorded in .seen_models.json or the report policy footnote
+    states lane finds re-report every run; unit tests cover promotion, lane-only negative,
+    and the seen behavior
+  status: complete
+  created_at: '2026-09-30T23:41:25.305849+00:00'
+  completed_at: '2026-10-01T00:18:08.506449+00:00'
