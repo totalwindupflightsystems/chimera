@@ -4,6 +4,7 @@
 - [CONFIG.md](CONFIG.md) — full `chimera.yaml` configuration reference
 - [CLI_PROXY.md](CLI_PROXY.md) — run a local CLI proxy (`claude-code-router`, `one-api`/`new-api`) as a provider: contract, base_url/key wiring, model-id mapping, measured example
 - [OPENAI_API.md](OPENAI_API.md) — OpenAI-compatible endpoint + custom DAG + SDK examples
+- [DEPS_REFRESH_2026-10-01.md](DEPS_REFRESH_2026-10-01.md) — dependency refresh record: landed groups, bound-blocked majors, remaining outdated census
 - [USAGE.md](USAGE.md) — CLI, REST API, MCP, Python SDK patterns
 - [INTEGRATION.md](INTEGRATION.md) — integrate into your app: deployment, clients, auth, errors
 - [SECURITY.md](SECURITY.md) — security model and credential handling

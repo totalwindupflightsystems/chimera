@@ -5,6 +5,7 @@
 [![CI](https://github.com/totalwindupflightsystems/chimera/actions/workflows/ci.yml/badge.svg)](https://github.com/totalwindupflightsystems/chimera/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/chimera-deliberation)](https://pypi.org/project/chimera-deliberation/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor_Covenant-3.0-4baaaa.svg)](CODE_OF_CONDUCT.md)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 One API call. A team of models. One answer.
@@ -684,5 +685,6 @@ The full guide lives in [CONTRIBUTING.md](./CONTRIBUTING.md). In short:
 Every PR is reviewed, and CI must pass before it can merge: the workflow runs
 `ruff` plus the unit-test matrix on Python 3.11, 3.12 and 3.13. Commit messages
 follow the repo convention (`feat:`, `fix:`, `docs:`, …), also described in
-[CONTRIBUTING.md](./CONTRIBUTING.md).
+[CONTRIBUTING.md](./CONTRIBUTING.md). By participating, you agree to abide by
+our [Code of Conduct](./CODE_OF_CONDUCT.md).
 
