@@ -871,3 +871,21 @@ curl -s -X POST http://localhost:8765/web/sessions -H 'Content-Type: application
 **Fix direction:** Exempt `/web/*` from `require_api_key` (local-only bind), or add a one-time "enter API key" modal that sets a cookie.
 
 **Browser tooling note:** The `browser_exec` tool (browser-use CLI) failed repeatedly on this tick (syntax errors, timeouts). Not a Chimera defect, but it blocked the web UI drive. File the blocker, don't burn the tick retrying.
+
+## Run 18 — Web UI Scripted Multi-Turn, Real Keys (2026-10-01)
+
+Run 17 called the web surface blocked on auth. With the documented Authorization
+header (USAGE.md's scripted recipe), the surface works end to end:
+
+- POST /web/sessions → 91d6baedcf6b; 3-turn conversation → multi-turn memory holds
+  (turn 2 answered "why the sky is blue" without restating; turn 3 fused both).
+- GET /web/sessions/{id} → full per-turn audit (models, tokens, cost).
+- Negative cases: no key 401, bad key 401, unknown formation 422, unknown session 404.
+
+**New finding — no DELETE route (DF-CHIMERA-V2-69):** `SessionManager.delete()`
+(session.py:125) exists but no route maps DELETE → it; sessions live forever except
+via the destructive global /web/debug/reset. Fix: `@router.delete("/sessions/{id}")`
+mapping the manager's bool to 204/404.
+
+Timing: turn 2 = 12.1s wall / 10,088ms trace (model-bound); 3 turns ≈ 93s.
+

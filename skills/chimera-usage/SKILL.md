@@ -36,7 +36,11 @@ description: >-
   workers-vs-stages formation trap, and the shared
   ~/.chimera/blocked-models.json stale-credential trap with its verified
   escape.
-version: 1.8.0
+  v1.9.0 adds the 2026-10-01 run-18 section: the scripted multi-turn web
+  session recipe is REAL and works with the documented auth header —
+  multi-turn memory, per-turn audit, negative contracts all hold; the
+  surface has no DELETE route (DF-CHIMERA-V2-69).
+version: 1.9.0
 category: software-development
 ---
 
@@ -754,3 +758,20 @@ models:                         # the catalog entry is REQUIRED (trap 1)
    chimera.yaml → `~/.hermes/.env`. Export before running.
 5. `/v1/deliberate` → `prompt`; `/v1/chat/completions` → `messages`.
    Mixing them is the classic cross-endpoint 422.
+
+## Run-18 (2026-10-01): scripted multi-turn web sessions — WORKS
+
+The web surface run 17 called blocked works with the documented auth header
+(USAGE.md "Scripted path"): `SID=$(curl -s -X POST localhost:8765/web/sessions -H
+"Authorization: Bearer $KEY" | sed ...)`, then POST `/web/sessions/$SID/chat`
+(prompt field) per turn. Verified for real: multi-turn memory holds across 3
+turns (turn 2 recalled the turn-1 topic unprompted; turn 3 fused both);
+GET /web/sessions/$SID returns the full per-turn audit (models, tokens, cost);
+no key 401 / bad key 401 / unknown formation 422 / unknown session 404.
+
+- **There is NO session DELETE route (DF-CHIMERA-V2-69, P2):**
+  `DELETE /web/sessions/{id}` → 405. `SessionManager.delete()` exists
+  (src/chimera/web/session.py:125) but is unwired; the only cleanup is the
+  destructive global `POST /web/debug/reset`. Sessions accumulate per process.
+- Timing: turn wall ≈ trace total_duration_ms + ~1-2s; a 3-turn conversation ≈
+  93s (57.6/12.1/23.4s) — model-bound, not user-actionable slowness.
