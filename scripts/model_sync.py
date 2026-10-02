@@ -51,6 +51,32 @@ ALIAS rows (``alias_of`` set — e.g. the openai-codex ``gpt-daybreak-*-latest``
 pointers to already-catalogued ids) are never counted as new models: they are
 skipped with a stated trail and rendered in an explicit "Alias Skips" section
 naming ``alias_of``.
+
+Since DF-CHIMERA-V2-66 ``--diff`` ALSO prints a "Pending — seen, not
+catalogued" section: every ``.seen_models.json`` ledger id that resolves to NO
+catalog entry. The seen filter silences a candidate the moment it enters the
+ledger — whether it was ADMITTED to the catalog or ignored — so a verified
+recommendation that was never applied went silent forever (measured live
+2026-10-02: claude-opus-5.5, verified and recommended ADD on
+2026-09-24/25/26, recorded in the ledger, never admitted to chimera.yaml,
+never re-reported). The comparison reuses the SAME ``_basename`` /
+``_basename_match`` helpers the core scan and the seen filter use, so
+``openrouter/*`` ledger ids normalize to their bare form and the paths cannot
+drift. The section is computed from the PRE-run ledger (a find reported in
+this same run is not double-listed; it joins the backlog on the next run if
+still unadmitted) and re-lists every pending id on every run until it is
+admitted to the catalog or dismissed from the ledger.
+
+The ``--diff`` ledger (``.seen_models.json``, repo root) — shape and
+provenance: a JSON array of candidate id strings, one per reported find;
+plain ids, plus a `` [basename=<catalog-id>]`` marker variant recorded when a
+candidate was skipped as already admitted under another prefix
+(DF-CHIMERA-V2-50). It is written at the end of every report run as the
+UNION of the prior ledger and that run's reported finds; reseller-watch,
+blind-spot and alias rows are deliberately never recorded, so they re-report
+on every run. The file is live local state and stays GITIGNORED BY DESIGN —
+``.gitignore`` carries ``.seen_models.json`` and ``.seen_models.json.bak*``
+(verified 2026-10-02); never commit it.
 """
 
 from __future__ import annotations
@@ -440,6 +466,59 @@ def _load_seen() -> set[str]:
 def _save_seen(seen: set[str]) -> None:
     """Save the set of already-reported candidate model IDs."""
     SEEN_PATH.write_text(json.dumps(sorted(seen), indent=2))
+
+
+def _pending_seen_not_catalogued(
+    seen: set[str] | frozenset[str],
+    catalog: set[str] | frozenset[str],
+) -> list[str]:
+    """Sorted ledger ids that resolve to NO catalog entry (DF-CHIMERA-V2-66).
+
+    The ``--diff`` seen filter silences a candidate the moment it enters the
+    ledger — whether it was ADMITTED to the catalog or ignored. This is the
+    backlog view that makes the ignored half visible again: every seen id
+    whose basename matches no catalog entry, sorted deterministically so the
+    rendered section is identical across consecutive runs.
+
+    The catalog comparison goes through ``_basename_match`` — the SAME
+    basename rule the core scan and the reseller watch dedupe with, via the
+    one ``_basename`` helper (DF-CHIMERA-V2-50) — so a namespaced ledger id
+    (``openrouter/anthropic/claude-opus-5.5``) normalizes to its bare form and
+    the two paths cannot drift. Marked entries (``<id> [basename=<cat-id>]``)
+    are resolved on their stripped id (``_seen_entry_id``): if the catalog
+    entry they matched is later removed, the id correctly re-appears as
+    pending. A plain entry and its marked twin strip to ONE row (set dedupe),
+    and the comparison stays whole-basename equality, never a prefix — a
+    catalogued ``foo-v2`` never covers a seen ``foo-v3``.
+    """
+    pending = {
+        _seen_entry_id(entry) for entry in seen if _basename_match(_seen_entry_id(entry), catalog) is None
+    }
+    return sorted(pending)
+
+
+def _format_pending_section(pending: list[str], markdown: bool) -> list[str]:
+    """The "Pending — seen, not catalogued" section (DF-CHIMERA-V2-66).
+
+    Rendered under ``--diff`` only (the caller supplies the list): the
+    seen-but-never-admitted backlog stays visible on every run until each id
+    is admitted to the catalog or dismissed from the ledger.
+    """
+    if not pending:
+        return [
+            "## Pending — seen, not catalogued",
+            "",
+            "None — every seen id resolves to a catalog entry.",
+            "",
+        ]
+    lines = ["## Pending — seen, not catalogued", ""]
+    if markdown:
+        lines.extend(f"- `{model_id}`" for model_id in pending)
+    else:
+        lines.append(f"  {len(pending)} seen ids with no catalog entry (seen, never admitted):")
+        lines.extend(f"  {model_id}" for model_id in pending)
+    lines.append("")
+    return lines
 
 
 #: Day buckets for the 0-100 recency scale (inclusive upper bounds, in days).
@@ -1291,6 +1370,7 @@ def format_report(
     reseller_watch: list[dict[str, Any]] | None = None,
     blind_spot: list[dict[str, Any]] | None = None,
     scope: dict[str, Any] | None = None,
+    pending_seen: list[str] | None = None,
 ) -> str:
     """Format candidate models as a report string.
 
@@ -1299,6 +1379,13 @@ def format_report(
     three are optional so existing callers/tests keep working: when omitted,
     the sections render as "None this run" and the scope statement falls back
     to the configured lists.
+
+    ``pending_seen`` (DF-CHIMERA-V2-66) is the sorted backlog list from
+    ``_pending_seen_not_catalogued()``; when supplied, a "Pending — seen, not
+    catalogued" section renders after the reseller sections. The default
+    ``None`` renders NO section at all (back-compat for existing callers) —
+    the report never loads the catalog itself, so the caller (``main()``,
+    under ``--diff``) computes the list and owns that dependency.
     """
     reseller_watch = reseller_watch or []
     blind_spot = blind_spot or []
@@ -1508,6 +1595,12 @@ def format_report(
     lines.append(policy)
     lines.append("")
 
+    # Pending backlog (DF-CHIMERA-V2-66): rendered only when the caller
+    # supplies the list (main() under --diff). Every ledger id with no catalog
+    # entry stays visible until admitted or dismissed.
+    if pending_seen is not None:
+        lines.extend(_format_pending_section(pending_seen, markdown))
+
     # Summary (DF-CHIMERA-V2-65): the headline counts CORE-lab candidates and
     # core providers only — a lane flood can never inflate "across N providers"
     # again — and states the lane finds as an explicit separate count right
@@ -1616,6 +1709,17 @@ def main() -> None:
             limited.setdefault(m["provider"], []).append(m)
         candidates = limited
 
+    # DF-CHIMERA-V2-66: under --diff, surface the ledger backlog — every seen
+    # id that resolves to NO catalog entry. Computed from the PRE-run ledger
+    # (before format_report() records this run's finds) so a find reported in
+    # this same report is not double-listed as pending; it joins the section
+    # on the next run if it is still not admitted. The comparison reuses the
+    # one _basename/_basename_match helper chain (DF-CHIMERA-V2-50), so
+    # openrouter/* ledger ids normalize to their bare form.
+    pending_seen: list[str] | None = None
+    if args.diff:
+        pending_seen = _pending_seen_not_catalogued(_load_seen(), _load_chimera_models())
+
     report = format_report(
         candidates,
         diff_only=args.diff,
@@ -1623,6 +1727,7 @@ def main() -> None:
         reseller_watch=watch,
         blind_spot=blind,
         scope=scope,
+        pending_seen=pending_seen,
     )
 
     if args.output:

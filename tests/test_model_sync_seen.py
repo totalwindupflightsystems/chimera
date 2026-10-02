@@ -292,3 +292,179 @@ def test_plain_seen_file_is_still_consumed_verbatim(isolated: dict[str, Any]) ->
 
     assert seen == {"openai/gpt-6-sol", "minimax/minimax-m3"}
     assert model_sync._seen_match("openai/gpt-6-sol", seen) == "openai/gpt-6-sol"
+
+
+# --- DF-CHIMERA-V2-66: "Pending — seen, not catalogued" --------------------- #
+#
+# The --diff seen filter silences a candidate the moment it enters the ledger
+# — whether it was ADMITTED to the catalog or ignored. Verified live
+# 2026-10-02: openrouter/anthropic/claude-opus-5.5 was verified and
+# recommended ADD on 2026-09-24/25/26, never applied, and never re-reported.
+# The --diff report now carries a "Pending — seen, not catalogued" section
+# listing every ledger id that resolves to NO catalog entry, so the
+# seen-but-never-admitted backlog stays visible until admitted or dismissed.
+
+
+def _pending_block(report: str) -> list[str]:
+    """The lines of the "Pending — seen, not catalogued" section (only)."""
+    lines = report.splitlines()
+    start = next(i for i, ln in enumerate(lines) if ln.startswith("## Pending"))
+    block: list[str] = []
+    for ln in lines[start:]:
+        if block and (ln.startswith("## ") or ln.startswith("---")):
+            break
+        block.append(ln)
+    return block
+
+
+def _run_main_diff(
+    monkeypatch: pytest.MonkeyPatch,
+    catalog: set[str],
+    candidates: dict[str, Any] | None = None,
+) -> None:
+    """One offline ``--diff`` CLI run: stubbed scan, pinned catalog, clean skips."""
+    monkeypatch.setattr(model_sync, "_load_chimera_models", lambda: set(catalog))
+    monkeypatch.setattr(model_sync, "LAST_SCAN_SKIPS", [])
+    monkeypatch.setattr(
+        model_sync,
+        "scan_all",
+        lambda: (candidates or {}, [], [], {"core": [], "reseller": [], "out_of_scope": 0}),
+    )
+    monkeypatch.setattr(sys, "argv", ["model_sync.py", "--diff"])
+    model_sync.main()
+
+
+# (a) an uncatalogued-but-seen id IS reported
+
+
+def test_pending_uncatalogued_seen_id_is_reported(
+    isolated: dict[str, Any], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """DF-CHIMERA-V2-66 acceptance: the silent-opus-5.5 class cannot recur."""
+    _write_seen(isolated, ["openrouter/anthropic/claude-opus-5.5"])
+
+    _run_main_diff(monkeypatch, catalog=set())
+    out = capsys.readouterr().out
+
+    assert "## Pending — seen, not catalogued" in out
+    assert any("openrouter/anthropic/claude-opus-5.5" in ln for ln in _pending_block(out))
+
+
+# (b) an admitted (catalogued) id is NOT reported — including the openrouter
+# normalization: the ledger id is namespaced, the catalog entry is bare.
+
+
+def test_pending_admitted_id_is_not_reported(
+    isolated: dict[str, Any], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An openrouter/* ledger id normalizes to its bare form for the catalog check."""
+    _write_seen(isolated, ["openrouter/anthropic/claude-opus-5.5"])
+
+    _run_main_diff(monkeypatch, catalog={"anthropic/claude-opus-5.5"})
+    block = _pending_block(capsys.readouterr().out)
+
+    assert any(ln.startswith("None") for ln in block)
+    assert not any("claude-opus-5.5" in ln for ln in block)
+
+
+# (c) idempotence / stability across two consecutive runs
+
+
+def test_pending_section_is_idempotent_across_runs(
+    isolated: dict[str, Any], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No duplicate rows, deterministic sort, identical output on a re-run."""
+    _write_seen(
+        isolated,
+        ["openrouter/anthropic/claude-opus-5.5", "openai/gpt-6-sol", "minimax/minimax-m3"],
+    )
+
+    _run_main_diff(monkeypatch, catalog={"openai/gpt-6-sol"})
+    first = _pending_block(capsys.readouterr().out)
+    _run_main_diff(monkeypatch, catalog={"openai/gpt-6-sol"})
+    second = _pending_block(capsys.readouterr().out)
+
+    assert first == second
+    rows = [ln.strip() for ln in first if ln.strip().startswith(("openrouter/", "minimax/"))]
+    assert rows == ["minimax/minimax-m3", "openrouter/anthropic/claude-opus-5.5"]
+    assert len(rows) == len(set(rows))
+
+
+def test_pending_excludes_this_runs_new_find(
+    isolated: dict[str, Any], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The section is the BACKLOG: a find reported in this same run is not
+    double-listed as pending — it joins on the NEXT run if still unadmitted."""
+    _write_seen(isolated, ["openai/gpt-6-sol"])
+    candidates = {"openai": [_core_candidate("openai/gpt-6-sol-mini")]}
+
+    _run_main_diff(monkeypatch, catalog=set(), candidates=candidates)
+    block = _pending_block(capsys.readouterr().out)
+
+    assert any("openai/gpt-6-sol" in ln for ln in block if "mini" not in ln)
+    assert not any("gpt-6-sol-mini" in ln for ln in block)
+
+
+# the helper itself
+
+
+def test_pending_helper_normalizes_openrouter_ids_to_basename() -> None:
+    """Catalog membership is decided on the basename, via the shared helper."""
+    seen = {"openrouter/anthropic/claude-opus-5.5"}
+    assert model_sync._pending_seen_not_catalogued(seen, {"anthropic/claude-opus-5.5"}) == []
+    assert model_sync._pending_seen_not_catalogued(seen, set()) == ["openrouter/anthropic/claude-opus-5.5"]
+
+
+def test_pending_helper_strips_markers_and_never_prefix_matches() -> None:
+    """A marked skip entry resolves against its stripped id; equality only."""
+    marked = "minimax/minimax-m3 [basename=openrouter/minimax/minimax-m3]"
+    assert model_sync._pending_seen_not_catalogued({marked}, {"openrouter/minimax/minimax-m3"}) == []
+    # A catalogued foo-v2 never covers a seen foo-v3 (whole-basename equality).
+    assert model_sync._pending_seen_not_catalogued({"google/foo-v3"}, {"google/foo-v2"}) == ["google/foo-v3"]
+
+
+def test_pending_helper_dedupes_marker_and_plain_twins_and_sorts() -> None:
+    """A plain entry and its marked twin strip to ONE row; output is sorted."""
+    seen = {"b/model-x", "b/model-x [basename=z/model-x]", "a/model-y"}
+    assert model_sync._pending_seen_not_catalogued(seen, set()) == ["a/model-y", "b/model-x"]
+
+
+def test_pending_helper_reuses_the_one_basename_helper(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The pending comparison goes through THE ``_basename`` helper (no second copy)."""
+    calls: list[str] = []
+    original = model_sync._basename
+
+    def spy(model_id: str) -> str:
+        calls.append(model_id)
+        return original(model_id)
+
+    monkeypatch.setattr(model_sync, "_basename", spy)
+
+    model_sync._pending_seen_not_catalogued(
+        {"openrouter/anthropic/claude-opus-5.5"}, {"anthropic/claude-opus-5.5"}
+    )
+
+    assert "openrouter/anthropic/claude-opus-5.5" in calls
+
+
+# format_report rendering
+
+
+def test_format_report_renders_pending_section_markdown(isolated: dict[str, Any]) -> None:
+    report = model_sync.format_report(
+        {}, diff_only=True, markdown=True, pending_seen=["openrouter/anthropic/claude-opus-5.5"]
+    )
+    assert "## Pending — seen, not catalogued" in report
+    assert "- `openrouter/anthropic/claude-opus-5.5`" in report
+
+
+def test_format_report_renders_empty_pending_section(isolated: dict[str, Any]) -> None:
+    report = model_sync.format_report({}, diff_only=True, pending_seen=[])
+    assert "## Pending — seen, not catalogued" in report
+    assert "None — every seen id resolves to a catalog entry." in report
+
+
+def test_pending_section_requires_the_caller_supplied_list(isolated: dict[str, Any]) -> None:
+    """Back-compat: callers that pass no pending list get no section at all."""
+    report = model_sync.format_report({}, diff_only=True)
+    assert "Pending" not in report
