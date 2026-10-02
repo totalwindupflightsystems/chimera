@@ -1964,3 +1964,13 @@ tasks:
   status: complete
   created_at: '2026-10-01T21:27:58.538678+00:00'
   completed_at: '2026-10-01T22:30:16.998496+00:00'
+- id: DF-CHIMERA-V2-69
+  title: Wire DELETE /web/sessions/{id} route to the existing SessionManager.delete
+  criteria:
+  - DELETE /web/sessions/{id} returns 204 for an existing session and removes it
+  - DELETE on an unknown session id returns 404
+  - GET on the deleted session returns 404
+  - tests cover the delete route
+  status: complete
+  created_at: '2026-10-02T03:07:07.628267+00:00'
+  completed_at: '2026-10-02T03:23:30.963596+00:00'
