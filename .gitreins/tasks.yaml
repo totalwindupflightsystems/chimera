@@ -1992,3 +1992,19 @@ tasks:
   status: complete
   created_at: '2026-10-02T04:01:01.867277+00:00'
   completed_at: '2026-10-02T04:27:11.846921+00:00'
+- id: DF-CHIMERA-V2-66
+  title: 'model-sync: report seen-but-uncatalogued candidates in a Pending section'
+  criteria:
+  - scripts/model_sync.py --diff emits a 'Pending - seen, not catalogued' section
+    listing every ledger id that resolves to no catalogue entry (openrouter/* normalised
+    to its bare form); with the current ledger the claude-opus-5.5 backlog entries
+    present in .seen_models.json (e.g. anthropic/anthropic/claude-opus-5.5) appear
+    there
+  - A unit test proves an uncatalogued-but-seen id is reported and an admitted one
+    is not
+  - 'The section is idempotent: no duplicate rows and stable output across consecutive
+    runs'
+  - The ledger's shape and provenance are documented, including whether it stays gitignored
+    by design
+  status: in_progress
+  created_at: '2026-10-02T19:27:10.660515+00:00'
