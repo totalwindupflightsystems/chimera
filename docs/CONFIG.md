@@ -386,6 +386,25 @@ config provider or is `openrouter` for OpenRouter-routed models:
 - `openrouter/anthropic/claude-fable-5` → via OpenRouter
 - `zai-coding-plan/glm-5.2` → direct Z.AI API
 
+### Model catalog source: the task-router registry (env overrides)
+
+`chimera models`, provider discovery and `scripts/model_sync.py` read the model
+catalog from task-router's generated JSONL registry. Two environment variables
+control where that registry is found:
+
+| Env var | Meaning |
+|---|---|
+| `CHIMERA_TASK_ROUTER_MODELS_PATH` | Explicit path to a `models.jsonl` table. Authoritative — it wins even when it points at a missing file, so a wrong path produces a clear diagnostic instead of silently reading a different checkout. |
+| `TASK_ROUTER_HOME` | Path to a task-router checkout. The registry is read from `<home>/data/tables/models.jsonl`. |
+
+Default discovery order when neither is set: `~/task-router/data/tables/models.jsonl`
+(the home checkout), then a `task-router` checkout sibling to the installed package.
+The chimera adapter depends only on the JSONL wire format — the task-router Python
+package or checkout is never imported, so wheels stay portable. Registry selection
+is logged at startup (`registry_source_selected`); `chimera models` refreshes and
+probes the resolved source. When `model_sync.py` cannot find a registry, its error
+remedy names `CHIMERA_TASK_ROUTER_MODELS_PATH` (or running `chimera models`) as the fix.
+
 ---
 
 ## `providers`
@@ -738,3 +757,21 @@ selector:
 Values outside `0.0`–`1.0` are rejected by config validation. Cost figures
 come from the model's `cost_per_1k_*` overrides or its `cost_tier` default
 (see [`models`](#models)).
+
+### `max_aggregator_context_tokens`
+
+Top-level `ChimeraConfig` field (not a subsection): an optional soft cap on the
+**aggregator** prompt size, in estimated tokens (~4 chars/token).
+
+```yaml
+# top level of chimera.yaml, next to api_keys / selector:
+max_aggregator_context_tokens: 100000   # omit or null = no cap (default)
+```
+
+When the natural merge prompt would exceed the cap, the aggregator truncates
+the **longest** worker outputs (preserving shorter ones) until the prompt
+fits. `null`/absent = no cap, backward compatible. Typical use: a deliberation
+with many large-output workers feeding an aggregator model with a small
+context window. The engine passes the cap to every aggregator call
+(`max_prompt_tokens`), so it applies to merge, audit and aggregator-style
+stages alike.
