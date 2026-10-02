@@ -949,6 +949,43 @@ def scan_models_dev(
     return candidates
 
 
+def _routable_id(candidate: dict[str, Any]) -> str:
+    """Routable Chimera-gateway admission key for one candidate (DF-CHIMERA-V2-68).
+
+    The gateway's admission rule strips EXACTLY ONE leading provider segment
+    and routes on what remains, so an admission key is routable only when
+    removing its first segment yields the id the serving lane actually
+    serves upstream.
+
+    * ``model_id`` carries no ``/`` — the lane-resolved ``chimera_id``
+      (``<lab>/<model_id>``) is already that key; one strip yields
+      ``model_id`` exactly.
+    * ``model_id`` already carries a prefix (lane-carried rows: the
+      attribution resolves against the LAB, so ``chimera_id`` doubles the
+      prefix — measured: ``openai/gpt-6.1-sol`` attributed to lab ``openai``
+      rendered ``openai/openai/gpt-6.1-sol``, which is NOT routable). The
+      routable key is ``<serving-lane>/<upstream-id>``: ``model_id`` with
+      any redundant ``<serving-lane>/`` leading segment collapsed (a lane
+      SKU carried as ``deepseek/deepseek-v4.1-flash-fast`` ON the
+      ``deepseek`` lane is already ``<lane>/<upstream-id>``), else
+      ``<serving-lane>/<model_id>`` (``openrouter/openai/gpt-6.1-sol``).
+      One strip yields exactly the id the lane serves.
+
+    The serving lane is the row's ``provider`` — the lane id for
+    lane-carried rows, the core provider id for core-scan rows (both are
+    the upstream that serves ``model_id``). Falls back to the chimera_id's
+    first segment when ``provider`` is absent.
+    """
+    model_id = candidate["model_id"]
+    if "/" not in model_id:
+        return candidate["chimera_id"]
+    lane = candidate.get("provider") or candidate["chimera_id"].split("/", 1)[0]
+    if model_id.startswith(f"{lane}/"):
+        # Already <serving-lane>/<upstream-id> — the id IS the routable key.
+        return model_id
+    return f"{lane}/{model_id}"
+
+
 def _attribute_lab(model_id: str, family: str | None = None) -> str | None:
     """Hypothesize the owning lab for a reseller-rows model id, or None.
 
@@ -1314,11 +1351,21 @@ def format_report(
                 continue
         new_seen.update(m["chimera_id"] for m in models)
 
+        # DF-CHIMERA-V2-68: the "Chimera ID" column renders the ROUTABLE
+        # admission key; when it differs from the lane-resolved chimera_id
+        # (prefixed model_id under a lane), the lane-resolved id stays
+        # visible in a second column — never silently dropped.
+        show_lane_resolved = any(_routable_id(m) != m["chimera_id"] for m in models)
+
         if markdown:
             lines.append(f"## {provider_name} (`{provider_id}`)")
             lines.append("")
-            lines.append("| Model | Chimera ID | Recency | Input/1k | Output/1k |")
-            lines.append("|-------|-----------|---------|----------|-----------|")
+            if show_lane_resolved:
+                lines.append("| Model | Chimera ID | Lane-resolved | Recency | Input/1k | Output/1k |")
+                lines.append("|-------|-----------|---------------|---------|----------|-----------|")
+            else:
+                lines.append("| Model | Chimera ID | Recency | Input/1k | Output/1k |")
+                lines.append("|-------|-----------|---------|----------|-----------|")
         else:
             lines.append(f"\n{'=' * 70}")
             lines.append(f"  {provider_name} ({provider_id}) — {len(models)} candidates")
@@ -1328,15 +1375,21 @@ def format_report(
             inp = f"${m['input_per_1k']:.6f}" if m["input_per_1k"] else "N/A"
             out = f"${m['output_per_1k']:.6f}" if m["output_per_1k"] else "N/A"
             rec = m["recency_score"]
+            rid = _routable_id(m)
 
             if markdown:
-                lines.append(f"| `{m['model_id']}` | `{m['chimera_id']}` | {rec:.0f} | {inp} | {out} |")
+                if show_lane_resolved:
+                    lane_cell = f"`{m['chimera_id']}`" if rid != m["chimera_id"] else "—"
+                    lines.append(f"| `{m['model_id']}` | `{rid}` | {lane_cell} | {rec:.0f} | {inp} | {out} |")
+                else:
+                    lines.append(f"| `{m['model_id']}` | `{rid}` | {rec:.0f} | {inp} | {out} |")
             else:
                 # Same seen comparison as the --diff filter (DF-CHIMERA-V2-64):
                 # a model first seen under another lane-resolved id shape is
                 # not NEW any more.
                 tag = " [NEW]" if _seen_match(m["chimera_id"], seen) is None else ""
-                lines.append(f"  {m['chimera_id']:50s} recency={rec:.0f}  inp={inp}  out={out}{tag}")
+                note = f"  lane-resolved={m['chimera_id']}" if rid != m["chimera_id"] else ""
+                lines.append(f"  {rid:50s} recency={rec:.0f}  inp={inp}  out={out}{tag}{note}")
 
             core_new += 1
 
@@ -1361,11 +1414,20 @@ def format_report(
             lines.append("")
             for lane_id in sorted(lane_fresh):
                 models = lane_fresh[lane_id]
+                # DF-CHIMERA-V2-68: same routable-key rendering as the core
+                # tables — lane SKUs are the canonical double-prefix case.
+                show_lane_resolved = any(_routable_id(m) != m["chimera_id"] for m in models)
                 if markdown:
                     lines.append(f"### Lane `{lane_id}`")
                     lines.append("")
-                    lines.append("| Model | Chimera ID | Recency | Input/1k | Output/1k |")
-                    lines.append("|-------|-----------|---------|----------|-----------|")
+                    if show_lane_resolved:
+                        lines.append(
+                            "| Model | Chimera ID | Lane-resolved | Recency | Input/1k | Output/1k |"
+                        )
+                        lines.append("|-------|-----------|---------------|---------|----------|-----------|")
+                    else:
+                        lines.append("| Model | Chimera ID | Recency | Input/1k | Output/1k |")
+                        lines.append("|-------|-----------|---------|----------|-----------|")
                 else:
                     lines.append(f"\n{'-' * 70}")
                     lines.append(f"  Lane {lane_id} — {len(models)} candidates")
@@ -1374,13 +1436,19 @@ def format_report(
                     inp = f"${m['input_per_1k']:.6f}" if m["input_per_1k"] else "N/A"
                     out = f"${m['output_per_1k']:.6f}" if m["output_per_1k"] else "N/A"
                     rec = m["recency_score"]
+                    rid = _routable_id(m)
                     if markdown:
-                        lines.append(
-                            f"| `{m['model_id']}` | `{m['chimera_id']}` | {rec:.0f} | {inp} | {out} |"
-                        )
+                        if show_lane_resolved:
+                            lane_cell = f"`{m['chimera_id']}`" if rid != m["chimera_id"] else "—"
+                            lines.append(
+                                f"| `{m['model_id']}` | `{rid}` | {lane_cell} | {rec:.0f} | {inp} | {out} |"
+                            )
+                        else:
+                            lines.append(f"| `{m['model_id']}` | `{rid}` | {rec:.0f} | {inp} | {out} |")
                     else:
                         tag = " [NEW]" if _seen_match(m["chimera_id"], seen) is None else ""
-                        lines.append(f"  {m['chimera_id']:50s} recency={rec:.0f}  inp={inp}  out={out}{tag}")
+                        note = f"  lane-resolved={m['chimera_id']}" if rid != m["chimera_id"] else ""
+                        lines.append(f"  {rid:50s} recency={rec:.0f}  inp={inp}  out={out}{tag}{note}")
                     lane_new += 1
                 if markdown:
                     lines.append("")
@@ -1775,6 +1843,37 @@ def _score_from_file(path_str: str) -> None:
     _llm_score_candidates(candidates)
 
 
+def _attach_routable_ids(
+    scored: dict[str, Any],
+    top_candidates: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Guarantee every scored model carries its routable admission key (DF-CHIMERA-V2-68).
+
+    The LLM is ASKED to echo ``routable_id``, but the YAML contract must not
+    depend on the reply's obedience: each scored entry is matched back to its
+    candidate (by ``routable_id`` or by the legacy ``chimera_id`` echo) and
+    the routable key is written in from the candidate record — so the scored
+    YAML never carries a double-prefix lane-resolved id as its only key.
+    Unmatched entries (hallucinated ids) are left untouched.
+    """
+    by_routable = {_routable_id(m): m for m in top_candidates}
+    by_chimera = {m["chimera_id"]: m for m in top_candidates}
+    models = scored.get("models")
+    if not isinstance(models, list):
+        return scored
+    for entry in models:
+        if not isinstance(entry, dict):
+            continue
+        cand = by_routable.get(entry.get("routable_id") or "") or by_chimera.get(
+            entry.get("chimera_id") or ""
+        )
+        if cand is None:
+            continue
+        entry["routable_id"] = _routable_id(cand)
+        entry.setdefault("chimera_id", cand["chimera_id"])
+    return scored
+
+
 def _llm_score_candidates(candidates: dict[str, list[dict[str, Any]]]) -> None:
     """Use DeepSeek to score top candidates on Chimera's hierarchical category paths.
 
@@ -1802,7 +1901,13 @@ def _llm_score_candidates(candidates: dict[str, list[dict[str, Any]]]) -> None:
     path_list = "\n".join(f"- {p}" for p in category_paths)
 
     model_descriptions = "\n".join(
-        f"- `{m['chimera_id']}`: {m.get('description', m.get('family', ''))[:200]}" for m in top5
+        # DF-CHIMERA-V2-68: the scorer scores the ROUTABLE admission key
+        # (``_routable_id``), with the lane-resolved chimera_id named inline
+        # when the two differ — never the double-prefix shape as the id.
+        f"- `{_routable_id(m)}`"
+        + (f" (lane-resolved chimera_id: `{m['chimera_id']}`)" if _routable_id(m) != m["chimera_id"] else "")
+        + f": {m.get('description', m.get('family', ''))[:200]}"
+        for m in top5
     )
 
     prompt = f"""You are evaluating LLM models for inclusion in the Chimera multi-model deliberation system.
@@ -1823,6 +1928,7 @@ For each model, assign scores (0-100, whole numbers only, ≥60) on the relevant
 {{
   "models": [
     {{
+      "routable_id": "serving-lane/model-id",
       "chimera_id": "provider/model-name",
       "cost_tier": "budget|standard|premium",
       "scores": {{
@@ -1835,12 +1941,17 @@ For each model, assign scores (0-100, whole numbers only, ≥60) on the relevant
 }}
 ```
 
+Echo each model's id EXACTLY as listed above into ``routable_id`` (the routable
+admission key); keep the lane-resolved chimera_id in ``chimera_id`` when one
+was shown.
 Only include paths where score ≥60. Use whole numbers only.
 Be conservative — only score categories the model is known to excel at
 based on benchmarks and provider claims."""
 
     try:
         scored = _score_llm_reply(prompt, deepseek_key)
+        # DF-CHIMERA-V2-68: the YAML's id contract is enforced, not prompted.
+        scored = _attach_routable_ids(scored, top5)
 
         # Save to YAML
         reports_dir = REPO_ROOT / "reports"
