@@ -1974,3 +1974,21 @@ tasks:
   status: complete
   created_at: '2026-10-02T03:07:07.628267+00:00'
   completed_at: '2026-10-02T03:23:30.963596+00:00'
+- id: DF-CHIMERA-V2-68
+  title: model-sync renders non-routable lane-resolved chimera_id; usable admission
+    key absent
+  criteria:
+  - A lane-carried release whose model_id already carries a prefix (e.g. openai/gpt-6.1-sol
+    attributed to lab openai) renders a routable admission key in the markdown report
+    (openrouter/openai/gpt-6.1-sol when carried by the openrouter lane) instead of
+    only the non-routable lane-resolved id openai/openai/gpt-6.1-sol
+  - A lane SKU attributed to lab deepseek (deepseek/deepseek-v4.1-flash-fast) renders
+    a routable key, never the double-prefix shape deepseek/deepseek/deepseek-v4.1-flash-fast,
+    and the same rule holds in the scored-candidate YAML artifact
+  - 'Every id rendered as a catalog admission key passes the gateway routability rule:
+    stripping exactly one leading provider segment yields an upstream-servable id'
+  - New regression tests cover both measured shapes from DF-CHIMERA-V2-68 and the
+    full pytest suite is green
+  status: complete
+  created_at: '2026-10-02T04:01:01.867277+00:00'
+  completed_at: '2026-10-02T04:27:11.846921+00:00'
