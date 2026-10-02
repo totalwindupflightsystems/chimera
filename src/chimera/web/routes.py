@@ -8,6 +8,7 @@ Endpoints:
 * ``POST /web/sessions`` — create a new session
 * ``POST /web/sessions/{id}/chat`` — deliberate with session context
 * ``GET  /web/sessions/{id}`` — get session history
+* ``DELETE /web/sessions/{id}`` — delete a session and its history
 * ``GET  /web/sse/{session_id}`` — SSE event stream
 * ``GET  /web/`` — serve the SPA
 * ``GET  /web/{path}`` — SPA static assets (vendored JS bundles; catch-all)
@@ -35,7 +36,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -571,6 +572,14 @@ async def get_session(session_id: str) -> SessionInfo:
             for t in session.turns
         ],
     )
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+async def delete_session(session_id: str) -> Response:
+    """Delete a session and its history (DF-CHIMERA-V2-69)."""
+    if not _session_manager.delete(session_id):
+        raise HTTPException(status_code=404, detail=f"Session {session_id!r} not found")
+    return Response(status_code=204)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

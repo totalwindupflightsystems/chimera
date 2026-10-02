@@ -429,6 +429,33 @@ def test_create_get_and_missing_session_routes(config) -> None:  # type: ignore[
     assert missing_chat.status_code == 404
 
 
+def test_delete_session_route_removes_the_session(config) -> None:  # type: ignore[no-untyped-def]
+    client = _client(config)
+
+    session_id = client.post("/web/sessions").json()["session_id"]
+
+    deleted = client.delete(f"/web/sessions/{session_id}")
+    assert deleted.status_code == 204
+    assert deleted.content == b""
+
+    # The session is gone: history and a second delete both answer 404.
+    fetched = client.get(f"/web/sessions/{session_id}")
+    assert fetched.status_code == 404
+    assert "not found" in fetched.json()["detail"]
+
+    deleted_again = client.delete(f"/web/sessions/{session_id}")
+    assert deleted_again.status_code == 404
+    assert "not found" in deleted_again.json()["detail"]
+
+
+def test_delete_session_route_404s_on_unknown_session(config) -> None:  # type: ignore[no-untyped-def]
+    client = _client(config)
+
+    response = client.delete("/web/sessions/not-a-session")
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"]
+
+
 def test_session_chat_runs_engine_records_turn_and_injects_history(config) -> None:  # type: ignore[no-untyped-def]
     dispatch_messages: list[str] = []
     client = _client(config, dispatch_messages)

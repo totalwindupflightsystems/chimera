@@ -277,7 +277,7 @@ def test_every_registered_web_path_is_gated_except_the_public_shell() -> None:
     for path in web_paths:
         item = app.openapi()["paths"][path]
         url = path.replace("{session_id}", MISSING_SESSION)
-        for method in ("get", "post"):
+        for method in ("get", "post", "delete"):
             if method not in item:
                 continue
             if path in public_paths:
@@ -290,10 +290,11 @@ def test_every_registered_web_path_is_gated_except_the_public_shell() -> None:
             gated.append(f"{method.upper()} {path}")
 
     # DF-CHIMERA-V2-21: the vendored-asset catch-all (GET /web/vendor/…) is now
-    # public alongside the shell; the other five paths — session create, chat,
-    # history, debug/reset and the SSE stream — stay gated.
+    # public alongside the shell; the other six paths — session create, chat,
+    # history, delete (DF-CHIMERA-V2-69), debug/reset and the SSE stream — stay
+    # gated.
     assert public == ["GET /web/", "GET /web/{asset_path}"], public
-    assert len(gated) == 5, gated
+    assert len(gated) == 6, gated
     assert gateway.calls == []
 
     # The carve-out is real, not merely "not a 401": the shell and a vendored
