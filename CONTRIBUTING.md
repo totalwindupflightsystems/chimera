@@ -16,7 +16,7 @@ pip install -e ".[full]"
 ## Running Tests
 
 ```bash
-# Unit tests (fast, offline — 322 tests, no API keys needed)
+# Unit tests (fast, offline — ~2000 tests, no API keys needed)
 pytest tests/ --ignore=tests/integration --ignore=tests/compat -W error
 
 # Integration tests (real API calls — needs --run-integration flag + API key)

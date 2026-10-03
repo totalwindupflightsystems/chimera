@@ -167,7 +167,7 @@ curl -H "X-API-Key: sk-prod-abc123" http://localhost:8765/v1/chat/completions ..
 
 When auth is disabled, requests pass through unauthenticated. The following
 endpoints are always open regardless of auth settings (safe for load-balancer
-health checks): `/health` (alias of `/v1/health`), `/v1/health`,
+health checks): `/health` (alias of the liveness probe `/v1/health/live`), `/v1/health`,
 `/v1/health/ready`, `/v1/health/live`, `/v1/models`, `/v1/formations`, `/docs`
 (plus `/docs/oauth2-redirect`), `/redoc`, `/openapi.json`.
 
