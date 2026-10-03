@@ -63,7 +63,7 @@ against your own deployment, and see `GET /openapi.json` for the routed surface)
 Everything else requires the key: `POST /v1/deliberate`,
 `POST /v1/chat/completions`, and the **entire** `/web/*` surface —
 `POST /web/sessions`, `POST /web/sessions/{id}/chat`, `GET /web/sessions/{id}`,
-`GET /web/sse/{id}`, and the SPA shell at `GET /web/`.
+`DELETE /web/sessions/{id}`, `GET /web/sse/{id}`, and the SPA shell at `GET /web/`.
 The web surface runs deliberations through the same engine as `/v1/deliberate`,
 so leaving it open would be a keyless, billable equivalent of the protected API.
 An anonymous request is refused by the auth layer before any handler, session or

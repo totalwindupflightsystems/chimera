@@ -110,11 +110,15 @@ Available endpoints once running:
 | `POST` | `/web/sessions` | Create a session (multi-turn, session-scoped deliberation) |
 | `GET` | `/web/sessions/{id}` | Session history: `turn_count` + per-turn prompt, answer, models, tokens, cost |
 | `POST` | `/web/sessions/{id}/chat` | Run a deliberation inside the session; past turns are injected as history |
+| `DELETE` | `/web/sessions/{id}` | Delete a session (204 on deleted, 404 on unknown id) |
 | `GET` | `/web/sse/{id}` | Session event stream (Server-Sent Events, `text/event-stream`) |
 
 `/web/sessions` is **POST-only** — a `GET /web/sessions` listing does not
 exist and returns **405** (`GET /web/sessions/{id}` is the per-session read,
-404 on an unknown id). The `/web` surface is served only when the `web` extra
+404 on an unknown id). `DELETE /web/sessions/{id}` is available for
+per-session cleanup (204 on success; unknown id -> 404); the global
+`POST /web/debug/reset` is the only bulk cleanup. The `/web` surface is
+served only when the `web` extra
 is installed (`pip install chimera-deliberation[web]`); open the UI at
 `/web/` and let it create the session and subscribe to `/web/sse/{id}`.
 
