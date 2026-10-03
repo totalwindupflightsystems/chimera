@@ -729,6 +729,58 @@ def test_chat_completions_unknown_override_model_returns_400(  # type: ignore[no
     assert "error" not in body, body
     assert field in body["detail"], body
     assert "unknown model" in body["detail"], body
+    # DF-CHIMERA-V2-61: the 400 must teach the catalog requirement — an
+    # undeclared id is only dispatchable once a `models.<id>` entry exists.
+    assert "catalog" in body["detail"], body
+    assert "models:" in body["detail"], body
+
+
+def test_deliberate_unknown_override_model_details_catalog_requirement(  # type: ignore[no-untyped-def]
+    config,
+) -> None:
+    """The /v1/deliberate 400 for an unknown override model names the fix (DF-CHIMERA-V2-61).
+
+    A 200-model gateway user sending an undeclared id gets a hard 400 either
+    way — the message must say WHY (the id has no `models:` catalog entry)
+    instead of a bare "Unknown model/formation: ..." that reads like a typo
+    hunt. Same detail body as the OpenAI-compat endpoint (FastAPI ``detail``).
+    """
+    client = _client(config)
+    r = client.post(
+        "/v1/deliberate",
+        json={
+            "prompt": "hello",
+            "formation": "auto",
+            "worker_model": "bogus/nonexistent-model-xyz",
+        },
+    )
+    assert r.status_code == 400, r.text
+    body = r.json()
+    assert "error" not in body, body
+    assert "worker_model" in body["detail"], body
+    assert "unknown model" in body["detail"], body
+    assert "catalog" in body["detail"], body
+    assert "models:" in body["detail"], body
+
+
+def test_chat_completions_unknown_override_model_details_catalog_requirement(  # type: ignore[no-untyped-def]
+    config,
+) -> None:
+    """The OpenAI-compat 400 for an unknown override model teaches the catalog too (DF-CHIMERA-V2-61)."""
+    client = _client(config)
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "auto",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stage_models": {"worker_1": "bogus/nonexistent-model-xyz"},
+        },
+    )
+    assert r.status_code == 400, r.text
+    body = r.json()
+    assert "error" not in body, body
+    assert "catalog" in body["detail"], body
+    assert "models:" in body["detail"], body
 
 
 def test_chat_completions_unknown_stage_id_returns_400(config) -> None:  # type: ignore[no-untyped-def]

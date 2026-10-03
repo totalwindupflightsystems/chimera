@@ -247,6 +247,33 @@ def _check_rate_limit(request: Request, key: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# DF-CHIMERA-V2-61: catalog-requirement teaching for unknown-model errors
+# --------------------------------------------------------------------------- #
+
+#: Appended to the 400 ``detail`` whenever a request names a model id that is
+#: not a `models:` catalog entry. A user pointing Chimera at a large gateway
+#: (hermes, router9, …) otherwise reads a bare "Unknown model" that never says
+#: the fix is a catalog declaration in chimera.yaml. Status code (400) and the
+#: JSON error shape are unchanged — teaching text only.
+_CATALOG_HINT = (
+    " A model id must be declared in the `models:` catalog section of"
+    " chimera.yaml (a `providers.<name>` entry alone is not enough) before it"
+    " is dispatchable; see docs/CONFIG.md."
+)
+
+
+def _catalog_error_detail(base: str) -> str:
+    """Append the catalog requirement to an unknown-model 400 ``detail``.
+
+    The validation errors raised downstream name the offending field/id
+    ("worker_model references unknown model 'x'", "Stage 's' uses unknown
+    model 'x'"); pass the reason through unchanged and append the catalog
+    requirement, so the message keeps naming WHERE the bad value came from.
+    """
+    return f"{base}{_CATALOG_HINT}"
+
+
+# --------------------------------------------------------------------------- #
 # Request / response models
 # --------------------------------------------------------------------------- #
 
@@ -775,7 +802,9 @@ def _register_routes(app: FastAPI) -> None:
                     allow_custom_dag=body.allow_custom_dag,
                 )
             except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
+                # DF-CHIMERA-V2-61: teach the `models:` catalog requirement
+                # (400 status + JSON shape unchanged).
+                raise HTTPException(status_code=400, detail=_catalog_error_detail(str(exc))) from exc
             if result.answer_degraded:
                 raise _NoUsableAnswerError(
                     message=(
@@ -918,7 +947,12 @@ def _register_routes(app: FastAPI) -> None:
                     allow_custom_dag=body.allow_custom_dag,
                 )
             except (KeyError, ValueError) as exc:
-                raise HTTPException(status_code=400, detail=f"Unknown model/formation: {exc}") from exc
+                # DF-CHIMERA-V2-61: teach the `models:` catalog requirement
+                # (400 status + JSON shape unchanged).
+                raise HTTPException(
+                    status_code=400,
+                    detail=_catalog_error_detail(f"Unknown model/formation: {exc}"),
+                ) from exc
             if result.answer_degraded:
                 raise _NoUsableAnswerError(
                     message=(

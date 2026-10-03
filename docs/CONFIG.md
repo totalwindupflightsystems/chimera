@@ -498,6 +498,37 @@ providers:
     api_key_env: ROUTER9_API_KEY   # var name in ~/.hermes/.env — never inline the key
 ```
 
+### Catalog entries are required for dispatch
+
+Adding `providers.<name>` wires up *routing* — it does not by itself make any
+model reachable. A model id is dispatchable only when it has its own
+`models.<id>` catalog entry: formations, client DAGs and every per-request
+override (`worker_model`, `stage_models`, `aggregator_model`) validate against
+the catalog, so an id missing from `models:` is rejected with an HTTP 400
+"unknown model" even though its provider is fully configured. For a gateway
+serving hundreds of models behind one `base_url`, that means each id you
+actually want to dispatch needs an explicit entry — deliberately, so cost
+tier, category scores and `enabled` stay per-model decisions instead of
+inheriting whatever the gateway happens to list (GET /v1/models shows exactly
+which ids the catalog knows):
+
+```yaml
+providers:
+  router9:
+    base_url: http://master001:20128/v1
+    api_key_env: ROUTER9_API_KEY
+
+models:
+  router9/ds/deepseek-v4-flash:      # dispatchable: has a catalog entry
+    provider: router9
+    cost_tier: budget
+    categories:
+      technology_code/code_generation/python: 88
+  # router9/ds/deepseek-v4-pro is NOT dispatchable yet — the provider can
+  # route it, but until a `models:` entry exists it fails with 400
+  # "unknown model"; add the entry (provider + cost_tier + categories).
+```
+
 Notes for this shape of provider:
 
 - **The key still has to resolve to a value.** LiteLLM's OpenAI-SDK path
