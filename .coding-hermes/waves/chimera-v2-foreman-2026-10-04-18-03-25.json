@@ -1,0 +1,1 @@
+{"tick":"chimera-v2-foreman-2026-10-04-18-03-25","budget":4,"workers":[{"id":"W1","tasks":["README-2","README-3","README-4","README-5"],"worktree":"~/chimera-v2-wt-README-DOCS-W1","branch":"README-DOCS-W1"},{"id":"W2","tasks":["README-6"],"worktree":"~/chimera-v2-wt-README-CI-W2","branch":"README-CI-W2"}],"created":"2026-10-04T18:10:00Z"}
