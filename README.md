@@ -130,6 +130,10 @@ curl -X POST http://localhost:8765/v1/chat/completions \
   -d '{"model": "auto", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
+If auth is enabled (`auth.enabled: true` with `CHIMERA_API_KEY`), every call
+needs `Authorization: Bearer <key>` or `X-API-Key: <key>` — see
+[Authentication](docs/INTEGRATION.md#3-authentication-chimera_api_key).
+
 ## Configuration
 
 `chimera.yaml` is found in this order: an explicit `path` argument, then the
@@ -570,6 +574,13 @@ The dispatcher writes custom prompts for each stage but uses YOUR structure exac
 | **MCP** | `chimera_formations` | List formation presets |
 | **MCP** | `chimera_models` | List models with weights |
 
+When auth is enabled (`CHIMERA_API_KEY`), pass `Authorization: Bearer <key>`
+or `X-API-Key: <key>` — see
+[docs/INTEGRATION.md](docs/INTEGRATION.md#3-authentication-chimera_api_key).
+`POST /v1/deliberate` also accepts an optional `idempotency_key` request-body
+field (a repeat call with the same key is replayed, not re-run) — see
+[docs/OPENAI_API.md](docs/OPENAI_API.md#v1deliberate).
+
 ## Response Trace
 
 Every deliberation returns a full trace:
@@ -595,17 +606,16 @@ Chimera uses LiteLLM under the hood. Supported providers:
 
 | Provider | Direct API | Via OpenRouter | Models |
 |---|---|---|---|
-| **DeepSeek** | ✅ | ✅ | v4-flash, v4-pro, r1 |
+| **DeepSeek** | ✅ | ✅ | v4-flash, v4-pro |
 | **Anthropic** | — | ✅ | Sonnet 4, Opus 4.7/4.8, Haiku 4.5 |
-| **OpenAI** | — | ✅ | GPT-5.5, GPT-5.1 |
+| **OpenAI** | — | ✅ | GPT-5.5, GPT-5.5 Pro, GPT-5.6 (Luna, Sol, Terra variants) |
 | **xAI** | — | ✅ | Grok 4.20 |
 | **Google** | — | ✅ | Gemini 3.5 Flash, 3.1 Pro, 2.5 Flash |
 | **Z.AI** | ✅ (direct) | ✅ | GLM-5.2 |
 | **MoonshotAI** | — | ✅ | Kimi K2.7 Code, K2.6 |
 | **MiniMax** | — | ✅ | M3 |
-| **Meta** | — | ✅ | Llama 4 Maverick |
 | **Hermes gateway** | ✅ (local) | — | any model the running Hermes serves, addressed as `hermes/<model>` |
-| **9router fleet gateway** | ✅ (tailnet) | — | ~269 models across 15 upstream prefixes, addressed as `router9/<upstream id>` |
+| **9router fleet gateway** | ✅ (tailnet) | — | 400 models across 16 upstream prefixes, addressed as `router9/<upstream id>` |
 
 ### Custom OpenAI-compatible endpoints
 
@@ -645,8 +655,9 @@ own endpoints.)
 
 …and the same seam carries the **9router fleet gateway** — one
 OpenAI-compatible endpoint (`http://master001:20128/v1`, reachable on the
-tailnet as `master001`) in front of ~269 models across 15 upstream prefixes
-(`ds/`, `mmx/`, `minimax/`, `kimi/`, `openrouter/`, `xai/`, `ollama/`, …):
+tailnet as `master001`) in front of a few hundred models spanning many
+upstream prefixes (`ds/`, `mmx/`, `minimax/`, `kimi/`, `openrouter/`,
+`xai/`, `ollama/`, … — see the 9router row above for the measured count):
 
 ```yaml
 providers:
