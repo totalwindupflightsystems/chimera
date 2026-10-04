@@ -693,3 +693,4 @@
 {"id": 1574, "type": "task_completed", "task_id": "CHIMERA-V2-REVIEW-03", "ts": "2026-10-04T19:45:00Z", "summary": "Harvest close: fix b9d643b already in origin/main; live probe confirmed repo-local blocked-models resolution."}
 {"id": 1575, "type": "task_completed", "task_id": "QA-CHIMERA-V2-40", "ts": "2026-10-04T19:45:00Z", "summary": "Host-side fix: bunker-qa.sh spawn-fail detail now names the ssh reachability gate + port-22 escape hatch; skill doc updated. Host script, no repo commit."}
 {"id": 1576, "type": "task_completed", "task_id": "QA-CHIMERA-V2-41", "ts": "2026-10-04T19:45:00Z", "summary": "Agent 391d19e6 reaped: bunker destroy rc=0, post-destroy list count 0."}
+{"id": 1577, "type": null, "task_id": "SUP-DEPS-20261004", "ts": null, "summary": null, "timestamp": "2026-10-04T21:16:09.095173+00:00", "event_type": "task_created", "actor": "foreman", "detail": "{\"id\":\"SUP-DEPS-20261004\",\"status\":\"pending\"}"}
