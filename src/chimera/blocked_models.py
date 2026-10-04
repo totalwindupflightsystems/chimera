@@ -21,15 +21,33 @@ Two failure classes block a model (DF-CHIMERA-V2-6):
 Transient errors (timeouts, 429, 5xx) are handled by retries/circuit
 breakers and must NOT remove a model from candidacy.
 
-Durability (DF-CHIMERA-V2-1)
+Durability (DF-CHIMERA-V2-1, repo-scoped per CHIMERA-V2-REVIEW-03)
 ----------------------------
 Both classes are long-lived (default 7 days) and **persisted to disk** as
-wall-clock expiry timestamps (``~/.chimera/blocked-models.json`` by
-default).  On construction the registry reloads the persisted state, so a
-fresh process never re-picks a known-blocked model, and the block is not
-silently re-admitted after a short in-memory cooldown.  Expired entries are
-pruned on load and on read.  To clear a block manually, delete the state
-file (or remove the entry from it).
+wall-clock expiry timestamps.  On construction the registry reloads the
+persisted state, so a fresh process never re-picks a known-blocked model,
+and the block is not silently re-admitted after a short in-memory cooldown.
+Expired entries are pruned on load and on read.  To clear a block manually,
+delete the state file (or remove the entry from it).
+
+The state file is **install-scoped, not machine-scoped**: the default path
+is resolved at construction time by :func:`default_state_path` —
+
+1. ``$CHIMERA_BLOCKED_MODELS_PATH`` when set (deploys can pin one file),
+2. else ``<repo>/.chimera/blocked-models.json`` for the nearest enclosing
+   checkout (walk up from the process cwd to the first ``pyproject.toml`` —
+   the same convention ``scripts/model_sync.py`` uses for
+   ``.seen_models.json``),
+3. else the legacy home path ``~/.chimera/blocked-models.json`` (bare pip
+   installs), with a :class:`UserWarning` because that location is shared
+   by every chimera process on the machine.
+
+Scope matters: the home-scoped default made a fresh clone inherit every
+block ever recorded on the host — credential blocks for providers the new
+install never configured (CHIMERA-V2-REVIEW-03).  A block recorded inside
+one checkout is invisible to another; blocks recorded before this change
+stay in the legacy file and are simply no longer read.  The repo-local
+``.chimera/`` directory is gitignored (per-install runtime state).
 
 The registry uses an injectable clock so tests can advance time without
 sleeping; persisted timestamps are wall-clock (``time.time()``) so they stay
@@ -43,6 +61,7 @@ import json
 import os
 import re
 import time
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 
@@ -56,10 +75,54 @@ log = structlog.get_logger("chimera.blocked_models")
 #: survives process restarts (DF-CHIMERA-V2-1).
 DEFAULT_BLOCK_COOLDOWN_S: float = 7.0 * 24.0 * 3600.0
 
-#: Default on-disk location for the persisted registry.  Follows the repo's
-#: state-file convention (``~/.chimera/models-dev-cache.json`` in
-#: ``provider_discovery``).
+#: LEGACY on-disk location (machine-scoped).  No longer the default: it made
+#: every chimera process on the host share one blocked-models file, so a
+#: fresh clone inherited blocks for providers it had never configured
+#: (CHIMERA-V2-REVIEW-03).  Kept as the last-resort fallback for bare pip
+#: installs outside any repo checkout — see :func:`default_state_path`.
 DEFAULT_STATE_PATH: str = "~/.chimera/blocked-models.json"
+
+#: Environment override pinning the blocked-models state file explicitly
+#: (highest-resolution priority; deploys and tests use this to opt out of
+#: repo-relative resolution).
+STATE_PATH_ENV: str = "CHIMERA_BLOCKED_MODELS_PATH"
+
+#: Repo marker the default resolution walks up to (from the process cwd):
+#: the first directory containing it is the install root, and the state
+#: file lives at ``<root>/.chimera/blocked-models.json``.
+_REPO_MARKER: str = "pyproject.toml"
+
+
+def default_state_path() -> Path:
+    """Resolve the default blocked-models state file for THIS install.
+
+    Priority: the :data:`STATE_PATH_ENV` override, else the repo-local
+    ``.chimera/blocked-models.json`` of the nearest enclosing checkout
+    (walk up from the cwd to the first directory holding a
+    ``pyproject.toml``), else the legacy :data:`DEFAULT_STATE_PATH`
+    (returned UNEXPANDED, as configured) when no repo marker exists above
+    the cwd.  Pure lookup — never creates directories or files.
+    """
+    env_path = os.environ.get(STATE_PATH_ENV)
+    if env_path:
+        return Path(env_path).expanduser()
+    here = Path.cwd()
+    for candidate in [here, *here.parents]:
+        if (candidate / _REPO_MARKER).is_file():
+            return candidate / ".chimera" / "blocked-models.json"
+    return Path(DEFAULT_STATE_PATH)
+
+
+class _DefaultPath:
+    """Sentinel type: ``state_path`` not given — resolve the default now."""
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "<default-state-path>"
+
+
+#: Module-import time no longer bakes in a path: resolution is deferred to
+#: construction (the cwd can differ between import and use in tests/tools).
+_DEFAULT_PATH = _DefaultPath()
 
 #: Error-message signature of a guardrail/privacy/endpoint-availability
 #: failure that should exclude the model from future candidate lists.
@@ -133,8 +196,19 @@ class ModelBlockRegistry:
         *,
         cooldown_s: float = DEFAULT_BLOCK_COOLDOWN_S,
         clock: Callable[[], float] = time.monotonic,
-        state_path: str | os.PathLike[str] | None = DEFAULT_STATE_PATH,
+        state_path: str | os.PathLike[str] | None | _DefaultPath = _DEFAULT_PATH,
     ) -> None:
+        if isinstance(state_path, _DefaultPath):
+            state_path = default_state_path()
+            if str(state_path) == DEFAULT_STATE_PATH:
+                warnings.warn(
+                    "blocked-models state outside any repo checkout: falling back "
+                    f"to the machine-scoped {DEFAULT_STATE_PATH}. Runs from a repo "
+                    "checkout keep per-install state instead (set "
+                    f"{STATE_PATH_ENV} to pin a location).",
+                    UserWarning,
+                    stacklevel=2,
+                )
         self.cooldown_s = cooldown_s
         self._clock = clock
         self._state_path = Path(state_path).expanduser() if state_path is not None else None
@@ -252,6 +326,19 @@ class ModelBlockRegistry:
         """
         stored = self._fingerprints.get(model)
         return None if stored == NO_CREDENTIAL else stored
+
+    # ------------------------------------------------------------------
+    # Introspection
+    # ------------------------------------------------------------------
+
+    def state_file(self) -> Path | None:
+        """The state file this registry persists to (``None`` = disabled).
+
+        The CLI renders this instead of a hardcoded location, so an operator
+        following the printed path always reaches the file actually read
+        (CHIMERA-V2-REVIEW-03).
+        """
+        return self._state_path
 
     # ------------------------------------------------------------------
     # Persistence
@@ -383,7 +470,9 @@ __all__ = [
     "NO_CREDENTIAL",
     "REASON_CREDENTIAL",
     "REASON_GUARDRAIL",
+    "STATE_PATH_ENV",
     "ModelBlockRegistry",
+    "default_state_path",
     "is_credential_error",
     "is_guardrail_error",
     "set_shared_registry",

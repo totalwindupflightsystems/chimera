@@ -1483,9 +1483,10 @@ async def test_worker_failures_populated_on_degraded_worker(config) -> None:  # 
     """C2: trace.worker_failures lists each dropped worker with stage/model/error.
 
     The registry is isolated like its C3 siblings: the engine RECORDS the
-    guardrail block it observes here, and the process-wide registry persists to
-    the developer's real ``~/.chimera/blocked-models.json`` (DEFAULT_STATE_PATH)
-    — which then excludes the model from the dispatcher catalog for the whole
+    guardrail block it observes here, and the process-wide registry persists
+    to a real state file (the repo-local ``.chimera/blocked-models.json``
+    since CHIMERA-V2-REVIEW-03) — which then excludes the model from the
+    dispatcher catalog for the whole
     cooldown and turns the NEXT suite run red (tests/test_e2e.py asserts the
     model is visible). This test is about failure surfacing, not persistence.
     """

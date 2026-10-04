@@ -54,8 +54,10 @@ def _isolate_blocked_model_registry(
 ) -> Any:
     """Keep the suite out of the developer's real guardrail block state.
 
-    ``blocked_models.shared_registry`` persists to ``DEFAULT_STATE_PATH``
-    (``~/.chimera/blocked-models.json``) — the SAME file the live ``chimera``
+    ``blocked_models.shared_registry`` persists to a real state file (the
+    repo-local ``.chimera/blocked-models.json`` since CHIMERA-V2-REVIEW-03,
+    the legacy ``~/.chimera/blocked-models.json`` outside a checkout) — the
+    SAME file a live ``chimera``
     service writes from real provider traffic. Every test that consults the
     registry (the dispatcher catalog, the selector, ``chimera models``' blocked
     section, engine failure handling) would otherwise pass or fail depending on

@@ -480,9 +480,12 @@ key") marks the model as **blocked** exactly like a provider guardrail
 rejection does. The run still completes (exit 0) with the surviving stages,
 but three things now happen:
 
-* the model is recorded in `~/.chimera/blocked-models.json` for the block
-  cooldown (7 days by default) with a **non-reversible fingerprint** of the
-  key that failed — never the key itself;
+* the model is recorded in the install-scoped blocked-models state file
+  (repo checkout: `.chimera/blocked-models.json`; see the
+  [state-file section](CONFIG.md#blocked-models-state-file) in the config
+  reference) for the block cooldown (7 days by default) with a
+  **non-reversible fingerprint** of the key that failed — never the key
+  itself;
 * the dispatcher/driver stops assigning it: it is dropped from the auto
   catalog *and* from worker stages, including a worker that names it
   explicitly (`--stage-models`), which is replaced by a credentialed
@@ -496,10 +499,11 @@ but three things now happen:
 warning: worker 'worker_1' (openrouter/openai/gpt-5.6-sol) failed: litellm.AuthenticationError: ...
   credential failure: provider 'openrouter' rejected the API key for openrouter/openai/gpt-5.6-sol.
   fix: set a valid OPENROUTER_API_KEY (or unset the stale one) and re-run — the model is excluded
-  from selection until the key changes or the block cooldown expires (~/.chimera/blocked-models.json).
+  from selection until the key changes or the block cooldown expires (the state file it names is the one this install uses).
 ```
 
-**See the exclusions:** `~/.chimera/blocked-models.json` (entries carry
+**See the exclusions:** the state file `chimera models` names in its
+`Blocked models` header (entries carry
 `blocked_until_epoch`, `reasons` and `credential_fingerprints`), or
 `chimera models`, which lists a `Blocked models` block with the reason and
 the remedy per model.
@@ -507,7 +511,7 @@ the remedy per model.
 **Clear a block:** fix or replace the key. The block **self-clears** on the
 next run as soon as the credential the config resolves differs from the
 fingerprint that was recorded — no file surgery needed. To clear it by hand,
-delete the entry from `~/.chimera/blocked-models.json` (or the whole file).
+delete the entry from the state file (or the whole file).
 Blocks expire on their own after the cooldown as well.
 `auto_formation.restrict_to_credentialed_providers: false` keeps the full
 catalog visible to the dispatcher (the pre-restriction behavior); it does not

@@ -57,6 +57,9 @@ IGNORED_ARTIFACTS = (
     "dagger.db-shm",
     ".vfs/graph/.parse_cache.json",
     ".vfs/graph/.last_reconcile",
+    # Per-install runtime state (repo-scoped blocked-models registry,
+    # CHIMERA-V2-REVIEW-03) — never machine-shared, never committable.
+    ".chimera/blocked-models.json",
 )
 
 #: A root file that must stay tracked, so the scratch check cannot pass vacuously

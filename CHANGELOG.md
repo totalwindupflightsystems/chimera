@@ -4,6 +4,22 @@ All notable changes to Chimera will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Blocked-models state is per-install, not machine-wide**
+  (CHIMERA-V2-REVIEW-03). The registry persisted to
+  `~/.chimera/blocked-models.json`, so every chimera process on the host
+  shared one file and a fresh clone inherited blocks it never recorded —
+  e.g. `provider key rejected` warnings for deepseek/openrouter models a
+  mock-only config had never configured. The default path is now resolved
+  at registry construction: `$CHIMERA_BLOCKED_MODELS_PATH` when set, else
+  `<repo>/.chimera/blocked-models.json` of the nearest enclosing checkout
+  (walk-up to the first `pyproject.toml`; the directory is gitignored),
+  else the legacy home path with a `UserWarning` for bare pip installs.
+  Blocks recorded before this change remain in the legacy file, unread;
+  `chimera models` and the `credential failure` hint now render the
+  registry's actual state file instead of a hardcoded location.
+
 ## [0.2.7] — 2026-09-21
 
 ### Fixed

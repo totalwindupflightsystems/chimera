@@ -38,3 +38,9 @@ namespaces/
 # gitreins runtime state (role checkpoints, lifecycle lock)
 .gitreins/role.db*
 .gitreins/tasks.yaml.lock
+
+# Chimera per-install runtime state (blocked-models registry; repo-scoped
+# since CHIMERA-V2-REVIEW-03 — the legacy ~/.chimera home file is no longer
+# read by default). Class rule, not a filename: other install-local state
+# files may join this directory later.
+.chimera/

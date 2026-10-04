@@ -125,10 +125,11 @@ Notes:
   a custom `base_url` with an `api_key_env` (see
   [Custom OpenAI-compatible endpoints](#custom-openai-compatible-endpoints)).
 - A *present but invalid* key blocks the model for the block cooldown
-  (`~/.chimera/blocked-models.json`, 7 days by default); the CLI prints the
-  same variable in its `credential failure` hint, and `chimera models` lists
-  the blocked models with their remedy. The block self-clears when the key
-  changes.
+  (state file: `.chimera/blocked-models.json` in the repo checkout — see
+  [Blocked-models state file](#blocked-models-state-file), 7 days by
+  default); the CLI prints the same variable in its `credential failure`
+  hint, and `chimera models` lists the blocked models with their remedy.
+  The block self-clears when the key changes.
 
 ---
 
@@ -250,7 +251,8 @@ guardrail/privacy/endpoint-availability error
 (`No endpoints available matching your guardrail restrictions…`), the model
 is recorded in a blocked-model registry and excluded from the auto
 dispatcher catalog and the category selector. Blocks are **long-lived (7
-days)** and **persisted to `~/.chimera/blocked-models.json`**, so a fresh
+days)** and **persisted to a state file scoped to the current install**
+(see [Blocked-models state file](#blocked-models-state-file)), so a fresh
 process never re-picks a known guardrail-blocked model and the block is not
 silently re-admitted after a short cooldown. Only guardrail-class failures
 are recorded — timeouts, 5xx, and auth errors never block a model. Expired
@@ -262,6 +264,32 @@ state file (or remove the entry from it).
 - If *no* provider has resolved credentials, the restriction is skipped with
   an actionable warning so the failure surface stays the real provider auth
   error rather than an empty catalog.
+
+### Blocked-models state file
+
+The registry persists to a state file resolved **per install, not per
+machine** (CHIMERA-V2-REVIEW-03 — the old machine-wide
+`~/.chimera/blocked-models.json` made a fresh clone inherit every block ever
+recorded on the host, including credential blocks for providers the new
+install had never configured). Resolution order, applied when the registry
+is constructed:
+
+1. `$CHIMERA_BLOCKED_MODELS_PATH` when set — pin one explicit file (deploys,
+   tests);
+2. else `<repo>/.chimera/blocked-models.json` for the nearest enclosing
+   checkout (walks up from the working directory to the first
+   `pyproject.toml`) — a fresh clone starts with an empty registry, two
+   checkouts never see each other's blocks, and `.chimera/` is gitignored;
+3. else the legacy `~/.chimera/blocked-models.json` (bare pip installs
+   outside any checkout) — kept for compatibility and announced with a
+   `UserWarning` because that location is shared by every chimera process
+   on the machine.
+
+`chimera models` renders the actual state file in its `Blocked models`
+header, and the per-failure `credential failure` hint names it too — follow
+the printed path, never an assumed one. Blocks recorded before this change
+remain in the legacy home file and are simply no longer read; delete that
+file when nothing on the host still runs an old chimera.
 
 ---
 

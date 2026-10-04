@@ -497,6 +497,8 @@ def _print_worker_failures(
             )
         else:
             env_var = _provider_api_key_env(provider, config)
+            state_file = blocked_models.shared_registry.state_file()
+            state_hint = f" ({state_file})" if state_file is not None else ""
             out.print(
                 f"  [yellow]credential failure:[/yellow] provider "
                 f"'{provider}' rejected the API key for {model}."
@@ -504,8 +506,7 @@ def _print_worker_failures(
             out.print(
                 f"  fix: set a valid {env_var} (or unset the stale one) and "
                 f"re-run — the model is excluded from selection until the key "
-                f"changes or the block cooldown expires "
-                f"(~/.chimera/blocked-models.json)."
+                f"changes or the block cooldown expires{state_hint}."
             )
             out.print(
                 "  escape hatch: auto_formation.restrict_to_credentialed_"
@@ -723,14 +724,15 @@ def models(ctx: click.Context) -> None:
     # DF-CHIMERA-V2-6: make the durable exclusions visible. A model whose
     # provider key failed auth (or hit a provider guardrail) is excluded from
     # selection for the block cooldown; without this line the only trace was
-    # ~/.chimera/blocked-models.json. Rendered as plain lines (not a table) so
-    # an 80-column terminal can never truncate a model name into "…".
+    # the registry's state file (repo-scoped by default since
+    # CHIMERA-V2-REVIEW-03 — the ACTUAL path is rendered, never a hardcoded
+    # location). Rendered as plain lines (not a table) so an 80-column
+    # terminal can never truncate a model name into "…".
     blocked = sorted(blocked_models.shared_registry.blocked())
     if blocked:
-        console.print(
-            "[bold]Blocked models[/bold] (excluded from selection; "
-            "state file: ~/.chimera/blocked-models.json)"
-        )
+        state_file = blocked_models.shared_registry.state_file()
+        state_hint = f"state file: {state_file}" if state_file is not None else "persistence disabled"
+        console.print(f"[bold]Blocked models[/bold] (excluded from selection; {escape(state_hint)})")
         for name in blocked:
             reason = blocked_models.shared_registry.block_reason(name) or "guardrail"
             provider = _provider_for_model(name, config)

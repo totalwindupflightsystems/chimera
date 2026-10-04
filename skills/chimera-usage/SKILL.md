@@ -33,9 +33,9 @@ description: >-
   v1.8.0 adds the 2026-09-25 run-16 CUSTOM-OPENAI-COMPATIBLE-PROVIDER
   section: pointing Chimera at your own gateways (base_url + api_key_env +
   REQUIRED catalog entry), per-entry-point field-tested recipes, the
-  workers-vs-stages formation trap, and the shared
-  ~/.chimera/blocked-models.json stale-credential trap with its verified
-  escape.
+  workers-vs-stages formation trap, and the blocked-models
+  stale-credential trap with its verified escape (the state file is
+  per-install since CHIMERA-V2-REVIEW-03).
   v1.9.0 adds the 2026-10-01 run-18 section: the scripted multi-turn web
   session recipe is REAL and works with the documented auth header —
   multi-turn memory, per-turn audit, negative contracts all hold; the
@@ -742,16 +742,19 @@ models:                         # the catalog entry is REQUIRED (trap 1)
    silently and the preset degrades to an auto-mode preset; the later
    failure says "Cannot build a structural DAG from an auto preset" —
    nothing names the real typo (DF-CHIMERA-V2-59).
-3. **`~/.chimera/blocked-models.json` is SHARED by every chimera process on
-   the machine, and a credential block recorded while NO key was set never
-   self-clears (7-day TTL; `credential_fingerprints` is empty so the
-   "self-clears when the key changes" remedy has nothing to compare).**
-   Symptom: a fresh venv with a VALID key still logs
-   `Blocked models (excluded from selection; state file:
-   ~/.chimera/blocked-models.json)` for the default provider. Verified
-   escape: back up + delete that file (it regenerates; blocks only ever
-   suppress model selection) — or route everything through custom-provider
-   defaults as in the recipe above (DF-CHIMERA-V2-58).
+3. **Blocked-models state is per-install since CHIMERA-V2-REVIEW-03: a
+   checkout keeps its own `.chimera/blocked-models.json` (gitignored), so a
+   fresh clone no longer inherits the host's stale blocks.** Two residues of
+   the old machine-scoped era remain: (a) a block recorded while NO key was
+   set still never self-clears (7-day TTL; `credential_fingerprints` carries
+   only the `no-credential` marker so the "self-clears when the key changes"
+   remedy has nothing to compare — DF-CHIMERA-V2-58); (b) the legacy
+   `~/.chimera/blocked-models.json` is still read when running OUTSIDE any
+   checkout (with a UserWarning) and is no longer read from inside one.
+   Verified escape for a wedged block: delete the state file `chimera
+   models` names (it regenerates; blocks only ever suppress model
+   selection) — or route everything through custom-provider defaults as in
+   the recipe above.
 4. **`${VAR}` substitution in chimera.yaml resolves to the EMPTY string
    when the var is unset** (config still loads; every call to that provider
    fails auth). Resolution order: process env → repo `.env` next to
