@@ -2027,3 +2027,12 @@ tasks:
   status: complete
   created_at: '2026-10-04T05:15:46.103321+00:00'
   completed_at: '2026-10-04T05:17:16.437340+00:00'
+- id: README-DOCS-W1
+  title: README drift fixes README-2..5
+  criteria:
+  - Providers table has no r1/GPT-5.1/Llama; 9router figure is 400 models / 16 prefixes;
+    auth (CHIMERA_API_KEY) noted at Quickstart + Interfaces table; idempotency_key
+    documented with pointer to docs/OPENAI_API.md
+  status: complete
+  created_at: '2026-10-04T18:19:41.093651+00:00'
+  completed_at: '2026-10-04T18:19:43.682413+00:00'
