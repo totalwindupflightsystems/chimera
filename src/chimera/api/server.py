@@ -21,6 +21,7 @@ import functools
 import os
 import subprocess
 import time
+from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -195,6 +196,7 @@ def create_app(
     app.state.engine = engine or Engine(cfg, LiteLLMGateway(cfg))
     app.state.request_queue = request_queue
     app.state.rate_limiter = RateLimiter(cfg.rate_limit)
+    app.state.idempotency_cache = _IdempotencyCache()
     _register_routes(app)
 
     # Web UI (session-backed multi-turn with live DAG viz + SSE)
@@ -292,12 +294,59 @@ class DeliberateRequest(BaseModel):
     # Client-defined DAG (Feature 1) — disabled unless allow_custom_dag=True
     dag: dict[str, Any] | None = None  # Full DAG definition from client
     allow_custom_dag: bool = False  # Must be True to accept client DAG
+    # Optional client-supplied idempotency key (CHIMERA-V2-REVIEW-05). When
+    # set, a repeat POST with the same key replays the cached response
+    # (HTTP 200 + X-Idempotent-Replay: true) instead of re-running the
+    # deliberation. When omitted, behavior is unchanged.
+    idempotency_key: str | None = None
 
 
 class DeliberateResponse(BaseModel):
     answer: str
     trace: dict[str, Any]
     request_id: str
+
+
+class _IdempotencyCache:
+    """Bounded, app-scoped response cache keyed on client idempotency keys.
+
+    LRU-capped at ``CAPACITY`` entries. Per-key asyncio locks coalesce
+    concurrent duplicates so an in-flight deliberation runs exactly once
+    and every waiter receives the same result. Only successful responses
+    are cached — failures are never memoized, so a retry after an error
+    re-executes.
+    """
+
+    CAPACITY = 512
+
+    def __init__(self, capacity: int = CAPACITY) -> None:
+        self._capacity = capacity
+        self._store: OrderedDict[str, DeliberateResponse] = OrderedDict()
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def get(self, key: str) -> DeliberateResponse | None:
+        resp = self._store.get(key)
+        if resp is not None:
+            self._store.move_to_end(key)
+        return resp
+
+    def put(self, key: str, response: DeliberateResponse) -> None:
+        self._store[key] = response
+        self._store.move_to_end(key)
+        while len(self._store) > self._capacity:
+            evicted, _ = self._store.popitem(last=False)
+            lock = self._locks.get(evicted)
+            if lock is not None and not lock.locked():
+                self._locks.pop(evicted, None)
+
+    def lock_for(self, key: str) -> asyncio.Lock:
+        # Sync by design: asyncio is single-threaded, so the get-or-create
+        # below is atomic with respect to other coroutines.
+        lock = self._locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[key] = lock
+        return lock
 
 
 class ChatMessage(BaseModel):
@@ -465,6 +514,95 @@ def _catalog_entry_payload(entry: Any) -> dict[str, Any]:
         "cost_per_1k_input": entry.cost_rate_input(),
         "cost_per_1k_output": entry.cost_rate_output(),
     }
+
+
+async def _execute_deliberation(request: Request, body: DeliberateRequest) -> DeliberateResponse:
+    """Run one deliberation for POST /v1/deliberate (validation + engine call).
+
+    Extracted so the endpoint's idempotency wrapper (CHIMERA-V2-REVIEW-05)
+    can call it on a cache miss while the no-key path stays byte-identical
+    to the pre-idempotency behavior.
+    """
+    engine: Engine = request.app.state.engine
+    cfg: ChimeraConfig = request.app.state.config
+    # DF-CHIMERA-V2-33: `auto` is a built-in formation backed by
+    # `Config.auto_formation` — valid even when the config lists no
+    # `auto:` entry (the docs example's shape). The dispatcher's
+    # unknown-name fallback stays untouched (DF-CHIMERA-V2-7).
+    if body.formation not in cfg.formations and body.formation != "auto":
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown formation: {body.formation}",
+        )
+    if body.dag is not None and not body.allow_custom_dag:
+        raise HTTPException(
+            status_code=400,
+            detail="Custom DAG requires allow_custom_dag=true",
+        )
+    from chimera.config import DeliberationOverrides
+
+    overrides = DeliberationOverrides(
+        allowed_models=body.allowed_models,
+        disallowed_models=body.disallowed_models,
+        dispatcher_model=body.dispatcher_model,
+        aggregator_model=body.aggregator_model,
+        worker_model=body.worker_model,
+        output_schema=body.output_schema,
+        stage_models=body.stage_models,
+    )
+    # Per-request timeout overrides via X-Chimera-Timeout header.
+    # Format: "total=300,per_stage=180". Values cannot exceed admin ceiling.
+    timeout_header = request.headers.get("X-Chimera-Timeout", "")
+    if timeout_header:
+        timeout_cfg = request.app.state.config.timeout
+        for part in timeout_header.split(","):
+            part = part.strip()
+            if "=" not in part:
+                continue
+            key, _, val = part.partition("=")
+            try:
+                parsed = float(val.strip())
+            except ValueError:
+                continue
+            if key == "total":
+                if timeout_cfg.total_s > 0 and parsed > timeout_cfg.total_s:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"total={parsed} exceeds admin ceiling {timeout_cfg.total_s}s",
+                    )
+                overrides.timeout_total_s = parsed if parsed > 0 else None
+            elif key == "per_stage":
+                if timeout_cfg.per_stage_s > 0 and parsed > timeout_cfg.per_stage_s:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"per_stage={parsed} exceeds admin ceiling {timeout_cfg.per_stage_s}s",
+                    )
+                overrides.timeout_per_stage_s = parsed if parsed > 0 else None
+    try:
+        result = await engine.deliberate(
+            body.prompt,
+            body.formation,
+            overrides=overrides,
+            dag=body.dag,
+            allow_custom_dag=body.allow_custom_dag,
+        )
+    except ValueError as exc:
+        # DF-CHIMERA-V2-61: teach the `models:` catalog requirement
+        # (400 status + JSON shape unchanged).
+        raise HTTPException(status_code=400, detail=_catalog_error_detail(str(exc))) from exc
+    if result.answer_degraded:
+        raise _NoUsableAnswerError(
+            message=(
+                "Deliberation failed: no usable answer produced. "
+                f"Upstream error: {result.answer_error or 'unknown'}"
+            ),
+            request_id=result.trace.request_id,
+        )
+    return DeliberateResponse(
+        answer=result.answer,
+        trace=result.trace.model_dump(mode="json"),
+        request_id=result.trace.request_id,
+    )
 
 
 def _register_routes(app: FastAPI) -> None:
@@ -723,6 +861,7 @@ def _register_routes(app: FastAPI) -> None:
         request: Request,
         body: DeliberateRequest,
         api_key: Annotated[str, Depends(require_api_key)],
+        response: Response,
     ) -> DeliberateResponse:
         # F2: Rate limiting
         _check_rate_limit(request, api_key)
@@ -738,86 +877,27 @@ def _register_routes(app: FastAPI) -> None:
             )
 
         try:
-            engine: Engine = request.app.state.engine
-            cfg: ChimeraConfig = request.app.state.config
-            # DF-CHIMERA-V2-33: `auto` is a built-in formation backed by
-            # `Config.auto_formation` — valid even when the config lists no
-            # `auto:` entry (the docs example's shape). The dispatcher's
-            # unknown-name fallback stays untouched (DF-CHIMERA-V2-7).
-            if body.formation not in cfg.formations and body.formation != "auto":
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Unknown formation: {body.formation}",
-                )
-            if body.dag is not None and not body.allow_custom_dag:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Custom DAG requires allow_custom_dag=true",
-                )
-            from chimera.config import DeliberationOverrides
-
-            overrides = DeliberationOverrides(
-                allowed_models=body.allowed_models,
-                disallowed_models=body.disallowed_models,
-                dispatcher_model=body.dispatcher_model,
-                aggregator_model=body.aggregator_model,
-                worker_model=body.worker_model,
-                output_schema=body.output_schema,
-                stage_models=body.stage_models,
-            )
-            # Per-request timeout overrides via X-Chimera-Timeout header.
-            # Format: "total=300,per_stage=180". Values cannot exceed admin ceiling.
-            timeout_header = request.headers.get("X-Chimera-Timeout", "")
-            if timeout_header:
-                timeout_cfg = request.app.state.config.timeout
-                for part in timeout_header.split(","):
-                    part = part.strip()
-                    if "=" not in part:
-                        continue
-                    key, _, val = part.partition("=")
-                    try:
-                        parsed = float(val.strip())
-                    except ValueError:
-                        continue
-                    if key == "total":
-                        if timeout_cfg.total_s > 0 and parsed > timeout_cfg.total_s:
-                            raise HTTPException(
-                                status_code=400,
-                                detail=f"total={parsed} exceeds admin ceiling {timeout_cfg.total_s}s",
-                            )
-                        overrides.timeout_total_s = parsed if parsed > 0 else None
-                    elif key == "per_stage":
-                        if timeout_cfg.per_stage_s > 0 and parsed > timeout_cfg.per_stage_s:
-                            raise HTTPException(
-                                status_code=400,
-                                detail=f"per_stage={parsed} exceeds admin ceiling {timeout_cfg.per_stage_s}s",
-                            )
-                        overrides.timeout_per_stage_s = parsed if parsed > 0 else None
-            try:
-                result = await engine.deliberate(
-                    body.prompt,
-                    body.formation,
-                    overrides=overrides,
-                    dag=body.dag,
-                    allow_custom_dag=body.allow_custom_dag,
-                )
-            except ValueError as exc:
-                # DF-CHIMERA-V2-61: teach the `models:` catalog requirement
-                # (400 status + JSON shape unchanged).
-                raise HTTPException(status_code=400, detail=_catalog_error_detail(str(exc))) from exc
-            if result.answer_degraded:
-                raise _NoUsableAnswerError(
-                    message=(
-                        "Deliberation failed: no usable answer produced. "
-                        f"Upstream error: {result.answer_error or 'unknown'}"
-                    ),
-                    request_id=result.trace.request_id,
-                )
-            return DeliberateResponse(
-                answer=result.answer,
-                trace=result.trace.model_dump(mode="json"),
-                request_id=result.trace.request_id,
-            )
+            # CHIMERA-V2-REVIEW-05: idempotency. With no key the path is
+            # byte-identical to before. With a key, a cached success replays
+            # (200 + X-Idempotent-Replay: true) and concurrent duplicates
+            # coalesce on the per-key lock so the engine runs exactly once.
+            key = body.idempotency_key
+            if key is None:
+                return await _execute_deliberation(request, body)
+            cache: _IdempotencyCache = request.app.state.idempotency_cache
+            cached = cache.get(key)
+            if cached is not None:
+                response.headers["X-Idempotent-Replay"] = "true"
+                return cached
+            lock = cache.lock_for(key)
+            async with lock:
+                cached = cache.get(key)
+                if cached is not None:
+                    response.headers["X-Idempotent-Replay"] = "true"
+                    return cached
+                result = await _execute_deliberation(request, body)
+                cache.put(key, result)
+                return result
         finally:
             queue.release()
 

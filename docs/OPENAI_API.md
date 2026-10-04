@@ -511,6 +511,14 @@ curl -X POST http://localhost:8765/v1/deliberate \
 Response includes full trace with per-stage tokens, latency, cost, model selection,
 and all prompts/responses.
 
+**Idempotency:** pass an optional `idempotency_key` (string) in the request body to
+make retries safe. The first successful response is cached (bounded LRU, 512 keys,
+in-memory per process); a repeat POST with the same key returns HTTP 200 with the
+same body plus an `X-Idempotent-Replay: true` header, without re-running or
+re-billing the deliberation. Concurrent duplicates coalesce onto the same
+execution. Omit the key for the previous always-execute behavior; failures are
+never cached, so retrying an errored call re-executes.
+
 ### `/v1/models`
 
 An **OpenAI `ListModelsResponse`**, so `client.models.list()` works through the
