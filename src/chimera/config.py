@@ -217,6 +217,20 @@ class ServerConfig(BaseModel):
     ~10.3s vs ~2.8-3.2s warm) briefly exceeds the budget.  ``0`` disables the
     grace and reproduces the previous cancel-at-deadline behaviour exactly.
     """
+    litellm_prewarm: bool = True
+    """Fire a non-blocking LiteLLM warm-up when the API server starts
+    (CHIMERA-V2-REVIEW-04).
+
+    The first deliberation on a cold process pays a one-off LiteLLM
+    initialization cost inside its dispatch stage (measured ~2.6s against an
+    instant mock provider; the lazy ``import litellm`` alone is ~1.5s of it,
+    with the first completion call contributing the rest).  When ``True`` the
+    server's lifespan schedules the same one-time initialization at startup,
+    in the background, so the first real request arrives on a warm module.
+    The warm-up runs offline (an instant ``mock_response`` completion — no
+    network, no credentials) and never delays startup or raises into the app.
+    ``False`` restores the cold-start behaviour exactly.
+    """
 
 
 class AuthKeyEntry(BaseModel):

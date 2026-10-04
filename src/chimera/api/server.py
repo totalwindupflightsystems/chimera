@@ -37,7 +37,7 @@ from chimera.api.dependencies import require_api_key
 from chimera.api.rate_limit import RateLimiter
 from chimera.config import ChimeraConfig, load_config, provider_credential_resolved
 from chimera.engine import DeliberationTrace, Engine
-from chimera.gateway import LiteLLMGateway
+from chimera.gateway import LiteLLMGateway, prewarm_litellm_background
 from chimera.observability import configure_logging
 
 log = structlog.get_logger("chimera.api")
@@ -166,8 +166,19 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        """Store queue on app state."""
+        """Store queue on app state; fire the background LiteLLM warm-up."""
+        prewarm_task = None
+        if cfg.server.litellm_prewarm:
+            # CHIMERA-V2-REVIEW-04: pay litellm's one-time initialization
+            # (lazy import + first completion path) in the background so the
+            # first POST /v1/deliberation does not. Non-blocking: the server
+            # binds immediately; a failed warm-up only costs the request it
+            # was meant to save (logged at debug inside the helper, never
+            # raised into startup).
+            prewarm_task = prewarm_litellm_background()
         yield
+        if prewarm_task is not None and not prewarm_task.done():
+            prewarm_task.cancel()
 
     app = FastAPI(title="Chimera", version=__version__, lifespan=lifespan)
 

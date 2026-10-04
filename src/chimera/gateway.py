@@ -67,6 +67,98 @@ def ensure_litellm_quiet(litellm_module: Any | None = None) -> Any:
     return litellm_module
 
 
+async def prewarm_litellm(litellm_module: Any | None = None) -> bool:
+    """Run LiteLLM's one-time initialization so the first real call skips it.
+
+    (CHIMERA-V2-REVIEW-04.)  What the warm-up is and why:
+
+    * The dominant cost is the lazy ``import litellm`` itself — measured
+      ~1.5s cold on this deployment's venv — plus the first completion call's
+      provider-lookup/route-building path (~10-20ms more with an instant
+      mock; both orders of magnitude below the ~2.6s first-deliberation
+      dispatch penalty this row was filed against, which includes the import
+      the gateway itself defers to call time).  Both are one-time,
+      process-global side effects: once paid, every later call — sync or
+      async — is warm.
+    * The cheapest SAFE trigger is one ``acompletion`` with
+      ``mock_response=`` on a natively-prefixed model.  LiteLLM short-circuits
+      that to a locally constructed response: no network, no credentials, no
+      retry ladder (verified offline against a credential-scrubbed
+      environment).  A bare ``mock/<model>`` string is NOT usable as the
+      trigger — LiteLLM raises ``LLM Provider NOT provided`` for it before
+      the mock branch (verified on litellm 1.99.4), hence a real provider
+      prefix.
+    * Why ``acompletion`` and not sync ``completion``: the production gateway
+      path (``_litellm_acomplete``) is async; warming the exact callable the
+      first deliberation will drive also exercises the async-mode detection
+      litellm performs once per process.
+
+    ``litellm_module`` is injectable so tests can pass a fake module (the
+    same pattern as :func:`ensure_litellm_quiet`).  The fake needs
+    ``acompletion(**kwargs) -> awaitable-or-value``;
+    :func:`prewarm_litellm_background` additionally accepts the
+    ``mock_completion`` coroutine shim tests use.
+    Returns ``True`` when a warm-up completion actually ran, ``False`` when
+    the injected module made the call impossible (never raises for it).
+    """
+    if litellm_module is None:
+        import litellm as litellm_module
+
+    # Same stdout-hygiene contract as every gateway call site: the lazy
+    # import and the completion must never print to stdout (MCP stdio wire).
+    ensure_litellm_quiet(litellm_module)
+
+    try:
+        result = litellm_module.acompletion(
+            model="openai/gpt-3.5-turbo",
+            messages=[{"role": "user", "content": "warm"}],
+            mock_response="ok",
+            num_retries=0,
+        )
+        if asyncio.iscoroutine(result):
+            await result
+        return True
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        log.debug(
+            "litellm_prewarm_failed",
+            error=str(exc)[:200],
+            error_type=type(exc).__name__,
+        )
+        return False
+
+
+def prewarm_litellm_background(
+    litellm_module: Any | None = None,
+    *,
+    mock_completion: Any | None = None,
+) -> asyncio.Task[bool] | None:
+    """Schedule :func:`prewarm_litellm` on the running loop, never blocking.
+
+    Returns the Task so the lifespan could await it in tests, or ``None``
+    when there is no running loop (e.g. during sync app construction).
+    ``mock_completion`` is a test shim: an awaitable standing in for the
+    warm-up completion call, so a test can observe scheduling without
+    importing LiteLLM at all.  Never raises: a warm-up that cannot even be
+    scheduled is swallowed and logged at debug — startup must not depend on
+    it.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        log.debug("litellm_prewarm_skipped_no_loop")
+        return None
+
+    async def _run() -> bool:
+        if mock_completion is not None:
+            await mock_completion()
+            return True
+        return await prewarm_litellm(litellm_module)
+
+    return loop.create_task(_run(), name="litellm-prewarm")
+
+
 #: Dedicated pool for residual sync LiteLLM work. Sized for concurrent stage
 #: waves (multiple workers + progressive wait-messages) so default-executor
 #: saturation cannot serialize independent stage calls.
@@ -1117,6 +1209,8 @@ __all__ = [
     "credential_remedy",
     "ensure_litellm_quiet",
     "negotiate_response_format",
+    "prewarm_litellm",
+    "prewarm_litellm_background",
     "resolve_litellm_model",
     "stamp_route_attribution",
 ]
