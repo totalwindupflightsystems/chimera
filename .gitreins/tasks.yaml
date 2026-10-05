@@ -1942,16 +1942,12 @@ tasks:
   status: in_progress
   created_at: '2026-10-01T06:45:54.922597+00:00'
 - id: DEPS-008
-  title: 'Python deps refresh: 21 outdated packages in groups'
+  title: Review and plan upgrades for outdated Python dependencies
   criteria:
-  - Minor/patch drift group landed with full suite green and pip check clean
-  - openai 3.x group landed OR reverted with root cause documented
-  - mcp 2.x group landed OR reverted with root cause documented
-  - huggingface_hub 2.0 group landed OR reverted with root cause documented
-  - Remaining outdated census printed with reasons for any not-bumped packages
-  status: complete
-  created_at: '2026-10-01T08:06:15.711185+00:00'
-  completed_at: '2026-10-01T09:15:04.567465+00:00'
+  - pyproject.toml updated with safe bumps; full pytest suite passes; ruff clean;
+    risky majors deferred with reasons
+  status: in_progress
+  created_at: '2026-10-05T18:04:36.042951+00:00'
 - id: CH-MAINT-007
   title: Automated freshness check for the litellm<1.100 pin
   criteria:
@@ -2036,3 +2032,13 @@ tasks:
   status: complete
   created_at: '2026-10-04T18:19:41.093651+00:00'
   completed_at: '2026-10-04T18:19:43.682413+00:00'
+- id: deps-refresh-inbounds-2026-10-05
+  title: Refresh in-bounds dependency drift (DEPS-CHIMERA-001 partial)
+  criteria:
+  - uv lock --check exits 0 after refresh
+  - pip check reports no broken requirements
+  - full pytest suite passes with no new failures
+  - ruff check passes clean
+  status: complete
+  created_at: '2026-10-05T18:17:01.147051+00:00'
+  completed_at: '2026-10-05T18:17:31.411086+00:00'
