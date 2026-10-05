@@ -1,18 +1,21 @@
 # Chimera Model Sync — Weekly Report
 
-**Date:** 2026-10-04 (run at 17:00 UTC)
-**Source:** `scripts/model_sync_cron.py` → `model_sync.py --diff --output reports/latest.md`
+**Date:** 2026-10-05  
+**Run:** 2026-10-05 17:00 UTC  
+**Source:** `reports/latest.md` (model-sync `--diff` output)
 
 ## Results
 
-- **New core candidates:** 0 across 13 providers.
-- **Task-router lane finds:** 0.
-- **Catalog recommendation:** none. No candidate qualified for external verification, category scoring, or an addition proposal this run.
-- **Catalog changes:** none; `chimera.yaml` was not modified.
+- **New candidates:** 0 new models reported across the 13 core providers; 0 task-router lane finds.
+- **Verification:** No new candidates were surfaced for verification. No OpenRouter pages, provider announcements, or pricing were independently checked this run.
+- **Scoring:** Not applicable; there are no newly surfaced candidates to score against the 32 category paths.
+- **Catalog recommendation:** No additions recommended. `chimera.yaml` and its shipped templates were not modified.
 
-The generated `reports/latest.md` contains Reseller Watch and Blind Spot inventories, but the scanner reported no new candidates in its diff. Those informational listings are not being treated as verified additions or recommendations in this report.
+## Scope notes
+
+The generated report includes separate **Reseller Watch** and **Blind Spot** informational sections, plus a “Pending — seen, not catalogued” list. These are not counted as new `--diff` candidates and were not independently verified or evaluated for addition in this weekly review. Do not treat their presence as an approval or recommendation to add them.
 
 ## Action items
 
-- No models to add or verify this week.
-- Continue the scheduled/ad-hoc model sync process; review new diff candidates if a later run reports any.
+- No catalog action this week.
+- Continue review on a future sync if the diff reports new candidates; verify each candidate's availability, provider announcement, and pricing before scoring or recommending it.

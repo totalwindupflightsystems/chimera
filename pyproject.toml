@@ -56,6 +56,25 @@ dependencies = [
     "mcp>=1.0.0,<2.0",
 ]
 
+# Deferred majors — DEPS-008 census (2026-10-05). All 9 remaining
+# `pip list --outdated` entries are hard-bound; none is safely bumpable
+# until its blocking constraint moves. Re-derive before acting on any
+# single line (parent caps evolve with their parents):
+#   openai 3.x        — litellm 1.99.x requires openai>=2.20,<3.0; 3.0 also
+#                       switches the default HTTP client to httpx2
+#   litellm 1.100+    — deliberate <1.100 cap above (stdout pollution
+#                       breaks the MCP stdio JSON-RPC wire)
+#   mcp 2.x           — deliberate <2.0 cap; 2.x removes pydantic-settings /
+#                       MCP_* env vars and changes handler signatures used by
+#                       src/chimera/mcp/server.py (FastMCP)
+#   multidict 7.0     — aiohttp 3.14.x requires multidict>=4.5,<7.0
+#   importlib_metadata 9 — litellm 1.99.x requires importlib-metadata>=8,<9.0
+#   huggingface_hub 2.x — tokenizers 0.23.x requires huggingface-hub>=0.16.4,<2.0
+#   pydantic_core 2.49 — pydantic 2.13.5 (already latest) pins
+#                       pydantic-core==2.46.5 exactly
+#   pyflakes 4.x      — pylsp 1.15.0 pyflakes extra requires pyflakes>=3.2,<3.3
+#   pycodestyle 2.13+ — pylsp 1.15.0 pycodestyle extra requires >=2.12,<2.13
+
 [project.urls]
 Homepage = "https://github.com/totalwindupflightsystems/chimera"
 Repository = "https://github.com/totalwindupflightsystems/chimera.git"
