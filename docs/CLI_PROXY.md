@@ -14,7 +14,8 @@ every shape required — a generic `base_url` provider branch
 This page is the class recipe: what the proxy must expose, how to wire it, how
 the model id travels, and the measured behaviour of the reference proxy.
 
-The ready-to-edit entry lives in `chimera.yaml.example`:
+The ready-to-edit entry lives in `chimera.yaml.fleet` (the full operator
+reference; REV-CHIMERA-V2-20261005-3):
 
 ```yaml
 providers:
@@ -80,7 +81,8 @@ the integration is configuration, not code.
 Chimera treats **loopback `base_url` + no `api_key` / `api_key_env`** as a
 keyless local endpoint — `provider_api_key_env` returns `None` ("no env var can
 be named honestly") instead of inventing `CLIPROXY_API_KEY`. That is the shape
-shipped in `chimera.yaml.example`.
+shipped in `chimera.yaml.fleet` (the minimal public starter
+`chimera.yaml.example` omits local proxies entirely).
 
 Two measured caveats, both worth knowing before you debug:
 

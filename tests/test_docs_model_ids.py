@@ -35,7 +35,11 @@ import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[1]
-EXAMPLE_CONFIG = REPO / "chimera.yaml.example"
+#: The full catalog ships in ``chimera.yaml.fleet`` (REV-CHIMERA-V2-20261005-3);
+#: ``chimera.yaml.example`` is a minimal starter that only carries abridged
+#: entries for its own defaults, so the docs gate must resolve against the fleet
+#: reference or every docs-quoted id outside the starter's four would "vanish".
+EXAMPLE_CONFIG = REPO / "chimera.yaml.fleet"
 MODEL_CATALOG_DOC = REPO / "docs" / "model-catalog.yaml"
 
 #: Quoted token (double quotes or backticks) without the quotes.

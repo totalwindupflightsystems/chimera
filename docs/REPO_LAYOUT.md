@@ -26,7 +26,8 @@ a directory listing (CLN-1).
 | `.gitignore` | Ignore rules |
 | `Dockerfile`, `Dockerfile.dev`, `docker-compose.yml` | Container builds |
 | `pyproject.toml`, `uv.lock` | Packaging and the locked dependency set |
-| `chimera.yaml.example`, `chimera.yaml.docker` | Shipped config templates |
+| `chimera.yaml.example`, `chimera.yaml.docker` | Shipped config templates (force-included in the wheel) |
+| `chimera.yaml.fleet` | Full operator config reference — tracked, checkout-only, NOT shipped |
 | `AGENTS.md`, `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `LICENSE` | Project documentation |
 
 ## Intentional exceptions
@@ -39,6 +40,12 @@ a directory listing (CLN-1).
   wheel force-includes both
   (`pyproject.toml` → `[tool.hatch.build.targets.wheel.force-include]`), so a
   release build needs them present in the checkout.
+- **`chimera.yaml.fleet` is tracked but deliberately NOT wheel-shipped**
+  (REV-CHIMERA-V2-20261005-3): it is the full operator config reference, which
+  carries internal topology (tailnet hostnames, internal gateway ports), so it
+  must never be force-included — `tests/test_yaml_example_sanitized.py` pins
+  that boundary. `chimera.yaml.example` is the minimal, public-safe starter
+  the wheel ships instead.
 - **`.vfs/`, `.gitreins/`, `.coding-hermes/` and `.memory-bank/` are tracked
   harness state**, not junk: their config, board, manifest and history files are
   versioned on purpose. The derived caches *below* them (`.vfs/graph/`,

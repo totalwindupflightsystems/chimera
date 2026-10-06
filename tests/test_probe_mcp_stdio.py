@@ -733,14 +733,17 @@ raise SystemExit(9)
 def _fake_child_bin(tmp_path: Path) -> Path:
     """A bin dir holding a stub ``chimera`` that copies the SHIPPED template.
 
-    Using the repo's real ``chimera.yaml.example`` keeps the fixture honest:
-    the remap contract is verified against the template that actually ships.
+    Using the repo's real ``chimera.yaml.fleet`` keeps the fixture honest about
+    the content under test: the remap contract needs a config carrying the
+    fleet-style ``speed`` formation (REV-CHIMERA-V2-20261005-3 — the shipped
+    ``chimera.yaml.example`` is a minimal starter without it), so the stub
+    copies the operator reference instead of the example.
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     cli = bin_dir / "chimera"
     cli.write_text(
-        _FAKE_CLI.format(python=sys.executable, template=str(REPO / "chimera.yaml.example")),
+        _FAKE_CLI.format(python=sys.executable, template=str(REPO / "chimera.yaml.fleet")),
         encoding="utf-8",
     )
     cli.chmod(0o755)
@@ -834,7 +837,9 @@ def test_yaml_bridge_used_when_this_interpreter_has_no_pyyaml(tmp_path: Path, mo
     ``python_exe``. Verified for real against the shipped template.
     """
     monkeypatch.setattr(probe, "_yaml_available", lambda: False)
-    source = REPO / "chimera.yaml.example"
+    # REV-CHIMERA-V2-20261005-3: the rich formations (speed/spec-writer DAGs)
+    # live in the fleet operator reference; the shipped example is minimal.
+    source = REPO / "chimera.yaml.fleet"
     document = probe.load_config_document(str(source), python_exe=sys.executable)
     assert "speed" in document["formations"]
     assert document["formations"]["speed"]["worker_models"][1] == "openrouter/qwen/qwen3-coder"

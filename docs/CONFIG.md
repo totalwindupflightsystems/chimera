@@ -344,7 +344,8 @@ model-id:
 ```
 
 **Score scale — percent, 0–100.** The shipped templates
-(`chimera.yaml.example`, `chimera.yaml.docker`), the live catalog and the
+(`chimera.yaml.fleet`, `chimera.yaml.docker`, and the minimal
+`chimera.yaml.example`), the live catalog and the
 `categories` map served by `GET /v1/models` all use percent, and the selector
 multiplies a score by its task weight with no further rescale — so percent is
 the canonical scale. There is exactly **one scale per catalog**, enforced at

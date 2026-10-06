@@ -44,9 +44,11 @@ from chimera.gateway import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXAMPLE_CONFIG = REPO_ROOT / "chimera.yaml.example"
+#: REV-CHIMERA-V2-20261005-3: the hermes/router9 gateway wiring lives in the
+#: operator reference now; chimera.yaml.example is the minimal public starter.
+FLEET_CONFIG = REPO_ROOT / "chimera.yaml.fleet"
 
-#: The provider name the shipped example config uses for the local gateway.
+#: The provider name the fleet operator reference uses for the local gateway.
 PROVIDER = "hermes"
 MODEL_ID = "hermes/glm-5.3-flash"
 BARE_MODEL = "glm-5.3-flash"
@@ -543,14 +545,14 @@ async def test_api_key_env_resolved_key_reaches_litellm(
     assert captured[0]["api_base"] == GATEWAY_BASE_URL
 
 
-def _example_config() -> dict[str, Any]:
-    raw = yaml.safe_load(EXAMPLE_CONFIG.read_text(encoding="utf-8"))
+def _fleet_config() -> dict[str, Any]:
+    raw = yaml.safe_load(FLEET_CONFIG.read_text(encoding="utf-8"))
     assert isinstance(raw, dict)
     return raw
 
 
-def test_example_config_declares_the_hermes_gateway_provider() -> None:
-    raw = _example_config()
+def test_fleet_config_declares_the_hermes_gateway_provider() -> None:
+    raw = _fleet_config()
     provider = raw["providers"][PROVIDER]
     assert provider["base_url"] == GATEWAY_BASE_URL
     assert provider["api_key_env"] == "API_SERVER_KEY"
@@ -564,9 +566,9 @@ def test_example_config_declares_the_hermes_gateway_provider() -> None:
     assert entry["cost_tier"] in {"budget", "standard", "premium"}
 
 
-def test_example_config_declares_the_router9_gateway_provider() -> None:
+def test_fleet_config_declares_the_router9_gateway_provider() -> None:
     """C3: the shipped example wires the 9router fleet gateway as a provider."""
-    raw = _example_config()
+    raw = _fleet_config()
     provider = raw["providers"][ROUTER9_PROVIDER]
     assert provider["base_url"] == ROUTER9_BASE_URL
     assert provider["api_key_env"] == "ROUTER9_API_KEY"
@@ -586,9 +588,9 @@ def test_example_config_declares_the_router9_gateway_provider() -> None:
         assert entry["cost_tier"] in {"budget", "standard", "premium"}
 
 
-def test_every_example_router9_model_resolves_to_its_upstream_id() -> None:
+def test_every_fleet_router9_model_resolves_to_its_upstream_id() -> None:
     """The example's own catalog ids route to 9router's namespaced ids."""
-    raw = _example_config()
+    raw = _fleet_config()
     base_url = raw["providers"][ROUTER9_PROVIDER]["base_url"]
     namespaced = [
         model_id
@@ -610,9 +612,9 @@ def test_every_example_router9_model_resolves_to_its_upstream_id() -> None:
         assert extra["custom_llm_provider"] == "openai"
 
 
-def test_example_config_holds_no_literal_credentials() -> None:
+def test_fleet_config_holds_no_literal_credentials() -> None:
     """Every tracked credential reference is a ``${VAR}`` placeholder."""
-    raw = _example_config()
+    raw = _fleet_config()
     for name, api_keys_value in raw.get("api_keys", {}).items():
         assert api_keys_value.startswith("${") and api_keys_value.endswith("}"), (
             f"api_keys.{name} must be a ${{VAR}} placeholder, got a literal"
@@ -665,7 +667,7 @@ def test_api_server_key_resolves_from_hermes_dotenv(
     )
     monkeypatch.setenv("HOME", str(tmp_path))
 
-    config = ChimeraConfig.model_validate(_example_config())
+    config = ChimeraConfig.model_validate(_fleet_config())
 
     assert config.providers[PROVIDER].api_key_env == "API_SERVER_KEY"
     assert config.providers[PROVIDER].api_key == FAKE_KEY
@@ -679,6 +681,6 @@ def test_hermes_provider_is_unresolved_without_the_env_var(
     """A box without the key resolves to ``None`` instead of a literal."""
     monkeypatch.setenv("HOME", str(tmp_path))
 
-    config = ChimeraConfig.model_validate(_example_config())
+    config = ChimeraConfig.model_validate(_fleet_config())
 
     assert config.providers[PROVIDER].api_key is None

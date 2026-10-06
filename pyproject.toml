@@ -135,6 +135,17 @@ packages = ["src/chimera"]
 "chimera.yaml.docker" = "chimera/chimera.yaml.docker"
 "chimera.yaml.example" = "chimera/chimera.yaml.example"
 
+# REV-CHIMERA-V2-20261005-3: chimera.yaml.fleet is the full operator config
+# reference and carries internal topology (tailnet hostnames, internal gateway
+# ports). It is tracked for the checkout only and must NEVER ship — the wheel
+# force-include table above does not mention it, and this exclude keeps it out
+# of the sdist too (`python -m build` produces both; twine uploads dist/*).
+# tests/test_yaml_example_sanitized.py pins the wheel boundary.
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "chimera.yaml.fleet",
+]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 110

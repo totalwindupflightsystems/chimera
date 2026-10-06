@@ -2,7 +2,8 @@
 
 Measured defect, frozen 2026-09-18 (HEAD f09c8cd): ``docs/CONFIG.md`` documented
 ``categories:`` as *0.0-1.0* scores (with a ``0.90`` sample) while the shipped
-templates (``chimera.yaml.example`` / ``chimera.yaml.docker``), the live
+templates (``chimera.yaml.fleet`` / ``chimera.yaml.docker`` — the fleet-scale
+catalogs; REV-CHIMERA-V2-20261005-3), the live
 ``chimera.yaml`` and ``GET /v1/models`` all carried 0-100 values (live: 42
 models / 1175 values, min 60.0, max 98.0).  ``CategorySelector.score``
 multiplies the raw value with no rescale, so a model configured from the docs
@@ -292,9 +293,15 @@ def test_cli_non_numeric_config_is_one_line_and_non_zero(tmp_path: Path) -> None
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize("template", ["chimera.yaml.example", "chimera.yaml.docker"])
+@pytest.mark.parametrize("template", ["chimera.yaml.fleet", "chimera.yaml.docker"])
 def test_shipped_template_values_are_byte_identical(template: str) -> None:
-    """Percent catalogs load with EXACTLY the raw YAML values (no translation)."""
+    """Percent catalogs load with EXACTLY the raw YAML values (no translation).
+
+    The fleet-scale catalogs live in ``chimera.yaml.fleet`` (the operator
+    reference, REV-CHIMERA-V2-20261005-3) and ``chimera.yaml.docker``;
+    ``chimera.yaml.example`` is now a minimal starter whose 4-entry abridged
+    catalog still exercises the same percent contract at smaller scale.
+    """
     raw = yaml.safe_load((REPO / template).read_text(encoding="utf-8"))
 
     with structlog.testing.capture_logs() as logs:
