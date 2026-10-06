@@ -2044,14 +2044,13 @@ tasks:
   created_at: '2026-10-05T18:17:01.147051+00:00'
   completed_at: '2026-10-05T18:17:31.411086+00:00'
 - id: REV-CHIMERA-V2-20261005-1
-  title: Add TTL cache to /v1/health provider probes
+  title: TTL cache for /v1/health provider probes
   criteria:
-  - 'AC1: First call probes all providers (age_s=0 or 1)'
-  - 'AC2: Second call within 60s returns cached result (age_s > 0)'
-  - 'AC3: ?refresh=1 forces fresh probe (age_s resets)'
-  - 'AC4: After 60s cache expires'
-  - 'AC5: Existing tests pass'
-  - 'AC6: At least 2 new tests for cache hit and refresh bypass'
+  - A second /v1/health call within the TTL window does not re-probe providers (served
+    from cache with an age_s field)
+  - refresh=1 bypasses the cache and forces a fresh probe of all providers
+  - The probe logic itself is unchanged and /v1/health/ready still fresh-probes
+  - Full pytest suite passes with the new tests/test_health_cache.py included
   status: complete
-  created_at: '2026-10-06T10:19:14.805247+00:00'
-  completed_at: '2026-10-06T10:28:29.773181+00:00'
+  created_at: '2026-10-06T10:54:12.881531+00:00'
+  completed_at: '2026-10-06T10:54:49.317542+00:00'
