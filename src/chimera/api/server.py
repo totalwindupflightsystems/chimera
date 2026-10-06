@@ -20,6 +20,7 @@ import asyncio
 import functools
 import os
 import subprocess
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator
@@ -208,6 +209,7 @@ def create_app(
     app.state.request_queue = request_queue
     app.state.rate_limiter = RateLimiter(cfg.rate_limit)
     app.state.idempotency_cache = _IdempotencyCache()
+    app.state.provider_health_cache = _ProviderHealthCache()  # /v1/health probe TTL cache
     _register_routes(app)
 
     # Web UI (session-backed multi-turn with live DAG viz + SSE)
@@ -616,6 +618,58 @@ async def _execute_deliberation(request: Request, body: DeliberateRequest) -> De
     )
 
 
+class _ProviderHealthCache:
+    """TTL cache for ``/v1/health`` provider probe results (REV-CHIMERA-V2-20261005-1).
+
+    A monitoring poller calling ``/v1/health`` every minute used to re-probe
+    every configured provider on EVERY call — measured 11.0s blocking with 8
+    providers, each probe burning real tokens. This cache makes the endpoint
+    read-through: the first call probes, calls inside the TTL window return
+    the stored result with an ``age_s`` field, ``?refresh=1`` bypasses the
+    cache, and entries expire after ``ttl_s`` seconds.
+
+    Thread-safe via :class:`threading.Lock` (the probe function is async, but
+    the lock only guards the timestamp/result bookkeeping, which is sync).
+    Clock is ``time.monotonic`` — immune to wall-clock adjustments.
+    """
+
+    def __init__(self, ttl_s: float = 60.0) -> None:
+        self._ttl_s = ttl_s
+        self._lock = threading.Lock()
+        self._computed_at: float | None = None  # monotonic clock
+        self._results: dict[str, dict[str, Any]] | None = None
+
+    def get(self) -> tuple[dict[str, dict[str, Any]] | None, float | None]:
+        """Return ``(provider_results, age_s)`` — ``(None, None)`` on a miss.
+
+        ``age_s`` is seconds since the cached result was computed; results
+        older than the TTL read as a miss (expired).
+        """
+        with self._lock:
+            if self._results is None or self._computed_at is None:
+                return None, None
+            age_s = time.monotonic() - self._computed_at
+            if age_s >= self._ttl_s:
+                return None, None
+            return self._results, age_s
+
+    def store(self, results: dict[str, dict[str, Any]]) -> None:
+        """Record a freshly computed probe result with the current timestamp.
+
+        Deep-copies the payload: the caller keeps building on its dict, and a
+        shallow copy would alias every per-provider entry.
+        """
+        with self._lock:
+            self._results = {name: dict(entry) for name, entry in results.items()}
+            self._computed_at = time.monotonic()
+
+    def clear(self) -> None:
+        """Drop the cached result entirely."""
+        with self._lock:
+            self._results = None
+            self._computed_at = None
+
+
 def _register_routes(app: FastAPI) -> None:
     from fastapi.responses import JSONResponse
 
@@ -624,7 +678,10 @@ def _register_routes(app: FastAPI) -> None:
     # ---------------------------------------------------------------- #
 
     @app.get("/v1/health")
-    async def health(request: Request) -> dict[str, Any]:
+    async def health(
+        request: Request,
+        refresh: bool = False,
+    ) -> dict[str, Any]:
         """Health check — returns healthy or degraded.
 
         Verifies: config loaded, at least one provider reachable.
@@ -665,8 +722,21 @@ def _register_routes(app: FastAPI) -> None:
         when a CONFIGURED provider (or one that owns a model) is unhealthy. A
         declared provider with no models is NOT in this list: CH-GAP-053's
         verdict for it is unchanged, and it still degrades the report.
+
+        Provider probe results are served from a TTL cache (default 60s,
+        REV-CHIMERA-V2-20261005-1): the first call probes every provider,
+        calls inside the window return the cached verdict with ``age_s``
+        (seconds since it was computed; 0 for a fresh probe) and make NO new
+        probe calls. ``?refresh=1`` bypasses the cache and forces a fresh
+        probe. ``age_s`` is additive — it appears on BOTH the cached and the
+        fresh paths.
         """
         cfg: ChimeraConfig = request.app.state.config
+        cache: _ProviderHealthCache = request.app.state.provider_health_cache
+        if not refresh:
+            cached_results, cached_age_s = cache.get()
+        else:
+            cached_results, cached_age_s = None, None  # bypass: force a fresh probe
         # CH-GAP-053: count only the providers the config declared — the
         # providers map also carries auto-discovery additions, which used to
         # inflate this count. Discovery-added names are reported separately.
@@ -683,8 +753,16 @@ def _register_routes(app: FastAPI) -> None:
         # Optional provider connectivity check
         try:
             gw = request.app.state.engine.gateway
-            provider_status = await _check_providers(cfg, gw)
+            if cached_results is not None:
+                # TTL hit: serve the stored verdict without touching providers.
+                provider_status = cached_results
+                age_s = cached_age_s
+            else:
+                provider_status = await _check_providers(cfg, gw)
+                age_s = 0  # fresh probe, computed just now
+                cache.store(provider_status)
             details["providers"] = provider_status
+            details["age_s"] = round(age_s, 3)
 
             slow = _slow_provider_names(provider_status)
             # DF-CHIMERA-V2-27: the degradation list excludes the ``slow``
@@ -799,10 +877,15 @@ def _register_routes(app: FastAPI) -> None:
             ) from exc
 
     @app.get("/v1/health/live")
-    async def liveness(request: Request) -> dict[str, Any]:
+    async def liveness(
+        request: Request,
+        refresh: bool = False,
+    ) -> dict[str, Any]:
         """Liveness probe — just checks the process is alive.
 
-        Always returns 200.
+        Always returns 200. ``?refresh=1`` is accepted for symmetry with
+        ``/v1/health`` (REV-CHIMERA-V2-20261005-1) but is a no-op: liveness
+        never probes providers, so there is no cache to bypass.
         """
         cfg: ChimeraConfig = request.app.state.config
         return {

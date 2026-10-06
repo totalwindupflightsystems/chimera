@@ -191,6 +191,8 @@ def test_health_details_shape_adds_only_the_discovered_key(
 
     details = _health_client(cfg).get("/v1/health").json()["details"]
 
+    # Additive ``age_s`` (REV-CHIMERA-V2-20261005-1) joins the set: seconds
+    # since the cached provider verdict was computed (0 for a fresh probe).
     assert set(details) == {
         "config_loaded",
         "models_configured",
@@ -199,4 +201,5 @@ def test_health_details_shape_adds_only_the_discovered_key(
         "commit",
         "version",
         "providers",
+        "age_s",
     }

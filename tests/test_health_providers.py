@@ -829,6 +829,8 @@ def test_health_response_keeps_every_pre_existing_key(
     # empty when the config declared everything it carries.
     assert data["discovered_not_configured"] == []
     details = data["details"]
+    # Additive ``age_s`` (REV-CHIMERA-V2-20261005-1): seconds since the cached
+    # provider verdict was computed (0 for a fresh probe).
     assert set(details) == {
         "config_loaded",
         "models_configured",
@@ -837,6 +839,7 @@ def test_health_response_keeps_every_pre_existing_key(
         "commit",
         "version",
         "providers",
+        "age_s",
     }
     assert details["config_loaded"] is True
     assert details["models_configured"] == len(cfg.models)
