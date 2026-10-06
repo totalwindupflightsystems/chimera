@@ -701,3 +701,4 @@
 {"id": 1582, "timestamp": "2026-10-05T23:50:27Z", "event_type": "task_created", "task_id": "REV-CHIMERA-V2-20261005-2", "actor": "foreman", "detail": "{\"id\":\"REV-CHIMERA-V2-20261005-2\",\"status\":\"pending\"}", "tick_number": null}
 {"id": 1583, "timestamp": "2026-10-05T23:50:27Z", "event_type": "task_created", "task_id": "REV-CHIMERA-V2-20261005-3", "actor": "foreman", "detail": "{\"id\":\"REV-CHIMERA-V2-20261005-3\",\"status\":\"pending\"}", "tick_number": null}
 {"id": 1584, "timestamp": "2026-10-05T23:50:27Z", "event_type": "task_created", "task_id": "REV-CHIMERA-V2-20261005-4", "actor": "foreman", "detail": "{\"id\":\"REV-CHIMERA-V2-20261005-4\",\"status\":\"pending\"}", "tick_number": null}
+{"id":"EVT-REV-1-FAIL-10-06","task_id":"REV-CHIMERA-V2-20261005-1","event":"dispatch_failed","tick":"chimera-v2-foreman-2026-10-06-10-14-51","detail":"worker stalled 5min, killed; judge FAIL (no staged files); re-queued","verdict":"55eacd05"}
