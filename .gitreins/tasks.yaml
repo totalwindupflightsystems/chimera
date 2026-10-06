@@ -1946,8 +1946,9 @@ tasks:
   criteria:
   - pyproject.toml updated with safe bumps; full pytest suite passes; ruff clean;
     risky majors deferred with reasons
-  status: in_progress
+  status: complete
   created_at: '2026-10-05T18:04:36.042951+00:00'
+  completed_at: '2026-10-05T18:28:39.156622+00:00'
 - id: CH-MAINT-007
   title: Automated freshness check for the litellm<1.100 pin
   criteria:
