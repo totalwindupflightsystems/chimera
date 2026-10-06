@@ -2054,3 +2054,17 @@ tasks:
   status: complete
   created_at: '2026-10-06T10:54:12.881531+00:00'
   completed_at: '2026-10-06T10:54:49.317542+00:00'
+- id: REV-CHIMERA-V2-20261005-3
+  title: Ship a sanitized minimal chimera.yaml.example plus fleet reference
+  criteria:
+  - New chimera.yaml.example is <=120 lines, contains no internal hostnames (master001),
+    no tailnet topology references, no internal gateway ports (:8642, :20128, :3456),
+    and keeps env-var API key indirection
+  - Full 1671-line operator config moves to chimera.yaml.fleet with internal content
+    intact
+  - pytest suite for changed packages passes via .venv
+  - Live service /health at localhost:8765 still reports alive after restart of the
+    service config is unaffected (service uses untracked chimera.yaml)
+  status: complete
+  created_at: '2026-10-06T18:11:21.327880+00:00'
+  completed_at: '2026-10-06T19:07:28.940736+00:00'
