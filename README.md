@@ -337,6 +337,12 @@ Health probes (all return JSON):
 - http://localhost:8765/v1/health/ready — readiness probe (200 when ≥1 provider reachable, 503 otherwise)
 - http://localhost:8765/v1/health/live — liveness probe (always 200 when alive)
 
+Agent discovery (A2A-style, keyless like the health probes):
+[http://localhost:8765/.well-known/agent-card.json](http://localhost:8765/.well-known/agent-card.json)
+returns the server's name, description, version, base URL, capabilities, and
+the MCP tools (`chimera_deliberate`, `chimera_formations`, `chimera_models`)
+as a `skills[]` list.
+
 **`/v1/health` status semantics.** `healthy` means every configured provider's
 live probe succeeded. `degraded` means **at least one provider probe failed** —
 missing credentials, an auth error (`401`/`403`), a quota/billing failure

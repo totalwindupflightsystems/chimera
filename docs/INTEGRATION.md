@@ -173,7 +173,10 @@ When auth is disabled, requests pass through unauthenticated. The following
 endpoints are always open regardless of auth settings (safe for load-balancer
 health checks): `/health` (alias of the liveness probe `/v1/health/live`), `/v1/health`,
 `/v1/health/ready`, `/v1/health/live`, `/v1/models`, `/v1/formations`, `/docs`
-(plus `/docs/oauth2-redirect`), `/redoc`, `/openapi.json`.
+(plus `/docs/oauth2-redirect`), `/redoc`, `/openapi.json`,
+and the agent-discovery card `GET /.well-known/agent-card.json` (A2A-style
+`AgentCard` describing this server — name, version, base URL, capabilities,
+and the MCP tools as `skills[]`).
 
 The `/web/*` surface is **not** on that list: every data route under it —
 sessions, chat, history, the SSE stream — requires the API key whenever

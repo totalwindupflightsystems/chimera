@@ -56,6 +56,7 @@ against your own deployment, and see `GET /openapi.json` for the routed surface)
 - `GET /v1/health/live`
 - `GET /v1/models`
 - `GET /v1/formations`
+- `GET /.well-known/agent-card.json` — A2A-style agent discovery card
 - `GET /docs` and `GET /docs/oauth2-redirect` — Swagger UI
 - `GET /redoc` — ReDoc UI
 - `GET /openapi.json` — machine-readable spec

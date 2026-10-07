@@ -8,6 +8,7 @@ Endpoints:
 * ``GET  /v1/health``           — health check (healthy/degraded/unhealthy).
 * ``GET  /v1/health/ready``     — readiness probe (provider connectivity).
 * ``GET  /v1/health/live``      — liveness probe (process alive).
+* ``GET  /.well-known/agent-card.json`` — A2A-style agent discovery card.
 
 Resilience features:
 * F5 – Request queue with backpressure (max_concurrent, max_queue_depth).
@@ -529,6 +530,66 @@ def _catalog_entry_payload(entry: Any) -> dict[str, Any]:
     }
 
 
+#: Process-lifetime cache for the MCP tool surface (see _agent_card_skills).
+_SKILL_CACHE: list[dict[str, str]] | None = None
+
+
+def _server_base_url(config: ChimeraConfig) -> str:
+    """Configured server base URL for discovery payloads.
+
+    Derived from ``server.host``/``server.port`` — the SAME settings
+    ``chimera serve`` binds — with an IPv6 wildcard host spelled ``[::1]``
+    for the localhost form (a client cannot dial ``[::]``).
+    """
+    host = config.server.host
+    if host in ("::", "[::]"):
+        host_display = "[::1]"
+    elif ":" in host:  # already-bracketed or literal IPv6 loopback
+        host_display = host if host.startswith("[") else f"[{host}]"
+    else:
+        host_display = host
+    return f"http://{host_display}:{config.server.port}"
+
+
+def _agent_card_skills(config: ChimeraConfig) -> list[dict[str, str]]:
+    """MCP tool surface as A2A-style ``skills[]`` entries.
+
+    One entry per MCP-exposed tool (``src/chimera/mcp/server.py``): the
+    ``description`` is the tool function's own ``__doc__`` first paragraph,
+    so the card and the MCP surface cannot drift. The surface is a
+    process-lifetime constant, so it is introspected once and cached.
+
+    The API's own config is passed to ``build_server`` — a fresh
+    ``load_config()`` here would re-run provider auto-discovery (network +
+    provider cache) inside a request and reconfigure logging. When the
+    introspection fails for any reason (``mcp`` extra missing, config
+    unusable) the server is still discoverable with an empty list rather
+    than a 500; the tests pin the populated shape so a systematic break
+    cannot hide behind that fallback.
+    """
+    global _SKILL_CACHE  # noqa: PLW0603 - module-level process-lifetime cache
+    if _SKILL_CACHE is not None:
+        return _SKILL_CACHE
+    try:
+        from chimera.mcp.server import build_server
+
+        server = build_server(config=config)
+        skills: list[dict[str, str]] = []
+        for tool in server._tool_manager.list_tools():  # noqa: SLF001 - FastMCP introspection
+            doc = (tool.description or "").strip()
+            skills.append(
+                {
+                    "id": tool.name,
+                    "name": tool.name,
+                    "description": doc.split("\n\n")[0].replace("\n", " "),
+                }
+            )
+    except Exception:  # noqa: BLE001 - discovery must not 500 on a degraded extra
+        skills = []
+    _SKILL_CACHE = skills
+    return skills
+
+
 async def _execute_deliberation(request: Request, body: DeliberateRequest) -> DeliberateResponse:
     """Run one deliberation for POST /v1/deliberate (validation + engine call).
 
@@ -915,6 +976,42 @@ def _register_routes(app: FastAPI) -> None:
     async def formations(request: Request) -> dict[str, Any]:
         cfg: ChimeraConfig = request.app.state.config
         return {name: preset.model_dump(exclude_none=True) for name, preset in cfg.formations.items()}
+
+    @app.get("/.well-known/agent-card.json")
+    async def agent_card(request: Request) -> dict[str, Any]:
+        """A2A-style agent discovery card (REV-CHIMERA-V2-20261005-2).
+
+        Follows the Agent2Agent (A2A) ``AgentCard`` JSON shape loosely — the
+        fields an agent-side client actually reads (``name``, ``description``,
+        ``version``, ``url``, ``capabilities``, ``skills``) — without adding a
+        dependency or claiming full A2A protocol conformance. Like
+        ``/v1/health``, it deliberately carries NO ``require_api_key``
+        dependency: discovery is how a client finds the server, so it must
+        answer before any credential exists (docs/SECURITY.md open list).
+
+        ``version`` is the same package metadata ``/v1/health`` serves
+        (``chimera.__version__``); ``url`` is the configured server base URL;
+        ``skills[]`` mirrors the MCP tool surface (``chimera_deliberate`` and
+        siblings, src/chimera/mcp/server.py) reusing each tool's own docstring
+        so the two cannot drift.
+        """
+        base_url = _server_base_url(request.app.state.config)
+        return {
+            "name": "chimera",
+            "description": (
+                "Dynamic multi-model deliberation gateway: one API call"
+                " dispatches your prompt to a team of LLMs and an aggregator"
+                " merges their outputs into one answer."
+            ),
+            "version": __version__,
+            "url": base_url,
+            "capabilities": {
+                "streaming": False,
+                "mcp_tools": True,
+                "openai_compatible": True,
+            },
+            "skills": _agent_card_skills(request.app.state.config),
+        }
 
     @app.get("/v1/models")
     async def models(request: Request) -> dict[str, Any]:
