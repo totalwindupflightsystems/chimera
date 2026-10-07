@@ -35,6 +35,14 @@ formations:
       - default
     merge: best_of_n
     workers: 2
+  # Post-hoc auditor stage appended to the worker fan-out. The web-SSE
+  # integration battery posts simple/debate/audit — CI runs against THIS
+  # file (chimera.yaml is untracked), so a formation the tests use must
+  # exist here or the chat edge rejects it 422 "Unknown formation".
+  audit:
+    audit: default
+    aggregator: default
+    workers: 2
 
 # Public provider endpoints. Any OpenAI-compatible endpoint — local or remote —
 # is another entry here plus matching catalog entries below. Worked examples
