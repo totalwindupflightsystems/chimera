@@ -2068,3 +2068,17 @@ tasks:
   status: complete
   created_at: '2026-10-06T18:11:21.327880+00:00'
   completed_at: '2026-10-06T19:07:28.940736+00:00'
+- id: REV-CHIMERA-V2-20261005-4
+  title: Wave worker implementation REV-CHIMERA-V2-20261005-4
+  criteria:
+  - Implementation matches the task brief acceptance criteria; tests pass; guard green
+  status: complete
+  created_at: '2026-10-07T02:28:16.006822+00:00'
+  completed_at: '2026-10-07T03:03:00.446574+00:00'
+- id: REV-CHIMERA-V2-20261005-2
+  title: Wave worker implementation REV-CHIMERA-V2-20261005-2
+  criteria:
+  - Implementation matches the task brief acceptance criteria; tests pass; guard green
+  status: complete
+  created_at: '2026-10-07T02:28:16.528895+00:00'
+  completed_at: '2026-10-07T03:03:01.043117+00:00'
