@@ -17,10 +17,11 @@ The fix has three halves, pinned here:
   history, the SSE stream, the debug reset — keeps the header-only
   ``require_api_key`` semantics: 401 without a valid key.
 * **key-entry surface** — the SPA ships an auth box, stores the entered key
-  (``localStorage``), attaches ``Authorization: Bearer <key>`` to every API
-  fetch (the header shape ``_extract_api_key`` reads), and retries once after a
-  401.  With auth disabled nothing is stored, no header is attached and the box
-  never appears.
+  (``sessionStorage`` — never ``localStorage``, never a cookie:
+  REV-CHIMERA-V2-20261005-4), attaches ``Authorization: Bearer <key>`` to every
+  API fetch (the header shape ``_extract_api_key`` reads), and retries once
+  after a 401.  With auth disabled nothing is stored, no header is attached and
+  the box never appears.
 * **SSE seam** — ``EventSource`` cannot set headers, so ``GET /web/sse/{id}``
   ADDITIONALLY accepts ``?api_key=``, verified by the same comparison function
   the header path uses (no forked check).  It is the only route that takes it.
@@ -349,9 +350,48 @@ def test_spa_ships_a_key_entry_surface() -> None:
     assert 'id="auth-save"' in SPA_SOURCE
     assert 'id="api-key-btn"' in SPA_SOURCE
     assert "function promptForApiKey(" in SPA_SOURCE
-    # The key is remembered per browser, so a reload does not re-prompt.
-    assert "localStorage.setItem(API_KEY_STORAGE" in SPA_SOURCE
-    assert "localStorage.getItem(API_KEY_STORAGE" in SPA_SOURCE
+    # The key is remembered for the tab's lifetime, so a reload does not re-prompt.
+    assert "sessionStorage.setItem(API_KEY_STORAGE" in SPA_SOURCE
+    assert "sessionStorage.getItem(API_KEY_STORAGE" in SPA_SOURCE
+
+
+# ---------------------------------------------------------------------------
+# A5 — credential storage policy (REV-CHIMERA-V2-20261005-4)
+# ---------------------------------------------------------------------------
+
+
+def test_spa_stores_the_key_in_session_storage_only() -> None:
+    """The credential lives in sessionStorage — never localStorage, never a cookie.
+
+    Policy (REV-CHIMERA-V2-20261005-4): an API key pasted into a shared browser
+    must not outlive the tab it was entered in. ``localStorage`` survives tab
+    close AND browser restarts on a shared machine; a cookie leaks to every
+    request the browser makes to the origin. ``sessionStorage`` dies with the
+    tab, and when it is unavailable (some privacy modes) the key degrades to
+    memory-only, where ``apiFetch`` re-prompts on the next 401.
+    """
+    assert "sessionStorage.setItem(API_KEY_STORAGE" in SPA_SOURCE
+    assert "sessionStorage.getItem(API_KEY_STORAGE" in SPA_SOURCE
+    assert "sessionStorage.removeItem(API_KEY_STORAGE" in SPA_SOURCE
+
+    # The forbidden tiers, as exact call shapes — a rename or a second storage
+    # path for the key fails here rather than silently regressing.
+    for forbidden in (
+        "localStorage.setItem(API_KEY_STORAGE",
+        "localStorage.getItem(API_KEY_STORAGE",
+        "localStorage.removeItem(API_KEY_STORAGE",
+        "document.cookie",
+    ):
+        assert forbidden not in SPA_SOURCE
+
+
+def test_spa_user_visible_copy_names_the_storage_tier() -> None:
+    """The entry box tells the user where the key is kept — keep it truthful."""
+    start = SPA_SOURCE.index('id="auth-hint"')
+    hint = SPA_SOURCE[start : SPA_SOURCE.index("</p>", start)]
+
+    assert "sessionStorage" in hint
+    assert "localStorage" not in hint.replace("never localStorage", "")
 
 
 def test_spa_sends_the_header_shape_the_server_reads() -> None:

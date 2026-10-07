@@ -238,6 +238,101 @@ def test_web_spa_shell_is_served_without_a_key() -> None:
     assert 'id="auth-overlay"' in response.text, "the public shell must carry the key prompt"
 
 
+def test_served_shell_ships_the_ui_credential_hooks() -> None:
+    """The SERVED page itself carries every hook the UI credential path needs.
+
+    Asserted against the HTTP response (not the repo file) so a packaging
+    regression — a stale or stripped shell reaching ``GET /web/`` — fails here
+    rather than only in the source-level SPA tests.  A hook present in the
+    source but missing from the served bytes is exactly the class of drift
+    that would leave a keyed deployment's UI silently keyless.
+
+    REV-CHIMERA-V2-20261005-4: the hooks are the stable DOM/JS identifiers the
+    credential path is built from — the entry box, the manual entry button,
+    the storage slot name, and the key-attaching request wrapper.
+    """
+    client, _, _ = _build(_auth_on_list())
+
+    page = client.get("/web/").text
+
+    # Element hooks: the entry box and its controls.
+    element_ids = (
+        "auth-overlay",
+        "auth-box",
+        "auth-input",
+        "auth-save",
+        "auth-clear",
+        "api-key-btn",
+        "auth-status",
+    )
+    for element_id in element_ids:
+        assert f'id="{element_id}"' in page, f"served shell is missing #{element_id}"
+
+    # Script hooks: the request wrapper (Bearer on fetch) and the SSE seam
+    # (?api_key= for the one route a browser cannot set headers on).
+    assert "function authHeaders(" in page
+    assert "Bearer ${apiKey}" in page
+    assert "function promptForApiKey(" in page
+    assert "API_KEY_STORAGE" in page
+
+
+def test_ui_credential_shape_is_accepted_by_the_gated_surface() -> None:
+    """The exact request shape the UI sends is what unlocks a gated web route.
+
+    The SPA attaches ``Authorization: Bearer <key>`` to every ``fetch()`` and
+    dials the SSE stream with ``?api_key=<key>`` (an ``EventSource`` cannot set
+    headers).  This pins that those two wire shapes — not just ``X-API-Key`` —
+    carry a valid key through the router-level gate, and that the SAME
+    transport WITHOUT the credential stays a 401.
+    """
+    client, _, gateway = _build(_auth_on_list())
+    session_id = _keyed_session(client)
+    del client.headers["X-API-Key"]  # anonymous from here on — no header fallback
+
+    # Bearer, the fetch() shape: 401 without, 200 with.
+    _assert_unauthorized(client.post("/web/sessions"))
+    created = client.post(
+        "/web/sessions",
+        headers={"Authorization": f"Bearer {WEB_KEY}"},
+    )
+    assert created.status_code == 200, created.text
+    ui_session = created.json()["session_id"]
+
+    # The Bearer-created session is usable with the same credential shape.
+    history = client.get(f"/web/sessions/{ui_session}", headers={"Authorization": f"Bearer {WEB_KEY}"})
+    assert history.status_code == 200
+
+    # The ?api_key= query shape: valid key unlocks the SSE stream, a wrong
+    # one stays 401 (verified by the same comparison as the header path).
+    # A recorded turn + stored events makes the stream replay-then-close, so
+    # the request reads a bounded body instead of the 30s idle timeout.
+    import time
+
+    session = web_routes._session_manager.get(session_id)
+    assert session is not None
+    session.add_turn(
+        web_routes.Turn(
+            user_prompt="p",
+            answer="a",
+            formation="simple",
+            dispatch_model="m",
+            worker_models=[],
+            aggregator_model="m",
+            total_tokens=1,
+            total_cost=0.0,
+            timestamp=time.time(),
+        )
+    )
+    session.last_sse_events = [("deliberation_done", {"answer": "a", "turn_number": 1})]
+
+    assert client.get(f"/web/sse/{session_id}?api_key={WEB_KEY}").status_code == 200
+    assert client.get(f"/web/sse/{session_id}?api_key=not-the-key").status_code == 401
+
+    # A keyed route call reached only the auth layer and the session store:
+    # no provider billing happened for any of the requests above.
+    assert gateway.calls == []
+
+
 def test_web_debug_reset_requires_key() -> None:
     client, _, _ = _build(_auth_on_list())
     before = web_routes._session_manager
