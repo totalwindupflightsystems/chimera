@@ -2086,3 +2086,18 @@ tasks:
   status: complete
   created_at: '2026-10-07T02:28:16.528895+00:00'
   completed_at: '2026-10-07T03:03:01.043117+00:00'
+- id: CH-MAINT-010
+  title: Trim chimera.yaml.example to the 120-line minimal budget
+  criteria:
+  - chimera.yaml.example <=120 lines via test_example_stays_minimal passing
+  status: complete
+  created_at: '2026-10-07T06:52:46.115488+00:00'
+  completed_at: '2026-10-07T06:55:47.343000+00:00'
+- id: CH-MAINT-011
+  title: Minimal-public-safe chimera.yaml.example per REV-20261005-3
+  criteria:
+  - chimera.yaml.example is minimal-public-safe per the REV-20261005-3 spec and test_example_stays_minimal
+    passes
+  status: complete
+  created_at: '2026-10-07T06:52:46.752101+00:00'
+  completed_at: '2026-10-07T06:56:10.370460+00:00'
