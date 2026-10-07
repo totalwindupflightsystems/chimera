@@ -2101,3 +2101,13 @@ tasks:
   status: complete
   created_at: '2026-10-07T06:52:46.752101+00:00'
   completed_at: '2026-10-07T06:56:10.370460+00:00'
+- id: DF51-bunker-qa-empty-script
+  title: 'bunker-qa.sh: refuse 0-byte qa-run.sh launch + distinct collect report'
+  criteria:
+  - launch records a FAIL cell and exits 1 when the agent confirms SCRIPT_BYTES=0
+    instead of printing LAUNCHED
+  - collect prints COLLECT-FAIL battery-empty with a recovery hint when the pulled
+    qa-evidence.jsonl has zero rows
+  status: complete
+  created_at: '2026-10-07T09:05:26.044226+00:00'
+  completed_at: '2026-10-07T09:07:11.684347+00:00'
