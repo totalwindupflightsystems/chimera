@@ -70,11 +70,52 @@ An anonymous request is refused by the auth layer before any handler, session or
 provider call runs (401, never 404).
 
 Because the auth dependency is attached to the router, gating covers `/web/*`
-as a whole — including the SPA shell. The bundled browser UI therefore targets
-auth-disabled deployments; with auth enabled the UI's own requests have nowhere
-to put a header, so drive `/web/*` from an API client that sends
-`Authorization: Bearer <key>` or `X-API-Key: <key>` (or keep the UI behind your
-own authenticating reverse proxy).
+as a whole. Two carve-outs exist so a browser can authenticate at all: the SPA
+shell at `GET /web/` and the vendored assets it loads are served WITHOUT a key
+(a browser has nothing to authenticate with before the page that asks for one
+has loaded); every data route under `/web/*` — sessions, chat, history, the
+SSE stream — stays gated exactly like `POST /v1/deliberate`.
+
+### Running the web UI behind auth
+
+The bundled browser UI has a first-class credential path, so `auth.enabled:
+true` no longer locks browsers out of it. Two supported ways to arm it:
+
+1. **Built-in token entry.** Open `GET /web/`, click the sidebar **Key**
+   button (or just trigger any action — the same entry box pops up
+   automatically on the first 401) and paste the API key. The key is kept per
+   browser TAB in `sessionStorage` — never in `localStorage` and never in a
+   cookie, so it does not outlive the browser session and does not leak
+   across tabs on a shared machine — and is attached to every request the UI
+   makes: `Authorization: Bearer <key>` on `fetch()` calls, and
+   `?api_key=<key>` on the SSE stream (an `EventSource` cannot set request
+   headers; the key is URL-encoded and never persisted anywhere but that tab).
+
+2. **Reverse proxy.** Keep the browser completely keyless and let an
+   authenticating reverse proxy inject the credential upstream; the UI needs
+   no change and shows "No API key" while everything works. nginx recipe
+   (`/etc/nginx/templates/chimera.conf.template` — the `${CHIMERA_API_KEY}`
+   placeholder is expanded at config-render time by nginx's envsubst
+   templating, or by your deployment tool, so the real key lives only
+   server-side):
+
+   ```nginx
+   location / {
+       proxy_pass http://127.0.0.1:8765;
+       proxy_set_header Authorization "Bearer ${CHIMERA_API_KEY}";
+       proxy_http_version 1.1;
+       proxy_set_header Connection "";   # keep SSE streams alive
+       proxy_read_timeout 3600s;         # long deliberations + idle SSE
+       proxy_buffering off;              # SSE: stream events, don't buffer
+   }
+   ```
+
+   Any proxy that can set a request header works the same way (Caddy:
+   `header_up Authorization "Bearer {env.CHIMERA_API_KEY}"`; Traefik: a
+   `customRequestHeaders` middleware).
+
+Programmatic clients keep the plain header path — `Authorization: Bearer
+<key>` or `X-API-Key: <key>` on every `/web/*` and `/v1/*` call.
 
 #### `POST /web/debug/reset` — dev/test only, disabled by default
 

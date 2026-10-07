@@ -175,10 +175,15 @@ health checks): `/health` (alias of the liveness probe `/v1/health/live`), `/v1/
 `/v1/health/ready`, `/v1/health/live`, `/v1/models`, `/v1/formations`, `/docs`
 (plus `/docs/oauth2-redirect`), `/redoc`, `/openapi.json`.
 
-The `/web/*` surface is **not** on that list: every path under it — including
-the SPA shell at `GET /web/` — requires the API key whenever
+The `/web/*` surface is **not** on that list: every data route under it —
+sessions, chat, history, the SSE stream — requires the API key whenever
 `auth.enabled: true`, because it runs deliberations through the same engine as
-`/v1/deliberate`. See `docs/SECURITY.md` for the full open/closed split.
+`/v1/deliberate`. The SPA shell at `GET /web/` (and the vendored assets it
+loads) is served without a key so a browser can load the page that asks for
+one. The bundled web UI has a built-in key-entry box and works as-is behind an
+authenticating reverse proxy — see
+[docs/SECURITY.md — "Running the web UI behind auth"](SECURITY.md#running-the-web-ui-behind-auth)
+for both options and the full open/closed split.
 
 ## 4. Client Examples
 

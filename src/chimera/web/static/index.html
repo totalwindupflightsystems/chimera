@@ -632,7 +632,7 @@ body {
 <div id="auth-overlay" hidden>
   <div id="auth-box" role="dialog" aria-modal="true" aria-labelledby="auth-title">
     <h3 id="auth-title">🔑 API key required</h3>
-    <p id="auth-hint">This Chimera server has auth enabled. Paste the API key to continue — it is kept in this browser only (localStorage) and sent with every request.</p>
+    <p id="auth-hint">This Chimera server has auth enabled. Paste the API key to continue — it is kept in this tab only (sessionStorage, never localStorage or a cookie) and sent with every request.</p>
     <input id="auth-input" type="password" autocomplete="off" spellcheck="false" placeholder="API key">
     <div class="auth-actions">
       <button id="auth-save" type="button">Save &amp; continue</button>
@@ -696,18 +696,24 @@ let stageRunTotals = { tokens: 0, cost: 0, latency_ms: 0 }; // incremental tile 
 // and its vendored assets are public — they have to be, because a browser has
 // nowhere to enter a key before it has loaded the page that asks for one
 // (gating the shell answered 401 JSON *as the page*). So the key lives here:
-// entered once, kept in localStorage, and attached to every request —
+// entered once, kept in sessionStorage for the tab's lifetime — NEVER in
+// localStorage and never in a cookie, so the credential does not outlive the
+// browser session or leak to other tabs on a shared machine — and attached to
+// every request:
 //
 //   * fetch()     -> `Authorization: Bearer <key>`, the header shape the
 //                    server's _extract_api_key() reads;
 //   * EventSource -> it CANNOT set headers, so the SSE dial appends
 //                    `?api_key=<key>` (the one route that accepts it).
 //
-// With auth disabled nothing is stored, no header is attached, the SSE dial
-// carries no parameter and the box never appears: behaviour is unchanged.
+// If sessionStorage is unavailable (some privacy modes) the key simply stays
+// memory-only: apiFetch() surfaces the entry box again on the next 401, so
+// nothing breaks. With auth disabled nothing is stored, no header is attached,
+// the SSE dial carries no parameter and the box never appears: behaviour is
+// unchanged.
 const API_KEY_STORAGE = 'chimera_api_key';
 let apiKey = '';
-try { apiKey = localStorage.getItem(API_KEY_STORAGE) || ''; } catch (_) { apiKey = ''; }
+try { apiKey = sessionStorage.getItem(API_KEY_STORAGE) || ''; } catch (_) { apiKey = ''; }
 let authResolver = null; // resolves the pending promptForApiKey() promise
 
 function authHeaders(base) {
@@ -719,8 +725,8 @@ function authHeaders(base) {
 function setApiKey(next) {
   apiKey = (next || '').trim();
   try {
-    if (apiKey) localStorage.setItem(API_KEY_STORAGE, apiKey);
-    else localStorage.removeItem(API_KEY_STORAGE);
+    if (apiKey) sessionStorage.setItem(API_KEY_STORAGE, apiKey);
+    else sessionStorage.removeItem(API_KEY_STORAGE);
   } catch (_) { /* storage blocked (private mode) — the in-memory key still works */ }
   updateAuthStatus();
 }
@@ -778,7 +784,7 @@ async function apiFetch(url, options) {
   return r;
 }
 
-updateAuthStatus(); // reflect a key restored from localStorage
+updateAuthStatus(); // reflect a key restored from sessionStorage
 
 document.getElementById('api-key-btn').addEventListener('click', () => {
   promptForApiKey('Enter the API key this browser should send with every request.');
