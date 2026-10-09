@@ -2111,3 +2111,11 @@ tasks:
   status: complete
   created_at: '2026-10-07T09:05:26.044226+00:00'
   completed_at: '2026-10-07T09:07:11.684347+00:00'
+- id: DF-CHIMERA-V2-71
+  title: CLI no-credentials error-as-answer exits 0
+  criteria:
+  - fully degraded run exits 2 in every mode; placeholder text never reaches stdout;
+    --json carries answer_degraded/answer_error markers
+  status: complete
+  created_at: '2026-10-09T22:02:08.832018+00:00'
+  completed_at: '2026-10-09T23:38:01.740298+00:00'

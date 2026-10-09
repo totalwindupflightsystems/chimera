@@ -1,0 +1,49 @@
+{
+  "tick": "chimera-v2-foreman-2026-10-09-21-02-32",
+  "created": "2026-10-09T21:10:00Z",
+  "wave_budget": 10,
+  "workers": [
+    {
+      "task": "DF-CHIMERA-V2-71",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-71",
+      "branch": "wt/DF-CHIMERA-V2-71",
+      "base": "origin/main@284510c",
+      "commit": "d46cd00",
+      "merged": "909988e"
+    },
+    {
+      "task": "DF-CHIMERA-V2-72",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-72",
+      "branch": "wt/DF-CHIMERA-V2-72",
+      "base": "origin/main@284510c",
+      "commit": "4a50ad3",
+      "merged": "909988e"
+    },
+    {
+      "task": "DF-CHIMERA-V2-73",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-73",
+      "branch": "wt/DF-CHIMERA-V2-73",
+      "base": "origin/main@284510c",
+      "commit": "1fb1902",
+      "merged": "909988e"
+    },
+    {
+      "task": "DF-CHIMERA-V2-75",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-75",
+      "branch": "wt/DF-CHIMERA-V2-75",
+      "base": "origin/main@284510c",
+      "commit": "10e6633",
+      "merged": "909988e"
+    },
+    {
+      "task": "DF-CHIMERA-V2-76",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-76",
+      "branch": "wt/DF-CHIMERA-V2-76",
+      "base": "origin/main@284510c",
+      "commit": "3c3d6a5",
+      "merged": "909988e"
+    }
+  ],
+  "independence": "no depends_on edges between the 5 rows; file overlap checked: 71=cli exit paths, 72=docs only, 73=cli --dag exit, 75=api server.py chat surface + docs/OPENAI_API.md, 76=README/INTEGRATION docs + server startup warning",
+  "status": "merged"
+}
