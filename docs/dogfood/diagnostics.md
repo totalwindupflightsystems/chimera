@@ -913,3 +913,59 @@ Driver lessons: bunker spawn transient `slice-limits: containment landing did
 not converge` (swap bar) → single retry succeeded, matching the skill rule;
 las-03 and las-04 unreachable this tick, las-02 answered. No PERF row — all
 timings model-bound and inside the run 11-18 band.
+
+## Run 20 (2026-10-09) — concurrent load + failure resilience, per-surface degradation visibility
+
+Surface chosen (additive to run 19's same-day angle): the operator-under-load
+view — the documented `queue` backpressure under real concurrent clients, and
+FAILURE_RESILIENCE.md's C2 promise (dead worker → graceful degraded answer)
+observed from every client surface that exists.
+
+What was proven:
+- Queue defaults live (read via the app's own loader, no service mutation):
+  `queue.max_concurrent=10, max_queue_depth=100`, rate_limit disabled, no
+  circuit breakers configured. 4 simultaneous simple deliberations: all 200,
+  4/4 unique answers, 49.4s total; per-request walls 18.9-49.4s vs 8.3-10.5s
+  warm single. Cross-request isolation held (no shared state, no cross-talk).
+- C2 HELD machine-readably on /v1/deliberate: worker_model pointed at a
+  configured-but-dead provider (cliproxy, missing credentials — exactly what
+  /v1/health.unhealthy_providers names) → 200 in 8.3-10.5s, real merged
+  answer, `trace.worker_failures` carries stage/model/"call failed after 3
+  attempts: litellm.InternalServerError: Missing credentials". Twice, cold,
+  deterministic.
+- C2 INVISIBLE on /v1/chat/completions: same call → 200, finish_reason=stop,
+  chimera_degraded_reasons=null (that field is truncation-only by design,
+  DF-CHIMERA-V2-55). An OpenAI-SDK third party cannot see a dead worker.
+  Filed DF-CHIMERA-V2-75 (P2).
+- Error-contract teaching quality: worker_model=bogus/model → 400 naming the
+  `models:` catalog requirement + docs/CONFIG.md pointer. Best-in-class.
+- Fresh install (las-02 agent 1b594f64, destroyed + verified gone): clone 10s
+  (public GitHub, HEAD 0e5de41 == control host), venv+`pip install -e '.[full]'`
+  65s RC=0 on Python 3.13.5, config init OK, documented smoke with an existing
+  fleet credential: RC=0, 22s, real answer. Serve boots healthy.
+- Auth leg (fresh agent): CHIMERA_API_KEY alone enables NOTHING (server
+  silently unauthenticated); CHIMERA_AUTH_ENABLED=true restores the exact
+  documented 401/401/200 contract. The inverse-silence is DF-CHIMERA-V2-76 (P2).
+  Driver lesson: my first auth probe misread the docs (assumed the key
+  enables auth); re-verified against config.py (env toggle only sets
+  `enabled`) before filing — the product was right, my probe was wrong, and
+  the real finding was the missing inverse warning.
+
+Why the degradation-marker split exists (design reading): `degraded_reasons`
+was built for the DF-CHIMERA-V2-55 truncation class (capped workers merge
+into clean-looking garbage), while hard failures get `worker_failures` +
+CLI dropped-worker warnings. The chat surface then maps only the truncation
+marker — the composition gap is that the two failure classes got different
+plumbing and only one reaches OpenAI-compat clients. Fix direction in the row.
+
+Perf: no PERF row. Concurrent 4x spread 18.9-49.4s = queue wait (UX, filed);
+CLI process overhead ~3-4s (user+sys); walls are upstream-model-bound, inside
+the run 11-19 band. Fresh install 75s end to end.
+
+Lane-hygiene lessons (shared checkout): `boardctl validate` shows 4
+PRE-EXISTING events.jsonl id-descent errors at HEAD (foreman event ids not
+monotone across lane restarts) — verify by diffing only your own lines.
+A single-file `git stash` mid-tick conflicted on .gitreins/tasks.yaml
+(concurrent run-19 lane committed a2857af between my reads) — restored via
+`git checkout HEAD --` + pathspec discipline; my 3 rows verified intact
+before and after. Avoid stash on shared checkouts entirely.

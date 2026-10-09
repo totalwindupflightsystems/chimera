@@ -133,3 +133,35 @@ Angle: the README's "Custom OpenAI-compatible endpoints" seam — pointing Chime
 - Verified-working (credit): the seam promise HOLDS — live :8765 compat chat/completions with a router9 worker (10.9s, correct answer, finish stop); scratch 0.2.7 CLI `--formation simple --stage-models` mixing router9 + hermes workers (14.6s, $0.0205, 0 failures); client-defined 4-stage DAG fully on custom providers (61.0s sequential, correct structured answer); /v1/deliberate with custom stage_models (9.5s, correct); the SSE-uninvited upstream consumed cleanly (27.8s run, worker 17.4s); lenient parse of the trailing-[DONE] body; traces carry full per-stage models/latency/tokens and merged answers are real merges.
 - Perf: no PERF row — warm simple-formation runs 25.6–31.1s wall (model-bound, consistent with runs 11–15's 25–35s), cold scratch CLI 15.5s, wheel install 43s. Nothing a user would feel as a project defect.
 - Env note: shared-checkout hazard — the foreman's tick-279 judge was swinging HEAD/branch in this same workdir during the run (judge-56-rerun → judge-57-rerun → 9f54505 within minutes); all artifacts were committed with explicit paths after re-verifying HEAD.
+
+## Dogfood Findings (2026-10-09) — run 20: concurrent load + failure resilience (operator angle)
+
+Promise under test: "4 concurrent clients each get their own panel (queue
+backpressure); a dead worker degrades gracefully AND visibly; load sheds at
+the edge." Additive to run 19's same-day fresh-box CLI angle.
+
+- [P2] DF-CHIMERA-V2-75: /v1/chat/completions hides hard worker failures —
+  200, finish_reason=stop, chimera_degraded_reasons=null while the identical
+  call on /v1/deliberate carries trace.worker_failures[] with the upstream
+  error. OpenAI-SDK third parties cannot see a dead panel member. Fix
+  direction: map worker_failures into a chat-surface marker (field or
+  finish_reason semantics); document in OPENAI_API.md.
+- [P2] DF-CHIMERA-V2-76: CHIMERA_API_KEY exported but auth disabled = every
+  endpoint silently unauthenticated (verified on a fresh bunker clone: key
+  alone → no-key POST 200; +CHIMERA_AUTH_ENABLED=true → 401/401/200 exact).
+  Fix direction: doc line in README/INTEGRATION §3 + optional serve-time
+  warning when the key is set but auth.enabled is false (inverse of the
+  DF-CHIMERA-V2-56 pre-flight warning).
+- [P3] DF-CHIMERA-V2-77: concurrent queue wait is silent — 4 simultaneous
+  simple deliberations spread 18.9-49.4s (vs 8.3-10.5s warm single) with no
+  queue-position/wait feedback anywhere. Fix direction: queue-position
+  header, request_queued/dequeued log events with wait_ms, or a documented
+  wall-time envelope in CONFIG.md's queue section.
+
+Verified-working (credit): C2 degraded-merge promise HELD machine-readably
+on /v1/deliberate (twice, cold); 4x concurrency isolated (unique answers, no
+cross-talk); unknown-model 400 error copy teaches; fresh install 10s clone +
+65s install + 22s real answer on clean Debian 13.7 (bunker agent 1b594f64,
+destroyed); auth-enabled contract exact.
+- Perf: no PERF row — walls model-bound (runs 11-19 band), CLI process
+  overhead ~3-4s, concurrent spread is queue wait (UX, filed above).

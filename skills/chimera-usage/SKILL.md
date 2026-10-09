@@ -16,6 +16,11 @@ description: >-
   headless-Chrome CDP recipe for driving the SPA, what live-updates mid-run,
   the auth.lockout of the browser, the green-failed-node DAG, the doubled
   answer bubble, and the "None" degraded turn.
+  v1.11.0 adds the 2026-10-09 run-20 CONCURRENCY + FAILURE-RESILIENCE
+  section: what the queue does under 4 simultaneous clients, what a dead
+  worker looks like on each surface (/v1/deliberate exposes it,
+  /v1/chat/completions hides it), the CHIMERA_API_KEY-without-auth
+  silent-open trap, and the fresh-install numbers (clone 10s + install 65s).
   v1.5.0 adds the 2026-09-24 run-13 DOCKER deployment section: compose
   build/up/smoke numbers on fresh hardware, the DEEPSEEK_KEY vs
   ${DEEPSEEK_API_KEY} naming split, the fake-key credential probe, the
@@ -40,7 +45,7 @@ description: >-
   session recipe is REAL and works with the documented auth header —
   multi-turn memory, per-turn audit, negative contracts all hold; DELETE
   /web/sessions/{id} is live as of 2026-10-09 (204, DF-CHIMERA-V2-69 fixed).
-version: 1.10.0
+version: 1.11.0
 category: software-development
 ---
 
@@ -790,3 +795,68 @@ no key 401 / bad key 401 / unknown formation 422 / unknown session 404.
   `Field required` naming `prompt`.
 - Timing: turn wall ≈ trace total_duration_ms + ~1-2s; a 3-turn conversation ≈
   93s (57.6/12.1/23.4s) — model-bound, not user-actionable slowness.
+
+## Update 2026-10-09 (run 20) — CONCURRENCY and FAILURE RESILIENCE: what an operator sees
+
+### Concurrent clients (the documented `queue` backpressure, verified live)
+
+Defaults (confirmed through the app's own config loader on 0.2.7):
+`queue.max_concurrent=10`, `queue.max_queue_depth=100`, rate limiting OFF,
+no per-provider circuit breakers unless you configure them.
+
+4 simultaneous `POST /v1/deliberate` (simple formation): all 200, all answers
+unique, 49.4s total wall; per-request walls 18.9-49.4s vs 8.3-10.5s warm
+single. **The queue works but is silent** — no wait feedback, header, or log
+reaches the client (DF-CHIMERA-V2-77). Budget wall-time, not latency, when
+firing N concurrent panels.
+
+### A dead worker: what each surface tells you
+
+Point `worker_model` at a configured-but-broken provider (e.g. one listed in
+`/v1/health` -> `unhealthy_providers`):
+
+| Surface | What you see |
+|---|---|
+| `/v1/deliberate` | 200 + real merged answer in ~9-11s; `trace.worker_failures[]` carries stage/model/error; dead stage rows show 0 tokens. **Trustworthy.** |
+| `/v1/chat/completions` | 200, `finish_reason=stop`, `chimera_degraded_reasons=null` (that field is token-limit-truncation-only). **The dead worker is invisible** (DF-CHIMERA-V2-75). Parse `usage` vs expected panel size if you need a heuristic. |
+| CLI | dropped-worker warnings on stderr beside the answer (documented, verified in runs 9-11). |
+
+`chimera_degraded_reasons` covers ONLY `finish_reason=length` truncations
+(DF-CHIMERA-V2-55 class). Hard worker failures are a different list
+(`trace.worker_failures`) that the chat surface does not map — until
+DF-CHIMERA-V2-75 is fixed, an OpenAI-SDK client cannot see them at all.
+
+### Error contract worth copying
+
+`worker_model: "bogus/model-does-not-exist"` -> HTTP 400 with the catalog
+requirement spelled out ("must be declared in the `models:` catalog section
+of chimera.yaml (a `providers.<name>` entry alone is not enough)… see
+docs/CONFIG.md"). Unknown-model rejection is up-front, no provider call, no
+billing.
+
+### The CHIMERA_API_KEY trap (fresh-install, hit for real)
+
+Exporting `CHIMERA_API_KEY=...` **enables nothing by itself**. Auth turns on
+ONLY with `auth.enabled: true` in the YAML or `CHIMERA_AUTH_ENABLED=true` in
+the env. Key-without-toggle = server binds, /health says alive, and every
+endpoint — including POST /v1/deliberate — answers unauthenticated, with zero
+warnings (DF-CHIMERA-V2-76). The DF-CHIMERA-V2-56 pre-flight warning covers
+the opposite direction only. Correct recipes:
+- env-only: `CHIMERA_AUTH_ENABLED=true CHIMERA_API_KEY=k chimera serve`
+- yaml-only: `auth: {enabled: true, mode: env}` + exported key
+
+Verified the enabled path end to end on a fresh agent: no key 401, wrong key
+401, valid key 200. `/v1/models` and `/health` are unguarded by design.
+
+### Fresh-install numbers (bunker-las-02 agent, Debian 13.7, Python 3.13.5)
+
+Public GitHub clone 10s (HEAD == control host) -> `python3 -m venv .venv &&
+.venv/bin/pip install -e '.[full]'` 65s RC=0 -> `config init` -> real
+`chimera --quiet -f simple run` 22s RC=0. Zero sudo/compose/toolchain
+friction. Serve boots healthy on the same tree.
+
+### Perf summary (run 20)
+
+CLI process overhead ~3-4s (user+sys); all deliberation walls model-bound
+(consistent with runs 11-19). Concurrent spread is queue-wait, not compute.
+No PERF row — nothing code-fixable that a user feels.
