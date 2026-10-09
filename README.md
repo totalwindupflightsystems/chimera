@@ -134,6 +134,11 @@ If auth is enabled (`auth.enabled: true` with `CHIMERA_API_KEY`), every call
 needs `Authorization: Bearer <key>` or `X-API-Key: <key>` — see
 [Authentication](docs/INTEGRATION.md#3-authentication-chimera_api_key).
 
+> **Note:** exporting `CHIMERA_API_KEY` alone does **not** enable
+> authentication — the env var only takes effect with `auth.enabled: true`
+> (or the `CHIMERA_AUTH_ENABLED` toggle). Without it the server starts fully
+> unauthenticated (a `chimera serve` startup warning says so).
+
 ## Configuration
 
 `chimera.yaml` is found in this order: an explicit `path` argument, then the
@@ -451,6 +456,11 @@ python scripts/smoke_live.py --base-url http://myhost:8765 --formation auto
 CHIMERA_API_KEY=... python scripts/smoke_live.py --base-url http://myhost:8765   # if auth is enabled
 ```
 
+Note: the `CHIMERA_API_KEY` on that line only authenticates the smoke-test
+request — exporting it does not enable auth on the server. The env var only
+takes effect with `auth.enabled: true` (or the `CHIMERA_AUTH_ENABLED`
+toggle); see [Authentication](docs/INTEGRATION.md#3-authentication-chimera_api_key).
+
 The flag is `--base-url` (there is no `--port`); `CHIMERA_BASE_URL` is the env
 default. Other flags: `--formation` (default `simple`), `--prompt`,
 `--api-key`, `--timeout`, `--expected-commit`, `--allow-stale`. The script
@@ -584,6 +594,9 @@ The dispatcher writes custom prompts for each stage but uses YOUR structure exac
 When auth is enabled (`CHIMERA_API_KEY`), pass `Authorization: Bearer <key>`
 or `X-API-Key: <key>` — see
 [docs/INTEGRATION.md](docs/INTEGRATION.md#3-authentication-chimera_api_key).
+As everywhere, the `CHIMERA_API_KEY` env var only takes effect with
+`auth.enabled: true` (or the `CHIMERA_AUTH_ENABLED` toggle) — exporting it
+alone does not enable authentication.
 `POST /v1/deliberate` also accepts an optional `idempotency_key` request-body
 field (a repeat call with the same key is replayed, not re-run) — see
 [docs/OPENAI_API.md](docs/OPENAI_API.md#v1deliberate).

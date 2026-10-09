@@ -1804,8 +1804,10 @@ def _warn_if_auth_key_missing(cfg: ChimeraConfig) -> None:
     stderr, naming the literal variable and the config stanza so the line is
     greppable in console/journal logs.
 
-    Silent when the key is set, when auth is disabled (the default), or when
-    ``auth.mode: list`` (keys come from config, not the env). Read-only:
+    Silent when the key is set, when auth is disabled (the default — a key
+    exported while auth is DISABLED is the sibling mismatch, see
+    ``_warn_if_auth_key_but_auth_disabled``), or when ``auth.mode: list``
+    (keys come from config, not the env). Read-only:
     never sets a default key, never bypasses the check in
     ``dependencies.verify_api_key`` — the server starts either way.
     """
@@ -1824,14 +1826,50 @@ def _warn_if_auth_key_missing(cfg: ChimeraConfig) -> None:
     )
 
 
+def _warn_if_auth_key_but_auth_disabled(cfg: ChimeraConfig) -> None:
+    """Loud one-line warning when the auth key env is set but auth is OFF (DF-CHIMERA-V2-76).
+
+    The inverse dead end of :func:`_warn_if_auth_key_missing`: a fresh user
+    following the README quickstart exports ``CHIMERA_API_KEY`` alone and gets
+    a fully UNAUTHENTICATED server — ``load_config`` only lets the env var
+    take effect through ``auth.enabled`` in ``chimera.yaml`` (or the
+    ``CHIMERA_AUTH_ENABLED`` toggle), so the export is silently inert and
+    nothing anywhere says so. Announce the mismatch BEFORE uvicorn binds the
+    port, on stderr, naming the literal variable so the line is greppable in
+    console/journal logs.
+
+    Silent when the env var is unset (no behavior change for anyone who never
+    exported it), when auth is enabled (the key works), or when auth is
+    enabled with ``auth.mode: list`` (keys come from config — the env var
+    stays inert but the deployment is not unauthenticated, so it stays
+    quiet). Read-only: never flips ``auth.enabled``, never turns the env var
+    into a key — the server starts either way.
+    """
+    auth = cfg.auth
+    if auth.enabled:
+        return
+    if not os.environ.get("CHIMERA_API_KEY", "").strip():
+        return
+    _err_console.print(
+        "[yellow]warning:[/yellow] "
+        "the CHIMERA_API_KEY env var is set but auth is disabled — all "
+        "endpoints are unauthenticated. The env var only takes effect with "
+        "auth.enabled=true in chimera.yaml (or the CHIMERA_AUTH_ENABLED "
+        "toggle); exporting it alone does not enable authentication.",
+        soft_wrap=True,
+    )
+
+
 def run(host: str | None = None, port: int | None = None) -> None:
     """Run the API server with uvicorn (``chimera serve`` entrypoint)."""
     import uvicorn
 
     cfg = load_config()
-    # DF-CHIMERA-V2-56: at startup, before the port binds — not on the first
-    # request, when the 401s have already confused everyone.
+    # DF-CHIMERA-V2-56 / DF-CHIMERA-V2-76: at startup, before the port binds
+    # — not on the first request, when the 401s (or the unauthenticated
+    # writes) have already confused everyone.
     _warn_if_auth_key_missing(cfg)
+    _warn_if_auth_key_but_auth_disabled(cfg)
     uvicorn.run(
         create_app(cfg),
         host=host or cfg.server.host,
