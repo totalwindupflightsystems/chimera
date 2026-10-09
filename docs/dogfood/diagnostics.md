@@ -889,3 +889,27 @@ mapping the manager's bool to 204/404.
 
 Timing: turn 2 = 12.1s wall / 10,088ms trace (model-bound); 3 turns ≈ 93s.
 
+
+## Run 19 (2026-10-09) — fresh-box CLI failure paths + machine-readable contracts
+
+Surface chosen: the one no prior run touched — a fresh machine (ephemeral
+bunker, las-02 agent 994784e5) with the wheel installed and NO credentials,
+plus the credentialed CLI machine-readable contract on the control host.
+
+What was proven:
+- Install: public mirror clone 5s → venv + `pip install chimera-deliberation[full]` 54s → `config init` (wheel template) → CLI 0.2.7. Zero friction, no sudo/toolchain.
+- Credentialed CLI: `--quiet` stdout = answer + \n only; `--json` one object, README jq paths (.answer, .trace.total_duration_ms/tokens) all resolve; unknown formation exit 2 with the available list. Warm simple 18-20s, debate 27s/5-stage, JSON 12s (trace 11.4s → ~1s shell overhead). Model-bound.
+- REST error contract exact where the CLI's is not: same missing-credential state → HTTP 502 structured error; smoke_live.py exit 1. Fresh-box serve: /web/ /v1/formations /v1/models /docs 200, unknown 404, health commit "unknown" (wheel shape, DF-CHIMERA-V2-48 class).
+- Web sessions live: create → turn1 11s ("OK") → turn2 6s ("chartreuse", memory holds) → DELETE 204 → GET 404. DF-CHIMERA-V2-69 (no DELETE route, run 18) verified FIXED; correction filed as DF-CHIMERA-V2-74.
+
+Defects found (why: the fallback design treats "no providers available" as
+"proceed anyway", and the CLI prints whatever the aggregator produced — when
+every stage failed, that artifact IS the error string):
+- DF-CHIMERA-V2-71 (P1): fresh install, no key → CLI exit 0 with the error text as the ANSWER on stdout. Scripted consumers (`ANSWER=$(chimera --quiet ...)`) capture failure as success. REST 502s the identical state — the two entry points disagree.
+- DF-CHIMERA-V2-73 (P2): `--dag` without `--allow-custom-dag` → usage error on stderr but exit 0 (unknown formation correctly exits 2; this guard is the outlier).
+- DF-CHIMERA-V2-72 (P3): /web/sessions/{id}/chat body field is `prompt`; no doc names it — `{"message":...}` → bare 422 Field required.
+
+Driver lessons: bunker spawn transient `slice-limits: containment landing did
+not converge` (swap bar) → single retry succeeded, matching the skill rule;
+las-03 and las-04 unreachable this tick, las-02 answered. No PERF row — all
+timings model-bound and inside the run 11-18 band.

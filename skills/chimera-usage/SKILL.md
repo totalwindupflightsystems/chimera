@@ -38,9 +38,9 @@ description: >-
   per-install since CHIMERA-V2-REVIEW-03).
   v1.9.0 adds the 2026-10-01 run-18 section: the scripted multi-turn web
   session recipe is REAL and works with the documented auth header —
-  multi-turn memory, per-turn audit, negative contracts all hold; the
-  surface has no DELETE route (DF-CHIMERA-V2-69).
-version: 1.9.0
+  multi-turn memory, per-turn audit, negative contracts all hold; DELETE
+  /web/sessions/{id} is live as of 2026-10-09 (204, DF-CHIMERA-V2-69 fixed).
+version: 1.10.0
 category: software-development
 ---
 
@@ -772,9 +772,21 @@ turns (turn 2 recalled the turn-1 topic unprompted; turn 3 fused both);
 GET /web/sessions/$SID returns the full per-turn audit (models, tokens, cost);
 no key 401 / bad key 401 / unknown formation 422 / unknown session 404.
 
-- **There is NO session DELETE route (DF-CHIMERA-V2-69, P2):**
-  `DELETE /web/sessions/{id}` → 405. `SessionManager.delete()` exists
-  (src/chimera/web/session.py:125) but is unwired; the only cleanup is the
-  destructive global `POST /web/debug/reset`. Sessions accumulate per process.
+- **Session DELETE is LIVE (verified 2026-10-09, DF-CHIMERA-V2-69 fixed;
+  correction row DF-CHIMERA-V2-74):** `DELETE /web/sessions/{id}` → 204,
+  subsequent `GET` → 404. (Run 18 saw 405 — deployed code has since wired
+  `SessionManager.delete()`.) The bulk `POST /web/debug/reset` still exists
+  and stays destructive.
+- **Fresh-install CLI failure contract is BROKEN (DF-CHIMERA-V2-71, P1,
+  verified 2026-10-09 on a zero-credential box):** with no API key, `chimera
+  --quiet "…"` exits 0 and stdout IS the upstream error string. A scripted
+  consumer captures failure as success. Detect it: grep stdout for
+  `[stage ` / `unavailable:` before trusting `--quiet` output, or prefer
+  `--json` (worker_failures/answer_stage_id in the trace) or the REST
+  surface (correctly 502s the same state). Also: `--dag` without
+  `--allow-custom-dag` prints a usage error but exits 0 (DF-CHIMERA-V2-73).
+- `/web/sessions/{id}/chat` request body field is `prompt` (not `message` —
+  DF-CHIMERA-V2-72): `{"prompt": "..."}`; a wrong field gives a bare 422
+  `Field required` naming `prompt`.
 - Timing: turn wall ≈ trace total_duration_ms + ~1-2s; a 3-turn conversation ≈
   93s (57.6/12.1/23.4s) — model-bound, not user-actionable slowness.
