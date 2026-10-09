@@ -76,7 +76,9 @@ readability — the real trace is the complete `DeliberationTrace` dump):
     "total_duration_ms": 15234,
     "worker_failures": [],
     "dispatch_note": null,
-    "dispatch_repairs": []
+    "dispatch_repairs": [],
+    "answer_degraded": false,
+    "answer_error": null
   }
 }
 ```
@@ -84,6 +86,14 @@ readability — the real trace is the complete `DeliberationTrace` dump):
 The `trace` value is the COMPLETE trace serialization (`model_dump(mode="json")`)
 — the same object the REST API returns. Unicode answers are preserved
 (`ensure_ascii=False`), so `café` stays `café`.
+
+Top-level `answer_degraded` / `answer_error` mirror the REST API's degraded
+handling: when the answer stage itself failed upstream (e.g. no provider
+credentials — the engine's placeholder `[stage ... unavailable: ...]` became
+the "answer"), the run exits **2**, `answer_degraded` is `true`,
+`answer_error` carries the upstream reason, and `--quiet` writes NOTHING to
+stdout — so `ANSWER=$(chimera --quiet ...)` can never capture an error as the
+answer. Check the exit code (or the marker) before consuming `$ANSWER`.
 
 When the dispatcher had to repair a malformed auto DAG (an `edges` entry
 pointing at a stage missing from `stages`, or a worker-only DAG with no

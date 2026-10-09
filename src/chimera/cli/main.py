@@ -348,6 +348,11 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
         # one-liner contract), so pipes and logs never see it folded.
         err_console.print(f"[red]error:[/red] {exc}", soft_wrap=True)
         sys.exit(2)
+    # DF-CHIMERA-V2-71: defensive reads, matching _print_worker_failures —
+    # a real ``DeliberationResult`` always carries the fields (pydantic
+    # defaults), while test doubles may be bare namespaces.
+    answer_degraded = bool(getattr(result, "answer_degraded", False))
+    answer_error = getattr(result, "answer_error", None)
     # Operational truth is never suppressed (DF-CHIMERA-0906-5): in human mode
     # the dropped-worker / degraded-dispatch warnings stay on stdout beside the
     # panel, but in --quiet/--json they move to stderr so stdout carries ONLY
@@ -360,7 +365,22 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
     _print_dispatch_degradation(result, warn_console)
 
     if json_mode:
+        # One parseable payload either way; on a degraded answer the payload's
+        # top-level ``answer_degraded`` / ``answer_error`` markers (added by
+        # ``_print_json``) carry the failure machine-readably.
         _print_json(result)
+    elif answer_degraded:
+        # DF-CHIMERA-V2-71: a degraded answer stage means the "answer" is the
+        # engine-fabricated upstream-failure placeholder (``[stage <id>
+        # (<model>) unavailable: ... set DEEPSEEK_API_KEY ...]``), never a real
+        # deliberation. Nothing goes to stdout in ANY mode: the placeholder
+        # must not ship as the ``--quiet`` answer (the README's scripted
+        # ``ANSWER=$(chimera --quiet ...)`` captured it verbatim with a
+        # success exit code) and must not be boxed as a human-mode answer
+        # panel. The REST surface rejects the identical result with HTTP 502
+        # (api/server); the exit code below mirrors that failure class with
+        # the CLI's existing error exit (the same 2 usage errors use).
+        pass
     elif quiet:
         # Exactly the raw answer + one newline: no panel, no border, no ANSI,
         # no trace — ``chimera --quiet "..." | pbcopy`` gets the answer only.
@@ -370,6 +390,16 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
         if opts.get("verbose"):
             _print_trace(result.trace)
 
+    if answer_degraded:
+        # The honest summary completes the report on stderr (after the
+        # dropped-worker / degraded-dispatch warnings printed above).
+        err_console.print(
+            "[red]error:[/red] deliberation produced no usable answer "
+            f"(answer stage '{result.trace.answer_stage_id}' degraded): "
+            f"{answer_error or 'unknown upstream error'}"
+        )
+        sys.exit(2)
+
 
 def _print_json(result: Any) -> None:
     """Write one JSON object (``answer`` + the COMPLETE trace) to stdout.
@@ -378,10 +408,21 @@ def _print_json(result: Any) -> None:
     ``café``, not ``caf\\u00e9``); click appends exactly one newline, so stdout
     is a single parseable JSON document. ``model_dump(mode="json")`` is the
     full trace serialization — every field the API/web UI sees, not a subset.
+
+    DF-CHIMERA-V2-71: ``answer_degraded`` / ``answer_error`` ride at the TOP
+    level (mirroring the ``DeliberationResult`` fields the REST API turns into
+    HTTP 502) so ``--json`` consumers can detect the "error as answer" run
+    without pattern-matching the answer text. ``false`` / ``null`` on healthy
+    runs — additive keys, never a changed shape for existing payloads.
     """
     payload = {
         "answer": result.answer,
         "trace": result.trace.model_dump(mode="json"),
+        # Defensive reads (matching _deliberate): a real DeliberationResult
+        # always carries both (pydantic defaults); test doubles may be bare
+        # namespaces.
+        "answer_degraded": bool(getattr(result, "answer_degraded", False)),
+        "answer_error": getattr(result, "answer_error", None),
     }
     click.echo(json.dumps(payload, ensure_ascii=False))
 

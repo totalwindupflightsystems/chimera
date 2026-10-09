@@ -249,16 +249,26 @@ def test_mid_dag_aggregator_degradation_warns(tmp_path, monkeypatch) -> None:  #
     assert "worker 'review_merge'" in result.stderr, result.stderr
 
 
-def test_degraded_answer_stage_warns(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """The terminal merge itself timing out is still announced (rc stays 0)."""
+def test_degraded_answer_stage_warns_and_fails(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The terminal merge itself timing out is announced AND fails the run.
+
+    DF-CHIMERA-V2-71 supersedes this test's original "rc stays 0" pin: when the
+    ANSWER stage degrades, the CLI's "answer" is the engine's upstream-failure
+    placeholder, so shipping it with exit 0 handed scripted consumers failure
+    text as the product (the exact shape the REST surface rejects with HTTP
+    502). The run now exits 2 with stdout clean under --quiet, and the
+    dropped-worker warning is still announced on stderr exactly as before.
+    """
     config = _write_config(tmp_path, per_stage_s=0.05)
     _stub_gateway(monkeypatch, _hanging(SONNET))
 
     result = _invoke(config, "--quiet", "-f", "code-review", "review this")
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 2, result.output
+    assert result.stdout == "", result.stdout
     assert "warning:" in result.stderr, result.stderr
     assert "worker 'verdict'" in result.stderr, result.stderr
+    assert "no usable answer" in result.stderr, result.stderr
 
 
 # --------------------------------------------------------------------------- #
