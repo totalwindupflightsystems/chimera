@@ -338,7 +338,15 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
     try:
         result = asyncio.run(engine.deliberate(prompt, opts["formation"], **extra_kwargs))
     except ValueError as exc:
-        console.print(f"[red]error:[/red] {exc}")
+        # DF-CHIMERA-V2-73: usage-class errors render on STDERR, not stdout —
+        # same contract as _validate_formation (DF-CHIMERA-V2-7). The old
+        # stdout print broke the --json/--quiet stdout-purity promise: a
+        # scripted consumer parsing stdout got rich-formatted error text
+        # ahead of (or instead of) the payload. Exit stays 2, the same code
+        # every other usage error in this CLI uses. soft_wrap keeps the
+        # message ONE logical line at any terminal width (CH-GAP-050
+        # one-liner contract), so pipes and logs never see it folded.
+        err_console.print(f"[red]error:[/red] {exc}", soft_wrap=True)
         sys.exit(2)
     # Operational truth is never suppressed (DF-CHIMERA-0906-5): in human mode
     # the dropped-worker / degraded-dispatch warnings stay on stdout beside the
