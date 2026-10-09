@@ -47,4 +47,5 @@ against the live deployment, **not** a description of current behavior.
 - [dogfood/2026-09-25-run16-integration.md](dogfood/2026-09-25-run16-integration.md) — run 16, custom OpenAI-compatible provider seam focus (2026-09-25)
 - [dogfood/2026-09-28-run17-integration.md](dogfood/2026-09-28-run17-integration.md) — run 17, web UI auth friction (2026-09-28)
 - [dogfood/2026-10-01-run18-integration.md](dogfood/2026-10-01-run18-integration.md) — run 18, web UI scripted multi-turn (2026-10-01)
+- [dogfood/2026-10-09-run19-integration.md](dogfood/2026-10-09-run19-integration.md) — run 19, fresh-machine install + CLI honest-path probe (2026-10-09)
 - [dogfood/diagnostics.md](dogfood/diagnostics.md) — build/diagnostic trail behind the 2026-08-03 run

@@ -169,6 +169,10 @@ indent-style = "space"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# DF-CHIMERA-V2-75: pin pytest's `chimera` import to THIS checkout's src/.
+# Without it the main repo's editable install (.venv → /home/kara/chimera-v2/src)
+# shadows a worktree's tree, so a worktree suite silently tests the wrong code.
+pythonpath = ["src"]
 markers = [
     "integration: integration tests (require --run-integration flag and live API keys)",
     "slow: tests that are slow to run",
