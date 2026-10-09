@@ -159,6 +159,12 @@ forget to export `CHIMERA_API_KEY`, `chimera serve` prints a loud `warning:`
 line to stderr naming the missing variable before it binds the port — the
 server still starts, but every authenticated call will return `401`.
 
+The inverse also holds: exporting `CHIMERA_API_KEY` alone does **not** enable
+authentication — the env var only takes effect with `auth.enabled: true` (or
+the `CHIMERA_AUTH_ENABLED` toggle). With auth left disabled, `chimera serve`
+starts fully unauthenticated and prints a loud `warning:` line to stderr
+naming the inert variable before it binds the port.
+
 Clients authenticate with either header:
 
 ```bash
