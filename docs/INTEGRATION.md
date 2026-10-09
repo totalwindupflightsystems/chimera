@@ -109,7 +109,7 @@ Available endpoints once running:
 | `GET` | `/web/` | Web UI with live DAG visualization |
 | `POST` | `/web/sessions` | Create a session (multi-turn, session-scoped deliberation) |
 | `GET` | `/web/sessions/{id}` | Session history: `turn_count` + per-turn prompt, answer, models, tokens, cost |
-| `POST` | `/web/sessions/{id}/chat` | Run a deliberation inside the session; past turns are injected as history |
+| `POST` | `/web/sessions/{id}/chat` | Run a deliberation inside the session (body field: **`prompt`**); past turns are injected as history |
 | `DELETE` | `/web/sessions/{id}` | Delete a session (204 on deleted, 404 on unknown id) |
 | `GET` | `/web/sse/{id}` | Session event stream (Server-Sent Events, `text/event-stream`) |
 
@@ -262,6 +262,37 @@ curl -X POST http://localhost:8765/v1/deliberate \
 
 The response includes a `trace` object; the final answer is in `answer` (or
 `choices[0].message.content` on the OpenAI-compatible endpoint).
+
+### Web sessions — POST /web/sessions/{id}/chat (body field: prompt)
+
+The session chat endpoint runs a deliberation inside an existing session and
+injects past turns as conversation history. Its request-body field for the
+user turn is **`prompt`** (required string) — it is **not** `message`. The
+optional fields match `/v1/deliberate`: `formation` (default `"auto"`),
+`allowed_models`, `dispatcher_model`, `aggregator_model`.
+
+Omitting `prompt` — including the natural guess `{"message": ...}` — is
+rejected with HTTP **422** and FastAPI's validation detail:
+
+```json
+{"detail": [{"type": "missing", "loc": ["body", "prompt"], "msg": "Field required", "input": {"message": "..."}}]}
+```
+
+Minimal working example (create the session first; both routes require the
+API key when `auth.enabled: true`, and the `/web` surface needs the `web`
+extra installed — see §2 and `docs/SECURITY.md`):
+
+```bash
+SID=$(curl -s -X POST http://localhost:8765/web/sessions \
+  -H "Authorization: Bearer ***" | python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])')
+
+curl -X POST "http://localhost:8765/web/sessions/$SID/chat" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ***" \
+  -d '{"prompt": "Summarize our conversation so far.", "formation": "simple"}'
+```
+
+The response carries `answer`, `trace`, `turn_number`, and `mermaid`.
 
 ### Custom DAGs
 
