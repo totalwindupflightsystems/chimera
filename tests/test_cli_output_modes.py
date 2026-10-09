@@ -291,8 +291,10 @@ def test_json_implicit_prompt_writes_one_object(config_file, monkeypatch) -> Non
     assert result.stdout.endswith("\n")
 
     payload = json.loads(result.stdout)
-    assert set(payload) == {"answer", "trace"}
+    assert set(payload) == {"answer", "trace", "answer_degraded", "answer_error"}
     assert payload["answer"] == "42"
+    assert payload["answer_degraded"] is False  # DF-CHIMERA-V2-71 markers on healthy runs
+    assert payload["answer_error"] is None
     assert payload["trace"] == result_obj.trace.model_dump(mode="json")
     # The trace is COMPLETE, not a subset: every declared field is present.
     assert set(payload["trace"]) == set(DeliberationTrace.model_fields)

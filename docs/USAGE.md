@@ -83,21 +83,34 @@ Streams and exit codes:
 | Situation | stdout | stderr | exit |
 |---|---|---|---|
 | `--quiet`, healthy run | the answer + `\n` | logs only | 0 |
-| `--quiet`, dropped worker or degraded dispatch | the answer + `\n` | `warning: ...` lines | 0 |
+| `--quiet`, dropped worker or degraded dispatch (answer stage healthy) | the answer + `\n` | `warning: ...` lines | 0 |
+| `--quiet`, degraded ANSWER stage (no usable answer) | (empty — the error text never ships as the answer) | `warning: ...` lines + `error: ... no usable answer ...` | 2 |
 | `--json`, healthy run | one JSON object + `\n` | logs only | 0 |
-| `--json`, dropped worker or degraded dispatch | one JSON object + `\n` | `warning: ...` lines | 0 |
+| `--json`, dropped worker or degraded dispatch (answer stage healthy) | one JSON object + `\n` | `warning: ...` lines | 0 |
+| `--json`, degraded ANSWER stage (no usable answer) | one JSON object + `\n` with `"answer_degraded": true` | `warning: ...` lines + `error: ... no usable answer ...` | 2 |
 | `--quiet --json` together | (empty) | `Error: --quiet and --json are mutually exclusive` | 2 |
 | unknown `--formation` value | (empty) | `error: Unknown formation: <value>` + the available names | 2 |
 | missing `chimera.yaml` | `error: ...` one-liner | logs only | 2 |
 
 Notes:
 
+- A **degraded answer stage** (DF-CHIMERA-V2-71) is the one degradation that
+  fails the run: the engine fabricates the "answer" from the upstream failure
+  (`[stage <id> (<model>) unavailable: ...]` — the no-credentials shape, among
+  others), so the CLI refuses to ship it as the product. The REST surface
+  rejects the identical result with HTTP 502; the CLI mirrors that with exit
+  **2**, an empty stdout under `--quiet` (so `ANSWER=$(chimera --quiet ...)`
+  can never capture the error text as the answer), and the honest
+  `error: deliberation produced no usable answer ...` line on stderr. Under
+  `--json` the parseable object still reaches stdout with the top-level
+  `"answer_degraded": true` and `"answer_error"` markers.
 - Operational truth is never hidden: the dropped-worker and
   dispatch-degradation/repair warnings that human mode prints beside the
   panel are written to **stderr** in the machine modes (the JSON's
   `trace.worker_failures` / `trace.dispatch_note` /
   `trace.dispatch_fallback_reason` / `trace.dispatch_repairs` carry the same
-  facts machine-readably).
+  facts machine-readably, and the top-level `answer_degraded` /
+  `answer_error` carry the degraded-answer failure).
 - A **dropped worker** is any stage — worker, aggregator, merge or audit — that
   ended degraded (a per-stage timeout, a gateway/connection error, an exhausted
   budget) while the deliberation still produced an answer. The line names the
