@@ -38,7 +38,7 @@ from chimera import __version__
 from chimera.api.dependencies import require_api_key
 from chimera.api.rate_limit import RateLimiter
 from chimera.config import ChimeraConfig, load_config, provider_credential_resolved
-from chimera.engine import DeliberationTrace, Engine
+from chimera.engine import DeliberationTrace, Engine, WorkerFailure
 from chimera.gateway import LiteLLMGateway, prewarm_litellm_background
 from chimera.observability import configure_logging
 
@@ -440,6 +440,19 @@ class ChatCompletionResponse(BaseModel):
     byte-identical. Chimera-specific; OpenAI-strict clients ignore unknown
     response fields. The choice's ``finish_reason`` carries the coarser
     ``"length"`` signal (DF-CHIMERA-V2-54); this field names the stages."""
+    chimera_worker_failures: list[WorkerFailure] | None = None
+    """Present ONLY when at least one stage failed hard upstream (gateway
+    failure, timeout, budget exhaustion) while the deliberation still
+    returned an answer without it — one ``{stage_id, model, error}`` entry
+    per dropped stage, mirroring ``trace.worker_failures``
+    (DF-CHIMERA-V2-75). The dropped worker's output is missing from the merge
+    by construction, yet the response reads as a normal 200 with
+    ``finish_reason="stop"``; this marker is how a client tells such a
+    degraded answer from an intact one. Absent (not null) when every stage
+    succeeded, so clean responses stay byte-identical. Semantics intentionally
+    DISJOINT from ``chimera_degraded_reasons`` (DF-CHIMERA-V2-55), which stays
+    token-limit truncation only. Chimera-specific; OpenAI-strict clients
+    ignore unknown response fields."""
 
 
 def _compat_format_negotiation(trace: DeliberationTrace) -> dict[str, Any] | None:
@@ -1264,6 +1277,12 @@ def _register_routes(app: FastAPI) -> None:
                 # garbage. ``or None`` keeps the field absent on clean runs
                 # (response_model_exclude_none), mirroring the field above.
                 chimera_degraded_reasons=trace.degraded_reasons or None,
+                # DF-CHIMERA-V2-75: name the stages that failed hard upstream
+                # (dropped workers) — a 200 with ``finish_reason="stop"``
+                # whose merge is silently missing a worker's output.
+                # ``or None`` keeps the field absent on clean runs, and the
+                # entry shape mirrors ``trace.worker_failures`` exactly.
+                chimera_worker_failures=list(trace.worker_failures) or None,
             )
         finally:
             queue.release()

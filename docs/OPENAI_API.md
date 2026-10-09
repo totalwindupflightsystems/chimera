@@ -168,6 +168,55 @@ OpenAI-strict clients ignore the unknown field; SDK wrappers that hide it
 still expose the coarser `finish_reason: "length"` signal on the choice.
 `POST /v1/deliberate` carries the same list as `trace.degraded_reasons`.
 
+### `chimera_worker_failures`: WHICH stages were dropped
+
+Truncation is not the only silent degradation. A worker stage that fails
+hard upstream — gateway error, per-stage timeout, budget exhaustion — is
+dropped from the merge, and the request still returns a normal
+`HTTP 200` with `finish_reason: "stop"`: the answer reads as clean prose
+while being built over one fewer contribution than the dispatcher designed.
+`/v1/deliberate` exposes the truth as `trace.worker_failures` (and the CLI
+prints a dropped-worker warning); the chat surface carries the same list as
+`chimera_worker_failures` — one `{"stage_id", "model", "error"}` entry per
+dropped stage. When every stage succeeded the field is **absent** — clean
+responses stay byte-identical:
+
+```json
+{
+  "id": "chatcmpl-...",
+  "object": "chat.completion",
+  "choices": [ ... ],
+  "usage": { ... },
+  "chimera_worker_failures": [
+    {
+      "stage_id": "worker_1",
+      "model": "deepseek/deepseek-v4-flash",
+      "error": "timed out after 30s"
+    }
+  ]
+}
+```
+
+This marker is deliberately **disjoint** from `chimera_degraded_reasons`
+above, whose semantics are unchanged: `chimera_degraded_reasons` lists
+token-limit truncations (the stage ANSWERED, but cut off), while
+`chimera_worker_failures` lists hard failures (the stage never answered at
+all). A given stage appears in at most one of the two; a run can carry both
+markers when one worker was capped and another died. The same client check
+applies:
+
+```python
+resp = client.chat.completions.create(...)
+body = resp.model_dump() if hasattr(resp, "model_dump") else resp
+if body.get("chimera_worker_failures"):
+    # At least one stage died upstream and its contribution is missing from
+    # the merged answer. Retry, or treat the answer as partial.
+    ...
+```
+
+OpenAI-strict clients ignore the unknown field. `POST /v1/deliberate`
+carries the same entries as `trace.worker_failures`.
+
 The following standard OpenAI fields are accepted for drop-in compatibility
 but are **documented no-ops** (never errors, never silently misapplied):
 
