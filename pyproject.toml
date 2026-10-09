@@ -169,6 +169,12 @@ indent-style = "space"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# DF-CHIMERA-V2-73: tests must exercise THIS checkout's src/chimera, never the
+# venv's editable install (its .pth points at whatever tree installed it — a
+# worktree running tests against the MAIN clone's code silently passes/fails
+# on the wrong source). ``src`` on sys.path[0] (pytest inserts ini pythonpath
+# BEFORE site-packages) makes the local tree win deterministically.
+pythonpath = ["src"]
 markers = [
     "integration: integration tests (require --run-integration flag and live API keys)",
     "slow: tests that are slow to run",

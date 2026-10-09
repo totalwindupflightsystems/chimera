@@ -1112,3 +1112,100 @@ def test_cli_version_flag() -> None:
     result = runner.invoke(main, ["--version"])
     assert result.exit_code == 0, result.output
     assert __version__ in result.output
+
+
+# ---------------------------------------------------------------------------
+# DF-CHIMERA-V2-73: --dag without --allow-custom-dag is a usage error
+# ---------------------------------------------------------------------------
+
+
+def _dag_without_flag_args(config_file, dag_payload: str) -> list[str]:  # type: ignore[no-untyped-def]
+    """CLI argv shape for a custom DAG requested WITHOUT --allow-custom-dag."""
+    return ["-c", str(config_file), "--dag", dag_payload, "say hi"]
+
+
+_SIMPLE_DAG_JSON = json.dumps({"stages": [], "edges": []})
+
+
+def _stub_engine_rejecting_dag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Engine stub that reproduces the engine's REAL reject order exactly.
+
+    ``Engine.__init__`` runs BEFORE the ValueError path (main._deliberate
+    constructs it, then ``engine.deliberate`` raises from
+    ``_resolve_custom_dag``), so the stub's __init__ must succeed and the
+    rejection must come from deliberate().
+    """
+
+    class RejectingEngine:
+        def __init__(self, *a, **k):  # noqa: ANN002, ANN003
+            pass
+
+        async def deliberate(self, prompt, formation, **kwargs):  # noqa: ANN001, ANN003
+            if kwargs.get("dag") is not None and not kwargs.get("allow_custom_dag"):
+                raise ValueError("Custom DAG requires allow_custom_dag=True")
+            raise AssertionError("deliberate must not proceed past the DAG guard")
+
+    monkeypatch.setattr("chimera.cli.main.Engine", RejectingEngine)
+    monkeypatch.setattr("chimera.cli.main.LiteLLMGateway", lambda *a, **k: None)
+
+
+def test_cli_dag_without_allow_flag_exits_2(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """``--dag`` without ``--allow-custom-dag`` exits 2 — a usage error, not success.
+
+    The engine raises ``ValueError("Custom DAG requires allow_custom_dag=True")``
+    (engine._resolve_custom_dag) before any provider call; the CLI renders the
+    message and must exit with the same code every other usage error uses
+    (2) — never 0. DF-CHIMERA-V2-73's fresh-box observation (exit 0 on wheel
+    0.2.7) could not be reproduced on this tree; this test pins the correct
+    contract so the guard cannot regress.
+    """
+    _stub_engine_rejecting_dag(monkeypatch)
+    runner = CliRunner()
+    result = runner.invoke(main, _dag_without_flag_args(config_file, _SIMPLE_DAG_JSON))
+    assert result.exit_code == 2, result.output
+    assert "allow_custom_dag" in result.output
+
+
+def test_cli_dag_without_allow_flag_json_mode_stdout_pure(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """In --json mode the rejected-DAG error must NOT touch stdout.
+
+    DF-CHIMERA-V2-73's live finding on this path: the ValueError was rendered
+    with the stdout console, so stdout carried rich-formatted error text —
+    ``--json``/``--quiet`` promise stdout carries ONLY the payload
+    (DF-CHIMERA-0906-5), and ``chimera --json "…" > out.json`` is the
+    documented scripted-consumer shape the purity rule exists for. The
+    message goes to stderr with the house ``error:`` prefix, exit 2.
+
+    click >= 8.2 captures stdout and stderr separately (``Result.stdout`` /
+    ``Result.stderr``); the merged ``Result.output`` interleaves both.
+    """
+    _stub_engine_rejecting_dag(monkeypatch)
+    runner = CliRunner()
+    result = runner.invoke(main, ["--json", *_dag_without_flag_args(config_file, _SIMPLE_DAG_JSON)])
+    assert result.exit_code == 2, result.output
+    assert "allow_custom_dag" in result.stderr
+    assert result.stdout.strip() == "", result.stdout
+
+
+def test_cli_value_error_goes_to_stderr(config_file, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The shared ValueError handler renders on stderr (stdout purity holds).
+
+    This is the SAME handler the ``--dag``-without-flag error flows through
+    (engine._resolve_custom_dag → ValueError → _deliberate's except clause);
+    pinned for every ValueError-class failure, not just the DAG one.
+    """
+
+    class StubEngine:
+        def __init__(self, *a, **k):  # noqa: ANN002, ANN003
+            pass
+
+        async def deliberate(self, prompt, formation, **kwargs):  # noqa: ANN001, ANN003
+            raise ValueError("deliberation exploded")
+
+    monkeypatch.setattr("chimera.cli.main.Engine", StubEngine)
+    monkeypatch.setattr("chimera.cli.main.LiteLLMGateway", lambda *a, **k: None)
+    runner = CliRunner()
+    result = runner.invoke(main, ["--json", "-c", str(config_file), "fail prompt"])
+    assert result.exit_code == 2
+    assert "deliberation exploded" in result.stderr
+    assert result.stdout.strip() == "", result.stdout
