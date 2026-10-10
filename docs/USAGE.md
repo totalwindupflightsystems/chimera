@@ -261,6 +261,95 @@ Then from Hermes chat:
 > Use chimera to compare React and Svelte for our dashboard
 ```
 
+### Advanced `chimera_deliberate` arguments
+
+Beyond `prompt` and `formation`, the `chimera_deliberate` MCP tool accepts six
+optional arguments for per-run control. All are additive: omit them and the run
+is identical to a plain `prompt` + `formation` call, and the success payload
+shape never changes (`{"answer": ..., "trace": {...}}`).
+
+| Argument | Type | Default | Activates when |
+|---|---|---|---|
+| `stage_models` | `dict[str, str] \| null` | `null` | non-null — forces the model per stage id |
+| `dag` | `dict \| null` | `null` | non-null — replaces formation selection entirely |
+| `allow_custom_dag` | `bool` | `false` | `true` — gates `dag` (required for `dag` to be accepted) |
+| `progressive` | `bool` | `false` | `true` — progressive prompting ON for every worker stage |
+| `wait_messages` | `list[str] \| null` | `null` | non-null — context messages fed to workers one at a time (itself enables progressive prompting) |
+| `trigger` | `str \| null` | `null` | non-empty, and only when `wait_messages` is set — replaces the final "produce the output" message |
+
+#### `stage_models` — per-stage model overrides
+
+Maps a stage id to the model that must run it, overriding both the formation's
+assignment and the dispatcher's choices. Applied on every run when non-null:
+
+```json
+{"stage_models": {"worker_1": "deepseek/deepseek-v4-flash", "aggregator": "deepseek/deepseek-v4-pro"}}
+```
+
+An unknown stage id, an unknown model, or a model disabled in config is
+rejected with an error naming the valid stage ids — a typoed id never silently
+drops its override behind a normal answer (the same rule the CLI enforces with
+exit 2). A credential-blocked model is handled differently: it is swapped for
+a credentialed fallback instead of failing the run (see
+[Blocked models](#blocked-models-a-present-but-invalid-provider-key)). The
+same field exists on the CLI (`--stage-models`) and the REST API.
+
+#### `dag` + `allow_custom_dag` — client-defined DAG
+
+`dag` is a full pipeline definition (`stages` + `edges` — the same shape as
+the custom formations in `chimera.yaml`, e.g. the Code Review Pipeline under
+[Common Patterns](#common-patterns)). Supplying it REPLACES formation
+selection: the dispatcher is not consulted for a design and the run is exempt
+from the unknown-formation check.
+
+Because a client-supplied DAG executes the models it names directly, it is
+gated: `dag` without `allow_custom_dag=true` fails the tool call
+(`Custom DAG requires allow_custom_dag=True`) before any provider call, and
+DAG validation failures (unknown model, cycle, no worker/aggregator stage)
+fail the run before billing. The same pair exists on the CLI (`--dag` +
+`--allow-custom-dag`) and the REST API.
+
+#### `progressive`, `wait_messages`, `trigger` — progressive prompting (MCP-only)
+
+Progressive prompting feeds a worker stage its context piece-by-piece: each
+context message is sent and answered (the per-message responses are
+discarded), then one final trigger message asks for the real output.
+
+- `wait_messages` — the list of context strings. The same list is applied to
+  every worker stage of the run. Supplying it is by itself sufficient to
+  enable progressive prompting.
+- `progressive` — turns progressive prompting ON for every worker stage of the
+  run, stages inherited from a preset formation included, whether or not
+  `wait_messages` is given. It never turns progressive prompting OFF for a
+  stage whose config/DAG declared it. On its own (no `wait_messages`) there is
+  nothing extra to feed, so the stage prompt is sent once, exactly as in a
+  non-progressive run — `progressive: true` alone adds no extra provider
+  calls and no cost (CH-GAP-058 fixed the older behavior where the flag was a
+  silent no-op).
+- `trigger` — replaces the final message that requests the real output. It is
+  used only when `wait_messages` is set. When `wait_messages` is given without
+  a `trigger`, the stage's main task prompt itself serves as the trigger.
+
+Progressive settings apply to worker stages only — aggregator, merge and audit
+stages are never progressive. Unlike `stage_models` / `dag` /
+`allow_custom_dag`, these three have NO CLI flag and NO REST field: the MCP
+tool is the only surface that exposes them.
+
+Example — feed background material to the workers, then request the verdict:
+
+```json
+{
+  "prompt": "Decide: do we migrate the auth service to the new IdP?",
+  "formation": "auto",
+  "progressive": true,
+  "wait_messages": [
+    "Context: the current IdP contract expires in 90 days.",
+    "Context: the new IdP supports SCIM but not SAML."
+  ],
+  "trigger": "Given the context above, give your recommendation with reasoning."
+}
+```
+
 ## Common Patterns
 
 ### Budget-First (default)
