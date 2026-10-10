@@ -2147,3 +2147,12 @@ tasks:
   status: complete
   created_at: '2026-10-10T00:00:15.997122+00:00'
   completed_at: '2026-10-10T00:00:16.364543+00:00'
+- id: SUP-DEPS-20261010
+  title: Re-review 20 outdated Python deps (2026-10-10 scan)
+  criteria:
+  - All 20 packages classified against pyproject/uv.lock constraints; only compatible
+    justified upgrades applied; uv lock --check, pip check, and full test suite pass;
+    blocked packages recorded with actual constraint
+  status: complete
+  created_at: '2026-10-10T07:31:31.797148+00:00'
+  completed_at: '2026-10-10T07:43:03.621857+00:00'
