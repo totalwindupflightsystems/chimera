@@ -300,6 +300,103 @@ curl -X POST "http://localhost:8765/web/sessions/$SID/chat" \
 
 The response carries `answer`, `trace`, `turn_number`, and `mermaid`.
 
+### Server-Sent Events — GET /web/sse/{id} (replay/live protocol)
+
+The web UI consumes deliberations over Server-Sent Events: it opens
+`GET /web/sse/{session_id}` as an `EventSource` and receives real-time frames
+while a deliberation runs. Third-party integrators can consume the same
+stream. Response headers: `Content-Type: text/event-stream`,
+`Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no`.
+
+Event names, in the order a turn emits them:
+
+| Event | When | `data` payload (JSON object) |
+|---|---|---|
+| `deliberation_started` | the chat handler accepted the prompt | `prompt` |
+| `stage_started` | a worker/aggregator stage began executing (mid-run) | `stage`, `kind`, `model` |
+| `stage_completed` | a stage finished (mid-run) | `stage`, `kind`, `model`, `tokens`, `latency_ms`, `cost`, `degraded`, `iteration` |
+| `dag_designed` | dispatcher finished, DAG is ready | `mermaid`, `formation`, `source`, `stage_count` |
+| `deliberation_done` | final answer + full trace summary (terminal for a turn) | `answer` + trace summary fields |
+| `error` | fatal for this stream (currently reason `unknown_session`) | `reason`, `session_id` |
+| `replay_done` | **terminal marker**: the server closed this stream on purpose | `reason` (present on the unknown-session variant) |
+
+Each frame is standard SSE wire format — optional `id:` / `event:` lines, one
+or more `data:` lines carrying a single JSON object, optional `retry:`, and a
+blank line as the frame terminator. Parse `data` as JSON; don't string-match.
+
+```
+event: stage_completed
+data: {"stage": "worker-1", "kind": "worker", "model": "zai-coding-plan/glm-5.2", "tokens": 482, "latency_ms": 3211, "cost": 0.0004, "degraded": false, "iteration": 1}
+
+```
+
+**Replay vs live — the close policy.** Without a flag, a stream for a session
+that has finished at least one turn **replays** the stored events of the last
+turn — `deliberation_started` → `dag_designed` → `deliberation_done` (the
+mid-run `stage_started` / `stage_completed` frames are not stored, so they do
+not appear in a replay) — then emits the terminal `replay_done` marker and
+closes. The replay is idempotent: a reload, or a retry by a client that missed
+the marker, sees the same frames again in milliseconds. The marker is the
+client's signal that the close was *intentional* — a browser cannot tell
+"server closed on purpose" from "connection dropped", so treat
+`replay_done` as "go idle, stop reconnecting" and everything else as a
+retryable drop. The marker frame also carries `retry: 60000`, so even a client
+that does not understand the marker backs off from the browser's default 3 s
+reconnect to a minute. A session with **no turns yet** has nothing to replay: the
+stream stays open until either the next chat turn's live events arrive or the
+idle timeout closes it silently (30 s before the first event, 120 s
+afterwards) — no marker on that path, so your reconnect logic stays armed.
+
+**Live mode** (`?live=1`). Add the query flag when your client is waiting on
+an in-flight or imminent turn: the replay is skipped entirely and the stream
+stays open to carry that turn's real-time events — without it, a client on a
+session with history sits in a replay/close/auto-redial cycle and never
+receives the mid-run `stage_started` / `stage_completed` frames. The chat
+handler closes all of the session's subscribers right after
+`deliberation_done`, which ends the stream cleanly; the idle timeout remains
+the backstop if no turn ever arrives. The flag is parsed tolerantly — the
+truthy values are `1`, `true`, `yes`, `on` (case-insensitive); any other
+value, including garbage, is treated as false rather than rejected with a 422,
+because an `EventSource` reports a validation error the same way it reports a
+dropped connection and would retry forever. The default no-flag behavior
+(replay, marker, close) is unchanged for page loads.
+
+**Unknown sessions are streams, not 404s.** `GET /web/sse/{unknown-id}`
+answers HTTP **200** with a two-frame event stream —
+`event: error` (`{"reason": "unknown_session", "session_id": "..."}`) followed
+by `replay_done` — then closes. A non-200 status surfaces in `EventSource` as
+an error indistinguishable from a drop, which would trigger infinite
+reconnection; the `error` event is what tells your client to drop the dead
+session id instead of treating it as a finished replay. Non-browser callers
+(curl, proxies) can read the same distinction from the
+`X-Chimera-Session-Status: unknown` response header.
+
+**Auth — the one route that accepts `?api_key=`.** An `EventSource` cannot set
+request headers, so the SSE route — and only this route — additionally accepts
+the API key as `?api_key=<key>`, verified by the same check as the usual
+`Authorization: Bearer ***` / `X-API-Key: ***` headers. The tradeoff (accepted
+for the local web UI): a key in the query string can be captured by server or
+proxy access logs, which is why every other `/web` route stays header-only — a
+state-changing call made with `?api_key=` answers **401**. With auth disabled
+(`auth.enabled: false`) no key is read anywhere and the dial is unchanged.
+
+```javascript
+// Live stream for the turn you are about to send (replay skipped):
+const es = new EventSource(`/web/sse/${sessionId}?live=1&api_key=${apiKey}`);
+es.addEventListener("replay_done", () => es.close());      // intentional close
+es.addEventListener("deliberation_done", (e) => {
+  const data = JSON.parse(e.data);                          // final answer + trace
+  es.close();
+});
+es.addEventListener("error", (e) => {
+  // Distinguishes the server's named error frame from a transport drop:
+  if (e.data && JSON.parse(e.data).reason === "unknown_session") {
+    es.close();                                             // discard the session id
+  }
+  // no e.data => transport error; EventSource retries on its own
+});
+```
+
 ### Custom DAGs
 
 For full control of the deliberation structure, send your own DAG:
