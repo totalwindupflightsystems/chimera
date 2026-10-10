@@ -669,6 +669,28 @@ Requests beyond `max_concurrent` wait in the queue; once the queue itself is
 full (`max_queue_depth` waiting), further requests are refused rather than
 buffered, so load sheds at the edge instead of growing memory unboundedly.
 
+### Queue feedback
+
+A queued request used to be silent: under concurrency, `POST /v1/deliberate`
+(and the `POST /v1/chat/completions` drop-in, which shares the same queue)
+returned no per-request signal, so four simultaneous deliberations came back
+with 18.9-49.4 s of wall-time variance and the client could not tell it had
+waited behind other work at all.
+
+Every deliberation response now carries:
+
+| Header | Value |
+|---|---|
+| `X-Chimera-Queue-Position` | The request's **1-based arrival rank**: how many requests, including itself, were inside the queue when it entered. `1` means nothing else was queued at entry. |
+
+The rank is an ordering signal, **not** a wait-time estimate and **not** a
+promise of a slot. With the default `max_concurrent: 10`, four simultaneous
+requests all enter immediately (ranks `1`-`4`) and none of them waits on this
+queue — their wall-time spread is model/provider bound upstream. A rank above
+`max_concurrent` is the one that means the request genuinely parked behind
+busy slots. The header is absent on the `503` refusal path, because a refused
+request never entered the queue.
+
 ---
 
 ## `auth`

@@ -26,6 +26,7 @@ import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -100,12 +101,26 @@ class _NoUsableAnswerError(Exception):
 # --------------------------------------------------------------------------- #
 
 
+#: DF-CHIMERA-V2-77: response header reporting a request's queue position.
+#: Under concurrency, ``POST /v1/deliberate`` requests waited on this queue with
+#: no per-request signal to the caller (four simultaneous deliberations returned
+#: 18.9-49.4 s of wall-time variance and the client could not tell it had queued
+#: at all). The value is the request's 1-based arrival rank — how many requests,
+#: including itself, were inside the queue when it entered — not a wait-time
+#: estimate. See docs/CONFIG.md § `queue`.
+QUEUE_POSITION_HEADER = "X-Chimera-Queue-Position"
+
+
 class RequestQueue:
     """In-memory request queue with semaphore-based concurrency limiting (F5).
 
     * max_concurrent: maximum simultaneously executing requests (default 10).
     * max_queue_depth: maximum waiting requests (default 100).
     * When full, returns HTTP 503 with Retry-After header.
+
+    Every request is also tracked for queue feedback (DF-CHIMERA-V2-77): it is
+    counted as *inside the queue* from ``acquire()`` until ``release()``, and
+    the count at entry is its 1-based arrival rank.
     """
 
     def __init__(self, max_concurrent: int = 10, max_queue_depth: int = 100) -> None:
@@ -113,35 +128,77 @@ class RequestQueue:
         self._max_queue_depth = max_queue_depth
         self._current_waiting = 0
         self._lock = asyncio.Lock()
+        # DF-CHIMERA-V2-77: requests currently inside the queue — waiting for a
+        # slot plus executing. Incremented on entry, decremented on exit; its
+        # value at entry is the request's arrival rank. The rank is published
+        # per request through ``_position`` so concurrent requests never read
+        # each other's value.
+        self._queued = 0
+        self._position: ContextVar[int] = ContextVar("chimera_queue_position", default=0)
         # Stats
         self.total_queued: int = 0
         self.total_rejected: int = 0
         self.total_completed: int = 0
 
     async def acquire(self) -> bool:
-        """Try to acquire a slot. Returns False if queue is full (503)."""
+        """Try to acquire a slot. Returns False if queue is full (503).
+
+        DF-CHIMERA-V2-77: on success the request's 1-based arrival rank is
+        published for the calling task and readable via
+        :attr:`position_of_current_request` — for the race-free per-request
+        read the caller performs right after this await.
+        """
         async with self._lock:
             if self._current_waiting >= self._max_queue_depth:
                 self.total_rejected += 1
                 return False
             self._current_waiting += 1
             self.total_queued += 1
+            self._queued += 1
+            position = self._queued
+
+        # Publish the rank into this request's own async context. A ContextVar
+        # (not an instance attribute) is what keeps two concurrent requests from
+        # reading the same slot: a value set while awaiting a coroutine is
+        # visible to its caller because awaiting runs in the caller's context.
+        self._position.set(position)
 
         try:
             await self._semaphore.acquire()
             return True
+        except BaseException:
+            # Cancelled/aborted while waiting: the request never took a slot, so
+            # it must not keep counting as queued (its ``release()`` never runs).
+            async with self._lock:
+                self._queued -= 1
+            raise
         finally:
             async with self._lock:
                 self._current_waiting -= 1
 
     def release(self) -> None:
-        """Release a concurrency slot."""
+        """Release a concurrency slot and leave the queue."""
         self.total_completed += 1
         self._semaphore.release()
+        self._queued -= 1
 
     @property
     def current_waiting(self) -> int:
         return self._current_waiting
+
+    @property
+    def current_queued(self) -> int:
+        """Requests inside the queue right now (waiting + executing)."""
+        return self._queued
+
+    @property
+    def position_of_current_request(self) -> int:
+        """1-based arrival rank recorded by this task's last successful acquire.
+
+        ``0`` before any acquire in the current task context, and on the
+        rejection path, where no rank is assigned.
+        """
+        return self._position.get()
 
     @property
     def max_queue_depth(self) -> int:
@@ -1080,6 +1137,12 @@ def _register_routes(app: FastAPI) -> None:
                 headers={"Retry-After": "5"},
             )
 
+        # DF-CHIMERA-V2-77: tell the client where it sat in the queue. The value
+        # is this request's 1-based arrival rank (1 = nothing else was in the
+        # queue when it entered); it is not a wait-time estimate. Set on the
+        # injected Response, so it rides every success return below.
+        response.headers[QUEUE_POSITION_HEADER] = str(queue.position_of_current_request)
+
         try:
             # CHIMERA-V2-REVIEW-05: idempotency. With no key the path is
             # byte-identical to before. With a key, a cached success replays
@@ -1117,6 +1180,7 @@ def _register_routes(app: FastAPI) -> None:
         request: Request,
         body: ChatCompletionRequest,
         api_key: Annotated[str, Depends(require_api_key)],
+        response: Response,
     ) -> Response | ChatCompletionResponse:
         # F2: Rate limiting
         _check_rate_limit(request, api_key)
@@ -1130,6 +1194,10 @@ def _register_routes(app: FastAPI) -> None:
                 detail="Server busy — queue full. Retry later.",
                 headers={"Retry-After": "5"},
             )
+
+        # DF-CHIMERA-V2-77: same queue feedback as /v1/deliberate — the OpenAI
+        # drop-in shares this queue, so it reports the same arrival rank.
+        response.headers[QUEUE_POSITION_HEADER] = str(queue.position_of_current_request)
 
         try:
             engine: Engine = request.app.state.engine
