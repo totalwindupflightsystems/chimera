@@ -44,3 +44,4 @@ namespaces/
 # read by default). Class rule, not a filename: other install-local state
 # files may join this directory later.
 .chimera/
+.coding-hermes/board/.lock
