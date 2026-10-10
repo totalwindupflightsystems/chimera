@@ -1,0 +1,12 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-10-18-18-24",
+  "wave_id": "wave-DOC-2026-10-10-18-18-24",
+  "tasks": ["DOC-8", "DOC-9", "DOC-10", "DOC-11"],
+  "workers": [
+    {"task": "DOC-8", "worktree": "/home/kara/worktrees/chimera-v2-DOC-8", "branch": "wt/DOC-8", "model": "glm-5.3-flash", "provider": "zai-glm-default"},
+    {"task": "DOC-9", "worktree": "/home/kara/worktrees/chimera-v2-DOC-9", "branch": "wt/DOC-9", "model": "glm-5.3-flash", "provider": "zai-glm-default"},
+    {"task": "DOC-10", "worktree": "/home/kara/worktrees/chimera-v2-DOC-10", "branch": "wt/DOC-10", "model": "glm-5.3-flash", "provider": "zai-glm-default"},
+    {"task": "DOC-11", "worktree": "/home/kara/worktrees/chimera-v2-DOC-11", "branch": "wt/DOC-11", "model": "glm-5.3-flash", "provider": "zai-glm-default"}
+  ],
+  "created_at": "2026-10-10T18:18:24-05:00"
+}
