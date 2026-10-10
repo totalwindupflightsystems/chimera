@@ -617,6 +617,7 @@ and full response payloads in logs.
 |---|---|---|
 | `host` | `0.0.0.0` | Bind address |
 | `port` | `8765` | Listen port |
+| `litellm_prewarm` | `true` | Fire a non-blocking LiteLLM warm-up when the API server starts (CHIMERA-V2-REVIEW-04). The first deliberation on a cold process pays a one-off LiteLLM initialization cost inside its dispatch stage (~2.6s measured; ~1.5s of it is the lazy `import litellm`). With the default `true`, the server's lifespan schedules that same one-time initialization at startup in the background, so the first real request arrives on a warm module. The warm-up runs offline (an instant `mock_response` completion — no network, no credentials) and never delays startup or raises into the app. Set to `false` to restore exact cold-start behaviour: no startup warm-up, and the first deliberation pays the initialization cost itself. |
 
 ---
 
