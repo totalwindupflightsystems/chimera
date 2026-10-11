@@ -2156,3 +2156,12 @@ tasks:
   status: complete
   created_at: '2026-10-10T07:31:31.797148+00:00'
   completed_at: '2026-10-10T07:43:03.621857+00:00'
+- id: SUP-DEPS-20261010-CHIMERA
+  title: 'Dep refresh: bump aiohttp+platformdirs (2 safe minor bumps from 11-outdated
+    scan)'
+  criteria:
+  - uv lock --check exit 0; pip check clean; full suite green; bound-blocked packages
+    unchanged
+  status: complete
+  created_at: '2026-10-11T04:36:06.247726+00:00'
+  completed_at: '2026-10-11T04:49:14.455481+00:00'
