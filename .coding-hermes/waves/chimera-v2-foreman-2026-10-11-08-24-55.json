@@ -1,7 +1,9 @@
 {
   "tick_id": "chimera-v2-foreman-2026-10-11-08-24-55",
   "wave_budget": 4,
-  "status": "dispatching",
+  "status": "recovered",
+  "finished_at": "2026-10-11T10:07:04-05:00",
+  "recovery_note": "Recovery verified both worker outputs were already landed before this tick: SUP-DEPS-20261010-CHIMERA content commit 6a6a4c7 merged as a36dcad; QA-CHIMERA-V2-42 was correctly re-homed to the ~/.hermes harness repository at commit 29fe2535 and pushed as origin/wt/mon-tick-2243. Both chimera-v2 board rows are complete with closure evidence, no recovery merge was possible because the recorded wt branches and worktrees no longer exist, and main/origin/main/github/main are all 150c086. The GitReins verdict artifacts on chimera-v2 are degraded empty-index artifacts, not independent passing judgments; the recorded worker gates and CI success are preserved on the rows.",
   "workers": [
     {
       "task_id": "QA-CHIMERA-V2-42",
