@@ -1,0 +1,25 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-11-08-24-55",
+  "wave_budget": 4,
+  "status": "dispatching",
+  "workers": [
+    {
+      "task_id": "QA-CHIMERA-V2-42",
+      "worktree": "/home/kara/worktrees/chimera-v2-QA-CHIMERA-V2-42",
+      "branch": "wt/QA-CHIMERA-V2-42",
+      "base_sha": "47140ef",
+      "brief_path": "/tmp/chimera-v2-foreman-2026-10-11-08-24-55_QA-CHIMERA-V2-42.txt",
+      "gitreins_task": "QA-CHIMERA-V2-42",
+      "dispatched_at": null
+    },
+    {
+      "task_id": "SUP-DEPS-20261010-CHIMERA",
+      "worktree": "/home/kara/worktrees/chimera-v2-SUP-DEPS-20261010-CHIMERA",
+      "branch": "wt/SUP-DEPS-20261010-CHIMERA",
+      "base_sha": "47140ef",
+      "brief_path": "/tmp/chimera-v2-foreman-2026-10-11-08-24-55_SUP-DEPS-20261010-CHIMERA.txt",
+      "gitreins_task": "SUP-DEPS-20261010-CHIMERA",
+      "dispatched_at": null
+    }
+  ]
+}
