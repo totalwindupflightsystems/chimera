@@ -45,7 +45,12 @@ description: >-
   session recipe is REAL and works with the documented auth header —
   multi-turn memory, per-turn audit, negative contracts all hold; DELETE
   /web/sessions/{id} is live as of 2026-10-09 (204, DF-CHIMERA-V2-69 fixed).
-version: 1.11.0
+  v1.12.0 adds the 2026-10-12 run-21 SSE-CLIENT section: consuming
+  GET /web/sse/{id} live and replay per docs/INTEGRATION.md (event order,
+  replay_done marker, ?live=1, ?api_key=), the queue-position header under
+  concurrency, re-proof that the DF-71/73/75/76 fixes hold on the deployed
+  0.2.7 process, and the variadic-prompt flag-order trap.
+version: 1.12.0
 category: software-development
 ---
 
@@ -860,3 +865,40 @@ friction. Serve boots healthy on the same tree.
 CLI process overhead ~3-4s (user+sys); all deliberation walls model-bound
 (consistent with runs 11-19). Concurrent spread is queue-wait, not compute.
 No PERF row — nothing code-fixable that a user feels.
+
+## SSE client (run 21, 2026-10-12) — consuming deliberations live off the wire
+
+`docs/INTEGRATION.md` § SSE is complete enough to implement a client from
+alone; this recipe is that client, field-tested on the live 0.2.7 deployment.
+
+```bash
+# 1. session
+SID=$(curl -s -X POST :8765/web/sessions -d '{}' -H 'Content-Type: application/json' | jq -r .session_id)
+# 2. open the live stream FIRST (mid-run frames are not stored — a stream
+#    opened after the turn only replays), then fire the turn:
+curl -s -N ":8765/web/sse/$SID?live=1" &            # live stream, stays open
+curl -s -X POST ":8765/web/sessions/$SID/chat" -d '{"prompt":"..."}'
+# stream frame order: deliberation_started → stage_started/stage_completed
+# (per stage, live only) → dag_designed → deliberation_done (terminal).
+# 3. replay later (page reload): same URL WITHOUT ?live=1 gives
+#    started → dag_designed → done → replay_done (data:{} + retry:60000),
+#    byte-identical on every reconnect; close on the marker.
+# 4. unknown session: HTTP 200 + error{reason:unknown_session} + replay_done
+#    + header X-Chimera-Session-Status: unknown — treat as "drop the id".
+```
+
+- EventSource cannot send headers → this route (only) also takes
+  `?api_key=`; every other /web route stays header-only (a state-changing
+  call with `?api_key=` answers 401 by design).
+- `?live=1` values parse tolerantly: garbage means false, never a 422.
+- Empty session + no flag = open silent stream (idle timeout closes it, no
+  marker) — don't wait for a frame that never comes.
+- Queue feedback (DF-CHIMERA-V2-77, live-verified 4-way): every
+  POST /v1/deliberate and /v1/chat/completions response carries
+  `X-Chimera-Queue-Position` (1-based arrival rank at queue entry).
+- Variadic-prompt trap (DF-CHIMERA-V2-81): `chimera "prompt" -f simple`
+  exits 2 — flags AFTER the positional prompt are eaten as prompt text.
+  Flags first: `chimera -f simple "prompt"`.
+- Scratch credentialless runs poison machine-scoped
+  `~/.chimera/blocked-models.json` with 7-day "no-credential" blocks (DF-58
+  class); delete the file to escape — live dispatch recovers immediately.

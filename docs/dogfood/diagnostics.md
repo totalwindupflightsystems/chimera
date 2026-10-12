@@ -969,3 +969,44 @@ A single-file `git stash` mid-tick conflicted on .gitreins/tasks.yaml
 (concurrent run-19 lane committed a2857af between my reads) — restored via
 `git checkout HEAD --` + pathspec discipline; my 3 rows verified intact
 before and after. Avoid stash on shared checkouts entirely.
+
+## Run 22 (2026-10-12) — the SSE wire protocol, and re-proving a fix wave on the deployed process
+
+How it is built: `/web/sse/{id}` is the third leg of the web plumbing (REST
+session routes + the SPA) — the SPA keeps its EventSource dialed while a turn
+runs, and the docs promise third parties the same wire. This run implemented
+that third party from the docs alone and found the promise holds: 9 live
+frames in documented order with real per-stage model/tokens/latency, replay
+is a stored-subset replay (mid-run frames omitted) + terminal
+`replay_done` + `retry: 60000`, idempotent across reconnects, unknown
+session is a 200 stream with an `error` frame instead of a 404 (because a
+404 is indistinguishable from a transport drop to an EventSource — the close
+policy is the design, and `X-Chimera-Session-Status: unknown` is the
+non-browser read of it).
+
+What re-proof means when the fix wave predates the running process: the
+October fix commits (DF-71/73/75/76/77) landed 10-09/10-10, the deployment
+restarted after (571dd2f), so every "VERIFIED FIXED" in this run was earned
+on the DEPLOYED process, not the source tree. Method per row: CLI rows by
+driving the binary against the live deployment's own install; server rows by
+a scratch instance (`CHIMERA_CONFIG` keyless copy + `CHIMERA_PORT=8799`)
+— never by reading code and never by mutating the live service.
+
+Machine-state lesson for every future scratch run: a credentialless run
+writes 7-day fingerprintless "no-credential" blocks into the machine-scoped
+`~/.chimera/blocked-models.json` (DF-58 mechanism, shared across all
+installs on the box) — it can make the NEXT live deliberation skip models
+for a week. Delete the file after scratch runs (documented escape hatch);
+verified live dispatch recovers immediately after.
+
+Driver lessons: (1) variadic `[PROMPT]...` eats trailing flags —
+`chimera "x" -f simple` exits 2 with a bare usage block (filed DF-81; flags
+first works); (2) the port override env is `CHIMERA_PORT` not
+`CHIMERA_API_SERVER_PORT` — the wrong name binds 8765 and dies on
+address-in-use with no hint; (3) `pkill -f 'chimera serve'` matches your own
+shell's command line and SIGTERMs it (pgrep-self-match) — pattern the
+actual process argv or use the PID.
+
+Perf: no PERF row — CLI 68s wall / 3.2s user (model-bound, in the run 14-20
+band); REST 8.8-39.6s under 4-way concurrency, queue rank header now makes
+the wait visible. Install 47s (PyPI wheel path, pydantic-2.14 tree).
