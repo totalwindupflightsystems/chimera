@@ -763,6 +763,127 @@ def test_deliberate_unknown_override_model_details_catalog_requirement(  # type:
     assert "models:" in body["detail"], body
 
 
+# --------------------------------------------------------------------------- #
+# DF-CHIMERA-V2-80: /v1/deliberate `models` alias — validated, never dropped
+# --------------------------------------------------------------------------- #
+#
+# Regression: DeliberateRequest carried no `models` field, so a client payload
+# with a `models` list (a common deliberation-API spelling for the pool
+# restriction) was silently dropped by Pydantic and the request deliberated
+# with the full preset pool — a silent model substitution behind a 200. The
+# field is now accepted as a compatibility alias for `allowed_models` and is
+# catalog-validated BEFORE the engine runs: an unknown id is a hard HTTP 400
+# naming the id, consistent with the other override fields (DF-CHIMERA-V2-61).
+
+
+def test_deliberate_models_unknown_id_returns_400(config) -> None:  # type: ignore[no-untyped-def]
+    """models=["totally-bogus-model-xyz"] → HTTP 400 naming the id (DF-CHIMERA-V2-80).
+
+    Same contract as an unknown `worker_model`/`stage_models` value: FastAPI
+    ``detail`` body (no OpenAI ``error`` object), the bogus id named, and the
+    catalog-requirement teaching. Rejected before any engine work, so nothing
+    is dispatched and nothing is billed.
+    """
+    client, gateway = _client_with_gateway(config, _standard_responder)
+    r = client.post(
+        "/v1/deliberate",
+        json={"prompt": "hi", "models": ["totally-bogus-model-xyz"]},
+    )
+    assert r.status_code == 400, r.text
+    body = r.json()
+    assert "error" not in body, body
+    assert "models" in body["detail"], body
+    assert "unknown model" in body["detail"], body
+    assert "totally-bogus-model-xyz" in body["detail"], body
+    # DF-CHIMERA-V2-61: the 400 teaches the `models:` catalog requirement.
+    assert "catalog" in body["detail"], body
+    assert "models:" in body["detail"], body
+    assert gateway.calls == []  # rejected before dispatch — no billing
+
+
+def test_deliberate_models_unknown_id_among_valid_returns_400(config) -> None:  # type: ignore[no-untyped-def]
+    """A bogus id is rejected even when valid ids accompany it (no partial pool)."""
+    client, gateway = _client_with_gateway(config, _standard_responder)
+    r = client.post(
+        "/v1/deliberate",
+        json={
+            "prompt": "hi",
+            "models": ["deepseek/deepseek-chat", "totally-bogus-model-xyz"],
+        },
+    )
+    assert r.status_code == 400, r.text
+    assert "totally-bogus-model-xyz" in r.json()["detail"], r.json()
+    assert gateway.calls == []
+
+
+def test_deliberate_models_valid_alias_restricts_pool(config) -> None:  # type: ignore[no-untyped-def]
+    """A valid `models` list behaves as `allowed_models`: workers are remapped into it.
+
+    Pins the alias semantics: with a one-entry pool every worker stage must run
+    on that entry (``_apply_allowed_models`` remaps to the first entry).
+    """
+    client = _client(config)
+    r = client.post(
+        "/v1/deliberate",
+        json={"prompt": "hi", "models": ["deepseek/deepseek-v4-flash"]},
+    )
+    assert r.status_code == 200, r.text
+    workers = [s for s in r.json()["trace"]["stages"] if s["kind"] == "worker"]
+    assert workers
+    assert all(s["model"] == "deepseek/deepseek-v4-flash" for s in workers), workers
+
+
+def test_deliberate_models_and_allowed_models_canonical_wins(config) -> None:  # type: ignore[no-untyped-def]
+    """Both fields sent → the canonical `allowed_models` wins; `models` is still valid here."""
+    client = _client(config)
+    r = client.post(
+        "/v1/deliberate",
+        json={
+            "prompt": "hi",
+            "models": ["openrouter/google/gemini-2.5-flash"],
+            "allowed_models": ["deepseek/deepseek-v4-flash"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    workers = [s for s in r.json()["trace"]["stages"] if s["kind"] == "worker"]
+    assert workers
+    assert all(s["model"] == "deepseek/deepseek-v4-flash" for s in workers), workers
+
+
+def test_deliberate_models_unknown_id_alongside_allowed_models_returns_400(config) -> None:  # type: ignore[no-untyped-def]
+    """A bogus `models` id is a 400 even when `allowed_models` wins — never silently dropped."""
+    client, gateway = _client_with_gateway(config, _standard_responder)
+    r = client.post(
+        "/v1/deliberate",
+        json={
+            "prompt": "hi",
+            "models": ["totally-bogus-model-xyz"],
+            "allowed_models": ["deepseek/deepseek-v4-flash"],
+        },
+    )
+    assert r.status_code == 400, r.text
+    assert "totally-bogus-model-xyz" in r.json()["detail"], r.json()
+    assert gateway.calls == []
+
+
+def test_deliberate_allowed_models_behavior_unchanged(config) -> None:  # type: ignore[no-untyped-def]
+    """Regression: canonical `allowed_models` keeps its pre-existing semantics.
+
+    `allowed_models` is deliberately NOT catalog-validated (documented in
+    docs/OPENAI_API.md — it remaps worker stages); the new `models` alias must
+    not change that. A valid `allowed_models` pool still deliberates normally.
+    """
+    client = _client(config)
+    r = client.post(
+        "/v1/deliberate",
+        json={"prompt": "hi", "allowed_models": ["deepseek/deepseek-v4-flash"]},
+    )
+    assert r.status_code == 200, r.text
+    workers = [s for s in r.json()["trace"]["stages"] if s["kind"] == "worker"]
+    assert workers
+    assert all(s["model"] == "deepseek/deepseek-v4-flash" for s in workers), workers
+
+
 def test_chat_completions_unknown_override_model_details_catalog_requirement(  # type: ignore[no-untyped-def]
     config,
 ) -> None:

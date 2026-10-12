@@ -357,6 +357,20 @@ class DeliberateRequest(BaseModel):
     # Request-level overrides — maximum flexibility
     allowed_models: list[str] | None = None  # Only these models allowed
     disallowed_models: list[str] | None = None  # Exclude these models
+    # DF-CHIMERA-V2-80: `models` is a COMPATIBILITY ALIAS for
+    # `allowed_models` — some deliberation-API clients spell the pool
+    # restriction that way. The field used to be absent from this model, so
+    # Pydantic silently dropped the key and the request deliberated with the
+    # full preset pool: a silent model substitution behind a 200. It is now
+    # accepted and CATALOG-VALIDATED before the engine runs (unknown id →
+    # HTTP 400 naming it, same contract as the other override fields).
+    # Precedence when both are sent: `allowed_models` (the canonical field)
+    # wins, but `models` is still validated — a bogus id in the losing field
+    # is never silently dropped either. Note the asymmetry with
+    # `allowed_models` itself, whose entries are deliberately NOT validated
+    # (remap semantics, docs/OPENAI_API.md) — the alias exists to fail loud
+    # for the clients that send `models`, so it validates.
+    models: list[str] | None = None  # Validated alias for allowed_models
     dispatcher_model: str | None = None  # Override dispatcher
     aggregator_model: str | None = None  # Override aggregator
     worker_model: str | None = None  # Override default worker
@@ -703,6 +717,24 @@ async def _execute_deliberation(request: Request, body: DeliberateRequest) -> De
         output_schema=body.output_schema,
         stage_models=body.stage_models,
     )
+    # DF-CHIMERA-V2-80: resolve + validate the `models` compatibility alias
+    # BEFORE the engine runs — an unknown id must never reach a billed call,
+    # and a supplied `models` must never be silently ignored. Every id is
+    # checked against the catalog even when `allowed_models` is also present
+    # (the canonical field wins for the POOL, but a bogus id in the alias is
+    # still a hard 400). The detail carries the same catalog-requirement
+    # teaching as the engine's own unknown-model 400s (DF-CHIMERA-V2-61).
+    if body.models is not None:
+        unknown = [model for model in body.models if model not in cfg.models]
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=_catalog_error_detail(
+                    f"models references unknown model(s): {', '.join(repr(model) for model in unknown)}"
+                ),
+            )
+        if body.allowed_models is None:
+            overrides.allowed_models = list(body.models)
     # Per-request timeout overrides via X-Chimera-Timeout header.
     # Format: "total=300,per_stage=180". Values cannot exceed admin ceiling.
     timeout_header = request.headers.get("X-Chimera-Timeout", "")

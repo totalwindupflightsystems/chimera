@@ -560,6 +560,15 @@ curl -X POST http://localhost:8765/v1/deliberate \
 Response includes full trace with per-stage tokens, latency, cost, model selection,
 and all prompts/responses.
 
+**`models` alias:** `/v1/deliberate` also accepts `models` (a `string[]`) as a
+compatibility alias for `allowed_models` — some deliberation-API clients spell the
+pool restriction that way. Unlike `allowed_models` itself, the alias IS
+catalog-validated: an unknown id returns HTTP 400 naming the id (same `detail`
+shape and catalog guidance as an unknown `worker_model`). When both fields are
+sent, `allowed_models` is canonical and wins for the pool, but `models` is still
+validated — a bogus id in either field is never silently dropped
+(DF-CHIMERA-V2-80).
+
 **Idempotency:** pass an optional `idempotency_key` (string) in the request body to
 make retries safe. The first successful response is cached (bounded LRU, 512 keys,
 in-memory per process); a repeat POST with the same key returns HTTP 200 with the
@@ -761,7 +770,9 @@ Two asymmetric cases are worth knowing:
   on this path — `allowed_models` remaps worker stages to its first entry, and
   `dispatcher_model` is passed through to the dispatcher. A typo there is not
   rejected up front; it surfaces as an upstream provider error (or as a
-  worker-failure trace) rather than as a 400.
+  worker-failure trace) rather than as a 400. Exception: the `models`
+  compatibility alias on `/v1/deliberate` IS validated (DF-CHIMERA-V2-80) —
+  see [`/v1/deliberate`](#v1deliberate).
 
 ### Other status codes — the bodies verbatim
 
