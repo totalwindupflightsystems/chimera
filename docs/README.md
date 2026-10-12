@@ -50,4 +50,6 @@ against the live deployment, **not** a description of current behavior.
 - [dogfood/2026-10-01-run18-integration.md](dogfood/2026-10-01-run18-integration.md) — run 18, web UI scripted multi-turn (2026-10-01)
 - [dogfood/2026-10-09-run19-integration.md](dogfood/2026-10-09-run19-integration.md) — run 19, fresh-machine install + CLI machine-readable failure contracts (2026-10-09)
 - [dogfood/2026-10-09-run20-integration.md](dogfood/2026-10-09-run20-integration.md) — run 20, operator-under-load: concurrent panels + failure resilience per surface (2026-10-09)
+- [dogfood/2026-10-12-run21-integration.md](dogfood/2026-10-12-run21-integration.md) — run 21, re-proof of the run-20 fix wave + REST-vs-chat failure-visibility parity (2026-10-12)
+- [dogfood/2026-10-12-run22-integration.md](dogfood/2026-10-12-run22-integration.md) — run 22, SSE wire protocol client implemented from docs/INTEGRATION.md alone (2026-10-12)
 - [dogfood/diagnostics.md](dogfood/diagnostics.md) — build/diagnostic trail behind the 2026-08-03 run
