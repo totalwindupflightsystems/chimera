@@ -376,6 +376,15 @@ class DeliberateResponse(BaseModel):
     answer: str
     trace: dict[str, Any]
     request_id: str
+    worker_failures: list[WorkerFailure] | None = None
+    """DF-CHIMERA-V2-78: one ``{stage_id, model, error}`` entry per worker
+    stage that failed hard upstream (gateway failure, timeout, budget
+    exhaustion) while the deliberation still answered without it — the same
+    data as ``trace.worker_failures``, mirrored top-level so a client does
+    not have to dig into the trace to tell a degraded merge from an intact
+    one (the chat surface's ``chimera_worker_failures``, DF-CHIMERA-V2-75,
+    is the same mirror). Absent (not null) when every stage succeeded, so
+    clean responses stay byte-identical (``response_model_exclude_none``)."""
 
 
 class _IdempotencyCache:
@@ -746,6 +755,10 @@ async def _execute_deliberation(request: Request, body: DeliberateRequest) -> De
         answer=result.answer,
         trace=result.trace.model_dump(mode="json"),
         request_id=result.trace.request_id,
+        # DF-CHIMERA-V2-78: mirror the dropped-worker list top-level (same
+        # entries as ``trace.worker_failures``). ``or None`` keeps the field
+        # absent on clean runs (``response_model_exclude_none`` on the route).
+        worker_failures=list(result.trace.worker_failures) or None,
     )
 
 
@@ -1117,7 +1130,16 @@ def _register_routes(app: FastAPI) -> None:
             "catalog": catalog,
         }
 
-    @app.post("/v1/deliberate", response_model=DeliberateResponse)
+    @app.post(
+        "/v1/deliberate",
+        response_model=DeliberateResponse,
+        # DF-CHIMERA-V2-78: ``worker_failures`` must be ABSENT (not explicit
+        # null) on clean runs — same convention as the chat surface
+        # (DF-CHIMERA-V2-53/75). The pre-existing fields are all required
+        # non-None, so this changes nothing else; clean responses stay
+        # byte-identical.
+        response_model_exclude_none=True,
+    )
     async def deliberate(
         request: Request,
         body: DeliberateRequest,

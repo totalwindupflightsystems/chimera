@@ -207,3 +207,44 @@ def test_deliberate_trace_carries_worker_failures(config) -> None:  # type: igno
     assert [f["stage_id"] for f in failures] == ["worker_1"], failures
     assert failures[0]["model"] == WORKER_1, failures
     assert failures[0]["error"], failures
+
+
+def test_deliberate_top_level_worker_failures_mirror_trace(config) -> None:  # type: ignore[no-untyped-def]
+    """DF-CHIMERA-V2-78: top-level ``worker_failures`` == ``trace.worker_failures``.
+
+    A degraded worker turn with a usable merged answer still returns 200;
+    the top-level field must carry the SAME failure entries as the trace so a
+    client can spot the degraded merge without digging into the trace.
+    """
+    client, _gateway = _client_with_gateway(config, _failing_responder)
+    r = client.post(
+        "/v1/deliberate",
+        json={"prompt": "hi", "formation": "auto"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # Premise: the turn really was degraded (trace carries the drop).
+    assert body["trace"]["worker_failures"], body["trace"]
+    assert body["worker_failures"] == body["trace"]["worker_failures"]
+    assert body["worker_failures"][0]["stage_id"] == "worker_1"
+    assert body["worker_failures"][0]["model"] == WORKER_1
+    assert body["worker_failures"][0]["error"]
+
+
+def test_deliberate_omits_worker_failures_when_clean(config) -> None:  # type: ignore[no-untyped-def]
+    """DF-CHIMERA-V2-78: a clean run keeps the field ABSENT (byte-identical).
+
+    Same omission convention as the chat surface's ``chimera_worker_failures``
+    (``response_model_exclude_none``) — no fabricated null and no fabricated
+    failure entry on a clean turn.
+    """
+    client, _gateway = _client_with_gateway(config, _standard_responder)
+    r = client.post(
+        "/v1/deliberate",
+        json={"prompt": "hi", "formation": "auto"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # Premise: the run really was clean, so absence is a real negative.
+    assert body["trace"]["worker_failures"] == []
+    assert "worker_failures" not in body
