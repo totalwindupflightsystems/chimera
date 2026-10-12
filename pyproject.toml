@@ -68,9 +68,13 @@ dependencies = [
 #   mcp 2.x           — deliberate <2.0 cap; 2.x removes pydantic-settings /
 #                       MCP_* env vars and changes handler signatures used by
 #                       src/chimera/mcp/server.py (FastMCP)
-#   multidict 7.0     — aiohttp 3.14.x requires multidict>=4.5,<7.0
+#   multidict 7.x     — HELD by policy, not constraint: aiohttp 3.14.5 now
+#                       allows multidict>=4.5,<8.0 (the <7 block is stale),
+#                       but 7.x is a major bump with no concrete need
 #   importlib_metadata 9 — litellm 1.99.x requires importlib-metadata>=8,<9.0
-#   huggingface_hub 2.x — tokenizers 0.23.x requires huggingface-hub>=0.16.4,<2.0
+#   huggingface_hub 2.x — HELD by policy, not constraint: tokenizers 0.23.3
+#                       now allows huggingface-hub>=0.16.4,<3.0 (the <2 block
+#                       is stale), but 2.x is a fresh major with no need
 #   pydantic_core — resolved 2026-10-11 (SUP-DEPS-20261010-CHIMERA):
 #                       pydantic 2.14.0 released; bumped together with
 #                       pydantic-core 2.50.0 (exact pin moves with pydantic)
