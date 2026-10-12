@@ -1939,8 +1939,9 @@ tasks:
   criteria:
   - README.md contains a Contributing section with a link to CONTRIBUTING.md and basic
     contribution steps
-  status: in_progress
+  status: complete
   created_at: '2026-10-01T06:45:54.922597+00:00'
+  completed_at: '2026-10-12T07:20:11.109921+00:00'
 - id: DEPS-008
   title: Refresh in-bounds Python dep drift
   criteria:
@@ -2007,8 +2008,9 @@ tasks:
     runs'
   - The ledger's shape and provenance are documented, including whether it stays gitignored
     by design
-  status: in_progress
+  status: complete
   created_at: '2026-10-02T19:27:10.660515+00:00'
+  completed_at: '2026-10-12T07:20:11.980915+00:00'
 - id: DOC-5
   title: Document DELETE /web/sessions/{id} in reference docs
   criteria:
