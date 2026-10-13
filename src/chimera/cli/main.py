@@ -697,10 +697,64 @@ def _print_trace(trace: Any) -> None:
 
 
 @main.command()
+@click.option("-f", "--formation", default="auto", help="Formation preset name.")
+@click.option("-v", "--verbose", is_flag=True, help="Print the full trace.")
+@click.option("--quiet", is_flag=True, help="Print only the raw answer to stdout.")
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Print one JSON object (answer + full trace) to stdout.",
+)
 @click.argument("prompt", nargs=-1)
 @click.pass_context
-def run(ctx: click.Context, prompt: tuple[str, ...]) -> None:
-    """Run a full deliberation for PROMPT (default when no subcommand given)."""
+def run(
+    ctx: click.Context,
+    prompt: tuple[str, ...],
+    formation: str,
+    verbose: bool,
+    quiet: bool,
+    json_output: bool,
+) -> None:
+    """Run a full deliberation for PROMPT (default when no subcommand given).
+
+    DF-CHIMERA-V2-81: these options mirror the group-level flags because
+    ``ChimeraGroup.resolve_command`` redirects an unknown first token (the
+    implicit-prompt form) to THIS command with the remaining args — including
+    any flags the user placed AFTER the prompt (``chimera "hello" -f debate``).
+    Without them, click rejected such flags with "No such option" (exit 2).
+    Flags given BEFORE the prompt still parse on the group (the documented
+    convention); a flag explicitly passed to ``run`` overrides the group
+    value, detected via click's parameter source so the plain default never
+    clobbers what the group already resolved.
+    """
+    source = click.core.ParameterSource
+    opts = ctx.obj if isinstance(ctx.obj, dict) else {}
+
+    def _effective(cli_value: bool, key: str) -> bool:
+        """The run-level flag wins only when the user actually passed it."""
+        if ctx.get_parameter_source(key) == source.COMMANDLINE:
+            return cli_value
+        return bool(opts.get(key, False))
+
+    formation_eff = (
+        formation
+        if ctx.get_parameter_source("formation") == source.COMMANDLINE
+        else opts.get("formation", formation)
+    )
+    verbose_eff = _effective(verbose, "verbose")
+    quiet_eff = _effective(quiet, "quiet")
+    json_eff = _effective(json_output, "json_output")
+    if quiet_eff and json_eff:
+        # The MutuallyExclusiveOption class only sees one parse scope, so the
+        # mixed form ``chimera --json run "p" --quiet`` must be rejected here.
+        raise click.UsageError("--quiet and --json are mutually exclusive — pick one output mode.")
+    opts.update(
+        formation=formation_eff,
+        verbose=verbose_eff,
+        quiet=quiet_eff,
+        json_output=json_eff,
+    )
     _deliberate(ctx, prompt)
 
 
