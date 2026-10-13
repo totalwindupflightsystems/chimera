@@ -1,4 +1,4 @@
-# Chimera Model Sync — 2026-10-11
+# Chimera Model Sync — 2026-10-12
 
 ## Summary
 
@@ -9,16 +9,18 @@
 
 ## Source and verification
 
-Source: `reports/latest.md`, generated 2026-10-11 17:00 UTC by the scheduled model-sync run. The scan refreshed the models.dev provider cache successfully (227 providers fetched; subsequent cache reports 226 providers) and completed discovery. The report declares 0 new models and 0 lane finds.
+Source: `reports/latest.md`, generated 2026-10-12 17:00 UTC by the scheduled model-sync run. The script completed provider discovery using the cached models.dev data and reported `No new models found. Done.` The report headline states 0 new models across 13 core providers and 0 task-router lane finds; the diff-candidate JSON was empty (`{}`).
 
-The report also contains Reseller Watch and Blind Spot tables. Those are explicitly informational, not counted as candidates or recorded in the seen file. They include reseller-only listings but do not establish provider announcements or verified availability; therefore none are recommended for catalog admission from this run. No OpenRouter/provider release verification or category scoring was performed because there were no new candidates in the scan's candidate sections.
+The generated report also includes Reseller Watch and Blind Spot listings. These are informational sections outside the new-candidate count; they do not establish provider release confirmation or candidate status for this run. No OpenRouter/provider announcement checks or 32-path scoring were performed because the run yielded no new candidates.
 
 ## Action items
 
 - No catalog action this week.
-- Continue the scheduled refresh; review reseller-watch entries only if a later run promotes a model into candidate scope or a provider announcement independently confirms it.
+- Do not add models to `chimera.yaml` without user approval.
+- Revisit reseller-watch or blind-spot entries only if a later run promotes one into candidate scope or independent provider evidence warrants a separate review.
 
 ## Evidence
 
 - `reports/latest.md`: `Candidates: 0 new models across 13 providers, plus 0 task-router lane finds`.
+- Diff candidates: `/var/tmp/hermes-scratch/chimera-model-sync-diff-502691.json` — empty object.
 - Script output: `No new models found. Done.`
