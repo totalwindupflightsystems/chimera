@@ -2167,3 +2167,12 @@ tasks:
   status: complete
   created_at: '2026-10-11T04:36:06.247726+00:00'
   completed_at: '2026-10-11T04:49:14.455481+00:00'
+- id: SUP-DEPS-20261013-CHV2
+  title: Review + update 2026-10-13 outdated deps
+  criteria:
+  - uv lock --check exit 0; pip check clean; full pytest suite green; no bound-blocked
+    package (litellm<1.100, mcp<2) force-upgraded; final pip list --outdated contains
+    only bound-blocked/documented-deferred items; changes committed on main
+  status: complete
+  created_at: '2026-10-13T09:12:45.182132+00:00'
+  completed_at: '2026-10-13T09:38:43.738094+00:00'
