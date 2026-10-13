@@ -508,18 +508,30 @@ class ChatCompletionResponse(BaseModel):
     (not null) when the format was honored or none was requested, so existing
     responses are byte-identical. The field is Chimera-specific; OpenAI-strict
     clients ignore unknown response fields."""
-    chimera_degraded_reasons: list[str] | None = None
-    """Present ONLY when at least one answer-contributing stage was truncated
-    at its ``max_tokens`` cap — one ``"<stage_id>: token_limit"`` entry per
-    truncated stage, mirroring ``trace.degraded_reasons`` (DF-CHIMERA-V2-55).
+    chimera_degraded_reasons: list[str] = Field(default_factory=list)
+    """One ``"<stage_id>: token_limit"`` entry per answer-contributing stage
+    truncated at its ``max_tokens`` cap, mirroring ``trace.degraded_reasons``
+    (DF-CHIMERA-V2-55) — the SAME list ``POST /v1/deliberate`` serves as
+    ``trace.degraded_reasons``.
+
+    ALWAYS present; an EMPTY list when nothing was truncated
+    (DF-CHIMERA-V2-79). The chat surface used to omit the key entirely on
+    clean runs (``or None`` + ``response_model_exclude_none``), which made
+    "no degradation" indistinguishable from "this surface does not support
+    the field" — while the REST trace's ``degraded_reasons`` was present (and
+    empty) on exactly the same turn. The degradation signal is a NON-EMPTY
+    list, never key presence: test the value
+    (``if body["chimera_degraded_reasons"]:``), not membership.
+    ``chimera_format_negotiation`` and ``chimera_worker_failures`` keep the
+    absent-when-clean convention; this field no longer does.
+
     A capped worker's fragment still reaches the aggregator, so the merged
     answer can read as clean, well-formed prose while silently lacking
     whatever the truncated stage never produced; this marker is how a
-    cost-bounding client tells that garbage merge from a good one. Absent
-    (not null) when no stage was truncated, so clean responses stay
-    byte-identical. Chimera-specific; OpenAI-strict clients ignore unknown
-    response fields. The choice's ``finish_reason`` carries the coarser
-    ``"length"`` signal (DF-CHIMERA-V2-54); this field names the stages."""
+    cost-bounding client tells that garbage merge from a good one.
+    Chimera-specific; OpenAI-strict clients ignore unknown response fields.
+    The choice's ``finish_reason`` carries the coarser ``"length"`` signal
+    (DF-CHIMERA-V2-54); this field names the stages."""
     chimera_worker_failures: list[WorkerFailure] | None = None
     """Present ONLY when at least one stage failed hard upstream (gateway
     failure, timeout, budget exhaustion) while the deliberation still
@@ -1396,9 +1408,16 @@ def _register_routes(app: FastAPI) -> None:
                 chimera_format_negotiation=_compat_format_negotiation(trace),
                 # DF-CHIMERA-V2-55: name the stages the token cap cut off —
                 # a worker capped mid-protocol merges into clean-looking
-                # garbage. ``or None`` keeps the field absent on clean runs
-                # (response_model_exclude_none), mirroring the field above.
-                chimera_degraded_reasons=trace.degraded_reasons or None,
+                # garbage. DF-CHIMERA-V2-79: the list is ALWAYS sent (empty
+                # when nothing was truncated), mirroring the REST trace's
+                # ``degraded_reasons``, so a client can tell "no degradation"
+                # from "field not supported". ``or None`` here used to delete
+                # the key on clean runs via ``response_model_exclude_none`` —
+                # exactly the asymmetry DF-CHIMERA-V2-79 removed. Do not
+                # reintroduce it; ``chimera_format_negotiation`` /
+                # ``chimera_worker_failures`` below keep their own
+                # absent-when-clean convention.
+                chimera_degraded_reasons=list(trace.degraded_reasons),
                 # DF-CHIMERA-V2-75: name the stages that failed hard upstream
                 # (dropped workers) — a 200 with ``finish_reason="stop"``
                 # whose merge is silently missing a worker's output.

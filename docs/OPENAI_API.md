@@ -61,7 +61,8 @@ Response:
     "prompt_tokens": 800,
     "completion_tokens": 420,
     "total_tokens": 1220
-  }
+  },
+  "chimera_degraded_reasons": []
 }
 ```
 
@@ -133,8 +134,9 @@ The per-stage detail — including each span's own finish reason — is on
 `finish_reason: "length"` says *that* something was cut off; the
 `chimera_degraded_reasons` field on the same response says *what*: one
 `"<stage_id>: token_limit"` entry per stage whose call hit its `max_tokens`
-cap. When nothing was truncated the field is **absent** — clean responses are
-byte-identical:
+cap. The field is **always present** — a clean run carries the same key holding
+an EMPTY list, exactly like `trace.degraded_reasons` on
+`POST /v1/deliberate` (DF-CHIMERA-V2-79):
 
 ```json
 {
@@ -145,6 +147,17 @@ byte-identical:
   "chimera_degraded_reasons": ["worker_1: token_limit", "worker_2: token_limit"]
 }
 ```
+
+```json
+{ "chimera_degraded_reasons": [] }
+```
+
+Because the key is always there, the degradation signal is a **non-empty
+list**, never key presence: test the value, not `"chimera_degraded_reasons" in
+body`. Before DF-CHIMERA-V2-79 the key was omitted on clean runs, which made
+"nothing was truncated" indistinguishable from "this server does not support
+the field" — while the REST trace served `degraded_reasons: []` on the very
+same turn.
 
 This marker exists because a token-capped merge is silent garbage by
 construction: a worker cut off mid-protocol (its output ends as a fragment
@@ -198,12 +211,14 @@ responses stay byte-identical:
 ```
 
 This marker is deliberately **disjoint** from `chimera_degraded_reasons`
-above, whose semantics are unchanged: `chimera_degraded_reasons` lists
+above, whose semantics are unchanged — `chimera_degraded_reasons` lists
 token-limit truncations (the stage ANSWERED, but cut off), while
 `chimera_worker_failures` lists hard failures (the stage never answered at
-all). A given stage appears in at most one of the two; a run can carry both
-markers when one worker was capped and another died. The same client check
-applies:
+all). Only its presence convention differs: `chimera_degraded_reasons` is
+always sent (empty when nothing was truncated, DF-CHIMERA-V2-79), while
+`chimera_worker_failures` is absent on clean runs. A given stage appears in at
+most one of the two; a run can carry both markers when one worker was capped
+and another died. The same client check applies:
 
 ```python
 resp = client.chat.completions.create(...)

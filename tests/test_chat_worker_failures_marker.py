@@ -12,7 +12,9 @@ chat surface showed nothing.  This adds ``chimera_worker_failures`` (one
 
 The new marker is deliberately DISJOINT from ``chimera_degraded_reasons``
 (DF-CHIMERA-V2-55), which stays token-limit truncation only: a hard worker
-failure sets the former and never the latter, and vice versa.
+failure sets the former and never the latter, and vice versa. (That field is
+always present since DF-CHIMERA-V2-79 — an empty list, not an absent key —
+while this one keeps the absent-when-clean convention.)
 """
 
 from __future__ import annotations
@@ -157,7 +159,8 @@ def test_chat_completions_worker_failures_disjoint_from_truncation_marker(config
 
     ``chimera_degraded_reasons`` stays token-limit truncation only
     (DF-CHIMERA-V2-55 semantics unchanged) — a dropped worker must not leak
-    into it.
+    into it. DF-CHIMERA-V2-79: that field is now always present, so the
+    negative is an EMPTY list rather than an absent key.
     """
     client, _gateway = _client_with_gateway(config, _failing_responder)
     r = client.post(
@@ -167,7 +170,11 @@ def test_chat_completions_worker_failures_disjoint_from_truncation_marker(config
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["chimera_worker_failures"]
-    assert "chimera_degraded_reasons" not in body
+    # Premise: the drop really was recorded (not an empty-world accident),
+    # and no stage hit a token cap on this run.
+    assert body["chimera_worker_failures"][0]["stage_id"] == "worker_1"
+    assert body["chimera_worker_failures"][0]["model"] == WORKER_1
+    assert body["chimera_degraded_reasons"] == []  # present, empty (DF-CHIMERA-V2-79)
 
 
 def test_chat_completions_truncation_marker_disjoint_from_worker_failures(config) -> None:  # type: ignore[no-untyped-def]
