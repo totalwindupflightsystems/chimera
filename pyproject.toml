@@ -56,30 +56,53 @@ dependencies = [
     "mcp>=1.0.0,<2.0",
 ]
 
-# Deferred majors — DEPS-008 census (2026-10-05). 8 remaining (was 9;
-# pydantic pair cleared 2026-10-11) `pip list --outdated` entries are
-# hard-bound; none is safely bumpable
-# until its blocking constraint moves. Re-derive before acting on any
-# single line (parent caps evolve with their parents):
-#   openai 3.x        — litellm 1.99.x requires openai>=2.20,<3.0; 3.0 also
-#                       switches the default HTTP client to httpx2
+# Deferred majors — DEPS-008 census (2026-10-05); re-derived 2026-10-13
+# (SUP-DEPS-20261013-CHV2, every entry below re-verified rather than copied).
+# 8 `pip list --outdated` entries remain after that refresh and each one is
+# accounted for here: six are refused by the resolver ITSELF (`uv lock
+# --upgrade-package <name>` leaves the pin below because a parent cap forbids
+# the newest release) and two are held by policy alone, where the resolver
+# moves freely — those two were probe-tested in isolated venvs. Re-derive
+# before acting on any single line (parent caps evolve with their parents):
+#   openai 3.x        — resolver-refused: litellm 1.99.x requires
+#                       openai>=2.20,<3.0; 3.0 also switches the default HTTP
+#                       client to httpx2. NOTE src/chimera/gateway.py imports
+#                       openai directly although the dependency is declared
+#                       only transitively through litellm — the <3.0 cap is
+#                       litellm's, not ours.
 #   litellm 1.100+    — deliberate <1.100 cap above (stdout pollution
-#                       breaks the MCP stdio JSON-RPC wire)
+#                       breaks the MCP stdio JSON-RPC wire); resolver-refused
 #   mcp 2.x           — deliberate <2.0 cap; 2.x removes pydantic-settings /
 #                       MCP_* env vars and changes handler signatures used by
-#                       src/chimera/mcp/server.py (FastMCP)
-#   multidict 7.x     — HELD by policy, not constraint: aiohttp 3.14.5 now
-#                       allows multidict>=4.5,<8.0 (the <7 block is stale),
-#                       but 7.x is a major bump with no concrete need
-#   importlib_metadata 9 — litellm 1.99.x requires importlib-metadata>=8,<9.0
+#                       src/chimera/mcp/server.py (FastMCP); resolver-refused
+#   multidict 7.x     — HELD by policy, not constraint: aiohttp 3.14.5 allows
+#                       multidict>=4.5,<8.0 and yarl 1.25.1 sets no cap, so
+#                       the resolver moves it freely; probe-tested 2026-10-13
+#                       green through the real C-extension paths (CIMultiDict,
+#                       yarl URL build, aiohttp live GET). 7.x is still a
+#                       major with no concrete need and no importer in this
+#                       tree beyond aiohttp/yarl
+#   importlib_metadata 9 — resolver-refused: litellm 1.99.x requires
+#                       importlib-metadata>=8,<9.0
 #   huggingface_hub 2.x — HELD by policy, not constraint: tokenizers 0.23.3
-#                       now allows huggingface-hub>=0.16.4,<3.0 (the <2 block
-#                       is stale), but 2.x is a fresh major with no need
+#                       allows huggingface-hub>=0.16.4,<3.0, so the resolver
+#                       moves it freely; probe-tested 2026-10-13 green
+#                       (hf-hub 2.2.0 imports, tokenizers 0.23.3 round-trip,
+#                       litellm.token_counter). Nothing in chimera, litellm or
+#                       tokenizers imports huggingface_hub at all — litellm
+#                       mentions it only in comments — so the bump buys
+#                       nothing that could be tested
 #   pydantic_core — resolved 2026-10-11 (SUP-DEPS-20261010-CHIMERA):
 #                       pydantic 2.14.0 released; bumped together with
 #                       pydantic-core 2.50.0 (exact pin moves with pydantic)
-#   pyflakes 4.x      — pylsp 1.15.0 pyflakes extra requires pyflakes>=3.2,<3.3
-#   pycodestyle 2.13+ — pylsp 1.15.0 pycodestyle extra requires >=2.12,<2.13
+#   pyflakes 4.x      — resolver-refused: pylsp 1.15.0 pyflakes extra requires
+#                       pyflakes>=3.2,<3.3 (3.2.0 is that ceiling)
+#   pycodestyle 2.13+ — resolver-refused: pylsp 1.15.0 pycodestyle extra
+#                       requires >=2.12,<2.13
+#
+# starlette 1.7.0 -> 1.8.0 (refreshed 2026-10-13): not a census entry — it was
+# in-bounds drift, capped by nobody (mcp>=0.27, fastapi>=0.46, sse-starlette
+# >=0.49.1), and 1.8.0 only drops Python 3.10 plus adds HTTP 103 early hints.
 
 [project.urls]
 Homepage = "https://github.com/totalwindupflightsystems/chimera"
