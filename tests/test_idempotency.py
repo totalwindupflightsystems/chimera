@@ -95,6 +95,51 @@ def test_no_key_executes_every_time(config, monkeypatch) -> None:  # type: ignor
     assert calls["n"] == 2
 
 
+def test_same_key_different_body_rejected_409(config, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """DF-CHIMERA-V2-83: reusing a key with a NEW body must never replay."""
+    client, calls = _client_with_engine_counter(config, monkeypatch)
+
+    r1 = client.post("/v1/deliberate", json={"prompt": "hello", "idempotency_key": "key-1"})
+    r2 = client.post(
+        "/v1/deliberate",
+        json={"prompt": "a DIFFERENT prompt", "idempotency_key": "key-1"},
+    )
+
+    assert r1.status_code == 200
+    assert r2.status_code == 409
+    assert r2.headers["X-Idempotent-Body-Match"] == "false"
+    assert r2.json()["detail"] != r1.json()["answer"]
+    assert calls["n"] == 1  # mismatch is rejected, not re-executed
+
+
+def test_same_key_same_body_still_replays(config, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """DF-CHIMERA-V2-83: the unchanged replay contract is intact."""
+    client, calls = _client_with_engine_counter(config, monkeypatch)
+    payload = {"prompt": "hello", "formation": "auto", "idempotency_key": "key-1"}
+
+    r1 = client.post("/v1/deliberate", json=payload)
+    r2 = client.post("/v1/deliberate", json=payload)
+
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert r2.headers[REPLAY_HEADER] == "true"
+    assert "X-Idempotent-Body-Match" not in r2.headers
+    assert r1.json() == r2.json()
+    assert calls["n"] == 1
+
+
+def test_mismatched_key_field_does_not_break_fingerprint(config, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Bodies identical except the idempotency key value are the SAME request."""
+    client, calls = _client_with_engine_counter(config, monkeypatch)
+
+    r1 = client.post("/v1/deliberate", json={"prompt": "hello", "idempotency_key": "key-a"})
+    r2 = client.post("/v1/deliberate", json={"prompt": "hello", "idempotency_key": "key-b"})
+
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert calls["n"] == 2  # different keys = different cache entries, no conflict
+
+
 def test_cache_default_capacity_is_512() -> None:
     cache = _IdempotencyCache()
     assert cache._capacity == 512
