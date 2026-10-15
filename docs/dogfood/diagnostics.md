@@ -1010,3 +1010,47 @@ actual process argv or use the PID.
 Perf: no PERF row — CLI 68s wall / 3.2s user (model-bound, in the run 14-20
 band); REST 8.8-39.6s under 4-way concurrency, queue rank header now makes
 the wait visible. Install 47s (PyPI wheel path, pydantic-2.14 tree).
+
+## Run 23 (2026-10-15) — idempotency contract + REST custom-DAG seam
+
+Surface: `POST /v1/deliberate` with `idempotency_key` (docs/OPENAI_API.md
+§Idempotency) and `POST /v1/chat/completions` with `model:"custom"` +
+`allow_custom_dag:true` (README §Custom DAGs) — the two documented surfaces
+no prior run (1–22) had driven. Live deploy 3c394ec, CODE-CURRENT vs HEAD
+12011c7 (material diff empty).
+
+How it is built, for the next debugger: the cache is a bounded LRU (512
+keys, in-memory per process) keyed by the idempotency key ALONE — the request
+body is not hashed into the key, which is exactly why DF-CHIMERA-V2-83's
+wrong-answer mode exists (same key + different body replays the first body's
+response, marked only by the standard replay header). Concurrent duplicates
+coalesce onto one execution (a per-key in-flight future), failures are never
+inserted, so a key stays reusable after an error. On the chat surface the
+field is accepted by the request model but never consulted (DF-84) — the
+middleware/lifecycle wiring exists only on the deliberate route.
+
+Custom-DAG validation order (observed): structural checks
+(dispatcher.py:403 "Formation has no aggregator/merge/audit stages") and
+catalog validation are merged into ONE 400 detail string — the structural
+message is concatenated with the catalog-rule boilerplate (DF-85). When
+debugging a rejected dag, test the shape first with one worker + one
+aggregator before touching the model catalog.
+
+Errors hit and their fixes (this run's own traps):
+
+- A forged-response replay probe (reusing the cached response body as a
+  request) 422s on `body.prompt missing` — pydantic validates the request
+  BEFORE the cache lookup, which is the correct order; probe re-shaped to a
+  valid different-prompt body to expose DF-83.
+- Two "expected-failure" worker legs (gemini, anthropic credentials) both
+  graded healthy — the deployment env carries live keys for both. Check
+  provider liveness before designing failure legs; the discriminating
+  failure leg ended up being the bogus-model 400.
+- bunker destroy needs `--server bunker-mvp <id>` explicitly (no default
+  target binding in 0.2.0).
+
+Fresh-box install (bunker-mvp agent df23chv2, destroyed): spawn 19s,
+public-mirror clone 1s (HEAD == local HEAD, 12011c7 — the mirror is a valid
+parity source), venv + `pip install -e ".[full]"` 53s RC=0 (py3.12),
+config init, zero-credential CLI exit 2 with actionable guidance (DF-71
+holding on a fresh box), serve healthy, keyless deliberate 502, /web/ 200.

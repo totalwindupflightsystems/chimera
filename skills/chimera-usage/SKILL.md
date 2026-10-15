@@ -50,7 +50,11 @@ description: >-
   replay_done marker, ?live=1, ?api_key=), the queue-position header under
   concurrency, re-proof that the DF-71/73/75/76 fixes hold on the deployed
   0.2.7 process, and the variadic-prompt flag-order trap.
-version: 1.12.0
+  v1.13.0 adds the 2026-10-15 run-23 IDEMPOTENCY + REST CUSTOM-DAG section:
+  idempotency_key replay/coalescing/failure-not-cached recipes (and the
+  DF-83 first-write-wins wrong-answer trap), the custom-DAG-over-HTTP
+  recipe, and the chat-surface idempotency gap (DF-84).
+version: 1.13.0
 category: software-development
 ---
 
@@ -902,3 +906,48 @@ curl -s -X POST ":8765/web/sessions/$SID/chat" -d '{"prompt":"..."}'
 - Scratch credentialless runs poison machine-scoped
   `~/.chimera/blocked-models.json` with 7-day "no-credential" blocks (DF-58
   class); delete the file to escape — live dispatch recovers immediately.
+
+## Idempotency + REST custom-DAG (run 23, 2026-10-15) — retry safety and your own DAG over HTTP
+
+The `idempotency_key` body field (docs/OPENAI_API.md §Idempotency) and the
+REST custom-DAG seam (README §Custom DAGs: `POST /v1/chat/completions` with
+`model: "custom"` + `allow_custom_dag: true` + a `dag` object) were driven
+end-to-end on the live 0.2.7 deploy (running 3c394ec).
+
+What HELD (use these as the working recipes):
+
+- **Replay:** repeat the byte-identical `POST /v1/deliberate` with the same
+  `idempotency_key` → 200 in <1s, `X-Idempotent-Replay: true`, response body
+  byte-identical (same answer AND same `trace.request_id`) — no re-run, no
+  re-billing. Treat the replayed trace as a snapshot, not a new run.
+- **Concurrent coalescing:** N simultaneous POSTs with the same key → one
+  execution (all responses share one `request_id`); all but the executing
+  request carry `X-Idempotent-Replay: true`. Safe to fire retries blindly.
+- **Failures are never cached:** a 400 (e.g. bogus model id) does not poison
+  the key — retry the same key with a corrected body and it executes fresh.
+- **Custom DAG over REST:** send your stage graph exactly as documented
+  (worker → aggregator chain; every dag needs at least one
+  aggregator/merge/audit stage); the dispatcher writes the prompts, your
+  structure is preserved, `finish_reason: stop`, 47s for a 3-stage
+  flash→pro→luna chain. `formation: "custom"` on `/v1/deliberate` is 422 by
+  design; `allow_custom_dag:false` with a dag is 400 — both exact.
+
+What to WATCH (filed as DF-CHIMERA-V2-83/84/85):
+
+- **DF-CHIMERA-V2-83 (P2):** the cache is keyed by the key ALONE. Same key +
+  a different prompt silently returns the FIRST body's cached answer with
+  `X-Idempotent-Replay: true` and no warning. Until a marker lands, derive
+  keys from the request content (hash of prompt+params) or use unique UUIDs
+  per logical request — never reuse a key across different requests.
+- **DF-CHIMERA-V2-84 (P3):** `idempotency_key` is accepted but IGNORED on
+  `/v1/chat/completions` (replay exists only on `/v1/deliberate`). Don't
+  port retry-safety to the OpenAI-compatible surface and assume it works.
+- **DF-CHIMERA-V2-85 (P3):** a worker-only dag (no aggregator stage) fails
+  with a 400 whose detail mixes the structural reason with the model-catalog
+  rule. If your dag SHAPE is wrong, ignore the catalog sentence.
+- Fresh-box note: a fresh agent's clone of the PUBLIC GitHub mirror tracks
+  local HEAD exactly (both `12011c7` this run) — fresh-box HEAD proofs are
+  valid parity evidence without any repo-permission changes.
+- Failure-leg design: check provider liveness first — this run's two
+  "expected-failure" worker legs (gemini, anthropic) both had live
+  credentials in the deployment and returned healthy answers.
