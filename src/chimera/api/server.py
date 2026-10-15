@@ -473,6 +473,14 @@ class ChatCompletionRequest(BaseModel):
     # Client-defined DAG (Feature 1) — disabled unless allow_custom_dag=True
     dag: dict[str, Any] | None = None  # Full DAG definition from client
     allow_custom_dag: bool = False  # Must be True to accept client DAG
+    # DF-CHIMERA-V2-84: honored on the chat surface — same contract as
+    # /v1/deliberate (CHIMERA-V2-REVIEW-05). With a key, a repeat POST with
+    # the same key replays the cached chat-completions envelope (HTTP 200 +
+    # X-Idempotent-Replay: true) instead of re-running (and re-billing) the
+    # deliberation. Keys are namespaced per surface (`chat:` prefix), so the
+    # same literal key on /v1/deliberate and /v1/chat/completions never
+    # cross-replays. Failures are never cached; a no-key request is unchanged.
+    idempotency_key: str | None = None
 
 
 class ChatChoiceMessage(BaseModel):
@@ -858,9 +866,177 @@ class _ProviderHealthCache:
             self._computed_at = None
 
 
-def _register_routes(app: FastAPI) -> None:
+async def _run_chat_deliberation(request: Request, body: ChatCompletionRequest) -> ChatCompletionResponse:
+    """Run one chat-completions deliberation (validation + engine call).
+
+    Extracted so the endpoint's idempotency wrapper (DF-CHIMERA-V2-84)
+    can call it on a cache miss while the no-key path stays byte-identical
+    to the pre-idempotency behavior (same shape as _execute_deliberation).
+    """
     from fastapi.responses import JSONResponse
 
+    engine: Engine = request.app.state.engine
+    if body.dag is not None and not body.allow_custom_dag:
+        raise HTTPException(
+            status_code=400,
+            detail="Custom DAG requires allow_custom_dag=true",
+        )
+    prompt = "\n".join(m.content for m in body.messages if m.role != "system")
+    # `body.model` already defaults to "auto" (INT-API-003), so an
+    # omitted `model` deliberates with the auto dispatcher.
+    formation = body.model or "auto"
+    # OpenAI-compat contract: an unknown model is a hard error, NOT a
+    # silent substitution (CH-GAP-027). Valid values: "auto", a
+    # configured formation preset, or "custom" (only with a DAG).
+    cfg: ChimeraConfig = request.app.state.config
+    if (
+        formation not in cfg.formations
+        and formation != "auto"
+        and not (formation == "custom" and body.dag is not None)
+    ):
+        # DF-CHIMERA-0911-3: `model` is a FORMATION selector (OpenAI
+        # drop-in compatibility), NOT a catalog model ID — a key from
+        # GET /v1/models sent as `model` lands here. Keep the 404
+        # model_not_found contract (CH-GAP-027) but make it
+        # actionable: name the override fields that DO select a
+        # specific catalog model. Those fields are read straight off
+        # the request body, so an OpenAI SDK caller reaches them via
+        # `extra_body` — say so instead of leaving the caller to guess.
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "message": (
+                        f"The model `{formation}` does not exist. "
+                        "`model` selects a FORMATION (a deliberation "
+                        "preset), not a catalog model ID — use GET "
+                        "/v1/formations for the valid names, or GET "
+                        "/v1/models for the catalog. Valid values: "
+                        "'auto', a formation preset, or 'custom' with "
+                        "a DAG via allow_custom_dag. To force a "
+                        "specific catalog model, send model='auto' "
+                        "with one of the Chimera override fields: "
+                        "`worker_model` (every worker), "
+                        "`stage_models` (per stage), or "
+                        "`allowed_models` (restrict the pool) — "
+                        "OpenAI SDK callers pass these through "
+                        "extra_body. See docs/OPENAI_API.md."
+                    ),
+                    "type": "invalid_request_error",
+                    "param": "model",
+                    "code": "model_not_found",
+                }
+            },
+        )
+    from chimera.config import DeliberationOverrides
+
+    # OpenAI-compat contract: streaming is NOT supported (CH-GAP-030).
+    # A drop-in client sending stream:true must get an explicit 400
+    # naming the field — never a silent non-stream 200.
+    if body.stream:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "message": (
+                        "Streaming is not supported by this server. Omit `stream` or set it to false."
+                    ),
+                    "type": "invalid_request_error",
+                    "param": "stream",
+                    "code": "stream_not_supported",
+                }
+            },
+        )
+    overrides = DeliberationOverrides(
+        allowed_models=body.allowed_models,
+        disallowed_models=body.disallowed_models,
+        dispatcher_model=body.dispatcher_model,
+        aggregator_model=body.aggregator_model,
+        worker_model=body.worker_model,
+        stage_models=body.stage_models,
+        max_tokens=body.max_completion_tokens or body.max_tokens,
+    )
+    # Extract output schema from OpenAI-style response_format
+    output_schema = None
+    if body.response_format:
+        rf = body.response_format
+        if rf.get("type") == "json_schema":
+            output_schema = rf.get("json_schema", {}).get("schema")
+        elif rf.get("type") == "json_object":
+            output_schema = {"type": "object"}  # generic object
+    try:
+        result = await engine.deliberate(
+            prompt,
+            formation,
+            overrides=overrides,
+            output_schema=output_schema,
+            dag=body.dag,
+            allow_custom_dag=body.allow_custom_dag,
+        )
+    except (KeyError, ValueError) as exc:
+        # DF-CHIMERA-V2-61: teach the `models:` catalog requirement
+        # (400 status + JSON shape unchanged).
+        raise HTTPException(
+            status_code=400,
+            detail=_catalog_error_detail(f"Unknown model/formation: {exc}"),
+        ) from exc
+    if result.answer_degraded:
+        raise _NoUsableAnswerError(
+            message=(
+                "Deliberation failed: no usable answer produced. "
+                f"Upstream error: {result.answer_error or 'unknown'}"
+            ),
+            request_id=result.trace.request_id,
+        )
+    trace = result.trace
+    # Deliberation-wide aggregate (dispatch + every stage), not the
+    # dispatcher stage's numbers alone — see aggregate_usage().
+    usage_prompt, usage_completion, usage_total = aggregate_usage(trace)
+    # "length" when ANY contributing stage was truncated (the merged
+    # answer is incomplete in exactly that case), else "stop" —
+    # aggregated_finish_reason().
+    return ChatCompletionResponse(
+        id=f"chatcmpl-{trace.request_id}",
+        created=int(time.time()),
+        model=formation,
+        choices=[
+            ChatChoice(
+                message=ChatChoiceMessage(content=result.answer),
+                finish_reason=aggregated_finish_reason(trace),
+            )
+        ],
+        usage=ChatUsage(
+            prompt_tokens=usage_prompt,
+            completion_tokens=usage_completion,
+            total_tokens=usage_total,
+        ),
+        # DF-CHIMERA-V2-53: make format negotiation visible at the
+        # compat edge — a lossy outcome on the ANSWER stage rides the
+        # response instead of living only in the logs. Present only
+        # when the requested format was weakened; omitted otherwise.
+        chimera_format_negotiation=_compat_format_negotiation(trace),
+        # DF-CHIMERA-V2-55: name the stages the token cap cut off —
+        # a worker capped mid-protocol merges into clean-looking
+        # garbage. DF-CHIMERA-V2-79: the list is ALWAYS sent (empty
+        # when nothing was truncated), mirroring the REST trace's
+        # ``degraded_reasons``, so a client can tell "no degradation"
+        # from "field not supported". ``or None`` here used to delete
+        # the key on clean runs via ``response_model_exclude_none`` —
+        # exactly the asymmetry DF-CHIMERA-V2-79 removed. Do not
+        # reintroduce it; ``chimera_format_negotiation`` /
+        # ``chimera_worker_failures`` below keep their own
+        # absent-when-clean convention.
+        chimera_degraded_reasons=list(trace.degraded_reasons),
+        # DF-CHIMERA-V2-75: name the stages that failed hard upstream
+        # (dropped workers) — a 200 with ``finish_reason="stop"``
+        # whose merge is silently missing a worker's output.
+        # ``or None`` keeps the field absent on clean runs, and the
+        # entry shape mirrors ``trace.worker_failures`` exactly.
+        chimera_worker_failures=list(trace.worker_failures) or None,
+    )
+
+
+def _register_routes(app: FastAPI) -> None:
     # ---------------------------------------------------------------- #
     # F8: Enhanced health checks
     # ---------------------------------------------------------------- #
@@ -1266,165 +1442,30 @@ def _register_routes(app: FastAPI) -> None:
         response.headers[QUEUE_POSITION_HEADER] = str(queue.position_of_current_request)
 
         try:
-            engine: Engine = request.app.state.engine
-            if body.dag is not None and not body.allow_custom_dag:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Custom DAG requires allow_custom_dag=true",
-                )
-            prompt = "\n".join(m.content for m in body.messages if m.role != "system")
-            # `body.model` already defaults to "auto" (INT-API-003), so an
-            # omitted `model` deliberates with the auto dispatcher.
-            formation = body.model or "auto"
-            # OpenAI-compat contract: an unknown model is a hard error, NOT a
-            # silent substitution (CH-GAP-027). Valid values: "auto", a
-            # configured formation preset, or "custom" (only with a DAG).
-            cfg: ChimeraConfig = request.app.state.config
-            if (
-                formation not in cfg.formations
-                and formation != "auto"
-                and not (formation == "custom" and body.dag is not None)
-            ):
-                # DF-CHIMERA-0911-3: `model` is a FORMATION selector (OpenAI
-                # drop-in compatibility), NOT a catalog model ID — a key from
-                # GET /v1/models sent as `model` lands here. Keep the 404
-                # model_not_found contract (CH-GAP-027) but make it
-                # actionable: name the override fields that DO select a
-                # specific catalog model. Those fields are read straight off
-                # the request body, so an OpenAI SDK caller reaches them via
-                # `extra_body` — say so instead of leaving the caller to guess.
-                return JSONResponse(
-                    status_code=404,
-                    content={
-                        "error": {
-                            "message": (
-                                f"The model `{formation}` does not exist. "
-                                "`model` selects a FORMATION (a deliberation "
-                                "preset), not a catalog model ID — use GET "
-                                "/v1/formations for the valid names, or GET "
-                                "/v1/models for the catalog. Valid values: "
-                                "'auto', a formation preset, or 'custom' with "
-                                "a DAG via allow_custom_dag. To force a "
-                                "specific catalog model, send model='auto' "
-                                "with one of the Chimera override fields: "
-                                "`worker_model` (every worker), "
-                                "`stage_models` (per stage), or "
-                                "`allowed_models` (restrict the pool) — "
-                                "OpenAI SDK callers pass these through "
-                                "extra_body. See docs/OPENAI_API.md."
-                            ),
-                            "type": "invalid_request_error",
-                            "param": "model",
-                            "code": "model_not_found",
-                        }
-                    },
-                )
-            from chimera.config import DeliberationOverrides
-
-            # OpenAI-compat contract: streaming is NOT supported (CH-GAP-030).
-            # A drop-in client sending stream:true must get an explicit 400
-            # naming the field — never a silent non-stream 200.
-            if body.stream:
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "error": {
-                            "message": (
-                                "Streaming is not supported by this server. Omit `stream` or set it to false."
-                            ),
-                            "type": "invalid_request_error",
-                            "param": "stream",
-                            "code": "stream_not_supported",
-                        }
-                    },
-                )
-            overrides = DeliberationOverrides(
-                allowed_models=body.allowed_models,
-                disallowed_models=body.disallowed_models,
-                dispatcher_model=body.dispatcher_model,
-                aggregator_model=body.aggregator_model,
-                worker_model=body.worker_model,
-                stage_models=body.stage_models,
-                max_tokens=body.max_completion_tokens or body.max_tokens,
-            )
-            # Extract output schema from OpenAI-style response_format
-            output_schema = None
-            if body.response_format:
-                rf = body.response_format
-                if rf.get("type") == "json_schema":
-                    output_schema = rf.get("json_schema", {}).get("schema")
-                elif rf.get("type") == "json_object":
-                    output_schema = {"type": "object"}  # generic object
-            try:
-                result = await engine.deliberate(
-                    prompt,
-                    formation,
-                    overrides=overrides,
-                    output_schema=output_schema,
-                    dag=body.dag,
-                    allow_custom_dag=body.allow_custom_dag,
-                )
-            except (KeyError, ValueError) as exc:
-                # DF-CHIMERA-V2-61: teach the `models:` catalog requirement
-                # (400 status + JSON shape unchanged).
-                raise HTTPException(
-                    status_code=400,
-                    detail=_catalog_error_detail(f"Unknown model/formation: {exc}"),
-                ) from exc
-            if result.answer_degraded:
-                raise _NoUsableAnswerError(
-                    message=(
-                        "Deliberation failed: no usable answer produced. "
-                        f"Upstream error: {result.answer_error or 'unknown'}"
-                    ),
-                    request_id=result.trace.request_id,
-                )
-            trace = result.trace
-            # Deliberation-wide aggregate (dispatch + every stage), not the
-            # dispatcher stage's numbers alone — see aggregate_usage().
-            usage_prompt, usage_completion, usage_total = aggregate_usage(trace)
-            # "length" when ANY contributing stage was truncated (the merged
-            # answer is incomplete in exactly that case), else "stop" —
-            # aggregated_finish_reason().
-            return ChatCompletionResponse(
-                id=f"chatcmpl-{trace.request_id}",
-                created=int(time.time()),
-                model=formation,
-                choices=[
-                    ChatChoice(
-                        message=ChatChoiceMessage(content=result.answer),
-                        finish_reason=aggregated_finish_reason(trace),
-                    )
-                ],
-                usage=ChatUsage(
-                    prompt_tokens=usage_prompt,
-                    completion_tokens=usage_completion,
-                    total_tokens=usage_total,
-                ),
-                # DF-CHIMERA-V2-53: make format negotiation visible at the
-                # compat edge — a lossy outcome on the ANSWER stage rides the
-                # response instead of living only in the logs. Present only
-                # when the requested format was weakened; omitted otherwise.
-                chimera_format_negotiation=_compat_format_negotiation(trace),
-                # DF-CHIMERA-V2-55: name the stages the token cap cut off —
-                # a worker capped mid-protocol merges into clean-looking
-                # garbage. DF-CHIMERA-V2-79: the list is ALWAYS sent (empty
-                # when nothing was truncated), mirroring the REST trace's
-                # ``degraded_reasons``, so a client can tell "no degradation"
-                # from "field not supported". ``or None`` here used to delete
-                # the key on clean runs via ``response_model_exclude_none`` —
-                # exactly the asymmetry DF-CHIMERA-V2-79 removed. Do not
-                # reintroduce it; ``chimera_format_negotiation`` /
-                # ``chimera_worker_failures`` below keep their own
-                # absent-when-clean convention.
-                chimera_degraded_reasons=list(trace.degraded_reasons),
-                # DF-CHIMERA-V2-75: name the stages that failed hard upstream
-                # (dropped workers) — a 200 with ``finish_reason="stop"``
-                # whose merge is silently missing a worker's output.
-                # ``or None`` keeps the field absent on clean runs, and the
-                # entry shape mirrors ``trace.worker_failures`` exactly.
-                chimera_worker_failures=list(trace.worker_failures) or None,
-            )
+            # DF-CHIMERA-V2-84: idempotency on the chat surface. With no key
+            # the path is byte-identical to before. With a key, a cached
+            # success replays (200 + X-Idempotent-Replay: true) and
+            # concurrent duplicates coalesce on the per-key lock — the
+            # SAME _IdempotencyCache contract as /v1/deliberate, with keys
+            # namespaced `chat:` so the two surfaces never cross-replay.
+            # Failures are never cached, so retrying an errored call
+            # re-executes.
+            key = body.idempotency_key
+            cache: _IdempotencyCache = request.app.state.idempotency_cache
+            if key is None:
+                return await _run_chat_deliberation(request, body)
+            chat_cached = cache.get("chat:" + key)
+            if chat_cached is not None:
+                response.headers["X-Idempotent-Replay"] = "true"
+                return chat_cached
+            async with cache.lock_for("chat:" + key):
+                chat_cached = cache.get("chat:" + key)
+                if chat_cached is not None:
+                    response.headers["X-Idempotent-Replay"] = "true"
+                    return chat_cached
+                result = await _run_chat_deliberation(request, body)
+                cache.put("chat:" + key, result)
+                return result
         finally:
             queue.release()
 

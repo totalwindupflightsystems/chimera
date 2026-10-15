@@ -240,6 +240,17 @@ but are **documented no-ops** (never errors, never silently misapplied):
 | `n` | Accepted; `n > 1` is unsupported — the response always contains a single `chat.completion` choice |
 | `top_p` | Accepted; ignored — sampling temperature is fixed per stage |
 
+**Idempotency on `/v1/chat/completions`:** this endpoint also honors an
+optional `idempotency_key` (string) request-body field — the same contract as
+`POST /v1/deliberate` (see [Idempotency](#idempotency) under `/v1/deliberate`).
+A repeat POST with the same key replays the cached chat-completions envelope
+(HTTP 200, same body including the same `id`, plus an
+`X-Idempotent-Replay: true` header) instead of re-running and re-billing the
+deliberation. Concurrent duplicates coalesce onto one execution; failures are
+never cached, so retrying an errored call re-executes. Keys are namespaced
+per surface — the same literal key on `/v1/deliberate` and
+`/v1/chat/completions` never cross-replays (DF-CHIMERA-V2-84).
+
 ## Usage Reporting
 
 The `usage` block describes the **entire deliberation**, not one provider's
@@ -591,6 +602,12 @@ same body plus an `X-Idempotent-Replay: true` header, without re-running or
 re-billing the deliberation. Concurrent duplicates coalesce onto the same
 execution. Omit the key for the previous always-execute behavior; failures are
 never cached, so retrying an errored call re-executes.
+
+The same `idempotency_key` contract is honored on `POST /v1/chat/completions`
+(DF-CHIMERA-V2-84): the cached chat-completions envelope replays with the same
+`X-Idempotent-Replay: true` header. Keys are namespaced per surface — the same
+literal key sent to `/v1/deliberate` and `/v1/chat/completions` never
+cross-replays. See [Idempotency on `/v1/chat/completions`](#idempotency-on-v1chatcompletions).
 
 ### `/v1/models`
 

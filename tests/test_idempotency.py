@@ -123,3 +123,83 @@ def test_lru_eviction_beyond_capacity() -> None:
     assert cache.get("k2") is None
     assert cache.get("k3") is not None
     assert cache.get("k4") is not None
+
+
+# ---------------------------------------------------------------------------
+# DF-CHIMERA-V2-84: idempotency_key honored on POST /v1/chat/completions —
+# same replay contract as /v1/deliberate, with keys namespaced `chat:` so the
+# two surfaces never cross-replay.
+# ---------------------------------------------------------------------------
+
+
+def _chat_payload(key):  # type: ignore[no-untyped-def]
+    payload = {
+        "model": "auto",
+        "messages": [{"role": "user", "content": "hello"}],
+    }
+    if key is not None:
+        payload["idempotency_key"] = key
+    return payload
+
+
+def test_chat_same_key_replays_and_engine_runs_once(config, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    client, calls = _client_with_engine_counter(config, monkeypatch)
+
+    r1 = client.post("/v1/chat/completions", json=_chat_payload("ck-1"))
+    r2 = client.post("/v1/chat/completions", json=_chat_payload("ck-1"))
+
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert r1.json() == r2.json()  # SAME envelope, incl. completion id
+    assert REPLAY_HEADER not in r1.headers
+    assert r2.headers[REPLAY_HEADER] == "true"
+    assert calls["n"] == 1  # engine ran once — the replay was not re-billed
+
+
+def test_chat_different_key_executes_fresh(config, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    client, calls = _client_with_engine_counter(config, monkeypatch)
+
+    r1 = client.post("/v1/chat/completions", json=_chat_payload("ck-a"))
+    r2 = client.post("/v1/chat/completions", json=_chat_payload("ck-b"))
+
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert REPLAY_HEADER not in r1.headers
+    assert REPLAY_HEADER not in r2.headers
+    assert r1.json()["id"] != r2.json()["id"]
+    assert calls["n"] == 2
+
+
+def test_chat_no_key_executes_every_time(config, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    client, calls = _client_with_engine_counter(config, monkeypatch)
+
+    r1 = client.post("/v1/chat/completions", json=_chat_payload(None))
+    r2 = client.post("/v1/chat/completions", json=_chat_payload(None))
+
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert REPLAY_HEADER not in r1.headers
+    assert REPLAY_HEADER not in r2.headers
+    assert r1.json()["id"] != r2.json()["id"]
+    assert calls["n"] == 2
+
+
+def test_chat_key_never_cross_replays_with_deliberate(config, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The same literal key on the two surfaces must not cross-replay."""
+    client, calls = _client_with_engine_counter(config, monkeypatch)
+
+    d1 = client.post(
+        "/v1/deliberate",
+        json={"prompt": "hello", "formation": "auto", "idempotency_key": "shared"},
+    )
+    c1 = client.post("/v1/chat/completions", json=_chat_payload("shared"))
+    c2 = client.post("/v1/chat/completions", json=_chat_payload("shared"))
+
+    assert d1.status_code == 200 and c1.status_code == 200 and c2.status_code == 200
+    # chat first call with that key EXECUTED (not a replay of the deliberate
+    # response — different wire shape entirely) and the second chat call
+    # replayed the chat envelope.
+    assert REPLAY_HEADER not in c1.headers
+    assert c2.headers[REPLAY_HEADER] == "true"
+    assert c2.json()["object"] == "chat.completion"
+    assert calls["n"] == 2
