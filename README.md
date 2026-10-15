@@ -609,7 +609,11 @@ As everywhere, the `CHIMERA_API_KEY` env var only takes effect with
 alone does not enable authentication.
 `POST /v1/deliberate` also accepts an optional `idempotency_key` request-body
 field (a repeat call with the same key is replayed, not re-run) — see
-[docs/OPENAI_API.md](docs/OPENAI_API.md#v1deliberate).
+[docs/OPENAI_API.md](docs/OPENAI_API.md#v1deliberate). The same contract is
+honored on `POST /v1/chat/completions` (replay of the cached chat-completions
+envelope with `X-Idempotent-Replay: true`); keys are namespaced per surface,
+so the same literal key on the two endpoints never cross-replays
+(DF-CHIMERA-V2-84).
 
 ## Response Trace
 
