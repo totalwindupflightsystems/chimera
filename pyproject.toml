@@ -57,13 +57,21 @@ dependencies = [
 ]
 
 # Deferred majors — DEPS-008 census (2026-10-05); re-derived 2026-10-13
-# (SUP-DEPS-20261013-CHV2, every entry below re-verified rather than copied).
-# 8 `pip list --outdated` entries remain after that refresh and each one is
-# accounted for here: six are refused by the resolver ITSELF (`uv lock
-# --upgrade-package <name>` leaves the pin below because a parent cap forbids
-# the newest release) and two are held by policy alone, where the resolver
-# moves freely — those two were probe-tested in isolated venvs. Re-derive
-# before acting on any single line (parent caps evolve with their parents):
+# (SUP-DEPS-20261013-CHV2) and again 2026-10-15 (SUP-DEPS-20261015-CHV2):
+# every held entry re-verified against current caps rather than copied.
+# 2026-10-15 `pip list --outdated` had 12 entries; 4 were in-bounds and
+# upgraded that day (transitive, no cap in this tree forbade them):
+#   boto3 1.43.113 -> 1.43.114 + botocore 1.43.113 -> 1.43.114
+#                       — transitive via litellm (<1.100 allows the 1.43.x
+#                       line); resolver moved freely, probe: pip check clean
+#   filelock 4.1.2 -> 4.2.0
+#                       — transitive via huggingface-hub 1.x (requires
+#                       filelock>=4,<5); resolver moved freely
+#   pluggy 1.6.0 -> 1.7.0
+#                       — transitive via pytest 9.1 / pylsp; resolver moved
+#                       freely, full suite green after the bump
+# The remaining 7+ are accounted for here; re-derive before acting on any
+# single line (parent caps evolve with their parents):
 #   openai 3.x        — resolver-refused: litellm 1.99.x requires
 #                       openai>=2.20,<3.0; 3.0 also switches the default HTTP
 #                       client to httpx2. NOTE src/chimera/gateway.py imports
