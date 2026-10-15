@@ -592,6 +592,14 @@ re-billing the deliberation. Concurrent duplicates coalesce onto the same
 execution. Omit the key for the previous always-execute behavior; failures are
 never cached, so retrying an errored call re-executes.
 
+**Key/body mismatch (DF-CHIMERA-V2-83):** the cache is first-request-wins per
+key, and each entry records a hash of the request body that produced it (the
+`idempotency_key` field itself is excluded from the hash). Reusing a key with
+a DIFFERENT body — a UUID-reuse or retry-framework bug — is rejected with
+**HTTP 409 Conflict** and an `X-Idempotent-Body-Match: false` header; the
+original cached answer is never returned and the engine does not re-run. Use
+a fresh key for every new request.
+
 ### `/v1/models`
 
 An **OpenAI `ListModelsResponse`**, so `client.models.list()` works through the

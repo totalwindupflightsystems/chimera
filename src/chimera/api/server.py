@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hashlib
+import json
 import os
 import subprocess
 import threading
@@ -409,23 +411,33 @@ class _IdempotencyCache:
     and every waiter receives the same result. Only successful responses
     are cached — failures are never memoized, so a retry after an error
     re-executes.
+
+    Each entry also records a hash of the request body that produced it
+    (DF-CHIMERA-V2-83): a replay with the SAME key but a DIFFERENT body is
+    a client bug (UUID reuse, retry framework regenerating the prompt) and
+    must never silently return the original answer — the endpoint rejects
+    it with HTTP 409 instead.
     """
 
     CAPACITY = 512
 
     def __init__(self, capacity: int = CAPACITY) -> None:
         self._capacity = capacity
-        self._store: OrderedDict[str, DeliberateResponse] = OrderedDict()
+        self._store: OrderedDict[str, tuple[DeliberateResponse, str]] = OrderedDict()
         self._locks: dict[str, asyncio.Lock] = {}
 
     def get(self, key: str) -> DeliberateResponse | None:
-        resp = self._store.get(key)
-        if resp is not None:
-            self._store.move_to_end(key)
-        return resp
+        resp = self.get_entry(key)
+        return resp[0] if resp is not None else None
 
-    def put(self, key: str, response: DeliberateResponse) -> None:
-        self._store[key] = response
+    def get_entry(self, key: str) -> tuple[DeliberateResponse, str] | None:
+        entry = self._store.get(key)
+        if entry is not None:
+            self._store.move_to_end(key)
+        return entry
+
+    def put(self, key: str, response: DeliberateResponse, body_hash: str = "") -> None:
+        self._store[key] = (response, body_hash)
         self._store.move_to_end(key)
         while len(self._store) > self._capacity:
             evicted, _ = self._store.popitem(last=False)
@@ -446,6 +458,32 @@ class _IdempotencyCache:
 class ChatMessage(BaseModel):
     role: str
     content: str
+
+
+def _body_mismatch_conflict() -> HTTPException:
+    """DF-CHIMERA-V2-83: 409 for a reused idempotency key with a new body."""
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            "idempotency_key was already used with a different "
+            "request body. Use a fresh key for a new request."
+        ),
+        headers={"X-Idempotent-Body-Match": "false"},
+    )
+
+
+def _body_fingerprint(body: DeliberateRequest) -> str:
+    """DF-CHIMERA-V2-83: stable hash of a deliberate request body.
+
+    The idempotency key itself is EXCLUDED (it is the cache key, not part
+    of the semantic payload), so two retries that differ only in key still
+    count as the same request while any change to the prompt/formation/
+    overrides is detected as a mismatch.
+    """
+    payload = body.model_dump(mode="json", exclude={"idempotency_key"})
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 class ChatCompletionRequest(BaseModel):
@@ -1218,18 +1256,28 @@ def _register_routes(app: FastAPI) -> None:
             if key is None:
                 return await _execute_deliberation(request, body)
             cache: _IdempotencyCache = request.app.state.idempotency_cache
-            cached = cache.get(key)
+            body_hash = _body_fingerprint(body)
+            cached = cache.get_entry(key)
             if cached is not None:
+                cached_resp, cached_hash = cached
+                if body_hash != cached_hash:
+                    # DF-CHIMERA-V2-83: same key, different body — the client
+                    # is reusing an idempotency key for a NEW request. Never
+                    # silently replay the original answer.
+                    raise _body_mismatch_conflict()
                 response.headers["X-Idempotent-Replay"] = "true"
-                return cached
+                return cached_resp
             lock = cache.lock_for(key)
             async with lock:
-                cached = cache.get(key)
+                cached = cache.get_entry(key)
                 if cached is not None:
+                    cached_resp, cached_hash = cached
+                    if body_hash != cached_hash:
+                        raise _body_mismatch_conflict()
                     response.headers["X-Idempotent-Replay"] = "true"
-                    return cached
+                    return cached_resp
                 result = await _execute_deliberation(request, body)
-                cache.put(key, result)
+                cache.put(key, result, body_hash)
                 return result
         finally:
             queue.release()
