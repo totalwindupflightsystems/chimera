@@ -31,6 +31,7 @@ from chimera.config import (
     credentialed_enabled_models,
     model_credential_fingerprint,
 )
+from chimera.exceptions import DagShapeError
 from chimera.gateway import Gateway, GatewayError, GatewayResponse
 
 log = structlog.get_logger("chimera.dispatcher")
@@ -398,9 +399,9 @@ def _validate_dag(dag: FormationDAG, config: ChimeraConfig) -> None:
                 f"Set enabled: true in chimera.yaml to re-enable it."
             )
     if not any(s.kind == "worker" for s in dag.stages):
-        raise ValueError("Formation has no worker stages")
+        raise DagShapeError("Formation has no worker stages")
     if not any(s.kind in {"aggregator", "merge", "audit"} for s in dag.stages):
-        raise ValueError("Formation has no aggregator/merge/audit stages")
+        raise DagShapeError("Formation has no aggregator/merge/audit stages")
     if _has_cycle(dag):
         raise ValueError("Formation DAG contains a cycle")
 

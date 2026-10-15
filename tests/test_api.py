@@ -1041,3 +1041,75 @@ def test_chat_completions_n_and_top_p_accepted(config) -> None:  # type: ignore[
     assert r.json()["object"] == "chat.completion"
     assert len(r.json()["choices"]) == 1  # n>1 unsupported — single choice
     assert all("n" not in c[2] and "top_p" not in c[2] for c in gateway.calls), gateway.calls
+
+
+# --------------------------------------------------------------------------- #
+# DF-CHIMERA-V2-85: structural custom-DAG failures must NOT carry the
+# model-catalog hint — the two failure reasons are split.
+# --------------------------------------------------------------------------- #
+
+
+def _worker_only_dag_dict() -> dict[str, object]:
+    return {
+        "stages": [
+            {"id": "w1", "kind": "worker", "model": "deepseek/deepseek-chat"},
+            {"id": "w2", "kind": "worker", "model": "deepseek/deepseek-chat"},
+        ],
+        "edges": [],
+    }
+
+
+def test_chat_completions_worker_only_dag_400_is_structural(config) -> None:  # type: ignore[no-untyped-def]
+    """A worker-only custom DAG (no aggregator stage) returns 400 with the
+    structural reason ONLY — the model-catalog sentence must be absent."""
+    client = _client(config)
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "custom",
+            "messages": [{"role": "user", "content": "hi"}],
+            "dag": _worker_only_dag_dict(),
+            "allow_custom_dag": True,
+        },
+    )
+    assert r.status_code == 400, r.text
+    detail = r.json()["detail"]
+    assert "aggregator/merge/audit" in detail
+    assert "must be declared in the `models:` catalog" not in detail
+
+
+def test_deliberate_worker_only_dag_400_is_structural(config) -> None:  # type: ignore[no-untyped-def]
+    """Same split on /v1/deliberate (the other error path)."""
+    client = _client(config)
+    r = client.post(
+        "/v1/deliberate",
+        json={"prompt": "hi", "dag": _worker_only_dag_dict(), "allow_custom_dag": True},
+    )
+    assert r.status_code == 400, r.text
+    detail = r.json()["detail"]
+    assert "aggregator/merge/audit" in detail
+    assert "must be declared in the `models:` catalog" not in detail
+
+
+def test_unknown_model_in_dag_still_carries_catalog_hint(config) -> None:  # type: ignore[no-untyped-def]
+    """A genuinely unknown model id still returns 400 with the catalog hint."""
+    client = _client(config)
+    bad_dag = {
+        "stages": [
+            {"id": "w", "kind": "worker", "model": "no/such/model"},
+            {"id": "a", "kind": "aggregator", "model": "zai-coding-plan/glm-5.2", "depends_on": ["w"]},
+        ],
+        "edges": [["w", "a"]],
+    }
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "custom",
+            "messages": [{"role": "user", "content": "hi"}],
+            "dag": bad_dag,
+            "allow_custom_dag": True,
+        },
+    )
+    assert r.status_code == 400, r.text
+    detail = r.json()["detail"]
+    assert "must be declared in the `models:` catalog" in detail

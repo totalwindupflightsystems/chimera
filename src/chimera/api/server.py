@@ -337,6 +337,18 @@ _CATALOG_HINT = (
 )
 
 
+_DAG_SHAPE_HINT = (
+    " Add at least one `aggregator`/`merge`/`audit` stage (and one `worker`"
+    ' stage) to your `dag`, or use a preset formation; see the "Custom DAG:'
+    ' Full Control" section of docs/OPENAI_API.md.'
+)
+
+
+def _dag_shape_error_detail(base: str) -> str:
+    """Append the custom-DAG shape guidance to a structural 400 ``detail``."""
+    return f"{base}{_DAG_SHAPE_HINT}"
+
+
 def _catalog_error_detail(base: str) -> str:
     """Append the catalog requirement to an unknown-model 400 ``detail``.
 
@@ -832,6 +844,15 @@ async def _execute_deliberation(request: Request, body: DeliberateRequest) -> De
     except ValueError as exc:
         # DF-CHIMERA-V2-61: teach the `models:` catalog requirement
         # (400 status + JSON shape unchanged).
+        # DF-CHIMERA-V2-85: structural (stage-shape) custom-DAG failures get
+        # the DAG-shape guidance instead of the catalog hint.
+        from chimera.exceptions import DagShapeError
+
+        if isinstance(exc, DagShapeError):
+            raise HTTPException(
+                status_code=400,
+                detail=_dag_shape_error_detail(f"Invalid custom DAG: {exc}"),
+            ) from exc
         raise HTTPException(status_code=400, detail=_catalog_error_detail(str(exc))) from exc
     if result.answer_degraded:
         raise _NoUsableAnswerError(
@@ -1014,6 +1035,16 @@ async def _run_chat_deliberation(request: Request, body: ChatCompletionRequest) 
     except (KeyError, ValueError) as exc:
         # DF-CHIMERA-V2-61: teach the `models:` catalog requirement
         # (400 status + JSON shape unchanged).
+        # DF-CHIMERA-V2-85: a structural (stage-shape) custom-DAG failure gets
+        # the DAG-shape guidance INSTEAD — never the catalog hint, which would
+        # send the user to fix a catalog that is not the problem.
+        from chimera.exceptions import DagShapeError
+
+        if isinstance(exc, DagShapeError):
+            raise HTTPException(
+                status_code=400,
+                detail=_dag_shape_error_detail(f"Invalid custom DAG: {exc}"),
+            ) from exc
         raise HTTPException(
             status_code=400,
             detail=_catalog_error_detail(f"Unknown model/formation: {exc}"),

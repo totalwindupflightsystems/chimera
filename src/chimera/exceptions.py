@@ -37,3 +37,15 @@ class ConfigError(ValueError):
 
 
 __all__ = ["BudgetExhaustedError", "ConfigError"]
+
+
+class DagShapeError(ValueError):
+    """A client-defined DAG is structurally invalid (not a catalog miss).
+
+    Raised by :func:`chimera.dispatcher._validate_dag` for stage-shape
+    defects: a missing worker stage or a missing aggregator/merge/audit
+    stage (DF-CHIMERA-V2-85).  Subclasses ``ValueError`` so existing
+    ``except ValueError`` callers keep working, while the API layer can
+    distinguish "fix your DAG shape" from "fix your model catalog" and
+    must NOT append the catalog hint to these messages.
+    """
