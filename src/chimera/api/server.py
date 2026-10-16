@@ -1181,6 +1181,12 @@ def _register_routes(app: FastAPI) -> None:
             "providers_discovered": discovered_names,
             "commit": _running_identity(),
             "version": __version__,
+            # DF-CHIMERA-V2-90: where each provider's key actually came from
+            # (process_env / repo_dotenv / hermes_dotenv_fallback / missing).
+            # Additive observability — answers "did I configure credentials?"
+            # when a host-level ~/.hermes/.env quietly satisfies a key.
+            # Labels only, never key values.
+            "credential_sources": dict(cfg.credential_sources),
         }
 
         # Optional provider connectivity check

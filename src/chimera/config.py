@@ -22,6 +22,20 @@ from chimera.exceptions import ConfigError
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
+#: Credential-source labels (DF-CHIMERA-V2-90): where a provider's API key was
+#: actually found at load time.  Recorded per provider in
+#: ``ChimeraConfig.credential_sources`` and surfaced additively on the
+#: deliberation trace and in ``/v1/health`` details.  Only the provider name
+#: and the label ever travel — never the key value itself.
+CREDENTIAL_SOURCE_PROCESS_ENV = "process_env"
+CREDENTIAL_SOURCE_REPO_DOTENV = "repo_dotenv"
+CREDENTIAL_SOURCE_HERMES_DOTENV_FALLBACK = "hermes_dotenv_fallback"
+CREDENTIAL_SOURCE_MISSING = "missing"
+
+#: Display form of the Hermes dotenv path, used verbatim in warning logs so
+#: the operator can go look at the exact file that satisfied a key.
+_HERMES_DOTENV_DISPLAY = "~/.hermes/.env"
+
 #: Logger name for every record this module emits.  Records are emitted
 #: through :func:`_log_warning` rather than a module-level logger *proxy*.
 _CONFIG_LOGGER_NAME = "chimera.config"
@@ -404,15 +418,66 @@ class ChimeraConfig(BaseModel):
     # an aggregator model with a small context window.
     max_aggregator_context_tokens: int | None = None
 
+    credential_sources: dict[str, str] = Field(
+        default_factory=dict,
+        exclude=True,
+    )
+    """Which source satisfied each provider's API key at load time
+    (DF-CHIMERA-V2-90).
+
+    Maps provider name → one of ``process_env``, ``repo_dotenv``,
+    ``hermes_dotenv_fallback`` or ``missing``.  ``exclude=True`` keeps it out
+    of every serialization, mirroring ``configured_provider_names``: it is
+    load-time bookkeeping, not a YAML field, so ``model_validate`` /
+    ``model_copy`` / hand-built fixtures are unaffected.  Consumers read it
+    for observability (the deliberation trace's ``credential_sources`` and
+    ``/v1/health`` ``details.credential_sources``); a provider absent from
+    the map is one the resolver never looked at (no ``api_key_env`` —
+    typically a discovery addition or an inline ``api_key``).
+
+    Only labels travel here — never a key value.
+    """
+
     @model_validator(mode="after")
     def _resolve_provider_api_keys(self) -> ChimeraConfig:
-        for provider in self.providers.values():
+        for provider_name, provider in self.providers.items():
             if provider.api_key is None and provider.api_key_env:
-                # Resolution order: process env → repo .env (loaded into the
-                # process env by ``load_config``) → ~/.hermes/.env fallback.
-                provider.api_key = os.environ.get(provider.api_key_env)
-                if provider.api_key is None:
-                    provider.api_key = _load_hermes_dotenv().get(provider.api_key_env)
+                # Resolution order (unchanged — DF-CHIMERA-V2-90 only records
+                # WHERE the key came from): process env → repo .env (loaded
+                # into the process env by ``load_config``) → ~/.hermes/.env
+                # fallback.  The repo .env entries are told apart from real
+                # process-env entries via the load-time marker
+                # ``_REPO_DOTENV_VARS`` that ``load_config`` installs.
+                env_var = provider.api_key_env
+                provider.api_key = os.environ.get(env_var)
+                if provider.api_key is not None:
+                    if env_var in _REPO_DOTENV_VARS:
+                        source = CREDENTIAL_SOURCE_REPO_DOTENV
+                    else:
+                        source = CREDENTIAL_SOURCE_PROCESS_ENV
+                else:
+                    # Not in the process env — the hermes dotenv is consulted
+                    # below; the label reflects whether it actually HAD the
+                    # key (fallback) or nothing did (missing).
+                    fallback_value = _load_hermes_dotenv().get(env_var)
+                    if fallback_value is None:
+                        source = CREDENTIAL_SOURCE_MISSING
+                    else:
+                        provider.api_key = fallback_value
+                        source = CREDENTIAL_SOURCE_HERMES_DOTENV_FALLBACK
+                self.credential_sources[provider_name] = source
+                if source == CREDENTIAL_SOURCE_HERMES_DOTENV_FALLBACK and provider.api_key:
+                    # The one case that behaves differently from what a user
+                    # would expect: the key came from a host-specific file
+                    # the config never mentions.  Name the provider and the
+                    # path — never the value.
+                    _log_warning(
+                        "api_key_source_fallback",
+                        provider=provider_name,
+                        env_var=env_var,
+                        source=CREDENTIAL_SOURCE_HERMES_DOTENV_FALLBACK,
+                        path=_HERMES_DOTENV_DISPLAY,
+                    )
         return self
 
     def get_model(self, name: str) -> ModelEntry:
@@ -587,6 +652,21 @@ _PROVIDER_API_KEY_ENV: dict[str, str] = {
     "google": "GEMINI_API_KEY",
 }
 
+
+def provider_credential_source(config: ChimeraConfig, provider_name: str) -> str | None:
+    """The recorded source label for *provider_name*'s API key, or ``None``.
+
+    Returns one of the ``CREDENTIAL_SOURCE_*`` labels (``process_env``,
+    ``repo_dotenv``, ``hermes_dotenv_fallback``, ``missing``) for providers
+    the load-time resolver looked at, and ``None`` when the config carries no
+    provenance for the provider — programmatically built fixtures, a
+    discovery addition, or a pre-recording config object.  Callers must
+    treat ``None`` as "unknown", not as any particular label
+    (DF-CHIMERA-V2-90).
+    """
+    return config.credential_sources.get(provider_name)
+
+
 #: Hosts that mean "this endpoint runs on the operator's own machine", where
 #: running without a key is the normal configuration.
 _LOCAL_PROVIDER_HOSTS = frozenset({"localhost", "127.0.0.1", "0.0.0.0", "::1"})
@@ -647,6 +727,21 @@ def credentialed_enabled_models(config: ChimeraConfig) -> dict[str, ModelEntry]:
 #: the process environment (e.g. cron sessions).
 _hermes_dotenv_cache: dict[str, str] | None = None
 
+#: Names of the env vars the repo-level ``.env`` load injected into
+#: ``os.environ`` for the config currently being loaded (DF-CHIMERA-V2-90).
+#: Names only, never values.  ``load_config`` clears it right before
+#: ``_load_repo_dotenv`` runs, so the set describes the live config load and
+#: the provider validator can label such a key ``repo_dotenv`` instead of
+#: ``process_env``.
+_REPO_DOTENV_VARS: set[str] = set()
+
+#: Per-load record of which source satisfied each ``${VAR}`` substitution
+#: (DF-CHIMERA-V2-90): env var name → ``process_env`` /
+#: ``repo_dotenv`` / ``hermes_dotenv_fallback``.  Values are source labels,
+#: never secrets.  ``load_config`` clears it before substitution and reads
+#: the map afterwards to label ``api_keys`` shortcut entries.
+_SUBSTITUTION_SOURCES: dict[str, str] = {}
+
 
 def _load_hermes_dotenv() -> dict[str, str]:
     """Parse ``~/.hermes/.env`` into a dict, caching the result."""
@@ -682,10 +777,17 @@ def _load_repo_dotenv(config_path: Path) -> None:
     (``process env > repo .env > ~/.hermes/.env``). Best-effort: a missing
     file or a missing ``python-dotenv`` install is silently ignored, and a
     malformed file logs a warning instead of crashing startup.
+
+    Every variable this function injects is recorded in the module-level
+    ``_REPO_DOTENV_VARS`` set (DF-CHIMERA-V2-90) so the provider key resolver
+    can label the credential source ``repo_dotenv`` instead of mistaking it
+    for a real ``process_env`` entry.  Only variable NAMES are recorded —
+    never values.
     """
     env_path = config_path.resolve().parent / ".env"
     if not env_path.is_file():
         return
+    before = set(os.environ)
     try:
         from dotenv import load_dotenv
     except ImportError:  # pragma: no cover - python-dotenv is a transitive dep
@@ -696,6 +798,10 @@ def _load_repo_dotenv(config_path: Path) -> None:
         import logging
 
         logging.getLogger("chimera.config").warning("failed to load repo .env at %s: %s", env_path, exc)
+        return
+    # Names only, and only what THIS load actually injected (vars that were
+    # already set stay unmarked — the process environment kept precedence).
+    _REPO_DOTENV_VARS.update(set(os.environ) - before)
 
 
 def _substitute_env(value: Any) -> Any:
@@ -704,18 +810,81 @@ def _substitute_env(value: Any) -> Any:
     Falls back to ``~/.hermes/.env`` for variables not found in the
     process environment (so API keys stored in Hermes' dotenv file
     resolve correctly even in cron sessions).
+
+    Every satisfied variable is recorded in the module-level
+    ``_SUBSTITUTION_SOURCES`` map with its source label
+    (``process_env`` / ``repo_dotenv`` / ``hermes_dotenv_fallback``;
+    DF-CHIMERA-V2-90) so ``load_config`` can label ``api_keys`` shortcut
+    entries.  Labels only — never the substituted values.
     """
     if isinstance(value, str):
         dotenv = _load_hermes_dotenv()
-        return _ENV_PATTERN.sub(
-            lambda m: os.environ.get(m.group(1)) or dotenv.get(m.group(1), ""),
-            value,
-        )
+
+        def _substitute_match(m: re.Match[str]) -> str:
+            var = m.group(1)
+            if var in os.environ:
+                _SUBSTITUTION_SOURCES[var] = (
+                    CREDENTIAL_SOURCE_REPO_DOTENV
+                    if var in _REPO_DOTENV_VARS
+                    else CREDENTIAL_SOURCE_PROCESS_ENV
+                )
+                return os.environ[var]
+            if var in dotenv:
+                _SUBSTITUTION_SOURCES[var] = CREDENTIAL_SOURCE_HERMES_DOTENV_FALLBACK
+                return dotenv[var]
+            return ""
+
+        return _ENV_PATTERN.sub(_substitute_match, value)
     if isinstance(value, dict):
         return {k: _substitute_env(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_substitute_env(v) for v in value]
     return value
+
+
+def _apply_api_keys_credential_sources(config: ChimeraConfig, raw_tokens: dict[str, str]) -> None:
+    """Record the credential source for ``api_keys`` shortcut entries.
+
+    The shipped templates resolve keys through ``api_keys: {deepseek:
+    ${DEEPSEEK_API_KEY}}`` — env substitution, not the per-provider
+    ``api_key_env`` validator — so without this pass those providers would be
+    absent from ``credential_sources`` (DF-CHIMERA-V2-90).  Sources come from
+    the substitution record; a provider that has no recorded substitution and
+    no validator-recorded entry is labeled ``missing``.  Does not overwrite
+    an entry the provider validator already recorded.
+
+    ``raw_tokens`` maps each ``api_keys`` entry to its PRE-substitution raw
+    value (captured by ``load_config`` before ``_substitute_env`` ran), so
+    the env var a ``${VAR}`` token names is read from the token itself
+    rather than guessed from the entry name — an entry like ``acme:
+    ${ACME_TOKEN}`` must be judged by ACME_TOKEN's provenance, not by an
+    invented ``ACME_API_KEY`` name.  A raw value that is not a single
+    ``${VAR}`` token falls back to the conventional name (best effort).
+    """
+    provider_env_by_key: dict[str, str] = {}
+    for provider_name, provider in config.providers.items():
+        if provider.api_key_env:
+            provider_env_by_key[provider.api_key_env] = provider_name
+    for key_name in config.api_keys:
+        provider_name = provider_env_by_key.get(key_name, key_name)
+        if provider_name in config.credential_sources:
+            continue
+        token_match = _ENV_PATTERN.fullmatch(raw_tokens.get(key_name, ""))
+        env_var = (
+            token_match.group(1)
+            if token_match
+            else _PROVIDER_API_KEY_ENV.get(key_name.lower(), key_name.upper())
+        )
+        source = _SUBSTITUTION_SOURCES.get(env_var, CREDENTIAL_SOURCE_MISSING)
+        config.credential_sources[provider_name] = source
+        if source == CREDENTIAL_SOURCE_HERMES_DOTENV_FALLBACK:
+            _log_warning(
+                "api_key_source_fallback",
+                provider=provider_name,
+                env_var=env_var,
+                source=CREDENTIAL_SOURCE_HERMES_DOTENV_FALLBACK,
+                path=_HERMES_DOTENV_DISPLAY,
+            )
 
 
 def find_config_path(start: Path | str | None = None) -> Path:
@@ -963,11 +1132,20 @@ def load_config(path: Path | str | None = None) -> ChimeraConfig:
     # process environment so provider ``api_key_env`` lookups and downstream
     # SDKs see the same credentials regardless of entry point. Only *unset*
     # vars are populated — the real process environment keeps precedence.
+    # The per-load credential-source bookkeeping is reset first so it
+    # describes THIS load only (DF-CHIMERA-V2-90).
+    _REPO_DOTENV_VARS.clear()
+    _SUBSTITUTION_SOURCES.clear()
     _load_repo_dotenv(config_path)
     raw_text = config_path.read_text(encoding="utf-8")
     raw = yaml.safe_load(raw_text)
     if not isinstance(raw, dict):
         raise ValueError(f"Config {config_path} did not parse to a mapping")
+    # Snapshot the api_keys tokens BEFORE substitution (DF-CHIMERA-V2-90):
+    # the raw ``${VAR}`` text is what names the env var whose provenance the
+    # credential-source pass must consult — the substituted value cannot.
+    raw_api_keys = raw.get("api_keys")
+    raw_tokens: dict[str, str] = dict(raw_api_keys) if isinstance(raw_api_keys, dict) else {}
     raw = _substitute_env(raw)
     try:
         config = ChimeraConfig.model_validate(raw)
@@ -989,6 +1167,10 @@ def load_config(path: Path | str | None = None) -> ChimeraConfig:
     # carry credential fingerprints, so nothing but names is stored.
     if isinstance(raw.get("providers"), dict):
         config.configured_provider_names = set(raw["providers"])
+    # ``${VAR}`` substitution carries source provenance (DF-CHIMERA-V2-90);
+    # label api_keys-shortcut providers from it before discovery adds
+    # uncredentialed providers to the map.
+    _apply_api_keys_credential_sources(config, raw_tokens)
     _apply_env_overrides(config)
     return config
 
@@ -1112,4 +1294,5 @@ __all__ = [
     "provider_api_key_env",
     "provider_credential_fingerprint",
     "provider_credential_resolved",
+    "provider_credential_source",
 ]

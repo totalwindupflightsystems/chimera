@@ -831,6 +831,8 @@ def test_health_response_keeps_every_pre_existing_key(
     details = data["details"]
     # Additive ``age_s`` (REV-CHIMERA-V2-20261005-1): seconds since the cached
     # provider verdict was computed (0 for a fresh probe).
+    # Additive ``credential_sources`` (DF-CHIMERA-V2-90): where each
+    # provider's key came from (labels only, never values).
     assert set(details) == {
         "config_loaded",
         "models_configured",
@@ -840,6 +842,7 @@ def test_health_response_keeps_every_pre_existing_key(
         "version",
         "providers",
         "age_s",
+        "credential_sources",
     }
     assert details["config_loaded"] is True
     assert details["models_configured"] == len(cfg.models)

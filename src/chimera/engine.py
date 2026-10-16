@@ -204,6 +204,17 @@ class DeliberationTrace(BaseModel):
     """Worker (and other) stages that degraded with an upstream error — the
     machine-readable form of the CLI's dropped-worker warning. Empty when
     every stage succeeded."""
+    credential_sources: dict[str, str] = Field(default_factory=dict)
+    """Which source satisfied each provider's API key at config-load time
+    (DF-CHIMERA-V2-90): provider name → ``process_env`` /
+    ``repo_dotenv`` / ``hermes_dotenv_fallback`` / ``missing``.
+
+    A deliberation that only succeeds because a host-level
+    ``~/.hermes/.env`` quietly supplied the key used to be
+    indistinguishable from a properly-configured one — this map is the
+    user-visible answer to "did I configure credentials?".  Additive and
+    empty on programmatically built configs (no provenance recorded);
+    only labels travel here, never key values."""
     degraded_reasons: list[str] = Field(default_factory=list)
     """Stage truncations that silently degrade the merged answer — one
     ``"<stage_id>: token_limit"`` entry per stage span whose call ended with
@@ -1845,6 +1856,11 @@ class Engine:
             dispatch_fallback_reason=dispatch.fallback_reason,
             dispatch_repairs=list(dispatch.dispatch_repairs),
             worker_failures=list(worker_failures or []),
+            # DF-CHIMERA-V2-90: make the credential SOURCE visible on every
+            # deliberation — a run that succeeded only because a host-level
+            # ~/.hermes/.env supplied the key reads exactly like a
+            # properly-configured one everywhere else.
+            credential_sources=dict(self.config.credential_sources),
             degraded_reasons=degraded_reasons,
         )
 
