@@ -2176,3 +2176,13 @@ tasks:
   status: complete
   created_at: '2026-10-13T09:12:45.182132+00:00'
   completed_at: '2026-10-13T09:38:43.738094+00:00'
+- id: DF-CHIMERA-V2-90
+  title: MCP-server-side key fallback silently satisfies DEEPSEEK_API_KEY - surface
+    credential source
+  criteria:
+  - Deliberation trace or health output names which source satisfied each provider
+    api_key entry (process env / repo .env / hermes-dotenv fallback) instead of silently
+    succeeding
+  status: complete
+  created_at: '2026-10-16T08:09:30.442049+00:00'
+  completed_at: '2026-10-16T09:31:14.080818+00:00'
