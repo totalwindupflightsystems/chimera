@@ -9,15 +9,71 @@ Tools:
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import CallToolResult, TextContent
 
 from chimera import __version__
 from chimera.config import ChimeraConfig, Defaults, Observability, load_config
 from chimera.engine import Engine
 from chimera.gateway import LiteLLMGateway
 from chimera.observability import configure_logging
+
+#: DF-CHIMERA-V2-89: the MCP error code for a run that produced NO usable
+#: answer — the same failure class ``POST /v1/deliberate`` answers HTTP 502 for
+#: and the web chat surface reports as ``all_workers_failed``, spelled in this
+#: tool's own error vocabulary (``unknown_formation`` / ``config_missing``).
+NO_USABLE_ANSWER_ERROR = "no_usable_answer"
+
+#: The engine's degraded-placeholder rendering (``engine._degraded_stage``):
+#: ``[stage <id> (<model>) unavailable: <error>]``. Anchored, because the
+#: upstream error text can itself contain brackets — only an answer that IS the
+#: placeholder (nothing else) counts.
+_DEGRADED_PLACEHOLDER_RE = re.compile(r"^\[stage \S+ \(\S+\) unavailable:.*\]$", re.DOTALL)
+
+#: ``_select_answer``'s per-terminal header in a multi-terminal join:
+#: ``### <stage_id> (<model>)`` on its own line.
+_STAGE_HEADER_SPLIT_RE = re.compile(r"^### \S+ \(\S+\)$", re.MULTILINE)
+
+
+def _is_degraded_placeholder_only(answer: Any) -> bool:
+    """True when *answer* is nothing but engine-fabricated failure placeholders.
+
+    Covers the "the answer IS the rendered error string" arm of
+    DF-CHIMERA-V2-89: the single-terminal shape (the aggregator fails and its
+    placeholder becomes the answer) and the multi-terminal join
+    ``_select_answer`` builds when every terminal degraded. Any real content
+    beside the placeholders makes it a genuine (possibly partially degraded)
+    answer, which is NOT this failure class.
+    """
+    text = str(answer or "").strip()
+    if not text:
+        return False
+    parts = [part.strip() for part in _STAGE_HEADER_SPLIT_RE.split(text)]
+    parts = [part for part in parts if part]
+    if not parts:
+        return False
+    return all(_DEGRADED_PLACEHOLDER_RE.match(part) for part in parts)
+
+
+def _no_usable_answer_reason(result: Any) -> str | None:
+    """Why a deliberation produced no usable answer — ``None`` when it did.
+
+    Two triggers, both read off the engine's own result object (defensively, so
+    a bare test double works too): ``answer_degraded`` — the flag the REST
+    surface turns into HTTP 502 and the CLI into exit 2 (DF-CHIMERA-V2-71) —
+    and an answer that is only the engine's degraded placeholder. Partial
+    degradation (a dropped worker beside a real merged answer) is NOT a failure
+    and keeps returning a successful result, exactly as on REST and the CLI.
+    """
+    upstream = getattr(result, "answer_error", None)
+    if bool(getattr(result, "answer_degraded", False)):
+        return str(upstream) if upstream else "the answer stage degraded"
+    if _is_degraded_placeholder_only(getattr(result, "answer", "")):
+        return str(upstream) if upstream else "the answer is the engine's degraded placeholder"
+    return None
 
 
 def build_server(
@@ -97,6 +153,18 @@ def build_server(
         ``unknown_formation`` + ``available: []``, which told an operator
         nothing about how to fix it. The ``unknown_formation`` + ``available``
         payload is unchanged for the case where formations DO exist.
+
+        DF-CHIMERA-V2-89: a run that produced NO usable answer is reported as
+        an MCP ERROR (``isError: true``) instead of a success whose ``answer``
+        happens to be the engine's failure text. That happens when every
+        provider call fails (e.g. no credentials) so the answer stage degrades.
+        The failed result still carries the FULL payload — ``answer`` +
+        ``trace`` incl. ``worker_failures`` and the dispatch info — plus the
+        machine-readable markers ``error: "no_usable_answer"``,
+        ``answer_degraded`` and ``answer_error``, so a scripted client can act
+        on the failure without pattern-matching prose. The same failure class
+        is HTTP 502 on ``POST /v1/deliberate`` and exit 2 on the CLI. The
+        success payload is unchanged: ``isError: false`` with the merged answer.
         """
         from chimera.config import DeliberationOverrides
 
@@ -145,9 +213,40 @@ def build_server(
             dag=dag,
             allow_custom_dag=allow_custom_dag,
         )
-        return json.dumps(
-            {"answer": result.answer, "trace": result.trace.model_dump(mode="json")},
-            indent=2,
+        payload: dict[str, Any] = {
+            "answer": result.answer,
+            "trace": result.trace.model_dump(mode="json"),
+        }
+        reason = _no_usable_answer_reason(result)
+        if reason is None:
+            return json.dumps(payload, indent=2)
+        # DF-CHIMERA-V2-89: the engine could not produce a real answer — the
+        # answer stage degraded (all workers failed / the aggregator failed) or
+        # the "answer" is nothing but the engine's degraded placeholder. Flag it
+        # as an MCP error AND keep the whole payload (incl. the trace) so a
+        # consumer still gets worker_failures and the dispatch info. Markers
+        # mirror the CLI's ``--json`` payload (DF-CHIMERA-V2-71) so every
+        # surface reports the same failure class the same way.
+        answer_error = getattr(result, "answer_error", None)
+        payload["error"] = NO_USABLE_ANSWER_ERROR
+        payload["answer_degraded"] = True
+        payload["answer_error"] = answer_error
+        payload["message"] = (
+            f"Deliberation failed: no usable answer produced. Upstream error: {answer_error or reason}"
+        )
+        text = json.dumps(payload, indent=2)
+        # A returned ``CallToolResult`` is passed through verbatim by the SDK's
+        # tool runner (``func_metadata.convert_result``), which is how the
+        # ``isError`` flag is set — raising instead would replace the payload
+        # with the generic ``Error executing tool …`` text. It carries BOTH
+        # channels the success arm produces: ``content`` (the JSON text a
+        # scripted client parses) and ``structuredContent`` in the wrapped
+        # ``{"result": …}`` shape the declared ``-> str`` output schema
+        # requires (the SDK validates it before handing the result over).
+        return CallToolResult(
+            content=[TextContent(type="text", text=text)],
+            structuredContent={"result": text},
+            isError=True,
         )
 
     @server.tool()

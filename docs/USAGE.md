@@ -261,6 +261,26 @@ Then from Hermes chat:
 > Use chimera to compare React and Svelte for our dashboard
 ```
 
+### Failure contract — `isError`
+
+A run that produced NO usable answer is reported as an MCP ERROR: the tool
+result carries `isError: true`, and its payload keeps the
+`{"answer": ..., "trace": {...}}` shape plus the machine-readable markers
+`"error": "no_usable_answer"`, `"answer_degraded": true` and `"answer_error"`
+(and a human-readable `"message"`). That happens when every provider call
+fails — no credentials, an upstream outage, a dead endpoint — so the answer
+stage degrades and the `answer` text is the engine's degraded rendering
+(`[stage aggregator (<model>) unavailable: …]`), never a real deliberation. It
+is the same failure class the CLI reports with exit 2 and
+`POST /v1/deliberate` with HTTP 502, and `trace.worker_failures` still lists
+every failed stage with its upstream error, so a client can log or retry on
+the failure instead of presenting the failure text as an answer.
+
+A successful run is unchanged (`isError: false` with the merged answer), and
+partial degradation — one dropped worker beside a real merged answer — is
+**not** an error: it answers normally and still reports the dropped stage in
+`worker_failures`.
+
 ### Advanced `chimera_deliberate` arguments
 
 Beyond `prompt` and `formation`, the `chimera_deliberate` MCP tool accepts six

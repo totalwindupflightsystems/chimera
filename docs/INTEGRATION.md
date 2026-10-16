@@ -452,6 +452,14 @@ response = client.chat.completions.create(
 Code, and other MCP-capable agents can call `chimera_deliberate` directly.
 It reads the same `chimera.yaml`.
 
+The tool signals a run that produced no usable answer with `isError: true`
+on the MCP result (the payload keeps the `answer` + `trace` shape and adds
+`"error": "no_usable_answer"`, `answer_degraded` and `answer_error`), so an
+automated client must branch on `isError` instead of treating the result
+text as the answer. A successful run is unaffected (`isError: false` with
+the merged answer); partial degradation still answers normally. See
+[USAGE.md § MCP](USAGE.md#failure-contract--iserror).
+
 ## 5. Deployment Patterns
 
 ### 5.1 systemd (single host)
