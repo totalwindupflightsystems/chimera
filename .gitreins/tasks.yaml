@@ -2176,24 +2176,3 @@ tasks:
   status: complete
   created_at: '2026-10-13T09:12:45.182132+00:00'
   completed_at: '2026-10-13T09:38:43.738094+00:00'
-- id: DF-CHIMERA-V2-83
-  title: DF-CHIMERA-V2-83 fix
-  criteria:
-  - Unit tests verify the new API contract; repro per dogfood run 23
-  status: complete
-  created_at: '2026-10-15T23:25:33.848023+00:00'
-  completed_at: '2026-10-15T23:26:36.964972+00:00'
-- id: DF-CHIMERA-V2-84
-  title: DF-CHIMERA-V2-84 fix
-  criteria:
-  - Unit tests verify the new API contract; repro per dogfood run 23
-  status: complete
-  created_at: '2026-10-15T23:25:34.353298+00:00'
-  completed_at: '2026-10-15T23:26:37.973004+00:00'
-- id: DF-CHIMERA-V2-85
-  title: DF-CHIMERA-V2-85 fix
-  criteria:
-  - Unit tests verify the new API contract; repro per dogfood run 23
-  status: complete
-  created_at: '2026-10-15T23:25:34.702272+00:00'
-  completed_at: '2026-10-15T23:26:38.875604+00:00'
