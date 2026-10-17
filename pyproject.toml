@@ -111,6 +111,18 @@ dependencies = [
 # starlette 1.7.0 -> 1.8.0 (refreshed 2026-10-13): not a census entry — it was
 # in-bounds drift, capped by nobody (mcp>=0.27, fastapi>=0.46, sse-starlette
 # >=0.49.1), and 1.8.0 only drops Python 3.10 plus adds HTTP 103 early hints.
+#
+# In-bounds patch drift refreshed 2026-10-17 (SUP-DEPS-20261016-CHV2) — also
+# not census entries, and both cases are lowered by a parent that sets no upper
+# bound on the line, so the resolver moved them freely:
+#   fastapi 0.143.2 -> 0.143.3 — declared in the dev/server/web/full extras as
+#                       fastapi>=0.115.0 (no upper bound). 0.143.3 is a
+#                       one-fix release: non-finite float serialization in
+#                       JSONL and SSE streams (upstream PR #16509).
+#   platformdirs 4.13.0 -> 4.13.3 — transitive via black 26.10.1 (requires
+#                       platformdirs with no cap). Patch-only fixes on the
+#                       XDG fonts path, quoted-backslash preservation and a
+#                       Windows known-folder buffer free; no API change.
 
 [project.urls]
 Homepage = "https://github.com/totalwindupflightsystems/chimera"
