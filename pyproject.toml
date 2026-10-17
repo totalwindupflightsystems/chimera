@@ -57,7 +57,8 @@ dependencies = [
 ]
 
 # Deferred majors — DEPS-008 census (2026-10-05); re-derived 2026-10-13
-# (SUP-DEPS-20261013-CHV2) and again 2026-10-15 (SUP-DEPS-20261015-CHV2):
+# (SUP-DEPS-20261013-CHV2), again 2026-10-15 (SUP-DEPS-20261015-CHV2) and
+# again 2026-10-17 (SUP-DEPS-20261016-CHV2):
 # every held entry re-verified against current caps rather than copied.
 # 2026-10-15 `pip list --outdated` had 12 entries; 4 were in-bounds and
 # upgraded that day (transitive, no cap in this tree forbade them):
@@ -123,6 +124,41 @@ dependencies = [
 #                       platformdirs with no cap). Patch-only fixes on the
 #                       XDG fonts path, quoted-backslash preservation and a
 #                       Windows known-folder buffer free; no API change.
+#
+# Full census re-derivation 2026-10-17 (SUP-DEPS-20261016-CHV2, on top of the
+# 683c7dd in-bounds batch): `pip list --outdated` reports EXACTLY the eight
+# entries already accounted for above — huggingface_hub 1.33.0->2.2.0,
+# importlib_metadata 8.9.0->9.0.1, litellm 1.99.4->1.105.1, mcp 1.30.0->2.3.0,
+# multidict 6.9.1->7.1.0, openai 2.54.0->3.33.0, pycodestyle 2.12.1->2.15.0,
+# pyflakes 3.2.0->4.0.3. No in-bounds drift is left to take, so ZERO
+# distributions were bumped this tick: all eight are either a major held by
+# policy or refused by a parent cap. Two labels from the scan were wrong and are
+# corrected here — importlib_metadata 8->9 is a MAJOR bump (not "within 8.x"),
+# and pycodestyle 2.15.0 is not reachable at all (pylsp caps <2.13).
+#
+# Probe method (do not repeat the trap): `uv pip compile pyproject.toml
+# --all-extras --upgrade-package <candidate>` ALONE is not a compatibility
+# answer for these entries, because it leaves every OTHER package free to move.
+# For importlib_metadata==9.0.1 and openai==3.33.0 it printed "Resolved 94
+# packages" by silently DOWNGRADING litellm 1.99.4 -> 1.83.0 (releases that cap
+# neither). Pin the held neighbour in the same invocation and the cap becomes
+# the answer:
+#   --upgrade-package litellm==1.99.4 --upgrade-package importlib_metadata==9.0.1
+#     -> "Because litellm==1.99.4 depends on importlib-metadata>=8.0.0,<9.0 ..."
+#   --upgrade-package litellm==1.99.4 --upgrade-package openai==3.33.0
+#     -> "Because litellm==1.99.4 depends on openai>=2.20.0,<3.0.0 ..."
+#   --upgrade-package pycodestyle==2.15.0
+#     -> python-lsp-server[pycodestyle] requires pycodestyle>=2.12.0,<2.13.0
+#   --upgrade-package pyflakes==4.0.3
+#     -> python-lsp-server[pyflakes] requires pyflakes>=3.2.0,<3.3.0
+#   --upgrade-package litellm==1.105.1 / mcp==2.3.0
+#     -> unsatisfiable against this file's own <1.100 / <2.0 caps
+# multidict 7.x and huggingface_hub 2.x still resolve freely (policy holds: no
+# constraint anywhere in this tree) and stay held — both are majors with no
+# concrete need, and the 2026-10-13 probe already took the C-extension paths
+# (CIMultiDict, yarl URL build, aiohttp live GET) and the hf-hub/tokenizers/
+# litellm.token_counter round-trip green. Re-taking a major to buy nothing is
+# not a fix; re-open either only with a concrete need.
 
 [project.urls]
 Homepage = "https://github.com/totalwindupflightsystems/chimera"
