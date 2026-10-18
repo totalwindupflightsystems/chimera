@@ -43,7 +43,7 @@ argument — including `act -q`, which is what the fleet QA battery runs.
 | Command | Result |
 | --- | --- |
 | `act -j lint` | `Job succeeded` (rc=0) — `ruff check .` → *All checks passed!* |
-| `act -j test --matrix python-version:3.11` | `Job succeeded` (rc=0) — `856 passed, 1 skipped` |
+| `act -j test --matrix python-version:3.11` | `Job succeeded` (rc=0) — `2127 passed, 1 skipped` |
 
 Those counts match the native suite:
 
