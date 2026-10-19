@@ -594,6 +594,103 @@ Notes for this shape of provider:
 
 ---
 
+## Credential Sources
+
+Chimera records **where each provider's API key came from** at config-load
+time, and publishes that map on every deliberation trace and on `/v1/health`
+(DF-CHIMERA-V2-90). It exists to make one situation visible: a deliberation
+that succeeds only because a host-level `~/.hermes/.env` quietly supplied the
+key is otherwise indistinguishable from a properly configured install. The
+call works, so nothing tells you the key was never configured where you
+thought it was.
+
+Only source **labels** travel — key values are never recorded, logged, traced
+or served.
+
+### Resolution chain (recorded, not changed)
+
+The order a provider key is resolved in is unchanged; the source label only
+records which step succeeded:
+
+| # | Source | Label | Meaning |
+|---|---|---|---|
+| 0 | `providers.<name>.api_key` (literal or `${VAR}`) | *no entry* | An inline key wins and the env resolver never runs for that provider. |
+| 1 | Process environment (`api_key_env` first, then the canonical name, then `<PROVIDER>_API_KEY`) | `process_env` | Exported in the environment that launched Chimera — systemd `Environment=`/`EnvironmentFile=`, shell export, container env. |
+| 2 | Repo-level `.env` beside `chimera.yaml` | `repo_dotenv` | Injected into the process env at load time, and only for variables the real environment did **not** already set, so row 1 keeps precedence. |
+| 3 | `~/.hermes/.env` | `hermes_dotenv_fallback` | Host-specific Hermes dotenv, consulted only when the variable is absent from the process env. **The one source a user would not expect.** |
+| — | none of the above | `missing` | Nothing satisfied the key; the provider is unusable until something does. |
+
+Both credential shapes are covered: `providers.<name>.api_key_env` (explicit)
+and the shipped-template `api_keys: {deepseek: ${DEEPSEEK_API_KEY}}` shortcut.
+For an `api_keys` entry the provenance is read from the `${VAR}` token itself,
+so `acme: ${ACME_TOKEN}` is judged by `ACME_TOKEN`'s origin rather than a
+guessed `ACME_API_KEY` name.
+
+A provider with **no entry at all** is one the resolver never looked at — an
+inline `api_key`, a provider added by auto-discovery, or a config object built
+programmatically. Absent means *unknown*, not `missing`: never read absence as
+either success or failure. A config built in code records no provenance, so
+the trace field is an empty object there — the field is additive and never
+fabricated.
+
+### Where to read it
+
+| Surface | Path | Notes |
+|---|---|---|
+| Deliberation trace | `trace.credential_sources` | On `POST /v1/deliberate`, the OpenAI-compatible response, and `chimera --json run`. |
+| Health | `GET /v1/health` → `details.credential_sources` | Operator/dashboard view of the loaded config. |
+| Config object | `ChimeraConfig.credential_sources` | Load-time bookkeeping; `exclude=True`, so it is not part of the config's own YAML/JSON serialization. |
+
+```json
+{
+  "trace": {
+    "request_id": "…",
+    "credential_sources": {
+      "deepseek": "process_env",
+      "openrouter": "repo_dotenv",
+      "zai": "hermes_dotenv_fallback",
+      "anthropic": "missing"
+    }
+  }
+}
+```
+
+```bash
+# operator check: which source satisfied each key on the running service?
+curl -s localhost:8765/v1/health | jq '.details.credential_sources'
+```
+
+### The `api_key_source_fallback` warning
+
+When a key resolves from `~/.hermes/.env`, the config loader emits exactly one
+WARNING per provider per config load through the structlog pipeline
+(`chimera.config` logger):
+
+```json
+{"provider": "deepseek", "env_var": "DEEPSEEK_API_KEY", "source": "hermes_dotenv_fallback", "path": "~/.hermes/.env", "event": "api_key_source_fallback", "level": "warning", "timestamp": "2026-10-16T04:24:49.123456Z"}
+```
+
+The CLI and the MCP stdio transport pin that stream to **stderr** (so a
+machine-mode `--json` stdout stays exactly one JSON object); the API server
+follows `observability.use_stdout` (stdout by default), so there the line
+lands in the server's normal log stream.
+
+It names the provider, the env var and the file — never the value. `source` is
+always `hermes_dotenv_fallback`, `path` is the display path of the fallback
+file, and `env_var` is the variable the provider actually reads (`api_key_env`
+when set, else the token from an `api_keys` entry).
+
+Read it as a **portability warning**, not an error: the install works on this
+host and will not work on one without that file. The remedy is to set the
+variable where the deployment actually reads credentials — the unit's
+`Environment=`/`EnvironmentFile=`, the container environment, or the repo
+`.env` next to `chimera.yaml` — not to change the resolution order, which
+already prefers both of those. The operator checklist (including the
+`missing` case) is in
+[INTEGRATION.md → `api_key_source_fallback`](INTEGRATION.md#api_key_source_fallback-what-operators-should-do).
+
+---
+
 ## `observability`
 
 | Field | Type | Default | Description |

@@ -547,6 +547,7 @@ Three probes, all unauthenticated, all return HTTP 200 with a JSON body:
     "models_configured": 42,
     "providers_configured": 5,
     "providers_discovered": [],
+    "credential_sources": { "deepseek": "process_env", "zai": "hermes_dotenv_fallback" },
     "providers": { "deepseek": {"healthy": true} }
   }
 }
@@ -555,6 +556,15 @@ Three probes, all unauthenticated, all return HTTP 200 with a JSON body:
 `providers_configured` counts only the providers explicitly declared in the
 config; providers added at load time by auto-discovery (`provider_discovery`)
 are named separately in the sorted `providers_discovered` list (CH-GAP-053).
+
+`details.credential_sources` reports where each provider's API key was
+satisfied at config-load time (`process_env` / `repo_dotenv` /
+`hermes_dotenv_fallback` / `missing` — full table in
+[CONFIG.md → Credential Sources](CONFIG.md#credential-sources)). It contains
+labels only, never key material, and is additive: a provider absent from the
+map has an inline `api_key`, was discovery-added, or has no recorded
+provenance. Read it to answer "did this service really get configured
+credentials, or is a host-level `~/.hermes/.env` quietly satisfying them?"
 
 Status semantics:
 
@@ -603,6 +613,67 @@ Chimera degrades gracefully: a failed worker is dropped from the aggregation
 and the response trace records what happened. If every worker fails, the
 response carries the error(s) in the trace; check `trace` before surfacing the
 answer to end users.
+
+### `api_key_source_fallback`: what operators should do
+
+A successful call is **not** proof that credentials are configured where you
+think they are. When a provider's key is missing from the process environment,
+Chimera falls back to `~/.hermes/.env` and emits one WARNING per provider per
+config load — structlog event `api_key_source_fallback`, logger
+`chimera.config`:
+
+```json
+{"provider": "deepseek", "env_var": "DEEPSEEK_API_KEY", "source": "hermes_dotenv_fallback", "path": "~/.hermes/.env", "event": "api_key_source_fallback", "level": "warning", "timestamp": "2026-10-16T04:24:49.123456Z"}
+```
+
+The CLI and the MCP transport pin it to stderr; a server writes it to its
+configured log stream (`observability.use_stdout`, stdout by default).
+
+Fields: `provider`, `env_var` (the variable the provider actually reads),
+`source` (always `hermes_dotenv_fallback`), `path` (display path of the
+fallback file). Never a key value.
+
+What it means: neither the deployment environment nor the repo `.env` beside
+`chimera.yaml` supplied this key — a file on **this particular host** did. The
+install is not portable. A second host, a container image built without that
+file, or a different service account will fail on the first call with `401` /
+`Missing credentials`.
+
+What to do, in order:
+
+1. **Decide whether the fallback is intended.** If `~/.hermes/.env` is your
+   deliberate credential store on a single-operator host, the warning is
+   informational — note it and move on.
+2. **Otherwise, move the key to the deployment's own source.** Set it in the
+   systemd unit (`Environment=` / `EnvironmentFile=`), the container
+   environment, or the repo `.env` next to `chimera.yaml`. Precedence is
+   process env → repo `.env` → `~/.hermes/.env`, so either of the first two
+   silences the warning. Do not change the resolution order — it already
+   prefers them.
+3. **Verify from the observability fields, not from the absence of a log
+   line.** `trace.credential_sources` on a deliberation, or
+   `details.credential_sources` on `GET /v1/health`, must read `process_env`
+   (or `repo_dotenv`) for that provider. A value still reading
+   `hermes_dotenv_fallback` means the move did not land — typically the unit
+   was never restarted, so the running process still holds the old config.
+4. **`missing` is a different failure and needs a different fix.** Nothing
+   satisfied the key, so that provider fails on its first call: set the
+   variable named by `providers.<name>.api_key_env`, or the canonical name
+   from [CONFIG.md → `api_keys`](CONFIG.md#api_keys).
+
+Two things this field cannot tell you, worth stating plainly:
+
+- A provider **absent** from the map is not a finding — it has an inline
+  `api_key`, was added by auto-discovery, or the config object was built
+  programmatically, so nothing was resolved and there is nothing to label.
+- The map records **load time**, not per-request. A key rotated in the
+  environment after startup is not visible until the config is re-read
+  (restart the service or reload the process).
+
+Integrators can act on this too: a client that receives a successful answer
+from a self-hosted Chimera cannot otherwise tell whether the operator's
+credential store is portable. Reading `trace.credential_sources` (labels only,
+no key material) and warning on `hermes_dotenv_fallback` is enough.
 
 ### Retry guidance
 

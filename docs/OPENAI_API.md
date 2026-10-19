@@ -584,7 +584,12 @@ curl -X POST http://localhost:8765/v1/deliberate \
 ```
 
 Response includes full trace with per-stage tokens, latency, cost, model selection,
-and all prompts/responses.
+and all prompts/responses. `trace.credential_sources` maps each provider to the
+source that satisfied its API key at config load (`process_env` /
+`repo_dotenv` / `hermes_dotenv_fallback` / `missing`) — provider names and
+labels only, never key material; the same map is on `GET /v1/health` under
+`details.credential_sources` (see
+[CONFIG.md → Credential Sources](CONFIG.md#credential-sources)).
 
 **`models` alias:** `/v1/deliberate` also accepts `models` (a `string[]`) as a
 compatibility alias for `allowed_models` — some deliberation-API clients spell the
