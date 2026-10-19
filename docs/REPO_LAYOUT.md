@@ -19,7 +19,7 @@ a directory listing (CLN-1).
 | `.github/` | CI workflow, issue/PR templates |
 | `.gitreins/` | Quality-harness config, guard logs, verdict history |
 | `.coding-hermes/` | Coding-hermes board (`board/*.jsonl`) and tick log |
-| `.memory-bank/` | Project context docs (brief, tech/active context, progress) |
+| `.memory-bank/` | Current project context (brief, product/active/tech/system context, progress) — refreshed with each release (see *Intentional exceptions*) |
 | `.vfs/` | Hilo manifest (`.vfs/graph/` is local cache and is gitignored) |
 | `.actrc` | `act` local-CI runner config (runner-image pin) |
 | `.gitleaks.toml` | Secret-scanning config |
@@ -46,10 +46,16 @@ a directory listing (CLN-1).
   must never be force-included — `tests/test_yaml_example_sanitized.py` pins
   that boundary. `chimera.yaml.example` is the minimal, public-safe starter
   the wheel ships instead.
-- **`.vfs/`, `.gitreins/`, `.coding-hermes/` and `.memory-bank/` are tracked
-  harness state**, not junk: their config, board, manifest and history files are
-  versioned on purpose. The derived caches *below* them (`.vfs/graph/`,
-  `.gitreins/logs/`, `.gitreins/history/`) are gitignored and rebuildable.
+- **`.vfs/`, `.gitreins/` and `.coding-hermes/` are tracked harness state**,
+  not junk: their config, board, manifest and history files are versioned on
+  purpose. The derived caches *below* them (`.vfs/graph/`, `.gitreins/logs/`,
+  `.gitreins/history/`) are gitignored and rebuildable.
+- **`.memory-bank/` is current context documentation, not an archive** (DOC-19).
+  Every file carries a `Current as of <date> · <version>` header and is refreshed
+  in the same wave as any change to the shipped surface, the version, or a
+  measured count; history is confined to the labelled *History* section of
+  `progress.md`. A `.memory-bank/` header whose version trails `pyproject.toml`
+  is a defect — fix the file, do not re-date it.
 - **No `_foreman_*.py` scratch files belong at the root.** Four tracked 33-byte
   foreman run leftovers (the `_foreman_` prefix with `check_duckbrain`,
   `check_scheduler`, `set_cooldown` and `verify_cooldown` suffixes — named
