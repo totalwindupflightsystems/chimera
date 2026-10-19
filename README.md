@@ -649,7 +649,7 @@ Chimera uses LiteLLM under the hood. Supported providers:
 | **MoonshotAI** | — | ✅ | Kimi K2.7 Code, K2.6 |
 | **MiniMax** | — | ✅ | M3 |
 | **Hermes gateway** | ✅ (local) | — | any model the running Hermes serves, addressed as `hermes/<model>` |
-| **9router fleet gateway** | ✅ (tailnet) | — | 400 models across 16 upstream prefixes, addressed as `router9/<upstream id>` |
+| **9router fleet gateway** | ✅ (tailnet) | — | 323 models across 16 upstream prefixes (measured 2026-10-19), addressed as `router9/<upstream id>` |
 
 ### Custom OpenAI-compatible endpoints
 
