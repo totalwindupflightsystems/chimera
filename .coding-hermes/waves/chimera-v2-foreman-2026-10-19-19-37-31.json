@@ -1,0 +1,25 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-19-19-37-31",
+  "block": "DOC-24",
+  "wave_size": 6,
+  "rows": ["DOC-17", "DOC-19", "DOC-20", "DOC-21", "DOC-23", "DOC-24"],
+  "model": "deepseek-v4-flash",
+  "provider": "deepseek-foreman",
+  "dispatched_at": "2026-10-19T19:37:31-05:00",
+  "worktrees": {
+    "DOC-17": "/home/kara/worktrees/chimera-v2-DOC-17",
+    "DOC-19": "/home/kara/worktrees/chimera-v2-DOC-19",
+    "DOC-20": "/home/kara/worktrees/chimera-v2-DOC-20",
+    "DOC-21": "/home/kara/worktrees/chimera-v2-DOC-21",
+    "DOC-23": "/home/kara/worktrees/chimera-v2-DOC-23",
+    "DOC-24": "/home/kara/worktrees/chimera-v2-DOC-24"
+  },
+  "branches": {
+    "DOC-17": "wt/DOC-17",
+    "DOC-19": "wt/DOC-19",
+    "DOC-20": "wt/DOC-20",
+    "DOC-21": "wt/DOC-21",
+    "DOC-23": "wt/DOC-23",
+    "DOC-24": "wt/DOC-24"
+  }
+}
