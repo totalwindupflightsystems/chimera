@@ -711,11 +711,13 @@ and full response payloads in logs.
 
 ## `server`
 
-| Field | Default | Description |
-|---|---|---|
-| `host` | `0.0.0.0` | Bind address |
-| `port` | `8765` | Listen port |
-| `litellm_prewarm` | `true` | Fire a non-blocking LiteLLM warm-up when the API server starts (CHIMERA-V2-REVIEW-04). The first deliberation on a cold process pays a one-off LiteLLM initialization cost inside its dispatch stage (~2.6s measured; ~1.5s of it is the lazy `import litellm`). With the default `true`, the server's lifespan schedules that same one-time initialization at startup in the background, so the first real request arrives on a warm module. The warm-up runs offline (an instant `mock_response` completion — no network, no credentials) and never delays startup or raises into the app. Set to `false` to restore exact cold-start behaviour: no startup warm-up, and the first deliberation pays the initialization cost itself. |
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `host` | `string` | `0.0.0.0` | Bind address |
+| `port` | `int` | `8765` | Listen port |
+| `health_timeout_s` | `float` | `10.0` | Wall-clock budget, in seconds, for the provider connectivity probe behind `/v1/health` and `/v1/health/ready`. All provider probes run concurrently under this one budget; a provider that has not answered inside it is reported `timeout` (probes still outstanding at the deadline then get `health_probe_grace_s` extra seconds — see below), and one that answers later than this budget is classified `slow` with its measured latency and named in `slow_providers` rather than counted as a degradation (DF-CHIMERA-V2-27). Raise it above a routing gateway's own latency — e.g. the `hermes` gateway injects a ~43.6k-token system prompt and needs ~108 s for a 1-token probe — if you want the probe to actually wait for that provider. |
+| `health_probe_grace_s` | `float` | `1.0` | Extra patience, in seconds, for probes still outstanding when the shared `health_timeout_s` budget expires (DF-CHIMERA-V2-17). A probe that lands inside the grace reports its real verdict (`quota` / `auth` / `api` plus `model_tested`) instead of a fabricated `timeout` — this keeps the first `/v1/health` after a process restart honest while LiteLLM's one-off client/TLS/provider-discovery warm-up (measured ~10.3 s cold vs ~2.8-3.2 s warm) briefly exceeds the budget. `0` disables the grace and reproduces the previous cancel-at-deadline behaviour exactly. |
+| `litellm_prewarm` | `bool` | `true` | Fire a non-blocking LiteLLM warm-up when the API server starts (CHIMERA-V2-REVIEW-04). The first deliberation on a cold process pays a one-off LiteLLM initialization cost inside its dispatch stage (~2.6s measured; ~1.5s of it is the lazy `import litellm`). With the default `true`, the server's lifespan schedules that same one-time initialization at startup in the background, so the first real request arrives on a warm module. The warm-up runs offline (an instant `mock_response` completion — no network, no credentials) and never delays startup or raises into the app. Set to `false` to restore exact cold-start behaviour: no startup warm-up, and the first deliberation pays the initialization cost itself. |
 
 ### Auto-discovered providers and the health report
 
