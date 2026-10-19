@@ -70,30 +70,44 @@ This is what makes weak models work together: each one gets a task scoped to wha
 ### 2. Config: Weighted Category Offsets
 ```yaml
 models:
-  deepseek-chat:
+  deepseek/deepseek-v4-pro:                        # provider/model-id
     categories:
-      code: 0.95          # excellent at code
-      analysis: 0.85      # good at analysis
-      design: 0.40        # mediocre at design
-      audit: 0.60         # OK at audit
+      technology_code/code_generation/python: 95              # excellent at code
+      technology_code/data_science/analysis: 85               # good at analysis
+      creative_conversational/ux_writing/interface_copy: 40   # mediocre at design
+      technology_code/testing_debugging/error_analysis: 60    # OK at audit
     cost_tier: budget
 
-  claude-sonnet-4:
+  anthropic/claude-sonnet-4.6:
     categories:
-      code: 0.90
-      analysis: 0.92
-      design: 0.88
-      audit: 0.85
+      technology_code/code_generation/python: 90
+      technology_code/data_science/analysis: 92
+      creative_conversational/ux_writing/interface_copy: 88
+      technology_code/testing_debugging/error_analysis: 85
     cost_tier: premium
 
-  gemini-2.5-flash:
+  google/gemini-3.5-flash:
     categories:
-      code: 0.70
-      analysis: 0.75
-      design: 0.90        # great at design
-      audit: 0.50
-    cost_tier: budget
+      technology_code/code_generation/python: 70
+      technology_code/data_science/analysis: 75
+      creative_conversational/ux_writing/interface_copy: 90   # great at design
+      technology_code/testing_debugging/error_analysis: 50
+    cost_tier: standard
 ```
+
+**Model ids are `provider/model-id`** — one leading provider segment, then the id the
+provider serves (`deepseek/deepseek-v4-flash`, `zai-coding-plan/glm-5.2`). OpenRouter-routed
+models keep the vendor segment: `openrouter/anthropic/claude-fable-5`. An id is dispatchable
+only when it has its own `models:` entry — a `providers.<name>` entry alone routes nothing,
+and an id absent from the catalog is rejected with HTTP 400 `unknown model` before any
+billed call.
+
+**Category keys are the long-form hierarchical paths** from `selector.PATH_PATTERNS`
+(`src/chimera/selector.py`), e.g. `technology_code/code_generation/python` — not the
+short-form `code` / `analysis` / `design` / `audit` / `reasoning` aliases. Scores are
+whole-number **percent, 0–100**: the shipped templates and the catalog served by
+`GET /v1/models` all use percent, and a score on a parent path (e.g. `technology_code`)
+covers every descendant through prefix fallback.
 
 Think of it like bandwidth provider weighting — this model in this category has this relative weight. The dispatcher uses these scores to decide who gets what.
 
@@ -122,12 +136,12 @@ POST /v1/deliberate
   → Request: {
       "prompt": "...",
       "formation": "auto|simple|debate",
-      // Request-level overrides (all optional):
-      "allowed_models": ["deepseek/deepseek-chat"],
-      "disallowed_models": ["openrouter/anthropic/claude-sonnet-4"],
+      // Request-level overrides (all optional, every id must be in the catalog):
+      "allowed_models": ["deepseek/deepseek-v4-pro"],
+      "disallowed_models": ["openrouter/x-ai/grok-4.5"],
       "dispatcher_model": "zai-coding-plan/glm-5.2",
-      "aggregator_model": "deepseek/deepseek-chat",
-      "worker_model": "deepseek/deepseek-chat"
+      "aggregator_model": "deepseek/deepseek-v4-flash",
+      "worker_model": "deepseek/deepseek-v4-pro"
     }
   → Response: {"answer": "...", "trace": {...}, "request_id": "..."}
 
@@ -164,84 +178,116 @@ chimera_models()                          # List models
 
 ## Config File (chimera.yaml)
 
+The example below is a **loadable** minimal catalog: every id is
+`provider/model-id`, every id referenced by `defaults:` / `formations:` has its
+own `models:` entry, and every category key is a `selector.PATH_PATTERNS` path.
+Check the ids a running service actually serves with `GET /v1/models`.
+
 ```yaml
 # Provider gateway
 providers:
+  deepseek:
+    base_url: https://api.deepseek.com/v1
   openrouter:
     base_url: https://openrouter.ai/api/v1
   zai:
     base_url: https://api.z.ai/api/coding/paas/v4
   anthropic:
     base_url: https://api.anthropic.com/v1
+  google:
+    base_url: https://generativelanguage.googleapis.com/v1beta
 
-# Model catalog with weighted category offsets
+# Model catalog with weighted category offsets (percent scores, 0-100)
+# Every id is `provider/model-id` and every id used anywhere in this file
+# (defaults, formations) must have an entry here — an uncatalogued id is a 400.
 models:
   zai-coding-plan/glm-5.2:
     categories:
-      code: 0.92
-      analysis: 0.90
-      design: 0.85
-      audit: 0.88
-      reasoning: 0.95
+      technology_code/system_design/architecture: 92
+      technology_code/code_generation/python: 90
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 90
+      general_knowledge/reasoning/explanation: 90
+      technology_code/testing_debugging/error_analysis: 88
     cost_tier: premium
     provider: zai
 
-  deepseek/deepseek-chat:
+  deepseek/deepseek-v4-pro:
     categories:
-      code: 0.95
-      analysis: 0.85
-      design: 0.40
-      audit: 0.60
-      reasoning: 0.80
+      technology_code/code_generation/python: 92
+      technology_code/code_generation/javascript: 90
+      technology_code/data_science/analysis: 85
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 75
+      general_knowledge/reasoning/explanation: 80
     cost_tier: budget
-    provider: openrouter
+    provider: deepseek
 
-  openrouter/google/gemini-2.5-flash:
+  deepseek/deepseek-v4-flash:
     categories:
-      code: 0.70
-      analysis: 0.75
-      design: 0.90
-      audit: 0.50
-      reasoning: 0.65
+      technology_code/code_generation/python: 88
+      technology_code/testing_debugging/error_analysis: 70
+      general_knowledge/reasoning/explanation: 75
     cost_tier: budget
-    provider: openrouter
+    provider: deepseek
 
-  openrouter/anthropic/claude-sonnet-4:
+  google/gemini-3.5-flash:
     categories:
-      code: 0.90
-      analysis: 0.92
-      design: 0.88
-      audit: 0.85
-      reasoning: 0.93
+      technology_code/code_generation/python: 70
+      technology_code/data_science/analysis: 75
+      creative_conversational/ux_writing/interface_copy: 90
+      technology_code/testing_debugging/error_analysis: 50
+    cost_tier: standard
+    provider: google
+
+  anthropic/claude-sonnet-4.6:
+    categories:
+      technology_code/code_generation/python: 93
+      technology_code/data_science/analysis: 92
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 90
+    cost_tier: premium
+    provider: anthropic
+
+  anthropic/claude-haiku-4.5:
+    categories:
+      technology_code/testing_debugging/error_analysis: 82
+      business_finance/legal_document/analysis: 78
+    cost_tier: standard
+    provider: anthropic
+
+  openrouter/anthropic/claude-fable-5:
+    categories:
+      technology_code/code_generation/python: 97
+      complex_reasoning_agency/multi_step_planning/task_decomposition: 98
+      general_knowledge/reasoning/explanation: 97
+      creative_conversational/creative_writing/storytelling: 92
     cost_tier: premium
     provider: openrouter
 
 # Default assignments
 defaults:
-  dispatcher: zai-coding-plan/glm-5.2   # Strong reasoning for formation design
-  default_worker: deepseek/deepseek-chat
-  default_aggregator: zai-coding-plan/glm-5.2
+  dispatcher: zai-coding-plan/glm-5.2       # Strong reasoning for formation design
+  default_worker: deepseek/deepseek-v4-pro
+  default_aggregator: deepseek/deepseek-v4-flash
 
 # Formation presets
 formations:
-  auto:                                  # Dispatcher decides everything
+  auto:                                     # Dispatcher decides everything
     mode: auto
 
-  simple:                                # 1 dispatcher → 2 workers → 1 aggregator
+  simple:                                   # 1 dispatcher → 2 workers → 1 aggregator
     workers: 2
     aggregator: default
 
-  debate:                                # 1 dispatcher → 3 workers → 2 aggregators → merge
-    workers: 3
+  debate:                                   # 1 dispatcher → 2 workers → 2 aggregators → merge
+    workers: 2
     aggregators:
       - default
-      - openrouter/anthropic/claude-sonnet-4
+      - anthropic/claude-sonnet-4.6
     merge: best_of_n
 
-  audit:                                 # 1 dispatcher → 2 workers → 1 aggregator → 1 auditor
+  audit:                                    # 1 dispatcher → 2 workers → 1 aggregator → 1 auditor
     workers: 2
     aggregator: default
-    audit: openrouter/anthropic/claude-haiku-4.5
+    audit: anthropic/claude-haiku-4.5
 
 # Observability
 observability:
@@ -318,7 +364,10 @@ to solve the user's task.
 {user_prompt}
 
 ## Instructions
-1. Analyze the task. What domains does it touch? (code, analysis, design, audit...)
+1. Analyze the task. What domains does it touch? Map them to category paths
+   (e.g. technology_code/code_generation/python,
+   complex_reasoning_agency/multi_step_planning/task_decomposition,
+   creative_conversational/creative_writing/storytelling).
 2. Pick the best models for each subtask using category weights.
 3. Design a formation DAG. You can use:
    - Multiple workers in parallel
