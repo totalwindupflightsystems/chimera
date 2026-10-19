@@ -153,8 +153,11 @@ curl -X POST http://127.0.0.1:8765/v1/deliberate \
 6. **`source=fallback`** in the trace means the dispatcher's DAG was
    malformed (e.g. missing the aggregator stage) and a single-worker preset
    was used instead. Retry; usually dispatches cleanly. (Task: dogfood-dispatcher-malformed-dag-fallback)
-7. **First CLI call is slow** (~30–60s): it refreshes the LiteLLM provider
-   catalog (5309 models). Later calls hit the cache (~2–20s).
+7. **First CLI call is slow** (~30–60s): it refreshes the provider catalog
+   (models.dev unioned with the task-router registry — ~5.5k model entries,
+   5537 measured 2026-10-19) and warms the LiteLLM import. The entry count is
+   dynamic: it grows as providers publish models, so treat 5.5k as
+   approximate. Later calls hit the cache (~2–20s).
 8. **Cost floor ~$0.003** — the dispatcher call carries the full model catalog
    in context (~17k input tokens). Per-run totals: $0.003–0.02 for small prompts.
 
