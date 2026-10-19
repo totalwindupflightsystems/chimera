@@ -1,5 +1,10 @@
 """Freshness check for the load-bearing ``litellm>=1.50.0,<1.100`` pin.
 
+Operator guide: ``docs/LITELLM_PIN.md`` — pin rationale, the three verdicts,
+the cap-lift checklist, and the cron cadence. Keep this module's constants
+(``PIN_SPEC`` / ``VERSION_CAP`` / ``SCRATCH_REQUIREMENT``) in step with the
+guide and ``tests/test_litellm_pin_check.py`` whenever the boundary moves.
+
 Why this exists (pyproject.toml:30-43, CH-MAINT-007): litellm 1.100.0 replaced
 its stderr ``logging.StreamHandler()`` with ``LevelRoutingStreamHandler``,
 which routes every record BELOW WARNING to ``sys.stdout`` — fatal for the MCP

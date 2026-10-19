@@ -11,7 +11,7 @@ a directory listing (CLN-1).
 |-------|----------|
 | `src/` | The `chimera` package (engine, dispatcher, aggregator, api/, web/, cli/) |
 | `tests/` | pytest suite — flat `test_*.py`, plus `integration/` and `compat/` |
-| `scripts/` | Ops helpers: `smoke_live.py`, `push_remotes.py`, `model_sync.py`, … |
+| `scripts/` | Ops helpers: `smoke_live.py`, `push_remotes.py`, `model_sync.py`, `model_sync_cron.py`, `litellm_pin_check.py`, `litellm_pin_check_cron.py`, … |
 | `docs/` | Guides + the docs index (`docs/README.md`) |
 | `specs/` | Design specs |
 | `skills/` | Bundled skill definitions |
