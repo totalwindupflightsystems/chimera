@@ -619,6 +619,34 @@ and full response payloads in logs.
 | `port` | `8765` | Listen port |
 | `litellm_prewarm` | `true` | Fire a non-blocking LiteLLM warm-up when the API server starts (CHIMERA-V2-REVIEW-04). The first deliberation on a cold process pays a one-off LiteLLM initialization cost inside its dispatch stage (~2.6s measured; ~1.5s of it is the lazy `import litellm`). With the default `true`, the server's lifespan schedules that same one-time initialization at startup in the background, so the first real request arrives on a warm module. The warm-up runs offline (an instant `mock_response` completion — no network, no credentials) and never delays startup or raises into the app. Set to `false` to restore exact cold-start behaviour: no startup warm-up, and the first deliberation pays the initialization cost itself. |
 
+### Auto-discovered providers and the health report
+
+Provider auto-discovery registers every registry provider whose API key resolves,
+so the in-memory `providers` map can hold names this file never declared.
+`/v1/health` keeps them out of its verdict and names them in the top-level
+`discovered_not_configured` array: providers that exist on the host (a key
+resolved) but that no `models:` entry references, so there is nothing to probe
+and nothing to conclude about their reachability. The array is informational —
+a non-empty value on a deployment you never configured is expected, not a fault:
+
+```json
+"discovered_not_configured": ["openai", "xai"]
+```
+
+- **To use one of them**, add a `models:` entry for one of its ids. It becomes
+  probe-able, leaves the array, and joins the `status` / `unhealthy_providers`
+  math (see [Catalog entries are required for dispatch](#catalog-entries-are-required-for-dispatch)).
+- **To make one disappear**, remove its key from the resolved environment
+  (process env → repo `.env` → `~/.hermes/.env`); discovery only registers a
+  provider whose key resolved.
+- **A declared provider is never in this array.** A provider you configured but
+  left without models still degrades `status`, exactly as it did before
+  auto-discovery existed.
+
+Full response schema, the sibling arrays (`unhealthy_providers`,
+`slow_providers`, `probe_skipped_providers`) and the cache/`age_s` semantics are
+in [docs/OPENAI_API.md](OPENAI_API.md#v1health).
+
 ---
 
 ## `retry`

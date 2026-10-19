@@ -711,6 +711,103 @@ served as-is, and a caller should not expect OpenAI semantics from them:
 }
 ```
 
+### `/v1/health`
+
+Operator-facing aggregate: config state plus a live probe of every provider that
+owns a model. It always answers **HTTP 200** with the verdict in the body — parse
+`status`, do not gate on the HTTP status code. `/v1/health/live` (liveness) and
+`/v1/health/ready` (readiness, `503` when unready) answer their own questions and
+are listed in [INTEGRATION.md](INTEGRATION.md#6-health-checks).
+
+```json
+{
+  "status": "degraded",
+  "unhealthy_providers": ["cliproxy"],
+  "discovered_not_configured": ["openai", "xai"],
+  "slow_providers": [],
+  "probe_skipped_providers": [],
+  "details": {
+    "config_loaded": true,
+    "models_configured": 43,
+    "providers_configured": 8,
+    "providers_discovered": ["openai", "xai"],
+    "commit": "63d3676",
+    "version": "0.2.7",
+    "credential_sources": {"deepseek": "hermes_dotenv_fallback", "openrouter": "process_env"},
+    "providers": {
+      "cliproxy": {
+        "healthy": false,
+        "error": "missing-credentials: no API key resolved for provider 'cliproxy'",
+        "error_class": "missing_credentials"
+      },
+      "deepseek": {"healthy": true, "model_tested": "deepseek/deepseek-v4-flash"},
+      "openai": {"healthy": false, "note": "no models configured for provider"}
+    },
+    "age_s": 17.919
+  }
+}
+```
+
+Field semantics:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `status` | `string` | `healthy` when `unhealthy_providers` is empty, `degraded` otherwise. There is no third value: a deployment with no reachable provider is `degraded` with the names in the array, not a separate status |
+| `unhealthy_providers` | `string[]` | Sorted names of providers whose probe failed for a reason that says something about the provider (connection failure, HTTP 5xx, auth, quota, missing key). The two UNMEASURED classes below are excluded — they are named in their own arrays and prove nothing about reachability |
+| `discovered_not_configured` | `string[]` | Sorted names auto-discovery added to `providers` that have no model to probe — see the section below. They are **not provider state**: excluded from `status` and from `unhealthy_providers` |
+| `slow_providers` | `string[]` | Sorted names that never answered inside `server.health_timeout_s`; each one's `latency_s` in `details.providers` carries the measured wait. Unmeasured, so it does not degrade `status` |
+| `probe_skipped_providers` | `string[]` | Sorted names whose live probe is disabled with `providers.<name>.health_probe: false`. Nothing was measured |
+| `details.providers_configured` | `int` | How many providers the config **declared** — discovery additions are not counted |
+| `details.providers_discovered` | `string[]` | Sorted names in `providers` the config did not declare (auto-discovery additions), including those that *do* own a model |
+| `details.providers` | `object` | Per-provider probe result: `healthy` plus `model_tested` when it answered, else `error` + `error_class` (`missing_credentials` / `slow` / `timeout` / `auth` / `quota` / `api` / `probe_skipped`) or a note-only entry |
+| `details.credential_sources` | `object` | Where each provider's key resolved from — `process_env`, `repo_dotenv`, `hermes_dotenv_fallback` or `missing`. Labels only, never key values |
+| `details.commit` / `details.version` | `string` | The running process's git commit and package version; compare `commit` against `git rev-parse --short HEAD` to prove the deployment matches the checkout |
+| `details.age_s` | `float` | Seconds since the cached probe was computed (`0` on a fresh probe). Provider results are served from a 60 s TTL cache; `?refresh=1` bypasses it and forces a live probe |
+
+#### `discovered_not_configured` — providers on the host with nothing to probe
+
+Provider auto-discovery (`chimera.provider_discovery`) registers every registry
+provider whose API key **resolves**, so `providers` accumulates credentials the
+YAML never asked for (`openai` and `xai` have been measured live doing exactly
+this). A provider with no catalog model cannot be probed — nothing in `models:`
+names it — so the only entry it can produce is the note-only one,
+`{"healthy": false, "note": "no models configured for provider"}`, which says
+nothing about whether the provider is reachable.
+
+`discovered_not_configured` names exactly those entries: providers present in the
+effective `providers` map that the config did not declare **and** that no
+`models:` entry references. It is the subset of `details.providers_discovered`
+that owns zero models. Read it as "these credentials exist on this host but are
+not part of the provider verdict" — not as "these providers are down".
+
+Guarantees, because a health signal is only useful if it cannot lie:
+
+- **Sorted names only**, never credential material.
+- **Derived from the config alone**, so the array is identical whether the live
+  probe succeeded, timed out, or the aggregation raised — reports stay comparable
+  across restarts and partial failures.
+- **It can never name a real provider.** A declared provider, or one that owns a
+  model, is outside the set by construction: a declared provider with no models
+  still degrades `status` as before (CH-GAP-053), and a discovery addition
+  becomes provider state the moment a catalog model names it.
+- **Nothing is hidden.** Those names stay in `details.providers` with their
+  honest `healthy: false` and note; only the status math excludes them, and
+  `/v1/health/ready` returns the same field with the same meaning so the two
+  endpoints cannot disagree.
+
+Why the exclusion exists: counting model-less discovery entries as provider state
+demoted the whole report to `degraded` while every configured provider probed
+healthy (CH-GAP-059), which made a real outage indistinguishable from a standing
+condition — the same failure mode `slow_providers` removed for unmeasured probes.
+
+What to do with a non-empty array: **nothing, if you do not want that provider** —
+the field is informational and a stray key in `~/.hermes/.env` stays harmless. To
+use one, add a `models:` entry for one of its ids: it then becomes probe-able,
+leaves this array, and joins the `status` / `unhealthy_providers` math. To make it
+disappear, remove the key from the resolved environment so discovery stops
+registering it. An empty array means every provider in the map is declared or
+model-bearing.
+
 ## Errors and Status Codes
 
 Chimera is OpenAI-compatible in its request and response *shape*, not in every
