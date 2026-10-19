@@ -508,9 +508,10 @@ providers:
 ```
 
 The same seam carries the **9router fleet gateway**: one OpenAI-compatible
-endpoint in front of a large multi-prefix catalog (~269 models across 15
-upstream prefixes — `ds/`, `mmx/`, `minimax/`, `kimi/`, `openrouter/`, `xai/`,
-`ollama/`, …). It answers on `http://master001:20128/v1` (the host is
+endpoint in front of a large multi-prefix catalog (323 models across 16
+upstream prefixes, measured 2026-10-19 — `ds/`, `mmx/`, `minimax/`, `kimi/`,
+`openrouter/`, `xai/`, `ollama/`, …). It answers on
+`http://master001:20128/v1` (the host is
 `master001` on the tailnet, and the same name resolves from the LAN hosts):
 
 ```yaml
