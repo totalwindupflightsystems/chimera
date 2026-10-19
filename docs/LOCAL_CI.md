@@ -40,16 +40,69 @@ argument — including `act -q`, which is what the fleet QA battery runs.
 
 ## Expected results at HEAD
 
+Measured **2026-10-19** at commit `9291506` (its `src/`, `tests/` and
+`pyproject.toml` are identical to `main` at `cbe233b`; only docs commits
+separate them, so the counts hold for both).
+
 | Command | Result |
 | --- | --- |
 | `act -j lint` | `Job succeeded` (rc=0) — `ruff check .` → *All checks passed!* |
-| `act -j test --matrix python-version:3.11` | `Job succeeded` (rc=0) — `2127 passed, 1 skipped` |
+| `act -j test --matrix python-version:3.11 --container-options "--user $(id -u):$(id -g)"` | `Job succeeded` (rc=0) — `2126 passed, 3 skipped` (2129 collected, 108.9s) |
+| `act -j test --matrix python-version:3.11` (act's default: the job container runs as **root**) | `Job failed` (rc=1) — `1 failed, 2125 passed, 3 skipped` |
 
-Those counts match the native suite:
+The root-run failure is a runner-identity artifact, not a workflow or suite
+defect, and it is exactly one test:
+
+`tests/test_release_workflow.py::test_repo_venv_guard_treats_unreadable_venv_as_absent`
+`chmod`s a directory to `000` and asserts the path probe reports it unreadable.
+Root ignores those mode bits, so the probe answers "readable" and the assertion
+fails. The same test **passes as uid 1000 on the same commit**, and GitHub's
+`ubuntu-latest` runner is non-root, which is why hosted CI is green. act 0.2.89
+has no dedicated `--user` flag, so the flag rides in through
+`--container-options`; substitute your own uid/gid (`id -u` / `id -g`) rather
+than copying `1000`.
+
+Treat the numbers as a **dated reading, not a constant**: the suite grows with
+every feature commit, so re-measure before calling a local mismatch a
+regression. The authoritative figure is whatever the run's own summary line
+reports (`N passed, M skipped` or the failure list) — and the pass count depends
+on the checkout, because some tests are environment-gated:
+
+- **2 skips** (`tests/test_cli_stdout_purity.py`, `tests/test_config.py`) need a
+  repo `chimera.yaml`, which is untracked and local-only (see `AGENTS.md`), so
+  they skip in CI and in a fresh clone.
+- **2 skips** (`tests/test_release_workflow.py`, the venv-gated pair) need the
+  repo `.venv`. A plain checkout has none, so a native run shows *2124 passed,
+  5 skipped*; with a `.venv` present the same command reports *2126 passed,
+  3 skipped* — the in-container figure above.
+- **1 skip** (`tests/test_gateway_coverage.py`) depends on how a pinned
+  third-party exception class is inherited in the installed `litellm`.
+
+The same selection, natively — this is the exact command the hosted `test` job
+runs:
 
 ```bash
 .venv/bin/python -m pytest tests/ --ignore=tests/integration --ignore=tests/compat -q
 ```
+
+### Verifying the count yourself
+
+```bash
+# 1. How many tests the selection contains (environment-independent total):
+.venv/bin/python -m pytest tests/ --ignore=tests/integration --ignore=tests/compat -q --collect-only | tail -1
+
+# 2. The run itself — read the last line, which is the figure quoted above:
+.venv/bin/python -m pytest tests/ --ignore=tests/integration --ignore=tests/compat -q
+
+# 3. The same selection inside the CI runner image, as a non-root user:
+act -j test --matrix python-version:3.11 --container-options "--user $(id -u):$(id -g)"
+```
+
+A run of `act -j test` that produces the collected total with **zero failures**
+is healthy whatever the pass/skip split; a differing pass count alone is not a
+regression. If the collected total itself moved, compare it with
+`git log --oneline ..HEAD -- tests/` — new tests land with their feature
+commits.
 
 ## Notes
 
