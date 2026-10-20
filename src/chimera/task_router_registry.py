@@ -108,10 +108,7 @@ def _warn_home_registry_missing(home: Path, missing: Path, selected: Path | None
     operator who named a checkout cannot tell which registry was really read.
     The selected table is named in the event AND in the human-readable reason.
     """
-    if selected is None:
-        outcome = "no fallback checkout was found"
-    else:
-        outcome = f"selected {selected} instead"
+    outcome = "no fallback checkout was found" if selected is None else f"selected {selected} instead"
     log.warning(
         "task_router_home_registry_missing",
         env=TASK_ROUTER_HOME_ENV,

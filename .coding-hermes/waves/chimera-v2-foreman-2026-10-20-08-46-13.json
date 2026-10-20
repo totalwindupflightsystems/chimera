@@ -1,0 +1,38 @@
+{
+  "tick": "chimera-v2-foreman-2026-10-20-08-46-13",
+  "block": "DF-CHIMERA-V2-9[2-6] dogfood run 25 findings",
+  "wave_id": "chimera-v2-foreman-2026-10-20-08-46-13",
+  "created_at": "2026-10-20T13:48:00Z",
+  "rows": [
+    {
+      "id": "DF-CHIMERA-V2-93",
+      "title": "[P2] Deliberation trace cost priced by unrelated gateway",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-93",
+      "branch": "wt/DF-CHIMERA-V2-93",
+      "brief": "/tmp/df93-brief.txt",
+      "model": "ox-alpha-free",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "DF-CHIMERA-V2-94",
+      "title": "[P3] TASK_ROUTER_HOME fallback silent",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-94",
+      "branch": "wt/DF-CHIMERA-V2-94",
+      "brief": "/tmp/df94-brief.txt",
+      "model": "ox-alpha-free",
+      "provider": "opencode-go"
+    },
+    {
+      "id": "DF-CHIMERA-V2-96",
+      "title": "[P3] Pre-commit secrets regex false-positives",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-96",
+      "branch": "wt/DF-CHIMERA-V2-96",
+      "brief": "/tmp/df96-brief.txt",
+      "model": "ox-alpha-free",
+      "provider": "opencode-go"
+    }
+  ],
+  "slots": 6,
+  "wave_size": 3,
+  "why_not_all_5": "DF-92 is policy-gated (release auth), DF-95 is infra-only (no code fix)"
+}
