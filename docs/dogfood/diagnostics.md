@@ -1054,3 +1054,51 @@ public-mirror clone 1s (HEAD == local HEAD, 12011c7 — the mirror is a valid
 parity source), venv + `pip install -e ".[full]"` 53s RC=0 (py3.12),
 config init, zero-credential CLI exit 2 with actionable guidance (DF-71
 holding on a fresh box), serve healthy, keyless deliberate 502, /web/ 200.
+
+## Run 25 (2026-10-20) — the task-router registry source: how the catalog and its prices are picked
+
+Surface: `CHIMERA_TASK_ROUTER_MODELS_PATH` / `TASK_ROUTER_HOME` and the pricing
+that reaches `trace.total_cost`. Findings: DF-CHIMERA-V2-92 (P1), 93 (P2),
+94 (P3), 95 (P2, install-leg substitution). Full legs + numbers:
+`docs/dogfood/2026-10-20-run25-integration.md`.
+
+How it is built (verified by reading the code and by probe, not assumed):
+
+- `task_router_registry.locate_task_router_models()` (src/chimera/task_router_registry.py:85)
+  returns the FIRST existing candidate; an explicit `CHIMERA_TASK_ROUTER_MODELS_PATH`
+  is the only one that raises when missing (:92-95). `TASK_ROUTER_HOME` is just a
+  candidate prefix (:73-75) and `~/task-router` + the package sibling are appended
+  AFTER it (:77-81) — that ordering is why a bogus home is silent (DF-94), and why
+  the dev checkout at `~/chimera-v2` still finds `~/task-router` through the
+  package-sibling rule (`Path(__file__).resolve().parents[3]/task-router/...`).
+- `load_task_router_registry()` validates the WHOLE file before returning: one
+  malformed/duplicate/non-object row invalidates the source and the caller falls
+  back to models.dev. Row liveness = not `archive`, not `disabled`, `valid_to` null.
+- `provider_discovery.load_preferred_registry()` logs `registry_source_selected`
+  (info) on success and `registry_source_fallback` (WARNING when the file var is set,
+  info otherwise) on failure. When the source is task-router, models.dev is merged
+  UNDER it (`merge_registry_with_models_dev`, provider blocks the router lacks).
+- Pricing then runs over the merged data with lane→lab attribution
+  (`lab_of_router_provider` + `MODEL_ID_MAP`): a lane row whose model id carries a lab
+  marker is re-keyed onto the lab's catalog id. The only write protection is
+  router-block-vs-fill-block (:462-466) — BETWEEN two router blocks, and across
+  providers generally, the LAST positive write wins. That is DF-93's mechanism:
+  25 writers for `deepseek/deepseek-v4-flash`, the lab's own row 2nd, overwritten 23×.
+- `config.py:1258-1264` copies the surviving price pair onto the catalog entry (only
+  when the entry declares no `cost_per_1k_*`), and `engine._stage_cost`
+  (src/chimera/engine.py:242-247) turns it into the trace `cost` — one rate, with no
+  provider dimension.
+
+Traps hit in this run (worth reusing):
+
+- **Shared /tmp on a substituted bunker host.** Agents share `/tmp`; a foreign-uid
+  `/tmp/pip.log` from an agent five days earlier made the first install attempt's
+  redirect fail (Permission denied), and reading that stale file back made a failed
+  install look successful. Keep agent scratch in `$HOME`, and verify the install by
+  the artifact (`~/venv/bin/chimera --version`), never by a log you did not write.
+- **`costs.py`-style probes must not hardcode `sys.path`** at the repo src: doing so
+  silently defeated the isolated-copy leg (the probe kept importing the dev checkout,
+  which found `~/task-router` through the package-sibling rule).
+- The `chimera models` table reads `config.models` (the catalog), NOT the registry —
+  so it is not a way to see what the registry contributed; the registry's effect is
+  visible only in the startup log line and in the trace cost.

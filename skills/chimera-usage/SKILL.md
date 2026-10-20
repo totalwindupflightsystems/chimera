@@ -54,7 +54,13 @@ description: >-
   idempotency_key replay/coalescing/failure-not-cached recipes (and the
   DF-83 first-write-wins wrong-answer trap), the custom-DAG-over-HTTP
   recipe, and the chat-surface idempotency gap (DF-84).
-version: 1.13.0
+  v1.14.0 adds the 2026-10-20 run-25 MODEL-CATALOG-SOURCE section: pointing
+  Chimera at a task-router models.jsonl (env contract + what the logs say),
+  and the price-provenance trap — the trace cost of a catalog model can come
+  from an unrelated gateway (DF-93), plus the TASK_ROUTER_HOME silent
+  fallback (DF-94) and the wheel template still shipping the operator config
+  (DF-92).
+version: 1.14.0
 category: software-development
 ---
 
@@ -954,3 +960,54 @@ What to WATCH (filed as DF-CHIMERA-V2-83/84/85):
 - Failure-leg design: check provider liveness first — this run's two
   "expected-failure" worker legs (gemini, anthropic) both had live
   credentials in the deployment and returned healthy answers.
+
+## Model catalog source (run 25, 2026-10-20) — pointing Chimera at a task-router registry
+
+Chimera prefers a task-router-generated `models.jsonl` over models.dev when one is
+reachable. Two env vars, both documented in `docs/CONFIG.md`:
+
+```bash
+# explicit table — AUTHORITATIVE: wins even when the file is missing (loud warning)
+CHIMERA_TASK_ROUTER_MODELS_PATH=/path/to/task-router/data/tables/models.jsonl chimera models
+# a checkout — registry read from <home>/data/tables/models.jsonl
+TASK_ROUTER_HOME=/srv/task-router chimera models
+# default order when neither is set: ~/task-router/data/tables/models.jsonl,
+# then a task-router checkout sibling to the installed package
+```
+
+Read the selection back from **stderr** (structlog, info level):
+
+```
+registry_source_selected   path=/…/models.jsonl providers=25 source=task-router
+registry_source_fallback   preferred=task-router fallback=models.dev reason='configured table does not exist: …'
+```
+
+Verified on the real 1992-row fleet registry: 838 live rows / 25 provider blocks read
+faithfully (no silent drops), and every malformed-input class fails **loud and precisely**
+— missing explicit file, malformed JSON (names the line), duplicate live row, all-archived
+table, empty file, non-string provider, non-object row — all rc=0 with models.dev fallback.
+An UNSET file variable stays quiet at info level (a normal machine without task-router is
+not a warning).
+
+### What to WATCH
+
+- **DF-CHIMERA-V2-93 (P2) — the price behind a trace cost is provider-agnostic and
+  last-writer-wins.** 25 providers' rows collapse onto the same resolved key, so
+  `deepseek/deepseek-v4-flash` was billed in my traces at clinepass 0.44/1.32 per M
+  (registry path) and routing-run 0.112/0.224 per M (models.dev path) while the call went
+  to `api.deepseek.com` at 0.15/0.60. Treat `trace.total_cost` / per-stage `cost` as an
+  estimate whose provenance is unknown; recompute from the price of the provider your
+  catalog entry names if the number matters.
+- **DF-CHIMERA-V2-94 (P3) — `TASK_ROUTER_HOME` is not authoritative.** A home without
+  `data/tables/models.jsonl` silently falls through to `~/task-router` (a *different*
+  checkout) with only an info-level line. If you depend on a specific registry, use
+  `CHIMERA_TASK_ROUTER_MODELS_PATH`.
+- **DF-CHIMERA-V2-92 (P1) — on the published 0.2.7 wheel the registry env vars do nothing**
+  (feature is in HEAD only) **and `chimera config init` writes an 83 KB / 1671-line
+  operator config** because the wheel's `chimera.yaml.example` is byte-identical to
+  `chimera.yaml.fleet`. If you installed from PyPI, do not treat the generated
+  `chimera.yaml` as a starter — use the repo's 120-line `chimera.yaml.example`.
+- The dev checkout at `~/chimera-v2` makes the *package-sibling* candidate resolve to
+  `~/task-router`, so "there is no registry on this machine" is not reproducible from the
+  dev tree — copy the package out of the checkout (or install the wheel) to test the
+  portable models.dev path.
