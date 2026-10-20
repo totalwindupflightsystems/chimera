@@ -11,8 +11,15 @@ import os
 from pathlib import Path
 from typing import Any
 
+import structlog
+
 TASK_ROUTER_MODELS_ENV = "CHIMERA_TASK_ROUTER_MODELS_PATH"
 TASK_ROUTER_HOME_ENV = "TASK_ROUTER_HOME"
+
+log = structlog.get_logger("chimera.task_router_registry")
+
+#: Registry location inside a task-router checkout.
+TASK_ROUTER_REGISTRY_RELATIVE_PATH = Path("data") / "tables" / "models.jsonl"
 
 # Public provider metadata only.  These values preserve Chimera's existing
 # environment-variable discovery; no credential values are read from or added
@@ -70,27 +77,74 @@ def _candidate_paths() -> list[Path]:
         return [Path(explicit).expanduser()]
 
     candidates: list[Path] = []
-    task_router_home = os.environ.get(TASK_ROUTER_HOME_ENV)
-    if task_router_home:
-        candidates.append(Path(task_router_home).expanduser() / "data" / "tables" / "models.jsonl")
+    home = _home_checkout()
+    if home is not None:
+        candidates.append(home / TASK_ROUTER_REGISTRY_RELATIVE_PATH)
 
-    home_candidate = Path.home() / "task-router" / "data" / "tables" / "models.jsonl"
-    package_sibling = Path(__file__).resolve().parents[3] / "task-router" / "data" / "tables" / "models.jsonl"
+    home_candidate = Path.home() / "task-router" / TASK_ROUTER_REGISTRY_RELATIVE_PATH
+    package_sibling = Path(__file__).resolve().parents[3] / "task-router" / TASK_ROUTER_REGISTRY_RELATIVE_PATH
     for candidate in (home_candidate, package_sibling):
         if candidate not in candidates:
             candidates.append(candidate)
     return candidates
 
 
+def _home_checkout() -> Path | None:
+    """Return the checkout named by ``TASK_ROUTER_HOME``, or ``None`` when unset."""
+    task_router_home = os.environ.get(TASK_ROUTER_HOME_ENV)
+    if not task_router_home:
+        return None
+    return Path(task_router_home).expanduser()
+
+
+def _warn_home_registry_missing(home: Path, missing: Path, selected: Path | None) -> None:
+    """Report an unusable ``TASK_ROUTER_HOME`` at the authoritative-var level.
+
+    ``CHIMERA_TASK_ROUTER_MODELS_PATH`` is authoritative and raises when it
+    points at a missing file, which its callers log as a WARNING.  A
+    ``TASK_ROUTER_HOME`` checkout is only the FIRST candidate prefix, so a home
+    without ``data/tables/models.jsonl`` keeps probing the portable home/sibling
+    locations — that substitution must never be silent (DF-CHIMERA-V2-94), or an
+    operator who named a checkout cannot tell which registry was really read.
+    The selected table is named in the event AND in the human-readable reason.
+    """
+    if selected is None:
+        outcome = "no fallback checkout was found"
+    else:
+        outcome = f"selected {selected} instead"
+    log.warning(
+        "task_router_home_registry_missing",
+        env=TASK_ROUTER_HOME_ENV,
+        home=str(home),
+        missing=str(missing),
+        fallback=None if selected is None else str(selected),
+        reason=f"{TASK_ROUTER_HOME_ENV} checkout has no registry: {missing}; {outcome}",
+    )
+
+
 def locate_task_router_models() -> Path:
-    """Locate the preferred JSONL table or raise an actionable error."""
+    """Locate the preferred JSONL table or raise an actionable error.
+
+    The first existing candidate wins.  A ``TASK_ROUTER_HOME`` checkout whose
+    own registry is missing is announced at WARNING level naming the table that
+    was selected instead; an explicit file override remains authoritative and
+    never consults the home variable at all.
+    """
+    explicit = os.environ.get(TASK_ROUTER_MODELS_ENV)
     candidates = _candidate_paths()
+    home = None if explicit else _home_checkout()
+    home_registry = None if home is None else home / TASK_ROUTER_REGISTRY_RELATIVE_PATH
+
     for path in candidates:
         if path.is_file():
+            if home_registry is not None and path != home_registry:
+                _warn_home_registry_missing(home, home_registry, path)
             return path
 
-    if os.environ.get(TASK_ROUTER_MODELS_ENV):
+    if explicit:
         raise TaskRouterRegistryError(f"configured table does not exist: {candidates[0]}")
+    if home_registry is not None:
+        _warn_home_registry_missing(home, home_registry, None)
     tried = ", ".join(str(path) for path in candidates)
     raise TaskRouterRegistryError(f"task-router table not found (tried: {tried})")
 
@@ -184,6 +238,7 @@ def load_task_router_registry(path: Path | str | None = None) -> dict[str, Any]:
 __all__ = [
     "TASK_ROUTER_HOME_ENV",
     "TASK_ROUTER_MODELS_ENV",
+    "TASK_ROUTER_REGISTRY_RELATIVE_PATH",
     "TaskRouterRegistryError",
     "load_task_router_registry",
     "locate_task_router_models",
