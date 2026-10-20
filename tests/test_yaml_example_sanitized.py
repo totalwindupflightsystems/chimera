@@ -129,3 +129,77 @@ def test_fleet_reference_is_not_wheel_shipped() -> None:
     assert "chimera.yaml.fleet" in sdist.get("exclude", []), (
         "chimera.yaml.fleet missing from the sdist exclude list — the sdist would ship it to PyPI"
     )
+
+
+# DF-CHIMERA-V2-92: the checks above grade the SOURCE (pyproject mapping, repo
+# files). A stale or mis-built archive can still leak the operator config, so
+# this test grades the BUILT artifact bytes: it builds the real wheel + sdist
+# from this checkout into a tmp dir via the PEP 517 backend and inspects the
+# archive members. No network, no build isolation (hatchling is a dev dep), no
+# writes outside tmp_path, no dependency on any pre-existing dist/ artifact.
+_BUILD_SNIPPET = (
+    "import sys, hatchling.build as backend;backend.build_wheel(sys.argv[1]);backend.build_sdist(sys.argv[2])"
+)
+
+
+def _build_artifacts(tmp_path: Path) -> tuple[Path, Path]:
+    """Build the wheel and sdist from this checkout; return (whl, sdist) paths."""
+    import subprocess
+    import sys
+
+    wheel_dir = tmp_path / "wheel"
+    sdist_dir = tmp_path / "sdist"
+    wheel_dir.mkdir()
+    sdist_dir.mkdir()
+    proc = subprocess.run(
+        [sys.executable, "-c", _BUILD_SNIPPET, str(wheel_dir), str(sdist_dir)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    assert proc.returncode == 0, f"PEP 517 build failed (rc={proc.returncode}):\n{proc.stdout}\n{proc.stderr}"
+    wheels = list(wheel_dir.glob("*.whl"))
+    sdists = list(sdist_dir.glob("*.tar.gz"))
+    assert len(wheels) == 1, f"expected exactly one wheel, got {wheels}"
+    assert len(sdists) == 1, f"expected exactly one sdist, got {sdists}"
+    return wheels[0], sdists[0]
+
+
+def test_built_artifacts_exclude_fleet_config(tmp_path: Path) -> None:
+    """The published artifacts themselves must not carry the fleet config.
+
+    Asserts on the BUILT bytes, not the checkout:
+    1. chimera.yaml.fleet is absent from both the wheel and the sdist;
+    2. chimera/chimera.yaml.example IS in the wheel and its bytes carry no
+       internal topology tokens;
+    3. the sdist still ships the (sanitized) example at its root.
+    """
+    import tarfile
+    import zipfile
+
+    wheel, sdist = _build_artifacts(tmp_path)
+
+    with zipfile.ZipFile(wheel) as zf:
+        names = zf.namelist()
+        leaked = [n for n in names if "chimera.yaml.fleet" in n]
+        assert not leaked, (
+            f"wheel ships the fleet config ({leaked}) — internal topology would publish to PyPI"
+        )
+        assert "chimera/chimera.yaml.example" in names, (
+            f"wheel lost the force-included example; members: {sorted(names)[:20]}…"
+        )
+        example_bytes = zf.read("chimera/chimera.yaml.example").decode("utf-8")
+        for token in LEAK_TOKENS:
+            assert token not in example_bytes, (
+                f"built wheel's chimera/chimera.yaml.example leaks internal topology token {token!r}"
+            )
+
+    with tarfile.open(sdist) as tf:
+        names = tf.getnames()
+        leaked = [n for n in names if "chimera.yaml.fleet" in n]
+        assert not leaked, f"sdist ships the fleet config ({leaked}) — twine uploads dist/* wholesale"
+        assert any(n.endswith("/chimera.yaml.example") for n in names), (
+            f"sdist lost the example; members: {sorted(names)[:20]}…"
+        )
