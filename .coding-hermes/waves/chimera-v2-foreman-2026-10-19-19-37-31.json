@@ -2,7 +2,14 @@
   "tick_id": "chimera-v2-foreman-2026-10-19-19-37-31",
   "block": "DOC-24",
   "wave_size": 6,
-  "rows": ["DOC-17", "DOC-19", "DOC-20", "DOC-21", "DOC-23", "DOC-24"],
+  "rows": [
+    "DOC-17",
+    "DOC-19",
+    "DOC-20",
+    "DOC-21",
+    "DOC-23",
+    "DOC-24"
+  ],
   "model": "deepseek-v4-flash",
   "provider": "deepseek-foreman",
   "dispatched_at": "2026-10-19T19:37:31-05:00",
@@ -21,5 +28,34 @@
     "DOC-21": "wt/DOC-21",
     "DOC-23": "wt/DOC-23",
     "DOC-24": "wt/DOC-24"
+  },
+  "finished_at": "2026-10-19T21:35:00-05:00",
+  "recovery": {
+    "tick_id": "chimera-v2-foreman-2026-10-20-02-24-31",
+    "status": "complete",
+    "rows_verified": [
+      "DOC-17",
+      "DOC-19",
+      "DOC-20",
+      "DOC-21",
+      "DOC-23",
+      "DOC-24"
+    ],
+    "rows_all_complete": true,
+    "merged_ancestors": [
+      "DOC-17",
+      "DOC-19",
+      "DOC-20",
+      "DOC-21",
+      "DOC-23"
+    ],
+    "superseded": {
+      "DOC-24": "branch tip 962ae34 not an ancestor of main; only docs/LOCAL_CI.md paragraph wording differs from the landed variant 0fc535a on main - content equivalent"
+    },
+    "worktrees_removed": 6,
+    "branches_preserved": [
+      "wt/DOC-24 (superseded variant, evidence)"
+    ],
+    "note": "wave-2 landed via linear docs commits + board close f449826 before tick end; worktree cleanup was the only outstanding step"
   }
 }
