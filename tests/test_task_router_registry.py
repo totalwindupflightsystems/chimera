@@ -116,10 +116,12 @@ def test_valid_task_router_table_is_preferred_and_translated(
         "base_url": "https://api.deepseek.com/v1",
         "api_key_env": "DEEPSEEK_API_KEY",
     }
-    assert pricing["deepseek/deepseek-v4-pro"] == {
-        "input": pytest.approx(0.00066),
-        "output": pytest.approx(0.00198),
-    }
+    # DF-CHIMERA-V2-93: the price row is scoped to the provider that published
+    # it — the ``deepseek`` block owns this key; its provider-agnostic twin sits
+    # under the ``None`` provider key as the coverage fallback.
+    assert pricing[("deepseek", "deepseek/deepseek-v4-pro")]["input"] == pytest.approx(0.00066)
+    assert pricing[("deepseek", "deepseek/deepseek-v4-pro")]["output"] == pytest.approx(0.00198)
+    assert (None, "deepseek/deepseek-v4-pro") in pricing
 
 
 def test_absent_explicit_path_falls_back_to_models_dev(

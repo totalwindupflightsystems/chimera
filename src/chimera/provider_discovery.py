@@ -10,7 +10,12 @@ Usage::
 
     providers, model_pricing = discover_providers()
     # providers: dict[str, Provider] — ready to merge into chimera.yaml
-    # model_pricing: dict[str, dict] — model_id → {input, output} per 1k tokens
+    # model_pricing: dict[(provider, model_id), dict] — price row, $/1k tokens.
+    #   The provider is the registry block that SUPPLIED the row, so two
+    #   providers serving the same model id never overwrite each other.  The
+    #   provider-agnostic winner (used only when a catalog entry's own provider
+    #   has no row) is stored under the ``None`` provider key; resolve a
+    #   catalog entry with :func:`resolve_model_pricing`.
 """
 
 from __future__ import annotations
@@ -115,6 +120,13 @@ def lab_of_router_provider(provider_id: str, model_id: str) -> str | None:
 MODEL_ID_MAP: dict[str, str] = {
     # DeepSeek
     "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
+    # DeepSeek's own registry/API id for the flash SKU is ``deepseek-flash``
+    # (models.dev lists both names in the ``deepseek`` block at identical
+    # prices): the same model, so it must canonicalize onto the catalog id.
+    # Without this alias the lab's own live row only ever reached
+    # ``deepseek/deepseek-flash`` while the catalog id was priced by whichever
+    # foreign gateway happened to write it (DF-CHIMERA-V2-93).
+    "deepseek-flash": "deepseek/deepseek-v4-flash",
     "deepseek-v4-pro": "deepseek/deepseek-v4-pro",
     "deepseek-reasoner": "deepseek/deepseek-reasoner",
     "deepseek-chat": "deepseek/deepseek-chat",
@@ -183,6 +195,64 @@ def _resolve_model_id(provider_id: str, model_id: str) -> str:
         return mapped
     chimera_provider = PROVIDER_ID_MAP.get(provider_id, provider_id)
     return f"{chimera_provider}/{model_id}"
+
+
+#: Provider key of the provider-agnostic price view.  A row stored under
+#: ``(None, model_id)`` was written for a model id that several registry blocks
+#: share, so nothing identifies the gateway it belongs to; it is only used as a
+#: coverage fallback when a catalog entry's own provider has no row for the id
+#: (DF-CHIMERA-V2-93).
+UNATTRIBUTED_PRICE_PROVIDER: None = None
+
+#: One discovered price row.  ``input``/``output`` are $/1k tokens; the rest is
+#: provenance, so a resolved price can always be traced back to the block and
+#: raw model id it came from instead of silently being the last block to write.
+PriceRow = dict[str, Any]
+
+#: Discovered prices, keyed by ``(provider, chimera_model_id)``.  The provider is
+#: the registry BLOCK that supplied the row — never the lab a lane row was
+#: attributed to — so a gateway serving a same-named model can no longer
+#: overwrite the row of the provider that actually answers for the catalog entry.
+ModelPricing = dict[tuple[str | None, str], PriceRow]
+
+
+def _price_rank(row_input: float, row_output: float, *, exact_name: bool) -> tuple[int, int]:
+    """Rank competing rows for one ``(provider, model id)`` key.
+
+    ``exact_name`` is True when the row's raw model id IS the model name of the
+    resolved catalog id (no alias table involved).  A priced row outranks a
+    zero-priced one (free-tier / unpublished cost) and an exact name outranks an
+    alias-resolved one, so a block holding two names for the same SKU publishes
+    the price of the name the catalog id actually uses.
+    """
+    return (1 if (row_input > 0 or row_output > 0) else 0, 1 if exact_name else 0)
+
+
+def resolve_model_pricing(
+    model_pricing: ModelPricing,
+    provider: str,
+    model_id: str,
+) -> tuple[PriceRow | None, str]:
+    """Resolve the discovered price of one catalog entry — provider first.
+
+    Returns ``(row, tier)``:
+
+    * ``"provider"`` — the catalog entry's OWN provider label supplied the row.
+      Authoritative: no other provider's row for the same model id can reach it
+      (DF-CHIMERA-V2-93).
+    * ``"unattributed"`` — the entry's provider has no row for this id, so the
+      provider-agnostic winner is used.  Coverage fallback, never silent: the
+      row's provenance names the block it came from.
+    * ``"none"`` — nothing discovered; the caller keeps the declared rate or the
+      ``cost_tier`` default.
+    """
+    row = model_pricing.get((provider, model_id))
+    if row is not None:
+        return row, "provider"
+    row = model_pricing.get((UNATTRIBUTED_PRICE_PROVIDER, model_id))
+    if row is not None:
+        return row, "unattributed"
+    return None, "none"
 
 
 def _mtok_to_per_1k(cost_mtok: float) -> float:
@@ -359,7 +429,7 @@ def discover_providers(
     *,
     force_refresh: bool = False,
     api_keys: dict[str, str] | None = None,
-) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, float]]]:
+) -> tuple[dict[str, dict[str, str]], ModelPricing]:
     """Auto-discover available providers and model pricing from models.dev.
 
     Pricing data is extracted from ALL providers in the cache regardless of
@@ -376,8 +446,13 @@ def discover_providers(
 
     Returns:
         providers: ``{provider_name: {base_url, api_key_env}}``
-        model_pricing: ``{chimera_model_id: {input: float, output: float}}``
-            where input/output are $/1k tokens.
+        model_pricing: ``{(provider, chimera_model_id): PriceRow}`` where
+            ``input``/``output`` are $/1k tokens and the remaining keys name the
+            block and raw model id the row came from.  Rows are scoped to the
+            provider that PUBLISHED them (DF-CHIMERA-V2-93); the
+            provider-agnostic winner is kept under ``(None, model_id)`` as a
+            coverage fallback.  Resolve a catalog entry with
+            :func:`resolve_model_pricing`.
     """
     # 1. Select task-router when available; force_refresh keeps the historical
     # models.dev refresh escape hatch for explicit callers.
@@ -397,7 +472,12 @@ def discover_providers(
     # 2. Extract per-model pricing from ALL providers in the selected registry.
     #    Pricing data does NOT require API keys — it's public data.
     providers: dict[str, dict[str, str]] = {}
-    model_pricing: dict[str, dict[str, float]] = {}
+    # Prices are keyed by (provider, chimera_model_id) — DF-CHIMERA-V2-93.  Every
+    # registry block publishes its own rows under its OWN provider id, so
+    # ``clinepass``'s price for ``deepseek-v4-flash`` can no longer overwrite the
+    # row ``deepseek`` publishes for the same model: the catalog entry's provider
+    # label decides which of them prices the entry (resolve_model_pricing).
+    model_pricing: ModelPricing = {}
     api_keys = api_keys or {}
     # Blocks that CAME FROM the task-router table (any block in the snapshot's
     # own data — lab blocks, lane blocks, reseller-namespace blocks).
@@ -407,8 +487,13 @@ def discover_providers(
         else set()
     )
     # Pricing keys whose CURRENT value came from a router block; models.dev
-    # fill blocks must not overwrite them (DF-CHIMERA-V2-49).
+    # fill blocks must not overwrite them (DF-CHIMERA-V2-49).  Guards the
+    # provider-agnostic fallback view only — the provider-scoped view needs no
+    # such rule, since a foreign block can no longer reach another provider's key.
     router_derived_keys: set[str] = set()
+    # Rank of the row currently stored under each provider-scoped key, so the
+    # tie-break inside one block is deterministic (see _price_rank).
+    price_ranks: dict[tuple[str | None, str], tuple[int, int]] = {}
 
     for md_id, md_provider in data.items():
         if md_id in ("_fetched_at",):
@@ -434,7 +519,9 @@ def discover_providers(
                 # Under a task-router source, lane blocks store rows under the
                 # lane id; attribute lane rows to their owning lab so the
                 # resolved Chimera id matches the catalog key shape
-                # (``deepseek/...`` not ``ollama-cloud/...``).
+                # (``deepseek/...`` not ``ollama-cloud/...``).  Attribution only
+                # shapes the ID — the row still belongs to the lane's provider
+                # key, which is what keeps same-lab rows from colliding.
                 attribution_source = (
                     lab_of_router_provider(md_id, md_model_id) or md_id
                     if snapshot.source == "task-router"
@@ -443,9 +530,36 @@ def discover_providers(
                 chimera_model_id = _resolve_model_id(attribution_source, md_model_id)
                 new_input = _mtok_to_per_1k(float(cost_input))
                 new_output = _mtok_to_per_1k(float(cost_output))
-                # Prefer non-zero pricing: if we already have real pricing,
-                # don't overwrite with zero-cost entries from free-tier providers.
-                existing = model_pricing.get(chimera_model_id)
+                row: PriceRow = {
+                    "input": new_input,
+                    "output": new_output,
+                    "source_provider": chimera_name,
+                    "source_model": md_model_id,
+                    "registry": snapshot.source,
+                    "attributed_lab": attribution_source if attribution_source != md_id else None,
+                }
+
+                # ── Provider-scoped view (authoritative, DF-CHIMERA-V2-93) ──
+                # A block publishes its rows under its own id only.  Competing
+                # rows for one key therefore all come from the SAME block; the
+                # highest-ranked one wins and ties keep the first, so the result
+                # never depends on which block the loop reached last.
+                provider_key = (chimera_name, chimera_model_id)
+                rank = _price_rank(
+                    new_input,
+                    new_output,
+                    exact_name=md_model_id == chimera_model_id.rsplit("/", 1)[-1],
+                )
+                if rank > price_ranks.get(provider_key, (-1, -1)):
+                    model_pricing[provider_key] = row
+                    price_ranks[provider_key] = rank
+
+                # ── Provider-agnostic view (coverage fallback) ──
+                # The pre-scoping winner, kept so a catalog entry whose provider
+                # publishes no row for the id still gets a discovered price —
+                # recorded with its provenance rather than silently applied.
+                fallback_key = (UNATTRIBUTED_PRICE_PROVIDER, chimera_model_id)
+                existing = model_pricing.get(fallback_key)
                 if (
                     existing is not None
                     and existing["input"] > 0
@@ -453,6 +567,9 @@ def discover_providers(
                     and new_input == 0.0
                     and new_output == 0.0
                 ):
+                    # Prefer non-zero pricing: if we already have real pricing,
+                    # don't overwrite with zero-cost entries from free-tier
+                    # providers.
                     continue
                 # DF-CHIMERA-V2-49: a pricing key derived from the task-router
                 # source (the pricing authority) is FINAL — a later models.dev
@@ -464,10 +581,7 @@ def discover_providers(
                     continue
                 if router_derived:
                     router_derived_keys.add(chimera_model_id)
-                model_pricing[chimera_model_id] = {
-                    "input": new_input,
-                    "output": new_output,
-                }
+                model_pricing[fallback_key] = row
 
         # ── Provider discovery (requires API key) ──
         env_vars = md_provider.get("env", [])
@@ -507,9 +621,11 @@ def discover_providers(
             "api_key_env": env_vars[0] if env_vars else "",
         }
 
+    provider_scoped_prices = sum(1 for key in model_pricing if key[0] is not None)
     log.info(
         "provider_discovery_done",
         providers=len(providers),
-        models=len(model_pricing),
+        models=provider_scoped_prices,
+        unattributed=len(model_pricing) - provider_scoped_prices,
     )
     return providers, model_pricing
