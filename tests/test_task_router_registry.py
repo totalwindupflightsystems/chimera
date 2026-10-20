@@ -387,9 +387,8 @@ def test_task_router_home_without_registry_or_fallback_warns_before_raising(
     fake_module.write_text("", encoding="utf-8")
     monkeypatch.setattr("chimera.task_router_registry.__file__", str(fake_module))
 
-    with patch("chimera.task_router_registry.log") as log_mock:
-        with pytest.raises(TaskRouterRegistryError) as excinfo:
-            locate_task_router_models()
+    with patch("chimera.task_router_registry.log") as log_mock, pytest.raises(TaskRouterRegistryError) as excinfo:
+        locate_task_router_models()
 
     assert log_mock.warning.call_count == 1
     assert log_mock.warning.call_args.args == ("task_router_home_registry_missing",)
@@ -410,7 +409,8 @@ def test_task_router_home_without_registry_or_fallback_warns_before_raising(
         ),
         pytest.param([_live_row(archive=True)], "has no live supported rows", None, id="all-archived"),
         pytest.param([_live_row(disabled=True)], "has no live supported rows", None, id="all-disabled"),
-        pytest.param([_live_row(valid_to="2026-09-01")], "has no live supported rows", None, id="all-expired"),
+        pytest.param([_live_row(valid_to="2026-09-01")], "has no live supported rows",
+                     None, id="all-expired"),
         pytest.param([], "has no live supported rows", None, id="empty-file"),
         pytest.param([_live_row(provider=None)], "provider must be a string", 1, id="non-string-provider"),
         pytest.param([_live_row(model="")], "model must be a string", 1, id="blank-model"),
