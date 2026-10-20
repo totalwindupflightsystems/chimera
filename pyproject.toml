@@ -160,10 +160,26 @@ dependencies = [
 # litellm.token_counter round-trip green. Re-taking a major to buy nothing is
 # not a fix; re-open either only with a concrete need.
 #
-# Census re-derivation 2026-10-19 (SUP-DEPS-20261018-CH): `pip list --outdated`
-# on a fresh `uv sync --all-extras` venv at b29e3f8 reported 19 entries (the
-# foreman's 20th, setuptools 84.0.0->84.2.0, is NOT INSTALLED in the uv venv —
-# uv environments carry no setuptools — so there is nothing to bump).
+# Census re-derivation 2026-10-19 (SUP-DEPS-20261018-CH, reworked after Tier-2
+# verdict 0e2cb0cb): `pip list --outdated` was measured in BOTH environments
+# that matter, and the two counts differ by exactly one entry — setuptools:
+#   REPO venv (/home/kara/chimera-v2/.venv) — a PLAIN venv (created with
+#     python3 -m venv), CPython 3.11.15, carrying pip + setuptools: 20 outdated
+#     entries = the 11 in-bounds bumps + the 8 holds below + setuptools
+#     84.0.0->84.2.0.
+#   uv-built venv (`uv venv --python 3.11 --seed` + `uv sync --all-extras`,
+#     CPython 3.11.15): 19 entries — the same set MINUS setuptools, because uv
+#     does not install setuptools into its venvs. Both numbers are real; the
+#     census is only meaningful with its environment label.
+# setuptools 84.0.0->84.2.0: it IS installed and outdated in the repo venv. It
+# is NOT a uv.lock distribution (uv resolves only what this file declares, and
+# nothing here depends on setuptools), so it cannot be bumped through the lock
+# — it is venv tooling and is bumped in the venv itself
+# (`pip install -U setuptools`).
+# Scope note: the 11 bumps below live in uv.lock and in any venv reconciled
+# from it via `uv sync --all-extras` (the worktree venv this was verified in).
+# The REPO venv itself still carried the old set at this commit — reconciling
+# it is a separate deploy step, not part of this change.
 # Constraints re-verified from installed metadata (importlib.metadata.requires),
 # never from this comment alone. Eleven were in-bounds and bumped through one
 # `uv lock --upgrade-package ...` batch + `uv sync --all-extras`:
@@ -191,7 +207,9 @@ dependencies = [
 #                       HTMLResponse/StreamingResponse/FileResponse,
 #                       TestClient), and the full pytest suite is green after
 #                       the bump
-# Eight remain HELD, each re-verified against installed metadata:
+# Eight remain HELD, each re-verified against installed metadata — and the
+# post-sync uv venv's `pip list --outdated` (CPython 3.11.15) shows EXACTLY
+# these eight, with all 11 bumped names absent:
 #   litellm 1.106.0           — this file's own <1.100 cap (stdout pollution
 #                               breaks the MCP stdio JSON-RPC wire)
 #   mcp 2.3.0                 — this file's own <2.0 cap (FastMCP signature /
