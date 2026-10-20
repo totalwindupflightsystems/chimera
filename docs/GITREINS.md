@@ -95,6 +95,27 @@ three arms, and only the last is the harness this page describes:
 3. **`gitreins guard`** — run with the repo venv first on PATH (see "Running
    it"), its output teed to the console rather than swallowed.
 
+### The built-in `sk-` alternative carries a token boundary
+
+Arm 1's `sk-` alternative is the engine's own rule verbatim (a boundary before
+the two-letter prefix, plus a body that is BOTH 20+ characters AND key-shaped —
+at least one uppercase letter or digit), because a boundary-less
+`sk-[a-zA-Z0-9_-]{20,}` matches prose: a board row naming the registry/source
+component carries `sk-` inside `task-`, and a kebab tail of 20 characters after
+it satisfied the pattern, so `Tier 1` BLOCKED a legitimate commit while gitleaks
+over the same file reported no leaks (DF-CHIMERA-V2-96). The alternative is NOT
+removable — it is what catches a real key — so fix this class by tightening the
+pattern, not by exempting the file: `.gitreins/secrets-ignore` entries are
+FILE-level, and exempting a file blinds the scan for every real key in it.
+
+Arm 1 does not use gitleaks at all; arm 3 does, and gitleaks only detects
+anything when `.gitleaks.toml` extends the default ruleset (`[extend]
+useDefault = true`). gitleaks treats a config as a full REPLACEMENT, so without
+that line the run loads no rules and `gitleaks: clean` means "nothing was
+checked" — the two scanners' verdicts are only comparable when both are really
+running. `tests/test_precommit_hook.py` pins both halves (kebab slugs clean,
+seeded credential caught) with a live gitleaks positive control.
+
 The guard's exit code is a **verdict**, not just an error level, and the hook
 maps it:
 

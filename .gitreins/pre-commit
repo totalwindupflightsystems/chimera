@@ -43,7 +43,17 @@ STAGED=$(git diff --cached --name-only --diff-filter=ACM)
 FAILED=0
 
 # ── 1. Secrets Scan ──────────────────────────────────────
-SECRET_PATTERNS='sk-[a-zA-Z0-9_-]{20,}|ghp_[a-zA-Z0-9]{36}|-----BEGIN (RSA |EC |OPENSSH )PRIVATE KEY-----|(OPENROUTER|DEEPSEEK|ZAI|ANTHROPIC)_API_KEY\s*=\s*\S'
+# The first alternative is the engine's own rule, verbatim (engine/guard_manager.py,
+# "OpenAI/OpenRouter API key"): a TOKEN BOUNDARY before the two-letter prefix, and a
+# body that is BOTH 20+ chars AND key-shaped (at least one uppercase letter or digit).
+# A bare `sk-[a-zA-Z0-9_-]{20,}` (no boundary, any body) matched ordinary kebab slugs:
+# a board row naming the registry-source component followed by "-home-fallback" gave a
+# 20+ char class run after the "sk-" inside "task-", so Tier 1 BLOCKED a legitimate
+# commit while gitleaks over the same file reported no leaks (DF-CHIMERA-V2-96).
+# The alternative is kept — it is what catches a real key — but slug text can no longer
+# match it. Per-file exemption via .gitreins/secrets-ignore was rejected as the fix:
+# it would blind the scan for a whole file that legitimately carries keys.
+SECRET_PATTERNS='\bsk-(?=[A-Za-z0-9_-]{20,})[A-Za-z0-9_-]*[A-Z0-9][A-Za-z0-9_-]*|ghp_[a-zA-Z0-9]{36}|-----BEGIN (RSA |EC |OPENSSH )PRIVATE KEY-----|(OPENROUTER|DEEPSEEK|ZAI|ANTHROPIC)_API_KEY\s*=\s*\S'
 # Honor .gitreins/secrets-ignore (same semantics as `gitreins guard`): a
 # staged file is skipped when its path equals an entry, or starts with an
 # entry ending in '/', or its path-part matches '<path>:<pattern>'.

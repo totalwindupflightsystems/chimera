@@ -55,4 +55,5 @@ against the live deployment, **not** a description of current behavior.
 - [dogfood/2026-10-12-run22-integration.md](dogfood/2026-10-12-run22-integration.md) — run 22, SSE wire protocol client implemented from docs/INTEGRATION.md alone (2026-10-12)
 - [dogfood/2026-10-15-run23-integration.md](dogfood/2026-10-15-run23-integration.md) — run 23, idempotency + REST custom-DAG seam (2026-10-15)
 - [dogfood/2026-10-15-run24-integration.md](dogfood/2026-10-15-run24-integration.md) — run 24, chimera-mcp (MCP stdio surface) as a real client (2026-10-15)
+- [dogfood/2026-10-20-run25-integration.md](dogfood/2026-10-20-run25-integration.md) — run 25, task-router registry source: contract holds, price provenance broken (2026-10-20)
 - [dogfood/diagnostics.md](dogfood/diagnostics.md) — build/diagnostic trail behind the 2026-08-03 run

@@ -2,6 +2,14 @@
 # Whitelists documentation and test directories to avoid false positives
 # on example keys and placeholder tokens.
 
+# The default ruleset MUST be extended explicitly: gitleaks treats a config as a
+# full replacement, and the harness passes this file through (`--config`, and the
+# pipeline's generated config extends it by path — DF-CHIMERA-V2-96). Without
+# `useDefault`, gitleaks ran with ZERO rules here and every "gitleaks: clean" line
+# meant "no rule was loaded", not "no secret found".
+[extend]
+  useDefault = true
+
 [allowlist]
   description = "Doc and test exclusions"
   paths = [
@@ -10,4 +18,10 @@
     '''chimera.yaml.example''',
     '''chimera.yaml.docker''',
     '''README.md''',
+    # Harness state, same rationale as the engine's own .gitreins exclusion: these
+    # are tracked board/verdict records, not code, and the default generic-api-key
+    # rule flags row text such as the ticket id "DF-CHIMERA-0916B-2" (measured:
+    # entropy 3.9) in .coding-hermes/board/events.jsonl. The built-in scanners
+    # (engine + pre-commit hook) still grade these files for real keys.
+    '''\.coding-hermes/''',
   ]
