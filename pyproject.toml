@@ -283,6 +283,11 @@ dev = [
     # and the lane prints `pylsp — clean` on every diff — a vacuous green.
     "python-lsp-server[pycodestyle,pyflakes]>=1.12.0",
     "ruff>=0.16.10",
+    # DF-CHIMERA-V2-92: the packaging regression test builds the wheel and
+    # sdist via the PEP 517 hooks IN-PROCESS backend (no network, no build
+    # isolation), so hatchling must be importable from the test environment,
+    # not just from pip's ephemeral build env.
+    "hatchling>=1.21",
 ]
 full = [
     "fastapi>=0.115.0",
