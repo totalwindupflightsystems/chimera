@@ -246,6 +246,21 @@ dependencies = [
 #                               nothing in chimera/litellm/tokenizers imports it
 #   multidict 7.1.0           — policy-held major; aiohttp allows <8.0, yarl
 #                               uncapped, but no importer beyond aiohttp/yarl
+#
+# 2026-10-20 census (SUP-DEPS-20261020-CHV2): the supervisor dep census reported
+# 10 outdated packages; 8 are the holds above (unchanged, re-verified below) and
+# two were in-bounds and bumped through `uv lock --upgrade-package fastapi
+# --upgrade-package pydantic-settings` + `uv sync --all-extras`:
+#   fastapi 0.150.0->0.153.0          — resolver-in-bounds; the declared floor
+#                       in the server/web/dev/full extras moves with it
+#                       (>=0.115.0 -> >=0.153.0) so the metadata minimum matches
+#                       the locked reality
+#   pydantic-settings 2.16.0->2.16.1  — patch bump; transitive via litellm and
+#                       mcp (no direct declaration in this file, so no floor to
+#                       move); both allow pydantic-settings>=2.x uncapped
+# Holds re-verified unmoved in uv.lock after the bump: litellm 1.99.4,
+# mcp 1.30.0, openai 2.54.0, importlib-metadata 8.9.0, pyflakes 3.2.0,
+# pycodestyle 2.12.1, huggingface-hub 1.33.0, multidict 6.9.1.
 
 [project.urls]
 Homepage = "https://github.com/totalwindupflightsystems/chimera"
@@ -254,16 +269,16 @@ Issues = "https://github.com/totalwindupflightsystems/chimera/issues"
 Changelog = "https://github.com/totalwindupflightsystems/chimera/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-server = ["fastapi>=0.115.0", "uvicorn[standard]>=0.30.0"]
+server = ["fastapi>=0.153.0", "uvicorn[standard]>=0.30.0"]
 cli = ["click>=8.0", "rich>=13.0"]
 mcp = ["mcp>=1.0.0,<2.0"]
-web = ["fastapi>=0.115.0", "uvicorn[standard]>=0.30.0"]
+web = ["fastapi>=0.153.0", "uvicorn[standard]>=0.30.0"]
 dev = [
     # Test collection imports the FastAPI app (tests/test_engine_coverage.py ->
     # chimera.api.server), so the documented `pip install -e ".[dev]"` must carry
     # the same runtime pins as the server/web extras — otherwise collection dies
     # with ModuleNotFoundError: No module named 'fastapi' (QA-CHIMERA-001).
-    "fastapi>=0.115.0",
+    "fastapi>=0.153.0",
     "uvicorn[standard]>=0.30.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.24.0",
@@ -290,7 +305,7 @@ dev = [
     "hatchling>=1.21",
 ]
 full = [
-    "fastapi>=0.115.0",
+    "fastapi>=0.153.0",
     "uvicorn[standard]>=0.30.0",
     "click>=8.0",
     "rich>=13.0",
