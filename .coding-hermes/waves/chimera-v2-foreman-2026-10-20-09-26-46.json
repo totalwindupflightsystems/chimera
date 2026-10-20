@@ -1,0 +1,30 @@
+{
+  "wave_id": "chimera-v2-foreman-2026-10-20-09-26-46",
+  "block": "DF-CHIMERA-V2-96",
+  "base": "c0602380cc16456aca3c28af7699cb388b196293",
+  "wave_budget": 12,
+  "slots": 6,
+  "wave_size": 1,
+  "path": "serial-fallback",
+  "why": "block_drive top ready block had one genuinely implementation-owned row after premise verification; the other block rows are policy/infra or already satisfied. A single row cannot form a wave.",
+  "rows": [
+    {
+      "task_id": "DF-CHIMERA-V2-92",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-92",
+      "branch": "wt/DF-CHIMERA-V2-92",
+      "base_sha": "c0602380cc16456aca3c28af7699cb388b196293",
+      "brief": "/tmp/DF-CHIMERA-V2-92-brief.txt",
+      "model": "k3",
+      "provider": "kimi-for-coding",
+      "gitreins": "created-and-started-in-worktree-before-dispatch",
+      "status": "merged",
+      "worker_commit": "4f9b5146ae3029e2ce19c7dad886288f5d136069",
+      "merge_commit": "74326dacba78df0103727be3aefdfdc9ffd74b1f",
+      "judge_verdict": "e4abde99",
+      "tier1": "DEGRADED PASS post-merge no-staged diff",
+      "local_gate": "focused 7 passed; full 2157 passed/62 skipped before dev-extra sync; packaging 7 passed after uv sync",
+      "remote_parity": "worker branch and main origin parity 0/0"
+    }
+  ],
+  "finished_at": "2026-10-20T11:40:00Z"
+}
