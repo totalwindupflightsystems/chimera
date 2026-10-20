@@ -438,6 +438,29 @@ class ChimeraConfig(BaseModel):
     Only labels travel here — never a key value.
     """
 
+    cost_provenance: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        exclude=True,
+    )
+    """Where each catalog entry's effective rate came from (DF-CHIMERA-V2-93).
+
+    Maps model id → ``{"tier", "source_provider", "source_model", "registry"}``:
+
+    * ``tier="catalog"`` — the entry declares ``cost_per_1k_*`` itself; the
+      declaration wins and nothing discovered can change it.
+    * ``tier="provider"`` — the entry's OWN ``provider`` label published the
+      price.  Authoritative.
+    * ``tier="unattributed"`` — the entry's provider published no row for this
+      model id, so the provider-agnostic winner was used; ``source_provider``
+      names the block it came from, so the fallback is visible instead of
+      silent.
+
+    ``exclude=True`` keeps it out of every serialization (same contract as
+    ``configured_provider_names`` / ``credential_sources``): it is load-time
+    bookkeeping for operators asking "why is this model priced that way?", not a
+    YAML field.
+    """
+
     @model_validator(mode="after")
     def _resolve_provider_api_keys(self) -> ChimeraConfig:
         for provider_name, provider in self.providers.items():
@@ -1254,14 +1277,33 @@ def _apply_env_overrides(config: ChimeraConfig) -> None:
                         api_key_env=pdata.get("api_key_env"),
                     )
 
-            # Apply model pricing to existing models
-            for model_id, pricing in model_pricing.items():
-                entry = config.models.get(model_id)
-                if entry is not None:
-                    if entry.cost_per_1k_input is None:
-                        entry.cost_per_1k_input = pricing["input"]
-                    if entry.cost_per_1k_output is None:
-                        entry.cost_per_1k_output = pricing["output"]
+            # Apply model pricing to existing models — per (provider, model) so
+            # the catalog entry's own ``provider`` label is authoritative
+            # (DF-CHIMERA-V2-93).  A price another provider published for a
+            # same-named model id can no longer price this entry, and every
+            # applied rate records WHERE it came from instead of silently being
+            # whichever registry block the scan reached last.
+            from chimera.provider_discovery import resolve_model_pricing
+
+            for model_id, entry in config.models.items():
+                row, tier = resolve_model_pricing(model_pricing, entry.provider, model_id)
+                if row is None:
+                    continue
+                if entry.cost_per_1k_input is not None and entry.cost_per_1k_output is not None:
+                    # Explicit declaration wins (unchanged behavior).  Recorded
+                    # so the served rate is explicable, not just different.
+                    config.cost_provenance[model_id] = {"tier": "catalog"}
+                    continue
+                if entry.cost_per_1k_input is None:
+                    entry.cost_per_1k_input = row["input"]
+                if entry.cost_per_1k_output is None:
+                    entry.cost_per_1k_output = row["output"]
+                config.cost_provenance[model_id] = {
+                    "tier": tier,
+                    "registry": row.get("registry"),
+                    "source_provider": row.get("source_provider"),
+                    "source_model": row.get("source_model"),
+                }
         except Exception:
             # Discovery is best-effort — never crash on network issues
             pass

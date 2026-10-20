@@ -434,6 +434,29 @@ is logged at startup (`registry_source_selected`); `chimera models` refreshes an
 probes the resolved source. When `model_sync.py` cannot find a registry, its error
 remedy names `CHIMERA_TASK_ROUTER_MODELS_PATH` (or running `chimera models`) as the fix.
 
+#### How a discovered price is resolved (per provider)
+
+Every registry block publishes prices for the models it serves, and several
+blocks routinely carry the **same** model id (a lab's own row plus the rows of
+any gateway reselling that model). A discovered price is therefore keyed by
+`(provider, model id)` — the provider being the block that published it — and a
+catalog entry is priced through **its own `provider` label first**:
+
+| Resolution | Source | Notes |
+|---|---|---|
+| `provider` | The block named by the entry's `provider` field. | Authoritative. Another provider's row for the same model id cannot price the entry. |
+| `unattributed` | The provider-agnostic winner across all blocks. | Only when the entry's provider publishes no row for that id. Kept for coverage; the block it came from is recorded, so the fallback is never silent. |
+| `catalog` | The entry's own `cost_per_1k_*` declaration. | Always wins; discovery never overwrites it. |
+| *(none)* | Nothing discovered and nothing declared. | The `cost_tier` default from the table above applies. |
+
+`load_config()` records the outcome per model in the internal
+`ChimeraConfig.cost_provenance` map (`{"tier", "registry", "source_provider",
+"source_model"}`) — load-time bookkeeping, excluded from every serialization —
+so a rate in a trace can be traced back to the registry row that produced it.
+An alias table (`MODEL_ID_MAP`) canonicalizes model **ids** (e.g. DeepSeek's own
+`deepseek-flash` and the catalog's `deepseek/deepseek-v4-flash` are the same
+SKU); it never merges two providers' rows for the same id.
+
 ---
 
 ## `providers`

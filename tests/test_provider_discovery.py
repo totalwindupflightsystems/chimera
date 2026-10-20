@@ -165,9 +165,15 @@ class TestDiscoverProviders:
         ):
             _providers, pricing = discover_providers(force_refresh=True)
 
-        v4f = pricing["deepseek/deepseek-v4-flash"]
+        # DF-CHIMERA-V2-93: prices are keyed by (provider, model id) — the
+        # ``deepseek`` block publishes this row under its own provider id.
+        v4f = pricing[("deepseek", "deepseek/deepseek-v4-flash")]
         assert v4f["input"] == pytest.approx(0.00014)  # 0.14 / 1000
         assert v4f["output"] == pytest.approx(0.00028)  # 0.28 / 1000
+        # Provenance: which block + raw model id the row came from.
+        assert v4f["source_provider"] == "deepseek"
+        assert v4f["source_model"] == "deepseek-v4-flash"
+        assert v4f["registry"] == "models.dev"
 
     def test_returns_empty_when_no_keys(self, monkeypatch):
         """When no API keys are set, providers empty but pricing still extracted."""
@@ -188,11 +194,14 @@ class TestDiscoverProviders:
 
         assert providers == {}, f"Should be empty: {providers}"
         # Pricing is always extracted — it's public data, no auth needed
-        assert len(pricing) == 4, f"All 4 models should have pricing: {pricing}"
-        assert "deepseek/deepseek-v4-flash" in pricing
-        assert "deepseek/deepseek-v4-pro" in pricing
-        assert "google/gemini-3-flash-preview" in pricing
-        assert "unknown-provider/some-model" in pricing
+        # (DF-CHIMERA-V2-93: one row per (provider, model id), plus the
+        # provider-agnostic fallback view under the ``None`` provider key).
+        assert len(pricing) == 8, f"4 scoped rows + 4 fallback rows: {pricing}"
+        assert ("deepseek", "deepseek/deepseek-v4-flash") in pricing
+        assert ("deepseek", "deepseek/deepseek-v4-pro") in pricing
+        assert ("google", "google/gemini-3-flash-preview") in pricing
+        assert ("unknown-provider", "unknown-provider/some-model") in pricing
+        assert (None, "deepseek/deepseek-v4-flash") in pricing
 
     def test_skips_providers_without_cost_data(self, monkeypatch):
         """Models without cost data are skipped in pricing."""
@@ -223,7 +232,7 @@ class TestDiscoverProviders:
         ):
             _providers, pricing = discover_providers(force_refresh=True)
 
-        assert "deepseek/no-cost-model" not in pricing
+        assert ("deepseek", "deepseek/no-cost-model") not in pricing
 
     def test_env_var_with_dollar_brace_skipped(self, monkeypatch):
         """Env vars that look like unresolved ${VAR} are treated as unset."""
@@ -269,7 +278,8 @@ class TestDiscoverProviders:
             providers, pricing = discover_providers()
 
         assert "deepseek" in providers, f"DeepSeek should be discovered from stale cache: {providers}"
-        assert len(pricing) == 4, f"Pricing should be extracted from stale cache: {pricing}"
+        # 4 scoped rows + their provider-agnostic fallback view (DF-CHIMERA-V2-93).
+        assert len(pricing) == 8, f"Pricing should be extracted from stale cache: {pricing}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
