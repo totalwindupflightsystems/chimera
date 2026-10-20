@@ -176,10 +176,33 @@ dependencies = [
 # nothing here depends on setuptools), so it cannot be bumped through the lock
 # — it is venv tooling and is bumped in the venv itself
 # (`pip install -U setuptools`).
-# Scope note: the 11 bumps below live in uv.lock and in any venv reconciled
-# from it via `uv sync --all-extras` (the worktree venv this was verified in).
-# The REPO venv itself still carried the old set at this commit — reconciling
-# it is a separate deploy step, not part of this change.
+# Scope note: the 11 bumps below live in uv.lock and are reconciled into the
+# repo venv (`uv sync --all-extras --inexact`, which preserves pip + setuptools,
+# followed by `pip install -U setuptools` -> 84.2.0). `pip list --outdated` in
+# the repo venv returns EXACTLY the eight holds below; no bumped name remains.
+#
+# Gate record 2026-10-19 — AUTHORITATIVE runs in the REPO tree
+# (/home/kara/chimera-v2, repo venv CPython 3.11.15, live untracked chimera.yaml
+# present), at 6b1f604:
+#   uv lock --check                 -> "Resolved 106 packages", exit 0
+#   .venv/bin/python -m pip check   -> "No broken requirements found.", exit 0
+#   .venv/bin/ruff check .          -> "All checks passed!", exit 0
+#   .venv/bin/python -m pytest -q   -> 2130 passed, 62 skipped, 0 failed
+#                                     (104.59s)
+# Count delta vs a worktree run (2128 passed / 64 skipped, uv venv, SAME
+# interpreter 3.11.15): two tests are conditioned on the live untracked
+# chimera.yaml, which exists only in the repo tree —
+#   tests/test_config.py::test_formation_models_exist_in_catalog and
+#   tests/test_cli_stdout_purity.py::test_cli_stdout_pure_models_with_real_repo_config
+# Staging chimera.yaml into a worktree makes both pass ("2 passed in 0.73s"),
+# reproducing 2130/62 exactly. Both counts are correct for their own tree; the
+# repo-tree numbers above are the record of truth.
+# Deploy note: the supervised :8765 unit was NOT restarted for this change — the
+# reload command is approval-gated in the unattended tick that landed it, so the
+# reload is DEFERRED and recorded as an explicit deferral (AGENTS.md permits
+# this). The material delta is this comment block only; the running process keeps
+# the pre-bump dependency set until a restart, which a later interactive tick or
+# the operator must perform.
 # Constraints re-verified from installed metadata (importlib.metadata.requires),
 # never from this comment alone. Eleven were in-bounds and bumped through one
 # `uv lock --upgrade-package ...` batch + `uv sync --all-extras`:
