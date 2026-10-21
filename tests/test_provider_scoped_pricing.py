@@ -255,9 +255,7 @@ def test_config_prices_entry_from_its_own_provider_on_the_models_dev_path(
     assert cfg.cost_provenance[TARGET]["registry"] == "models.dev"
 
 
-def test_catalog_declaration_wins_and_is_recorded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_catalog_declaration_wins_and_is_recorded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     table = _router_table(tmp_path)
     monkeypatch.setenv("CHIMERA_TASK_ROUTER_MODELS_PATH", str(table))
     doc = _catalog_doc(cost_per_1k_input=0.0099, cost_per_1k_output=0.0299)
@@ -270,9 +268,7 @@ def test_catalog_declaration_wins_and_is_recorded(
     assert cfg.cost_provenance[TARGET] == {"tier": "catalog"}
 
 
-def test_cost_provenance_is_never_serialized(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cost_provenance_is_never_serialized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     table = _router_table(tmp_path)
     monkeypatch.setenv("CHIMERA_TASK_ROUTER_MODELS_PATH", str(table))
     cfg = load_config(_write_catalog(tmp_path, _catalog_doc()))
