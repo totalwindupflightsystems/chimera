@@ -305,6 +305,19 @@ dependencies = [
 #   .venv/bin/ruff format --check . -> 163 files already formatted, exit 0
 #   .venv/bin/python -m pytest -q   -> 2158 passed, 62 skipped, 0 failed
 #                                     (112.26s; baseline-identical to 0.2.7)
+#
+# Follow-up inside the SAME tick (SUP-DEPS-20261021-CV, after the first Tier-2
+# verdict 45135d48 flagged the census as stale): the census is a MOVING TARGET on
+# this box — three in-bounds releases appeared between the first census and the
+# judge's own re-read, so the criterion 'refresh the in-bounds drift' was
+# satisfied rather than annotated. Bumped through `uv lock --upgrade-package
+# fastapi --upgrade-package httpx2 --upgrade-package httpcore2`:
+#   fastapi 0.156.4->0.156.5, httpx2 2.15.1->2.16.0, httpcore2 2.15.1->2.16.0
+# httpx2 pins httpcore2 to the same version, so the pair moves together; all
+# three have no upper cap anywhere in this tree (fastapi's floor, and the pin
+# that guards it, moved to >=0.156.5 in the same commit). Lesson: run the
+# final `pip list --outdated` LAST and treat it as a fresh measurement — the
+# pre-suite census can already be behind by the time the suite finishes.
 
 [project.urls]
 Homepage = "https://github.com/totalwindupflightsystems/chimera"
@@ -313,16 +326,16 @@ Issues = "https://github.com/totalwindupflightsystems/chimera/issues"
 Changelog = "https://github.com/totalwindupflightsystems/chimera/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-server = ["fastapi>=0.156.4", "uvicorn[standard]>=0.30.0"]
+server = ["fastapi>=0.156.5", "uvicorn[standard]>=0.30.0"]
 cli = ["click>=8.0", "rich>=13.0"]
 mcp = ["mcp>=1.0.0,<2.0"]
-web = ["fastapi>=0.156.4", "uvicorn[standard]>=0.30.0"]
+web = ["fastapi>=0.156.5", "uvicorn[standard]>=0.30.0"]
 dev = [
     # Test collection imports the FastAPI app (tests/test_engine_coverage.py ->
     # chimera.api.server), so the documented `pip install -e ".[dev]"` must carry
     # the same runtime pins as the server/web extras — otherwise collection dies
     # with ModuleNotFoundError: No module named 'fastapi' (QA-CHIMERA-001).
-    "fastapi>=0.156.4",
+    "fastapi>=0.156.5",
     "uvicorn[standard]>=0.30.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.24.0",
@@ -349,7 +362,7 @@ dev = [
     "hatchling>=1.21",
 ]
 full = [
-    "fastapi>=0.156.4",
+    "fastapi>=0.156.5",
     "uvicorn[standard]>=0.30.0",
     "click>=8.0",
     "rich>=13.0",

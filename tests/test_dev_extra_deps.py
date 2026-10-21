@@ -38,7 +38,7 @@ _DIST_ALIASES = {"yaml": "pyyaml"}
 
 #: Exact constraints the server/web extras ship; the dev extra must reuse them
 #: rather than inventing a second, drifting set.
-_SERVER_RUNTIME_SPECS = {"server": ["fastapi>=0.156.4", "uvicorn[standard]>=0.30.0"]}
+_SERVER_RUNTIME_SPECS = {"server": ["fastapi>=0.156.5", "uvicorn[standard]>=0.30.0"]}
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
 
