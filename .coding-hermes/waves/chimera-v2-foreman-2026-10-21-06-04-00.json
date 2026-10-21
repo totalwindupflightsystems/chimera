@@ -1,0 +1,49 @@
+{
+  "wave_id": "chimera-v2-foreman-2026-10-21-06-04-00",
+  "block": "SUP-DEPS-20261021-CV",
+  "base": "7ea49b85bc34190147caa12d38ecefe6d36f1686",
+  "wave_budget": 1,
+  "slots": 1,
+  "nproc": 16,
+  "loadavg_at_tick": "3.78 13.22 19.08",
+  "slots_math": "max(1, min(6, nproc - ceil(loadavg))) with ceiling clamped to the injected WAVE_BUDGET=1 -> 1 slot",
+  "wave_size": 1,
+  "path": "serial-fallback",
+  "why": "WAVE_BUDGET=1 caps the wave at one worker; the driven block (SUP-DEPS-20261021-CV) also had exactly one ready row. Dependency-refresh rows are foreman-direct by doctrine (worker sub-models stall on package manifests), so no worker was dispatched: the row was implemented in the repo tree by the foreman and judged with the mandatory GitReins lifecycle.",
+  "rows": [
+    {
+      "task_id": "SUP-DEPS-20261021-CV",
+      "worktree": null,
+      "branch": "main",
+      "base_sha": "7ea49b85bc34190147caa12d38ecefe6d36f1686",
+      "brief": null,
+      "model": "foreman-direct",
+      "provider": "deepseek-foreman",
+      "gitreins": "created-and-started-before-implementation; task complete flipped state; Tier 2 judged async (job-10fb709c009740c7a6f91a36534d9f72)",
+      "status": "landed-and-pushed",
+      "commit": "b5743f3",
+      "merge_commit": null,
+      "judge_verdict": "pending-async",
+      "tier1": "PASS on the commit gate (secrets/lint/tests-full all PASS; static_analysis skipped by empty static_analysis_tools, known state)",
+      "local_gate": "uv lock --check exit 0 (Resolved 109); pip check clean; ruff check . All checks passed; ruff format --check . 163 files; pytest -q 2158 passed / 62 skipped / 0 failed; final pip list --outdated = exactly the 8 documented holds",
+      "remote_parity": "origin/main and github/main both 0/0 at b5743f3"
+    },
+    {
+      "task_id": "INT-CI-016",
+      "note": "second block driven in the same tick: the repo-wide lint gate this tick had to satisfy was red on main (E501 in tests/test_task_router_registry.py) and is the row that owns it; formatting-only change, foreman-direct",
+      "worktree": null,
+      "branch": "main",
+      "base_sha": "7ea49b85bc34190147caa12d38ecefe6d36f1686",
+      "model": "foreman-direct",
+      "provider": "deepseek-foreman",
+      "gitreins": "created-and-started-before-implementation; state flipped with --force --skip-tier2; Tier 2 judged async (job-866e5821f7f24b24a931af7a96978e36) -> all 3 criteria PASS",
+      "status": "landed-and-pushed",
+      "commit": "96c336d",
+      "judge_verdict": "pending-artifact-readback",
+      "tier1": "secrets/lint/tests/lsp PASS on the staged diff before commit; static_analysis skipped (empty static_analysis_tools, known state)",
+      "local_gate": "ruff check . All checks passed; ruff format --check . 163 files; focused 26 passed",
+      "remote_parity": "origin/main and github/main both 0/0 at 96c336d"
+    }
+  ],
+  "finished_at": null
+}
