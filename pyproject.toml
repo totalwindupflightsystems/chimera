@@ -261,6 +261,50 @@ dependencies = [
 # Holds re-verified unmoved in uv.lock after the bump: litellm 1.99.4,
 # mcp 1.30.0, openai 2.54.0, importlib-metadata 8.9.0, pyflakes 3.2.0,
 # pycodestyle 2.12.1, huggingface-hub 1.33.0, multidict 6.9.1.
+#
+# 2026-10-21 census (SUP-DEPS-20261021-CV, supervisor check-deps: 14 outdated
+# in the repo venv). Every entry is accounted for below; nothing was left as an
+# unexplained null. Four lock distributions were in-bounds and bumped through
+# `uv lock --upgrade-package boto3 --upgrade-package botocore
+# --upgrade-package fastapi` + `uv sync --all-extras --inexact`:
+#   boto3 1.43.115->1.43.116, botocore 1.43.115->1.43.116 — litellm allows
+#                       boto3>=1.43.1,<2.0 and boto3 1.43.116 pins
+#                       botocore>=1.43.116,<1.44.0, so the pair moves together;
+#                       resolver moved freely, no cap in this tree
+#   fastapi 0.153.0->0.156.4   — declared in the server/web/dev/full extras with
+#                       no upper bound; the declared floor moves with it
+#                       (>=0.153.0 -> >=0.156.4) so the metadata minimum keeps
+#                       matching the locked reality, and the pin that guards
+#                       that contract (tests/test_dev_extra_deps.py
+#                       _SERVER_RUNTIME_SPECS) moved in the same commit — a
+#                       value and the test that pins it must never diverge
+#   pydantic-settings 2.16.0->2.16.1 — already resolved to 2.16.1 in uv.lock by
+#                       the 2026-10-20 tick; the REPO VENV had drifted one patch
+#                       behind the lock (2.16.0) and this tick's sync reconciled
+#                       it. Not a new resolution — a venv/lock reconciliation,
+#                       which is why it appears in the census without a lock
+#                       diff line.
+# Two entries are venv tooling, not uv.lock distributions (uv resolves only what
+# this file declares; nothing here depends on either), so they are bumped in the
+# venv itself via `python -m pip install -U pip setuptools`:
+#   pip 26.2.1->26.2.2, setuptools 84.2.0->84.2.1
+# The remaining EIGHT are HELD, each re-verified against installed metadata this
+# tick and unmoved in uv.lock afterwards (litellm 1.99.4, mcp 1.30.0,
+# openai 2.54.0, importlib-metadata 8.9.0, pyflakes 3.2.0, pycodestyle 2.12.1,
+# huggingface-hub 1.33.0, multidict 6.9.1) — same reasons as the blocks above:
+# this file's own <1.100 / <2.0 caps, litellm's openai<3.0 and
+# importlib-metadata<9 caps, pylsp's pyflakes<3.3 / pycodestyle<2.13 caps, and
+# the two policy-held majors (huggingface_hub 2.x, multidict 7.x) with no
+# concrete need and no importer beyond aiohttp/yarl. Re-open either only with a
+# concrete need.
+# Gate record 2026-10-21 — AUTHORITATIVE runs in the repo tree (repo venv,
+# CPython 3.11.15, live untracked chimera.yaml present):
+#   uv lock --check                 -> "Resolved 109 packages", exit 0
+#   .venv/bin/python -m pip check   -> "No broken requirements found.", exit 0
+#   .venv/bin/ruff check .          -> "All checks passed!", exit 0
+#   .venv/bin/ruff format --check . -> 163 files already formatted, exit 0
+#   .venv/bin/python -m pytest -q   -> 2158 passed, 62 skipped, 0 failed
+#                                     (112.26s; baseline-identical to 0.2.7)
 
 [project.urls]
 Homepage = "https://github.com/totalwindupflightsystems/chimera"
@@ -269,16 +313,16 @@ Issues = "https://github.com/totalwindupflightsystems/chimera/issues"
 Changelog = "https://github.com/totalwindupflightsystems/chimera/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-server = ["fastapi>=0.153.0", "uvicorn[standard]>=0.30.0"]
+server = ["fastapi>=0.156.4", "uvicorn[standard]>=0.30.0"]
 cli = ["click>=8.0", "rich>=13.0"]
 mcp = ["mcp>=1.0.0,<2.0"]
-web = ["fastapi>=0.153.0", "uvicorn[standard]>=0.30.0"]
+web = ["fastapi>=0.156.4", "uvicorn[standard]>=0.30.0"]
 dev = [
     # Test collection imports the FastAPI app (tests/test_engine_coverage.py ->
     # chimera.api.server), so the documented `pip install -e ".[dev]"` must carry
     # the same runtime pins as the server/web extras — otherwise collection dies
     # with ModuleNotFoundError: No module named 'fastapi' (QA-CHIMERA-001).
-    "fastapi>=0.153.0",
+    "fastapi>=0.156.4",
     "uvicorn[standard]>=0.30.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.24.0",
@@ -305,7 +349,7 @@ dev = [
     "hatchling>=1.21",
 ]
 full = [
-    "fastapi>=0.153.0",
+    "fastapi>=0.156.4",
     "uvicorn[standard]>=0.30.0",
     "click>=8.0",
     "rich>=13.0",
