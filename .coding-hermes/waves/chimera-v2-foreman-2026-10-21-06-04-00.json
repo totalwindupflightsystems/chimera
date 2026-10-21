@@ -23,7 +23,7 @@
       "status": "landed-and-pushed",
       "commit": "b5743f3",
       "merge_commit": null,
-      "judge_verdict": "pending-async",
+      "judge_verdict": "13e5e3ab (tier2 PASS/COMPLETE, bound to 11050a5; round 1 = 45135d48 INCOMPLETE at the 60m cap, round 2 = 13e5e3ab after the census follow-up)",
       "tier1": "PASS on the commit gate (secrets/lint/tests-full all PASS; static_analysis skipped by empty static_analysis_tools, known state)",
       "local_gate": "uv lock --check exit 0 (Resolved 109); pip check clean; ruff check . All checks passed; ruff format --check . 163 files; pytest -q 2158 passed / 62 skipped / 0 failed; final pip list --outdated = exactly the 8 documented holds",
       "remote_parity": "origin/main and github/main both 0/0 at b5743f3"
@@ -39,11 +39,20 @@
       "gitreins": "created-and-started-before-implementation; state flipped with --force --skip-tier2; Tier 2 judged async (job-866e5821f7f24b24a931af7a96978e36) -> all 3 criteria PASS",
       "status": "landed-and-pushed",
       "commit": "96c336d",
-      "judge_verdict": "pending-artifact-readback",
+      "judge_verdict": "29d0d58e (tier2 PASS/COMPLETE, all 3 criteria re-verified; evaluated at the then-HEAD b5743f3 with 96c336d as an ancestor)",
       "tier1": "secrets/lint/tests/lsp PASS on the staged diff before commit; static_analysis skipped (empty static_analysis_tools, known state)",
       "local_gate": "ruff check . All checks passed; ruff format --check . 163 files; focused 26 passed",
-      "remote_parity": "origin/main and github/main both 0/0 at 96c336d"
+      "remote_parity": "origin/main and github/main both 0/0 at 96c336d",
+      "remote_ci": "GREEN run 39555407045 (lint + test 3.11/3.12/3.13 + integration + packaging-smoke all success)"
     }
   ],
-  "finished_at": null
+  "closeout": {
+    "board_commit": "6721f83",
+    "rows_closed": [
+      "SUP-DEPS-20261021-CV",
+      "INT-CI-016"
+    ],
+    "deploy": "EXPLICIT DEFERRAL — /health commit 635d282 is an ancestor of HEAD with a 10-file material diff (src/scripts/tests/pyproject); `sudo systemctl restart chimera` is approval-gated in this unattended tick"
+  },
+  "finished_at": "2026-10-21T08:15:00Z"
 }
