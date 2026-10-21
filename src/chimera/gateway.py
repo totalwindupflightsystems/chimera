@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -29,6 +30,15 @@ from chimera.config import ChimeraConfig, ModelEntry, provider_api_key_env
 from chimera.exceptions import BudgetExhaustedError
 
 log = structlog.get_logger("chimera.gateway")
+
+# --------------------------------------------------------------------------- #
+# DF-CHIMERA-V2-63: compiled regex to strip trailing data: [DONE] sentinel
+# --------------------------------------------------------------------------- #
+
+#: Matches ``data: [DONE]`` followed by optional trailing whitespace, anchored
+#: to end-of-string.  Does NOT consume leading whitespace (so ``'  \\n  data:
+#: [DONE]\\n\\n'`` yields ``'  \\n  '``, not ``'  '``).
+_DATA_DONE_RE = re.compile(r"data:\s*\[DONE\]\s*$")
 
 #: LiteLLM ships process-global debug switches whose DEFAULT state writes
 #: straight to stdout:
@@ -1135,6 +1145,8 @@ def _extract_text(result: Any) -> str:
     * ``finish_reason="stop"`` with empty content (model stopped early)
     * Reasoning models that return text in non-standard fields
       (``reasoning_content`` for DeepSeek V4, ``reasoning`` for MiniMax/Kimi)
+    * Trailing ``data: [DONE]`` sentinel appended by upstream gateways
+      (DF-CHIMERA-V2-63: 9router ds/ appends this after non-stream JSON)
     """
     choices = getattr(result, "choices", None)
     if not choices:
@@ -1154,8 +1166,16 @@ def _extract_text(result: Any) -> str:
 
     # Primary content field
     content = getattr(message, "content", None)
-    if content and isinstance(content, str) and content.strip():
-        return content
+    if content and isinstance(content, str):
+        # DF-CHIMERA-V2-63: upstream gateways (e.g. 9router ds/) may append
+        # a trailing "data: [DONE]\n\n" sentinel even when stream=False.
+        # Strip it so callers get the clean answer.  The sentinel can appear
+        # with or without leading whitespace (e.g. "\ndata: [DONE]" or
+        # "   \n   data: [DONE]"), and may or may not have trailing newlines.
+        cleaned = _DATA_DONE_RE.sub("", content).rstrip("\n")
+        if cleaned.strip():
+            return cleaned
+        content = cleaned
 
     # Reasoning models put their response in non-standard fields:
     #   DeepSeek V4 series → reasoning_content
