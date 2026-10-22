@@ -1,0 +1,13 @@
+{
+  "wave_id": "chimera-v2-foreman-2026-10-22-07-05-13",
+  "block": "RELEASE-READINESS-2026-10-22",
+  "base": "dae8fa025d39f66afaab02d9d729afda0979a365",
+  "wave_budget": 12,
+  "slots": 1,
+  "wave_size": 0,
+  "path": "serial-foreman-direct-ops",
+  "why": "WAVE_BUDGET=12; host sizing nproc=16, loadavg_1m=36.46, ceil=37, slots=max(1,min(6,16-37))=1 -> SERIAL per foreman doctrine. The block's four open items are foreman ops (board commit, push, CI verify, deploy reload), not parallelizable implementation; no worker row eligible: DF-CHIMERA-V2-96's three ready rows re-verified gated this tick (bunker-las-01/02/03/04 fresh ssh probes all timed out offline; DF-CHIMERA-V2-28 owner billing 402), RELEASE-CUT-2026-09-28 owner-authorization-gated. Deploy reload attempted 2x, approval-gated on unattended surface -> explicit deferral recorded on the sweep row.",
+  "rows": [],
+  "outcome": {"cleared": ["dirty-tree (83f9f77)", "mirror-behind (parity 83f9f77 2/2)", "mirror-CI-unproven (run 39703215189 SUCCESS on canonical dae8fa0)"], "deferred": ["deploy reload + smoke_live (approval-gated)"]},
+  "created_at": "2026-10-22T07:26:00Z"
+}
