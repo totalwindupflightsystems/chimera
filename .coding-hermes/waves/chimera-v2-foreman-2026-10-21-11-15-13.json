@@ -1,0 +1,20 @@
+{
+  "wave_id": "chimera-v2-foreman-2026-10-21-11-15-13",
+  "block": "DF-CHIMERA-V2-96",
+  "base": "5e2e20eb93961175bb8befc86718b26f3ef1d7f9",
+  "wave_budget": 5,
+  "slots": 1,
+  "wave_size": 0,
+  "path": "serial-fallback-required",
+  "why": "block-drive ranks DF-CHIMERA-V2-96 first unfinished closure at 89/92 with three effective pending rows. The only otherwise plausible implementation row is DF-CHIMERA-V2-28, but it is explicitly gated on an owner billing decision; two install-skip rows require the designated Bunker hosts, freshly probed offline. No independent worker row is eligible. Slot calculation: nproc=16, ceil(loadavg-1m 16.16)=17, slots=max(1,min(6,16-17))=1. Although WAVE_BUDGET=5, the block has no eligible implementation-owned rows; per board/project doctrine do verification-only reconciliation without a worker.",
+  "rows": [],
+  "reconciliation": {
+    "closed_this_tick": [],
+    "rows_open": [
+      "DF-CHIMERA-V2-28: remains owner-gated until account funding/routing decision; current row forbids a native route while upstream account returns 402",
+      "DF-CHIMERA-V2-62: stale infra record, re-probed all designated bunker-las-01/02/03/04 OFFLINE",
+      "DF-CHIMERA-V2-95: fresh re-probe confirms all designated bunker-las-01/02/03/04 OFFLINE; install on substitute is already proven, designated-host evidence remains open"
+    ]
+  },
+  "created_at": "2026-10-21T11:23:59Z"
+}
