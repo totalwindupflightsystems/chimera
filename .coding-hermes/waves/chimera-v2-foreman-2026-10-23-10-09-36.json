@@ -1,0 +1,23 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-23-10-09-36",
+  "project": "chimera-v2",
+  "block": "DF-CHIMERA-V2-96",
+  "wave_size": 1,
+  "path": "serial",
+  "sizing": "nproc=16, loadavg_1m=15.35 -> ceil(15.35)=16 -> slots = max(1, min(6, 0)) = 1; block also has exactly 1 ready row",
+  "rows": [
+    {
+      "task_id": "DF-CHIMERA-V2-28",
+      "row": 0,
+      "mode": "foreman-direct",
+      "worktree": null,
+      "branch": "main",
+      "commit": "db634fc1d5c5c2df4fedd6321716e0282823ec9e",
+      "why_direct": "trivial one-file docs change (docs/CONFIG.md); no independent sibling row free (block sibling DF-CHIMERA-V2-95 owner-blocked on bunker infra, re-probed live and confirmed offline)",
+      "gitreins": {"task": "DF-CHIMERA-V2-28", "created_started": true, "verdict_dir": ".gitreins/history/2026-10-23/1eb0ef1a", "tier2": "COMPLETE/PASS both criteria"}
+    }
+  ],
+  "blocked_rows_not_dispatched": [
+    {"task_id": "DF-CHIMERA-V2-95", "blocker": "bunker-las-01/02/03/04 all OFFLINE (re-probed 2026-10-23, ssh rc=255 each) - owner (Bane/bunker infra)"}
+  ]
+}
