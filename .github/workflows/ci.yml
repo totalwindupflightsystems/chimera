@@ -173,6 +173,31 @@ jobs:
           .venv/bin/pip install build twine
           .venv/bin/python -m build
 
+      - name: Artifact packaging boundary — built wheel/sdist carry no operator config (DF-CHIMERA-V2-97 gate)
+        run: |
+          # 0.2.7 shipped the operator fleet config to PyPI. The tag that cut it
+          # predates the boundary fix, but this job would not have caught the
+          # leak even from a fixed tree: `lint` and `test` grade the SOURCE
+          # tree, and only a test over BUILT bytes catches an artifact whose
+          # packaging mapping is wrong. `pip install chimera-deliberation`
+          # users received an 83,677-byte chimera/chimera.yaml.example that was
+          # byte-identical to the checkout-only chimera.yaml.fleet — internal
+          # topology plus 42 operator models instead of the public starter.
+          #
+          # The test builds the wheel AND sdist from THIS checkout through the
+          # PEP 517 backend in-process (no build isolation, no network, no
+          # writes outside pytest's tmp_path) and asserts on the archive
+          # members: chimera.yaml.fleet absent from both, the example present
+          # and free of the internal-topology tokens. `.[dev]` is what carries
+          # pytest + hatchling (the backend the test imports) plus the suite
+          # conftest's runtime imports.
+          #
+          # It must run BEFORE the PyPI publish step below: a release cannot be
+          # withdrawn once uploaded, so the tag run has to fail while dist/ is
+          # still unpublished.
+          .venv/bin/pip install -e ".[dev]"
+          .venv/bin/python -m pytest tests/test_yaml_example_sanitized.py::test_built_artifacts_exclude_fleet_config -q
+
       - name: Publish to PyPI
         run: .venv/bin/twine upload dist/*
         env:
