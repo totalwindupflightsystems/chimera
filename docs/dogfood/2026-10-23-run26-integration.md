@@ -197,3 +197,32 @@ Classification: **STALE** (running 635d282 is an ancestor of HEAD 5455172, 12 ma
 paths changed). Per `AGENTS.md`, this tick records an **explicit deferral** — a read-only
 dogfood lane does not restart the supervised service. The reload is filed as
 DF-CHIMERA-V2-98 for the owning foreman/operator.
+
+## 10. Addendum (same tick, resumed turn) — install leg re-run on the DESIGNATED host
+
+The run-26 install leg in §5 used **bunker-mvp** as a substitute because row
+DF-CHIMERA-V2-95 records las-01/02/03/04 as unreachable. Re-checked at 11:26Z, **bunker-las-02
+answers again** (`bunker list --server bunker-las-02` rc=0, 0 agents; las-01/03/04 still time
+out at 25 s). The leg was therefore re-driven on the designated host, agent **chv2-df26b**
+(destroyed, `exec` → `not_found`, key removed from the control host):
+
+| step | command | result |
+|---|---|---|
+| host | `bunker spawn chv2-df26b --server bunker-las-02 --ttl 2h` | first attempt failed `slice-limits: containment landing ... memory.swap.max`; **single retry succeeded** (known transient, run-19 precedent) |
+| env | `hostname; python3 --version; git --version` | bunker-las-02, **Python 3.13.5**, git 2.47.3 |
+| install | `pip install "chimera-deliberation[full]==0.2.7"` | **rc=0, 40 s** → `chimera 0.2.7` |
+| config | `chimera config init` | **83,677 bytes**, `master001` ×2 → the DF-97 leak reproduces on a third independent site (PyPI wheel bytes, not host state) |
+| serve | `chimera serve --port 8765` | `/health` alive (wheel reports `commit:"unknown"` — no git metadata in a wheel) |
+| keyless REST | `POST /v1/deliberate` | **502** + `set DEEPSEEK_API_KEY` guidance (correct contract) |
+| keyless CLI | `chimera "…"` | **rc=0** with the worker-failure JSON on stdout — the published 0.2.7 predates the DF-71 exit-2 fix, so this is release lag, not a regression |
+| real answer | key staged as a 53-byte 0600 file by `bunker cp` (never printed, deleted in-leg) | **HTTP 200, 20.18 s**, answer `PONG`, `total_cost=0.008858`, `worker_failures=[]` |
+| teardown | `bunker destroy` | **destroyed**, `exec` → `not_found`, local SSH key removed |
+
+Consequence for the board: row **DF-CHIMERA-V2-95** is updated by an event (id 2780) — the
+designated host is not uniformly offline, and the install proof no longer rests on a
+substitute. The finding itself (§4.1/§4.2) does not change: the released artifact and the
+running deployment are still behind HEAD.
+
+Measurement note: the designated-host install (40 s) matches the substitute's 40-60 s band,
+so the install cost is artifact-bound, not host-bound. Nothing here is slow enough to file
+as perf; the deliberation value is model latency again (20.2 s == trace 20167 ms).
