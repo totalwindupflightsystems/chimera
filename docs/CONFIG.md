@@ -1009,3 +1009,29 @@ with many large-output workers feeding an aggregator model with a small
 context window. The engine passes the cap to every aggregator call
 (`max_prompt_tokens`), so it applies to merge, audit and aggregator-style
 stages alike.
+
+---
+
+## Provider twins: one vendor, two separate accounts
+
+Some vendors expose the same model families from two different hosted
+endpoints — the model names look identical, but the endpoints are **separate
+accounts** with separate billing, separate quotas and separate keys. A key
+registered on one endpoint does not exist on the other: an endpoint rejecting
+it with `401 Incorrect API key provided` is the *endpoint mirror telling you
+you knocked on the wrong door*, NOT a credential defect. Measured example
+(DF-CHIMERA-V2-28, 2026-09-20, key redacted): `api.stepfun.ai/v1` (StepFun
+Global) accepted the key and listed 16 models, while
+`api.stepfun.com/v1` (StepFun China) rejected the same key with 401 — so wire
+`api.stepfun.ai` for that key, and never assume the other mirror works.
+
+When a vendor's native endpoint answers `402 quota_exceeded` on every chat
+call — account-wide, not model-specific — the fix is billing (top up or
+consciously leave the key unused), not configuration. **Do not add a native
+provider entry against an unfunded account while routing stays healthy
+elsewhere**: it would put a permanently failing provider into the
+auto-selection path and into the `/v1/health` provider map. Route the models
+through an existing healthy provider (e.g. OpenRouter) until the account is
+funded, then follow [Custom OpenAI-compatible endpoints](#custom-openai-compatible-endpoints)
+and remember the catalog-entry requirement — wiring `providers.<name>` alone
+does not make a model dispatchable.
