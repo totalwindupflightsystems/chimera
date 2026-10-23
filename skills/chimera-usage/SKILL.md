@@ -60,7 +60,12 @@ description: >-
   from an unrelated gateway (DF-93), plus the TASK_ROUTER_HOME silent
   fallback (DF-94) and the wheel template still shipping the operator config
   (DF-92).
-version: 1.14.0
+  v1.15.0 adds the 2026-10-23 run-26 WHICH-BUILD-AM-I-ON section: the three
+  builds differ (PyPI 0.2.7 / deployed / checkout), DF-93/94/96/89 are fixed
+  at HEAD and verified by execution, the published wheel still leaks the
+  operator config (97), the deployment is stale (98), and `[full]` is not a
+  test environment (99) — install `[dev]` before running the suite.
+version: 1.15.0
 category: software-development
 ---
 
@@ -991,23 +996,66 @@ not a warning).
 
 ### What to WATCH
 
-- **DF-CHIMERA-V2-93 (P2) — the price behind a trace cost is provider-agnostic and
-  last-writer-wins.** 25 providers' rows collapse onto the same resolved key, so
-  `deepseek/deepseek-v4-flash` was billed in my traces at clinepass 0.44/1.32 per M
-  (registry path) and routing-run 0.112/0.224 per M (models.dev path) while the call went
-  to `api.deepseek.com` at 0.15/0.60. Treat `trace.total_cost` / per-stage `cost` as an
-  estimate whose provenance is unknown; recompute from the price of the provider your
-  catalog entry names if the number matters.
-- **DF-CHIMERA-V2-94 (P3) — `TASK_ROUTER_HOME` is not authoritative.** A home without
-  `data/tables/models.jsonl` silently falls through to `~/task-router` (a *different*
-  checkout) with only an info-level line. If you depend on a specific registry, use
-  `CHIMERA_TASK_ROUTER_MODELS_PATH`.
-- **DF-CHIMERA-V2-92 (P1) — on the published 0.2.7 wheel the registry env vars do nothing**
-  (feature is in HEAD only) **and `chimera config init` writes an 83 KB / 1671-line
-  operator config** because the wheel's `chimera.yaml.example` is byte-identical to
-  `chimera.yaml.fleet`. If you installed from PyPI, do not treat the generated
-  `chimera.yaml` as a starter — use the repo's 120-line `chimera.yaml.example`.
+- **Build matters more than version string (run 26).** Three builds can all report
+  `version: 0.2.7` and behave differently: PyPI 0.2.7 (2026-09-21), a deployed service
+  whose `/health.commit` is old, and a checkout at HEAD. Before trusting any behavior
+  below, run `curl -s localhost:8765/health | jq -r .commit` and compare it with
+  `git rev-parse --short origin/main`; `python scripts/smoke_live.py` prints
+  STALE / CODE-CURRENT / CURRENT / UNVERIFIABLE and exits non-zero on STALE.
+- **DF-CHIMERA-V2-93 (P2) — FIXED at HEAD (19a86df), still live on the deployed build.**
+  The price behind a trace cost used to be provider-agnostic and last-writer-wins
+  (deepseek/deepseek-v4-flash billed at clinepass 0.44/1.32 per M while the call went to
+  api.deepseek.com at 0.15/0.60). At HEAD `config.cost_provenance[model_id]` records
+  `{"tier": "provider"|"unattributed"|"catalog", "source_provider", "source_model"}` and
+  the per-(provider, model) lookup wins. On an older build, recompute the cost yourself.
+- **DF-CHIMERA-V2-94 (P3) — FIXED at HEAD (e1b4bb8).** A `TASK_ROUTER_HOME` without
+  `data/tables/models.jsonl` now logs `task_router_home_registry_missing` at WARNING with
+  both the `missing` and `fallback` paths instead of silently serving another checkout.
+- **DF-CHIMERA-V2-92 (P1) — open on the PUBLISHED artifact (run 26, row 97).** The fix
+  (4f9b514 + a boundary test) is merged and green at HEAD, but no release has been cut
+  since 0.2.7: `pip install chimera-deliberation[full]==0.2.7` + `chimera config init`
+  still writes an 83,677-byte operator config (master001:20128, 42 models) because the
+  wheel's `chimera.yaml.example` is byte-identical to `chimera.yaml.fleet`. If you are on
+  a PyPI wheel, do NOT treat the generated `chimera.yaml` as a starter — take the repo's
+  ~120-line `chimera.yaml.example` instead.
+- **`[full]` is not a test environment (run 26, row 99).** It ships pytest/ruff but not
+  `python-lsp-server` or `pytest-timeout`, so `pytest tests/` on a `[full]` venv is
+  1 failed (`ModuleNotFoundError: pylsp`) while `pip install -e ".[dev]"` gives 2163
+  passed. Install `[dev]` before running the suite.
 - The dev checkout at `~/chimera-v2` makes the *package-sibling* candidate resolve to
   `~/task-router`, so "there is no registry on this machine" is not reproducible from the
   dev tree — copy the package out of the checkout (or install the wheel) to test the
   portable models.dev path.
+
+## Which build am I on (run 26, 2026-10-23) — the delivery chain is the surface
+
+Before reporting or debugging any behavior above, identify the build. Three of them
+exist at once and all say `version: 0.2.7`:
+
+```bash
+curl -s localhost:8765/health | jq -r .commit          # what the SERVICE runs
+git -C ~/chimera-v2 rev-parse --short origin/main      # what the CHECKOUT holds
+python ~/chimera-v2/scripts/smoke_live.py; echo rc=$?  # STALE => rc=1, with the paths
+python3 -m venv /tmp/v && /tmp/v/bin/pip install -q "chimera-deliberation[full]"  # the WHEEL
+```
+
+Measured 2026-10-23: PyPI = 0.2.7 uploaded 2026-09-21; deployed `:8765` = 635d282
+(started 10-19 15:42); HEAD = 5455172, **12 material paths** ahead. Every fix from the
+2026-10-20 wave runs only in the third one.
+
+What that means in practice, per surface:
+
+| you want | use | why |
+|---|---|---|
+| the documented behavior of DF-93/94/96/89 | a checkout at HEAD (`chimera serve --port <free>`) | the deployed process predates all four |
+| a starter config | the repo's `chimera.yaml.example` | the PyPI wheel's copy is the 83 KB operator config |
+| to run the test suite | `pip install -e ".[dev]"` | `[full]` lacks pylsp/pytest-timeout → 1 false red |
+| a real answer on a fresh box | `nohup bash -c ". ./envline.sh && exec .venv/bin/chimera serve …"` | the server reads env at start, not per request |
+
+Re-proofs executed at HEAD (all pass): DF-93 provider-scoped pricing with
+`cost_provenance` provenance and a served trace priced against
+`api_base=https://api.deepseek.com/v1`; DF-94 `task_router_home_registry_missing`
+warning; DF-96 kebab-slug no longer matching the pre-commit regex while a real key shape
+still does; DF-89 keyless MCP `isError: true`; DF-92's boundary test green and a fresh
+public clone's example free of internal topology. The fix wave is real — it just has not
+been released or deployed.

@@ -1102,3 +1102,55 @@ Traps hit in this run (worth reusing):
 - The `chimera models` table reads `config.models` (the catalog), NOT the registry —
   so it is not a way to see what the registry contributed; the registry's effect is
   visible only in the startup log line and in the trace cost.
+
+## Run 26 (2026-10-23) — the fix wave a user can actually get: three builds, one truth
+
+Surface: not a new endpoint, but the delivery chain between "merged" and "installed" —
+the published wheel, the supervised deployment, and a checkout at HEAD graded side by
+side. Findings: DF-CHIMERA-V2-97 (P1 published wheel still leaks the fleet config),
+98 (P2 deployment stale, 12 material paths), 99 (P3 `[full]` is half a test env).
+Full legs + numbers: `docs/dogfood/2026-10-23-run26-integration.md`.
+
+Re-proofs (all executed, on a scratch instance at HEAD 5455172 because the deployment
+predates them): DF-93 FIXED — `config.cost_provenance` now carries
+`{"tier": "provider", "source_provider": "deepseek", "source_model": "deepseek-flash"}`
+and the served trace prices `deepseek/deepseek-v4-pro` at 0.66/1.98 per M against
+`api_base=https://api.deepseek.com/v1`; DF-94 FIXED — a `TASK_ROUTER_HOME` with no
+`data/tables/models.jsonl` now logs `task_router_home_registry_missing` at WARNING with
+both `missing` and `fallback` paths; DF-96 FIXED — the kebab-slug probe no longer
+matches the pre-commit regex while a real key shape still does; DF-89 FIXED — a keyless
+MCP `chimera_deliberate` returns `isError: True`; DF-92 FIXED at HEAD (boundary test
+green, fresh clone's example carries zero leak tokens) but NOT on the published wheel.
+
+How the fix works (read + probed):
+
+- `provider_discovery.resolve_model_pricing()` (src/chimera/provider_discovery.py:231)
+  looks up `(provider, model_id)` FIRST and only falls back to the provider-agnostic
+  row with a named `"unattributed"` tier — so no other gateway's row can price an entry
+  whose catalog label names its own provider. `config.py:1288-1303` applies the rate and
+  records `config.cost_provenance[model_id] = {tier, registry, source_provider,
+  source_model}`; a declared rate still wins and is labelled `tier: "catalog"`.
+- `task_router_registry.locate_task_router_models()` now yields a
+  `task_router_home_registry_missing` warning (missing + fallback paths) when
+  `TASK_ROUTER_HOME` names a checkout without the table — the asymmetry with the
+  authoritative file variable is closed.
+- The packaging boundary test builds the real wheel/sdist through hatchling's in-process
+  PEP 517 hooks and asserts on archive bytes; it is the right gate, it simply cannot
+  reach a release that was cut before it existed.
+
+Traps hit in this run (worth reusing):
+
+- **A supervised server resolves its env at START, not per request.** Staging
+  `DEEPSEEK_API_KEY` onto a fresh agent and then calling the already-running
+  `chimera serve` keeps answering 502 — the key must be in the process env at launch
+  (`nohup bash -c ". ~/envline.sh && exec …"`). Cost: one wasted 502 leg.
+- **`bunker destroy` refuses while a service the agent started is still alive** and
+  reports the pid ("a previous destroy that orphaned them is exactly the failure this
+  gate exists to prevent"). Kill the pid inside the agent first, then destroy; verify
+  with `bunker exec <id>` → `not_found`.
+- **`grep -c '"id": "X"'` is the wrong probe for a boardctl-written row** — boardctl
+  writes `"id": "…"` with a space while some lanes write compact `{"id":"…"}`. Use the
+  tolerate-both scan (`grep -c "DF-CHIMERA-V2-9[789]"`) or `boardctl show`.
+- **The lsp test imports `pylsp` inside the test body**, so a `[full]` venv (which has
+  pytest but not pylsp) fails instead of skipping — `importorskip` is the fix, and the
+  `[dev]` extra is what makes the suite green.
