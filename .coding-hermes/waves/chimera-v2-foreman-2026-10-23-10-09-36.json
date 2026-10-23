@@ -14,10 +14,27 @@
       "branch": "main",
       "commit": "db634fc1d5c5c2df4fedd6321716e0282823ec9e",
       "why_direct": "trivial one-file docs change (docs/CONFIG.md); no independent sibling row free (block sibling DF-CHIMERA-V2-95 owner-blocked on bunker infra, re-probed live and confirmed offline)",
-      "gitreins": {"task": "DF-CHIMERA-V2-28", "created_started": true, "verdict_dir": ".gitreins/history/2026-10-23/1eb0ef1a", "tier2": "COMPLETE/PASS both criteria"}
+      "gitreins": {
+        "task": "DF-CHIMERA-V2-28",
+        "created_started": true,
+        "verdict_dir": ".gitreins/history/2026-10-23/1eb0ef1a",
+        "tier2": "COMPLETE/PASS both criteria"
+      }
     }
   ],
   "blocked_rows_not_dispatched": [
-    {"task_id": "DF-CHIMERA-V2-95", "blocker": "bunker-las-01/02/03/04 all OFFLINE (re-probed 2026-10-23, ssh rc=255 each) - owner (Bane/bunker infra)"}
-  ]
+    {
+      "task_id": "DF-CHIMERA-V2-95",
+      "blocker": "bunker-las-01/02/03/04 all OFFLINE (re-probed 2026-10-23, ssh rc=255 each) - owner (Bane/bunker infra)"
+    }
+  ],
+  "finished_at": "2026-10-23T16:55:00Z",
+  "recovery": {
+    "outcome": "verified-empty-wave",
+    "workers": 0,
+    "worktrees_checked": true,
+    "matching_worktrees": [],
+    "branches_checked": [],
+    "note": "Recovery manifest had zero workers; no matching abandoned worktrees or branches existed. Closed before normal tick selection."
+  }
 }
