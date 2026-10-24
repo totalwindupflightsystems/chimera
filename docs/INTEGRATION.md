@@ -101,6 +101,7 @@ Available endpoints once running:
 | `POST` | `/v1/deliberate` | Full control: formation, overrides, trace |
 | `GET` | `/v1/models` | OpenAI-shaped model list (`object`/`data`) with the chimera catalog map under `catalog` |
 | `GET` | `/v1/formations` | Available formation presets |
+| `GET` | `/.well-known/agent-card.json` | Keyless AgentCard/A2A discovery document |
 | `GET` | `/v1/health` | Health check (healthy / degraded / unhealthy) |
 | `GET` | `/v1/health/ready` | Readiness probe (provider connectivity) |
 | `GET` | `/v1/health/live` | Liveness probe (process alive) |
