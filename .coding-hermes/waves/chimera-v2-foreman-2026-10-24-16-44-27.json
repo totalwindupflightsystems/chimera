@@ -1,0 +1,41 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-24-16-44-27",
+  "block": "DF-CHIMERA-V2-99",
+  "created_at": "2026-10-24T16:44:27-05:00",
+  "mode": "wave-stewardship (3 independent ready rows; implementations for 97/99 already exist on unmerged worktree branches from the 2026-10-23 worker wave; 98 is verify-only. Duplicate-dispatch law: verify existing work against ACs and merge, do not re-dispatch)",
+  "slots": 3,
+  "wave_budget": 7,
+  "rows": [
+    {
+      "task_id": "DF-CHIMERA-V2-97",
+      "priority": "P1",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-97",
+      "branch": "wt/DF-CHIMERA-V2-97",
+      "existing_commit": "926c68d ci: gate publish on built artifact boundary test",
+      "plan": "cherry-pick 926c68d onto main (docs commit 1e5b642 already on main as da7f30d), verify AC1 GATED + AC2 built-artifact test, gate, push"
+    },
+    {
+      "task_id": "DF-CHIMERA-V2-99",
+      "priority": "P3",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-99",
+      "branch": "wt/DF-CHIMERA-V2-99",
+      "existing_commit": "5b7b6b4 fix: make full extra testable with lsp dependencies",
+      "plan": "cherry-pick 5b7b6b4 onto main (resolve docs/README.md overlap with da7f30d), verify AC1 fresh [full] venv lsp tests, AC2 full suite 0 failed in that venv, AC3 MIRRORED probe, gate, push"
+    },
+    {
+      "task_id": "DF-CHIMERA-V2-98",
+      "priority": "P2",
+      "worktree": "n/a (main checkout, verify-only)",
+      "branch": "main",
+      "plan": "after the code merges land + service reload: smoke_live.py CURRENT/CODE-CURRENT exit 0, /health commit == HEAD, ActiveEnterTimestamp after DF-93 fix; then close"
+    }
+  ],
+  "excluded": [
+    {
+      "task_id": "DF-CHIMERA-V2-95",
+      "reason": "blocked on OWNER (Bane, bunker infra): designated bunker-las-01/02/03/04 hosts unreachable; live re-probe this tick, record evidence, do not dispatch"
+    }
+  ],
+  "finished_at": "2026-10-24T17:26:00Z",
+  "outcome": "BLOCK DF-CHIMERA-V2-99 COMPLETE 95/95 - all 4 rows closed (2 stewardship merges af8bfd6/a288176, 1 deploy verification CURRENT, 1 ops install leg green on recovered bunker-las-02)"
+}
