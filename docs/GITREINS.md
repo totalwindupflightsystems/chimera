@@ -78,7 +78,7 @@ then prints `full suite — safety trigger`), and the `guard --full` flag.
 ## The pre-commit hook
 
 Every commit runs `.gitreins/pre-commit` (installed into `.git/hooks/`). It has
-three arms, and only the last is the harness this page describes:
+four arms, and only the last is the harness this page describes:
 
 1. **The built-in secrets scan** — self-contained, always runs, and BLOCKS the
    commit (exit 1) on a match, honouring `.gitreins/secrets-ignore`. It is
@@ -92,7 +92,16 @@ three arms, and only the last is the harness this page describes:
    publish the host NAME, never its address. Where the scanner or a python
    interpreter is missing it prints a loud SKIP and lets the commit proceed —
    the suite guard still covers the whole tree on the next run.
-3. **`gitreins guard`** — run with the repo venv first on PATH (see "Running
+3. **The docs-index arm** (INT-CI-014-R2) — `scripts/check_docs_index.sh`. A
+   dated `docs/dogfood/*.md` run log added in a commit that does not name it in
+   `docs/README.md` BLOCKS the commit (exit 1), graded against the index **as
+   committed** (`git show :docs/README.md`), not the working tree.
+   `tests/test_docs_index.py` derives its parameter list from `git ls-files
+   docs/`, so it detects an unindexed log only on the NEXT push — which is why
+   this class recurred five times (CI-FIX-001, DOC-2, INT-CI-014,
+   INT-CI-014-R2). The invariant is pinned twice: no stranded log at HEAD, and
+   a RED-then-GREEN proof of this gate through a private index file.
+4. **`gitreins guard`** — run with the repo venv first on PATH (see "Running
    it"), its output teed to the console rather than swallowed.
 
 ### The built-in `sk-` alternative carries a token boundary
@@ -108,7 +117,7 @@ removable — it is what catches a real key — so fix this class by tightening 
 pattern, not by exempting the file: `.gitreins/secrets-ignore` entries are
 FILE-level, and exempting a file blinds the scan for every real key in it.
 
-Arm 1 does not use gitleaks at all; arm 3 does, and gitleaks only detects
+Arm 1 does not use gitleaks at all; arm 4 does, and gitleaks only detects
 anything when `.gitleaks.toml` extends the default ruleset (`[extend]
 useDefault = true`). gitleaks treats a config as a full REPLACEMENT, so without
 that line the run loads no rules and `gitleaks: clean` means "nothing was

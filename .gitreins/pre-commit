@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # GitReins Tier 1 — the pre-commit gate for this repo.
 #
-# Three arms, in this order:
+# Four arms, in this order:
 #
 #   1. the built-in secrets scan. It always runs, and it BLOCKS (exit 1). It is
 #      deliberately self-contained: it is the only gate still available on a box
@@ -17,7 +17,12 @@
 #      SKIP — never a block — where no Python can be resolved or the scanner
 #      is missing from the repo layout (the suite guard still covers that tree).
 #
-#   3. the real quality harness — `gitreins guard` (docs/GITREINS.md). Its exit
+#   3. the docs-index arm (INT-CI-014-R2). A dated docs/dogfood/ run log added in
+#      a commit that does not name it in docs/README.md BLOCKS (exit 1), graded
+#      against the index as committed. The suite detector for this class only
+#      fires on the NEXT push, which is why the class recurred five times.
+#
+#   4. the real quality harness — `gitreins guard` (docs/GITREINS.md). Its exit
 #      code is a VERDICT, not just an error level, so the hook maps it:
 #
 #        0  every substantive lane did work and passed           -> PASS, commit
@@ -139,7 +144,27 @@ else
   echo "✓ GitReins Tier 1: Private-host leak scan — PASS"
 fi
 
-# ── 3. The quality harness (gitreins guard) ──────────────
+# ── 3. Docs-index arm (INT-CI-014-R2) ────────────────────
+# A dated docs/dogfood/ run log that lands without its docs/README.md index line
+# turns main RED on the next push: tests/test_docs_index.py derives its parameter
+# list from `git ls-files docs/`, so the detector fires AFTER the commit. This arm
+# enforces the same-commit rule the detector cannot — the log and the index line
+# travel together, graded against the index AS COMMITTED. Fifth recurrence of the
+# class (CI-FIX-001, DOC-2, INT-CI-014), so it is a gate, not a reminder.
+DOCS_INDEX_GATE="scripts/check_docs_index.sh"
+if [ -f "$DOCS_INDEX_GATE" ]; then
+  set +e
+  bash "$DOCS_INDEX_GATE"
+  DOCS_RC=$?
+  set -e
+  if [ "$DOCS_RC" -ne 0 ]; then
+    exit 1
+  fi
+else
+  echo "⚠ GitReins Tier 1: docs-index gate SKIPPED — $DOCS_INDEX_GATE is missing" >&2
+fi
+
+# ── 4. The quality harness (gitreins guard) ──────────────
 # The verdict must be VISIBLE — the engine's own output is teed, never
 # swallowed — and the rc is handled explicitly, because `set -e` above would
 # otherwise turn every non-zero verdict into an indistinguishable abort.

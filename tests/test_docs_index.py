@@ -19,6 +19,7 @@ and there is no network access, no provider key, and no deliberation call.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -36,6 +37,10 @@ HISTORICAL_HEADING = "## Historical / archived"
 
 #: Heading that marks the index's dogfood run-log section.
 DOGFOOD_HEADING = "## Dogfood run logs"
+
+#: The undated catch-all behind the run logs — not a dated run log itself, so the
+#: same-commit rule below does not require a dated index line for it.
+UNDATED_DOGFOOD_LOG = "diagnostics.md"
 
 
 def _tracked_docs_files() -> list[str]:
@@ -101,6 +106,33 @@ def test_tracked_docs_file_is_reachable(rel_path: str) -> None:
     )
 
 
+def _orphaned_dogfood_logs(index_text: str | None = None) -> list[str]:
+    """Tracked ``docs/dogfood/*.md`` logs that no index line names, sorted.
+
+    ``index_text`` defaults to the live README.md + docs/README.md pair. The
+    pre-commit hook (``scripts/check_docs_index.sh``) passes the INDEX AS IT
+    WOULD BE COMMITTED — ``git show :README.md`` plus ``git show :docs/README.md``
+    — so the hook and this test agree on one implementation instead of two
+    drifting copies.
+
+    ``diagnostics.md`` is the undated catch-all, not a run log, so it is not
+    required to carry a dated index line (the dogfood-section test below still
+    pins it). Everything else under docs/dogfood/ is a dated run log: it exists
+    to be read, so it must be reachable from the index in the same commit that
+    adds it.
+    """
+    text = _index_text() if index_text is None else index_text
+    return [
+        rel
+        for rel in TRACKED_DOCS
+        if rel.startswith("docs/dogfood/")
+        and rel.endswith(".md")
+        and Path(rel).name != UNDATED_DOGFOOD_LOG
+        and rel not in text
+        and Path(rel).name not in text
+    ]
+
+
 @pytest.mark.parametrize(
     "name",
     [
@@ -137,4 +169,114 @@ def test_dogfood_log_is_listed_under_dogfood_section(name: str) -> None:
     assert name in section, (
         f"docs/dogfood/{name} is not listed under '{DOGFOOD_HEADING}' in "
         f"docs/README.md — historical run logs must be marked as such"
+    )
+
+
+# ── Same-commit rule (INT-CI-014-R2) ──────────────────────────────────────────
+#
+# test_tracked_docs_file_is_reachable above is the DETECTOR: it walks
+# `git ls-files docs/`, so it fires on the push AFTER an unindexed log lands.
+# That ordering is why this class recurred five times (CI-FIX-001, DOC-2,
+# INT-CI-014, INT-CI-014-R2): the run log and its index line were allowed to
+# travel in different commits, and main was red in between.
+#
+# The two tests below are the PREVENTIVE half:
+#   * no stranded log at HEAD (the invariant, asserted against the live index),
+#   * scripts/check_docs_index.sh blocks a commit that adds a log without its
+#     index line, proven RED then GREEN through a private index file.
+
+CHECKER = REPO / "scripts" / "check_docs_index.sh"
+
+
+def test_no_dogfood_log_is_stranded_at_head() -> None:
+    """The invariant: nothing tracked under docs/dogfood/ is unindexed at HEAD."""
+    stranded = _orphaned_dogfood_logs()
+    assert not stranded, (
+        "these tracked run logs are referenced nowhere in README.md / "
+        f"docs/README.md: {stranded} — list each one under '{DOGFOOD_HEADING}' "
+        "in docs/README.md"
+    )
+
+
+def _scratch_index(tmp_path: Path) -> Path:
+    """A private copy of the repository index (never the live one)."""
+    git_dir = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=GIT_TIMEOUT_S,
+        check=True,
+    ).stdout.strip()
+    source = (REPO / git_dir / "index").resolve()
+    if not source.is_file():
+        pytest.skip(f"no index at {source}")
+    scratch = tmp_path / "index"
+    scratch.write_bytes(source.read_bytes())
+    return scratch
+
+
+def _git(args: list[str], env: dict[str, str], stdin: str | None = None) -> str:
+    proc = subprocess.run(
+        ["git", *args],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        input=stdin,
+        timeout=GIT_TIMEOUT_S,
+        env=env,
+        check=True,
+    )
+    return proc.stdout
+
+
+def _hash(env: dict[str, str], content: str) -> str:
+    return _git(["hash-object", "-w", "--stdin"], env, stdin=content).strip()
+
+
+def test_checker_blocks_a_log_added_without_its_index_line(tmp_path: Path) -> None:
+    """RED: an added run log with no index line is refused, through the index.
+
+    The scratch index is a byte copy of the repo index, so the checker sees the
+    real tree plus exactly one added log. Nothing is written to the worktree and
+    the live index is never touched — only loose objects and a temp index.
+    """
+    env = {**os.environ, "GIT_INDEX_FILE": str(_scratch_index(tmp_path))}
+    log_path = "docs/dogfood/2099-01-01-runZZ-integration.md"
+
+    blob = _hash(env, "# run ZZ — scratch index arm\n")
+    _git(["update-index", "--add", "--cacheinfo", f"100644,{blob},{log_path}"], env)
+
+    red = subprocess.run(
+        ["bash", str(CHECKER)], cwd=REPO, env=env, capture_output=True, text=True, timeout=GIT_TIMEOUT_S
+    )
+    assert red.returncode == 1, (
+        "the checker PASSED a commit that adds an unindexed run log:\n"
+        f"stdout={red.stdout}\nstderr={red.stderr}"
+    )
+    assert log_path in red.stderr, f"the refusal does not name the offending path:\n{red.stderr}"
+
+    # GREEN: stage the index line into the SAME scratch index.
+    index_md = _git(["show", ":docs/README.md"], env)
+    line = f"- [dogfood/{log_path.split('/')[-1]}](dogfood/{log_path.split('/')[-1]}) — scratch arm\n"
+    new_entry = index_md.replace(f"{DOGFOOD_HEADING}\n", f"{DOGFOOD_HEADING}\n{line}", 1)
+    assert new_entry != index_md, "the scratch index has no dogfood section to append to"
+    new_blob = _hash(env, new_entry)
+    _git(["update-index", "--add", "--cacheinfo", f"100644,{new_blob},docs/README.md"], env)
+
+    green = subprocess.run(
+        ["bash", str(CHECKER)], cwd=REPO, env=env, capture_output=True, text=True, timeout=GIT_TIMEOUT_S
+    )
+    assert green.returncode == 0, (
+        "the checker refused a commit that DOES index the log it adds:\n"
+        f"stdout={green.stdout}\nstderr={green.stderr}"
+    )
+
+
+def test_checker_is_wired_into_the_precommit_hook() -> None:
+    """The gate only prevents anything if the commit path actually runs it."""
+    hook = (REPO / ".gitreins" / "pre-commit").read_text(encoding="utf-8")
+    assert "scripts/check_docs_index.sh" in hook, (
+        ".gitreins/pre-commit does not invoke scripts/check_docs_index.sh — the "
+        "same-commit rule is inert at commit time"
     )
