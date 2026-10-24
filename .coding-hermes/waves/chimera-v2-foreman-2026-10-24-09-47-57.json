@@ -1,0 +1,25 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-24-09-47-57",
+  "block": "INT-CI-014-R2",
+  "mode": "serial-recovery",
+  "wave_budget": 10,
+  "slots": 1,
+  "budget_note": "Host loadavg 18.90 on 16 CPUs yields one slot; the selected block has one ready row. Existing implementation commit 1e5b642 was found in worktree wt/DF-CHIMERA-V2-97 and recovered (cherry-picked as da7f30d) instead of dispatching a duplicate worker; the preventive gate was then implemented foreman-direct as 8a54798.",
+  "tasks": [
+    {
+      "id": "INT-CI-014-R2",
+      "status": "complete",
+      "worktree": "/home/kara/chimera-v2",
+      "branch": "main",
+      "implementation_commits": ["da7f30d", "8a54798"],
+      "recovered_from": {"worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-97", "branch": "wt/DF-CHIMERA-V2-97", "commit": "1e5b642986e5bd6ada4e16c333fbb7fc6ba6ff6c", "note": "branch NOT merged: it also carries the unrelated DF-CHIMERA-V2-97 workflow change"},
+      "brief": null,
+      "dispatch": null,
+      "judge": {"verdict_dir": ".gitreins/history/2026-10-24/5bb01b2e", "tier2": "COMPLETE 4/4 PASS", "first_round_dir": ".gitreins/history/2026-10-24/03b5579f", "first_round": "INCOMPLETE (criterion 4)"},
+      "remote_ci": {"run": 40086089898, "head": "8a54798", "conclusion": "success"},
+      "disposition": "closed with two commits; no worker dispatched"
+    }
+  ],
+  "finished_at": "2026-10-24T10:33:38Z",
+  "result": "OK"
+}
