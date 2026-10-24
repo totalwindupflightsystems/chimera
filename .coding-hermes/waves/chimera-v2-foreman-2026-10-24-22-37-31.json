@@ -1,0 +1,29 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-24-22-37-31",
+  "project": "chimera-v2",
+  "block": "DOC-27",
+  "path": "serial",
+  "wave_budget": 12,
+  "slots": 6,
+  "why_serial": "DOC-25 and DOC-26 are both ready but share docs/INTEGRATION.md; DOC-27 depends on both. They are not mutually independent.",
+  "workers": [
+    {
+      "task_id": "DOC-25",
+      "worktree": "/home/kara/worktrees/chimera-v2-DOC-25",
+      "branch": "wt/DOC-25",
+      "base": "40cdc6f490835c445380ba64060da967e8d86d00e",
+      "brief": "/home/kara/.hermes/cache/tick-2026-10-24-22-37-31-doc25-brief.txt",
+      "status": "merged",
+      "commit": "76eaa38692dd1798fad7ea39acf3c020e02a017a",
+      "merge_commit": "66af45e546df46793fbd866e7f8a34385ea1039c",
+      "verdict": "931e7b38",
+      "result": "landed"
+    }
+  ],
+  "finished_at": "2026-10-24T22:51:30Z",
+  "ci": {
+    "run_id": 40140155280,
+    "status": "in_progress",
+    "head": "66af45e546df46793fbd866e7f8a34385ea1039c"
+  }
+}
