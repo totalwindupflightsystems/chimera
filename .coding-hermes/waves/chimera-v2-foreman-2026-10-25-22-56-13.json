@@ -1,0 +1,21 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-25-22-56-13",
+  "project": "chimera-v2",
+  "block": null,
+  "wave_size": 0,
+  "path": "idle",
+  "created_at": "2026-10-25T22:58:06Z",
+  "base_sha": "8b16eeafee4994a7bd6695bc6deb6259242dc00c",
+  "tasks": [],
+  "workers": [],
+  "reason": "block_drive.py reported six blocks with zero ready work; seven effective pending rows are owner, policy, QA, or release blocked. WAVE_BUDGET=4 and host slots=4, but no worker-eligible row existed.",
+  "local_evidence": {
+    "git_fsck": "PASS: git fsck --full --connectivity-only",
+    "compile": "PASS: .venv/bin/python -m compileall -q src tests",
+    "diff_check": "PASS: git diff --check",
+    "live_smoke": "deliberation PASS but overall exit 1 because deployment is STALE; running a288176, expected origin/main 8b16eea; material paths changed under src/tests/pyproject.toml",
+    "remote_ci": "GREEN: latest three GitHub runs 40226866959, 40226409421, 40186762896 completed successfully",
+    "remote_parity_before_closeout": "origin/main and github/main both 8b16eeafee4994a7bd6695bc6deb6259242dc00c"
+  },
+  "finished_at": "2026-10-25T23:00:00Z"
+}
