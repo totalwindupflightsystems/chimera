@@ -29,6 +29,25 @@ pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 TIMEOUT = 180.0  # These are complex tasks — allow 3 min
 
+# A provider may state the conclusion with standard mathematical notation
+# instead of the English word "irrational". Keep this deliberately narrow:
+# the integration assertions below still require the proof's key elements and
+# structure, so a bare symbolic claim cannot satisfy the full eval.
+_FORMAL_SQRT_TWO_IRRATIONAL_RE = re.compile(
+    r"(?:\\?sqrt\s*\{?\s*2\s*\}?|√\s*2)\s*(?:\\notin|∉)\s*"
+    r"(?:\\mathbb\s*(?:\{\s*[qQ]\s*\}|[qQ])|[qQ])",
+    re.IGNORECASE,
+)
+
+
+def _states_sqrt_two_is_irrational(answer: str) -> bool:
+    r"""Accept the requested conclusion in words or conventional notation.
+
+    This recognizes only the conclusion \(\sqrt{2} \notin \mathbb{Q}\);
+    callers must separately verify the proof's substantive elements.
+    """
+    return "irrational" in answer.lower() or bool(_FORMAL_SQRT_TWO_IRRATIONAL_RE.search(answer))
+
 
 # ── Transient-failure retry (INT-CI-002) ───────────────────────────────────
 # These evals hit real provider APIs: latency spikes surface as
@@ -318,9 +337,13 @@ async def test_collaborative_math_proof(live_server: str) -> None:
             f"Stage {stage.get('stage_id', '?')} ({stage.get('kind', '?')}) degraded"
         )
 
-    # Verify proof content
+    # Verify proof content. The conclusion can be worded in English or in
+    # conventional notation (e.g. ``\\sqrt2\\notin\\mathbb Q``); the
+    # remaining checks still require an actual proof rather than that claim alone.
     lower = answer.lower()
-    assert "irrational" in lower, f"Proof should mention 'irrational': {answer[:300]}"
+    assert _states_sqrt_two_is_irrational(answer), (
+        f"Proof should conclude that sqrt(2) is irrational: {answer[:300]}"
+    )
     assert "sqrt" in lower or "√" in answer or "square root" in lower, (
         f"Proof should reference sqrt: {answer[:300]}"
     )
