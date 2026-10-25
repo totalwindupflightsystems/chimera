@@ -1,0 +1,18 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-25-05-01-01",
+  "project": "chimera-v2",
+  "block": "DOC-27",
+  "wave_budget": 1,
+  "path": "serial",
+  "reason": "Only DOC-26 is ready in the selected block; DOC-27 depends on DOC-25 and DOC-26. Host load 22.12 on 16 CPUs yields slots=1.",
+  "rows": [
+    {
+      "task_id": "DOC-26",
+      "worktree": "/home/kara/worktrees/chimera-v2-DOC-26",
+      "branch": "wt/DOC-26",
+      "brief": "/tmp/brief-DOC-26.txt",
+      "base_sha": "e649771d3d5411e567d15b7488c8a39d652e633f"
+    }
+  ],
+  "created_before_dispatch": true
+}
