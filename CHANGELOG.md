@@ -4,6 +4,24 @@ All notable changes to Chimera will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.8] — 2026-10-25
+
+### Added
+
+- Response-format negotiation, queue feedback, credential-source observability, and A2A agent discovery for OpenAI-compatible and operational clients.
+- A minimal public configuration example separated from the operator-only fleet reference.
+
+### Fixed
+
+- Built-artifact packaging now blocks the operator fleet configuration from entering wheel and sdist releases.
+- Provider/model pricing provenance, blocked-model state scope, MCP degraded-answer signaling, idempotency replay handling, and non-stream response sentinel handling are corrected.
+- CI and documentation gates now prevent unindexed dogfood logs and verify the built package boundary before PyPI upload.
+- The full installation extra now includes the dependencies required by the documented test suite.
+
+### Changed
+
+- Health reporting, registry fallback diagnostics, model-sync freshness, and CLI error exit codes now expose clearer machine-readable behavior.
+
 ### Fixed
 
 - **Blocked-models state is per-install, not machine-wide**
