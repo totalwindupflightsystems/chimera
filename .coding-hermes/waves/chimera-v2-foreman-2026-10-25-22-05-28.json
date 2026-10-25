@@ -1,0 +1,10 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-25-22-05-28",
+  "started_at": "2026-10-25T22:09:53Z",
+  "status": "idle",
+  "block": null,
+  "wave_budget": 4,
+  "wave_size": 0,
+  "rows": [],
+  "reason": "block_drive.py found six blocks with zero ready rows; all seven effective pending rows are owner, policy, QA, or release blocked. No worker dispatch authorized."
+}
