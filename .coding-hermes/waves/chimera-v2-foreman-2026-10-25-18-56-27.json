@@ -10,7 +10,14 @@
     "slots": 6
   },
   "path": "serial-fallback",
-  "why": "Selected block has one ready row; no mutually independent second row exists in the block. Existing isolated worktree was reused after verifying it is clean and at the current base.",
+  "why": "Selected block had one ready row; no mutually independent second row existed in the block. Existing isolated worktree was reused after verifying it is clean and at the current base.",
+  "finished_at": "2026-10-25T19:35:00Z",
+  "recovery": {
+    "status": "complete",
+    "worker_count": 0,
+    "disposition": "No workers were recorded in the scheduler recovery envelope. The manifest contained one historical row, but its worker branch/worktree was already closed by the prior tick: INT-CI-018 is terminal on main at 6ce190c, and no merge/replacement was required.",
+    "witness": "git show main:.coding-hermes/board/events.jsonl plus live worktree census; main contains the board closeout and the branch remains preserved only as historical evidence"
+  },
   "rows": [
     {
       "task_id": "INT-CI-018",

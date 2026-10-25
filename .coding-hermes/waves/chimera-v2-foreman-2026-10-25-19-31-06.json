@@ -1,0 +1,29 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-25-19-31-06",
+  "project": "chimera-v2",
+  "block": null,
+  "wave_budget": 6,
+  "host_sizing": {
+    "nproc": 16,
+    "loadavg_1m": 13.05,
+    "ceil_loadavg": 14,
+    "slots": 2
+  },
+  "path": "idle",
+  "why": "Recovery completed first. block_drive.py reported zero ready work across all six pending blocks; every pending row is owner-gated, blocked, or policy-gated. No worker was dispatched.",
+  "rows": [],
+  "finished_at": "2026-10-25T19:35:00Z",
+  "recovery": {
+    "manifest": ".coding-hermes/waves/chimera-v2-foreman-2026-10-25-18-56-27.json",
+    "status": "complete",
+    "witness": "main board event 2811; historical INT-CI-018 implementation is already on main at 6ce190c; preserved wt/INT-CI-018 remains evidence-only and was not merged"
+  },
+  "board_census": {
+    "physical_task_lines": 389,
+    "effective_rows": 389,
+    "complete": 382,
+    "pending": 7,
+    "ready_blocks": 0,
+    "block_drive": "rows=389 pending=7 blocks=6; blocks_with_ready_work=0"
+  }
+}
