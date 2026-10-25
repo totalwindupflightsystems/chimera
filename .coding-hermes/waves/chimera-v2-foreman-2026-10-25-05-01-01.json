@@ -14,5 +14,20 @@
       "base_sha": "e649771d3d5411e567d15b7488c8a39d652e633f"
     }
   ],
-  "created_before_dispatch": true
+  "created_before_dispatch": true,
+  "finished_at": "2026-10-25T09:06:09Z",
+  "recovery": {
+    "status": "complete",
+    "recovered_before_dispatch": true,
+    "rows": [
+      {
+        "task_id": "DOC-26",
+        "gate": "DEGRADED PASS (empty index; targeted pytest unavailable in worktree)",
+        "acceptance": "PASS on merged main",
+        "merged_commit": "6431b129d77b45d99dffb7aeb51feb6b8bb089e5",
+        "worktree_removed": true,
+        "branch_deleted": true
+      }
+    ]
+  }
 }
