@@ -1,0 +1,25 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-25-18-56-27",
+  "project": "chimera-v2",
+  "block": "INT-CI-018",
+  "wave_budget": 7,
+  "host_sizing": {
+    "nproc": 16,
+    "loadavg_1m": 8.70,
+    "ceil_loadavg": 9,
+    "slots": 6
+  },
+  "path": "serial-fallback",
+  "why": "Selected block has one ready row; no mutually independent second row exists in the block. Existing isolated worktree was reused after verifying it is clean and at the current base.",
+  "rows": [
+    {
+      "task_id": "INT-CI-018",
+      "worktree": "/home/kara/worktrees/chimera-v2-INT-CI-018",
+      "branch": "wt/INT-CI-018",
+      "base_sha": "8b291e5c15c6d2600f419c9c7aad96a8e45b7a25",
+      "brief": "/tmp/brief-INT-CI-018.txt",
+      "model": "gpt-5.6-terra",
+      "provider": "openai-codex"
+    }
+  ]
+}
