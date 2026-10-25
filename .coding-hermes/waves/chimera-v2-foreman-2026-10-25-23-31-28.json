@@ -1,0 +1,32 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-25-23-31-28",
+  "project": "chimera-v2",
+  "block": "RELEASE-READINESS-2026-10-25",
+  "wave_size": 1,
+  "path": "serial",
+  "path_reason": "block_drive.py reported six blocks with zero ready rows; host slots = max(1, min(6, 16 - ceil(41.66))) = 1 (loadavg 41.66 on 16 cores), so the tick ran the serial path with ONE worker on a row discovered+dispatched by this tick.",
+  "discovered_defect": "release-verify (tag-gated CI leg) FAILED on tag v0.2.8 (run 40171452018, job 121103678685 step 9): probe_mcp_stdio.py --formation=speed answered unknown_formation because chimera.yaml.example lost the speed formation in 72b2eca (CH-MAINT-010/011 trim, 2026-10-07, after v0.2.7 shipped green). Reproduced at HEAD e45e9b6.",
+  "created_at": "2026-10-25T23:47:00Z",
+  "base_sha": "e45e9b6d69cc44f00dfadb0559ba4df19bd669f2",
+  "tasks": [
+    {
+      "id": "DF-CHIMERA-V2-100",
+      "title": "release-verify FAILS on every tag: the shipped template lost the speed formation",
+      "priority": "P1",
+      "workdir": "/home/kara/chimera-v2",
+      "worktree": null,
+      "branch": "main",
+      "worker_model": "glm-5.3-flash",
+      "worker_provider": "zai-glm-default",
+      "lane_verified": "agent.log: session 20261025_183925_65de94 API call #1 model=glm-5.3-flash provider=custom, no 'Fallback activated' line",
+      "brief": "/tmp/brief-DF-CHIMERA-V2-100.txt",
+      "pid": 883358,
+      "gitreins_task": "DF-CHIMERA-V2-100 (in_progress)",
+      "gate_config_untouched": "tests/test_release_workflow.py::test_mcp_gate_probes_both_gate_formations still pins BOTH probe legs (simple AND speed)"
+    }
+  ],
+  "workers": [],
+  "branching": "serial (no worktree): the change is template + regression-test scoped, the repo .venv is already installed in the main checkout, and this tick's own writes are board-only — no index contention with the worker.",
+  "local_evidence": {},
+  "remote_ci": {}
+}
