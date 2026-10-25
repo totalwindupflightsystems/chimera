@@ -112,6 +112,7 @@ Available endpoints once running:
 | `GET` | `/web/sessions/{id}` | Session history: `turn_count` + per-turn prompt, answer, models, tokens, cost |
 | `POST` | `/web/sessions/{id}/chat` | Run a deliberation inside the session (body field: **`prompt`**); past turns are injected as history |
 | `DELETE` | `/web/sessions/{id}` | Delete a session (204 on deleted, 404 on unknown id) |
+| `POST` | `/web/debug/reset` | Dev/test-only destructive reset; 404 unless `CHIMERA_WEB_DEBUG_RESET=1` or `true`; drops all sessions and SSE subscribers |
 | `GET` | `/web/sse/{id}` | Session event stream (Server-Sent Events, `text/event-stream`) |
 
 `/web/sessions` is **POST-only** — a `GET /web/sessions` listing does not
