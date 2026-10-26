@@ -1,0 +1,13 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-26-18-24-10",
+  "project": "chimera-v2",
+  "block": null,
+  "wave_budget": 11,
+  "wave_size": 0,
+  "path": "idle",
+  "reason": "block_drive.py found 4 effective pending rows across 4 blocks and 0 blocks with ready work; all remaining rows are owner, policy, or external-harness blocked",
+  "rows": [],
+  "workers": [],
+  "created_at": "2026-10-26T18:28:27Z",
+  "finished_at": "2026-10-26T18:28:27Z"
+}
