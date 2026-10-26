@@ -9,19 +9,16 @@
 #
 # Every credential below is a ${ENV_VAR} reference, resolved at load time from
 # the environment or a .env file next to your config. Never inline a real key.
-
 api_keys:
   deepseek: ${DEEPSEEK_API_KEY}
   openrouter: ${OPENROUTER_API_KEY}
   zai: ${ZAI_API_KEY}
-
 defaults:
   dispatcher: deepseek/deepseek-v4-flash
   default_worker: deepseek/deepseek-v4-pro
   default_aggregator: deepseek/deepseek-v4-flash
   lock_dispatcher: false
   lock_aggregator: true
-
 formations:
   # CLI default (`chimera -f auto`): the dispatcher designs the DAG itself.
   auto:
@@ -29,6 +26,12 @@ formations:
   simple:
     aggregator: default
     workers: 2
+  speed:
+    aggregator: deepseek/deepseek-v4-flash
+    workers: 2
+    worker_models:
+      - deepseek/deepseek-v4-flash
+      - openrouter/qwen/qwen3-coder
   debate:
     aggregators:
       - default
@@ -51,7 +54,6 @@ providers:
     base_url: https://openrouter.ai/api/v1
   zai:
     base_url: https://api.z.ai/api/coding/paas/v4
-
 # Catalog the dispatcher and selector score against. Entries are required for
 # every model referenced by defaults/formations (unknown ids are rejected at
 # load). A real catalog gives each model a full category map — these are
@@ -105,11 +107,9 @@ observability:
   trace_enabled: true
   langfuse:
     enabled: false
-
 selector:
   price_sensitivity: 0.0
 provider_discovery: true
-
 timeout:
   total_s: 600.0
   per_stage_s: 300.0
