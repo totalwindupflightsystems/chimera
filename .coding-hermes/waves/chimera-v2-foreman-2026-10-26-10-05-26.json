@@ -5,6 +5,7 @@
   "wave_budget": 12,
   "slots": 0,
   "path": "wave recovery only — no blocks with ready work (all 5 remaining pending rows are externally blocked)",
+  "finished_at": "2026-10-26T15:49:59Z",
   "recovery": {
     "tick": "chimera-v2-foreman-2026-10-26-02-06-14",
     "task_id": "QA-CHIMERA-V2-44",
