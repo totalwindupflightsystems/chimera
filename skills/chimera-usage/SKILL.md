@@ -1059,3 +1059,16 @@ warning; DF-96 kebab-slug no longer matching the pre-commit regex while a real k
 still does; DF-89 keyless MCP `isError: true`; DF-92's boundary test green and a fresh
 public clone's example free of internal topology. The fix wave is real — it just has not
 been released or deployed.
+
+## Run 27 — MCP formation selection (2026-10-26)
+
+Use the external probe or an equivalent JSON-RPC client against the actual `chimera-mcp` console script. Both the default `simple` formation and the named `speed` formation completed real tool calls on the current tree, with clean JSON-RPC stdout and a non-empty merged answer. Measured walls were 17.3s (`simple`) and 19.6s (`speed`); repeated simple calls were 25.5s cold and 20.7s warm, so the wait is provider-bound rather than local MCP overhead.
+
+```text
+python scripts/probe_mcp_stdio.py --formation=simple .venv/bin/chimera-mcp
+python scripts/probe_mcp_stdio.py --formation=speed .venv/bin/chimera-mcp
+```
+
+The negative CLI contract is also usable: `chimera --formation definitely-not-real run '2+2'` exits 2 and lists the available formations. Before diagnosing a live result, check `/health`'s commit and run `scripts/smoke_live.py`; the service can be CODE-CURRENT against `origin/main` even when its short commit differs because only board/docs paths are ahead.
+
+Run 27 install lesson: `bunker-qa.sh` currently reported `install rc=0 but no artifact found (toolsd...)` after successfully installing `chimera-deliberation 0.2.8` on a fresh agent. For Chimera, the relevant post-install checks are the `chimera` and `chimera-mcp` console scripts plus `chimera --version`; a toolsd result is harness identity evidence, not a Chimera install verdict. Preserve the complete evidence path and classify the battery as untrusted until the external detector is fixed (current recurrence candidate: QA-CHIMERA-V2-44-R2).

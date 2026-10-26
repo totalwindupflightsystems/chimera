@@ -1154,3 +1154,9 @@ Traps hit in this run (worth reusing):
 - **The lsp test imports `pylsp` inside the test body**, so a `[full]` venv (which has
   pytest but not pylsp) fails instead of skipping — `importorskip` is the fix, and the
   `[dev]` extra is what makes the suite green.
+
+## 2026-10-26 (run 27) — MCP formation selection and live parity
+
+Run 27 drove the external MCP client against the repository's real `chimera-mcp` entry point, not a unit test or internal helper. The client completed initialize, tool discovery, and a real `chimera_deliberate` call for both `simple` and the restored `speed` formation. Both returned `PROBE OK`, a non-empty `17 * 23 = 391` answer marker, and no non-JSON stdout pollution. Measured walls were 17.3s (`simple`) and 19.6s (`speed`); a repeated simple run measured 25.5s cold and 20.7s warm. These waits are provider/model-bound, so no PERF row was filed.
+
+The deployed REST service was also exercised through `scripts/smoke_live.py`: `/health` reported commit `9bdb753`; the script returned rc=0, `CODE-CURRENT` against `origin/main` because the path-scoped material diff is empty, and `SMOKE PASS` with a real merged answer. The CLI unknown-formation arm returned rc=2 with the available formation list. The fresh install battery completed through `bunker-qa.sh` on `bunker-mvp` agent `5d53db3f`. Its package install succeeded for `chimera-deliberation 0.2.8`, but the external harness incorrectly graded fresh-install FAIL because it searched for a toolsd artifact; this corroborates QA-CHIMERA-V2-44. The collector recovered teardown and a fresh census confirmed the agent was gone. The act leg remained UNVERIFIED because the container image was absent.
