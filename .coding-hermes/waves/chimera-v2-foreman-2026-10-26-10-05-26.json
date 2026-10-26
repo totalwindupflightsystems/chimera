@@ -1,0 +1,20 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-26-10-05-26",
+  "project": "chimera-v2",
+  "block": null,
+  "wave_budget": 12,
+  "slots": 0,
+  "path": "wave recovery only — no blocks with ready work (all 5 remaining pending rows are externally blocked)",
+  "recovery": {
+    "tick": "chimera-v2-foreman-2026-10-26-02-06-14",
+    "task_id": "QA-CHIMERA-V2-44",
+    "branch": "wt/QA-CHIMERA-V2-44",
+    "branch_sha": "5c802603ebc4df1cf51741ef083f267b47ddbce8",
+    "stale": true,
+    "action": "skipped merge (stale base), closed row as harness-blocked",
+    "worker_result": "external-only defect, no commit",
+    "row_status": "complete",
+    "worktree_removed": true,
+    "branch_removed": true
+  }
+}
