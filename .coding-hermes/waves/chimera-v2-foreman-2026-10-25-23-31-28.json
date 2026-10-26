@@ -4,7 +4,7 @@
   "block": "RELEASE-READINESS-2026-10-25",
   "wave_size": 1,
   "path": "serial",
-  "path_reason": "block_drive.py reported six blocks with zero ready rows; host slots = max(1, min(6, 16 - ceil(41.66))) = 1 (loadavg 41.66 on 16 cores), so the tick ran the serial path with ONE worker on a row discovered+dispatched by this tick.",
+  "path_reason": "block_drive.py reported six blocks with zero ready rows; host slots = max(1, min(6, 16 - ceil(41.66))) = 1 (loadavg 41.66 on 16 cores), so the tick ran the serial path with ONE worker on a row this tick discovered and filed.",
   "discovered_defect": "release-verify (tag-gated CI leg) FAILED on tag v0.2.8 (run 40171452018, job 121103678685 step 9): probe_mcp_stdio.py --formation=speed answered unknown_formation because chimera.yaml.example lost the speed formation in 72b2eca (CH-MAINT-010/011 trim, 2026-10-07, after v0.2.7 shipped green). Reproduced at HEAD e45e9b6.",
   "created_at": "2026-10-25T23:47:00Z",
   "base_sha": "e45e9b6d69cc44f00dfadb0559ba4df19bd669f2",
@@ -18,15 +18,48 @@
       "branch": "main",
       "worker_model": "glm-5.3-flash",
       "worker_provider": "zai-glm-default",
-      "lane_verified": "agent.log: session 20261025_183925_65de94 API call #1 model=glm-5.3-flash provider=custom, no 'Fallback activated' line",
+      "lane_verified": "agent.log: session 20261025_184127_838403 API call #1 model=glm-5.3-flash provider=custom, no 'Fallback activated' line",
       "brief": "/tmp/brief-DF-CHIMERA-V2-100.txt",
       "pid": 883358,
-      "gitreins_task": "DF-CHIMERA-V2-100 (in_progress)",
-      "gate_config_untouched": "tests/test_release_workflow.py::test_mcp_gate_probes_both_gate_formations still pins BOTH probe legs (simple AND speed)"
+      "exit": "WORKER EXIT: 0",
+      "commit": "63bdadfd3f7ab70e26407a06996ceec72c27178b",
+      "files": ["chimera.yaml.example", "tests/test_release_template_formations.py"],
+      "gitreins_task": "DF-CHIMERA-V2-100 (created + started pre-implementation, completed post-commit)",
+      "gate_config_untouched": "tests/test_release_workflow.py::test_mcp_gate_probes_both_gate_formations still pins BOTH probe legs (simple AND speed)",
+      "status": "complete"
     }
   ],
-  "workers": [],
+  "workers": [
+    {
+      "role": "row-worker",
+      "task_id": "DF-CHIMERA-V2-100",
+      "session": "20261025_184127_838403",
+      "pid": 883358,
+      "model": "glm-5.3-flash",
+      "provider": "zai-glm-default",
+      "exit_code": 0,
+      "commit": "63bdadfd3f7ab70e26407a06996ceec72c27178b",
+      "started_at": "2026-10-25T23:41:30Z",
+      "finished_at": "2026-10-26T00:02:00Z",
+      "verification": "independent: probes re-run by foreman, red-arm reproduced by foreman, full suite run by foreman"
+    }
+  ],
   "branching": "serial (no worktree): the change is template + regression-test scoped, the repo .venv is already installed in the main checkout, and this tick's own writes are board-only — no index contention with the worker.",
-  "local_evidence": {},
-  "remote_ci": {}
+  "local_evidence": {
+    "full_suite": "PASS: pytest tests/ --ignore=tests/integration --ignore=tests/compat -q -> 2173 passed, 1 skipped, 0 failed",
+    "targeted": "PASS: tests/test_release_workflow.py + test_config.py + test_docs_model_ids.py + test_release_template_formations.py + test_yaml_example_sanitized.py -> 155 passed",
+    "probe_simple": "PASS: exit 0, PROBE OK, ANSWER_MARKER hit",
+    "probe_speed": "PASS: exit 0, PROBE OK, ANSWER_MARKER hit (was PROBE FAIL / unknown_formation before the fix)",
+    "red_arm": "PASS (proven red): pre-fix template staged from git show HEAD~1 -> new test exits 1 naming 'speed'; template restored byte-identical",
+    "guard_staged_diff": "PASS (DEGRADED): secrets/lint/tests/lsp green; static_analysis skip is the repo baseline (static_analysis_tools={})",
+    "tier2_verdict": ".gitreins/history/2026-10-26/833810a1/verdict.json - tier2 COMPLETE 3/3; overall false only for the judge's clean-index tier-1 DEGRADED phantom",
+    "deployment": "supervised unit reloaded: a288176/0.2.7 -> current HEAD/0.2.8; smoke_live.py exit 0, deployment CODE-CURRENT, SMOKE PASS"
+  },
+  "remote_ci": {
+    "implementation_sha": "63bdadfd3f7ab70e26407a06996ceec72c27178b",
+    "run": "40247770204",
+    "result": "lint + test 3.11/3.12/3.13 + packaging-smoke SUCCESS; integration leg still in flight at close (not claimed); publish/release-verify tag-gated and skipped",
+    "release_verify_on_tag_v0.2.8": "FAILED (run 40171452018 job 121103678685 step 9) - cause fixed by DF-CHIMERA-V2-100; a past tag run cannot be re-graded, the next tag exercises the fixed gate"
+  },
+  "finished_at": "2026-10-26T00:26:00Z"
 }
