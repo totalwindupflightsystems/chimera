@@ -1,0 +1,19 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-26-02-06-14",
+  "project": "chimera-v2",
+  "block": "QA-CHIMERA-V2-45",
+  "wave_budget": 2,
+  "slots": 1,
+  "path": "serial-fallback: loadavg 12.59/16 gives one slot; only QA-CHIMERA-V2-44 remained ready after QA-CHIMERA-V2-45 closeout; QA-CHIMERA-V2-43 is externally blocked",
+  "base": "5c80260",
+  "workers": [
+    {
+      "task_id": "QA-CHIMERA-V2-44",
+      "worktree": "/home/kara/worktrees/chimera-v2-QA-CHIMERA-V2-44",
+      "branch": "wt/QA-CHIMERA-V2-44",
+      "model": "glm-5.3-flash",
+      "provider": "zai-glm-default",
+      "brief": "/tmp/brief-QA-CHIMERA-V2-44"
+    }
+  ]
+}
