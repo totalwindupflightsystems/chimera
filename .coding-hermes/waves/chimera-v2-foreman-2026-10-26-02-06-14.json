@@ -25,6 +25,7 @@
     "branch_state": "branch/worktree already removed; recorded commit is ancestor of current main",
     "merge": "not required: implementation/docs commit already present in current main ancestry; no live branch to gate or merge",
     "board_state": "complete as harness-blocked, verified from effective last row",
-    "cleanup": "worktree and branch absent"
+    "cleanup": "worktree and branch absent",
+    "post_recovery_focused_gate": "PASS: .venv/bin/python -m pytest tests/test_yaml_example_sanitized.py tests/test_version.py tests/test_bin_shims.py tests/test_docs_index.py tests/test_repo_hygiene.py -q -> 80 passed in 4.37s"
   }
 }
