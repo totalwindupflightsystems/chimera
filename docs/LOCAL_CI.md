@@ -104,6 +104,27 @@ regression. If the collected total itself moved, compare it with
 `git log --oneline ..HEAD -- tests/` — new tests land with their feature
 commits.
 
+## Act emulation limitations (2026-10-26)
+
+Hosted CI at commit `b7a6f642295deeb2555e752ad8f89dbda06ab338` (run 40243624603,
+2026-10-25T23:11:31Z) shows conclusion=success: lint=success, test(3.11)=success,
+test(3.12)=success, test(3.13)=success, integration=success, packaging-smoke=success.
+
+The same commit under `act` (local GitHub Actions emulation) fails at the Python 3.11
+setup step with `ModuleNotFoundError: No module named 'ast'` and the lint leg fails
+removing the Python 3.11 directory. Python 3.12/3.13 setup completes but their
+unit-test jobs fail. Native execution at the same commit passes 2167 tests.
+
+This is an **act emulation/toolchain artifact**, not a workflow defect. The act runner
+image (`catthehacker/ubuntu:act-24.04`) lacks the full Ubuntu toolchain that
+`actions/setup-python@v5` expects, and the Python 3.11 installation fails at the
+`ast` module import. Hosted CI uses GitHub's `ubuntu-latest` runners with the full
+toolchain pre-installed, so the workflow is unchanged in what it gates.
+
+**Verdict**: hosted CI at b7a6f64 is authoritative and green; act-only failures at
+that SHA are runner-image gaps, not product defects. Keep the workflow verdict
+separate from native pytest results when documenting act reproduction.
+
 ## Notes
 
 - Jobs that need repository secrets or a tag ref cannot be fully exercised
