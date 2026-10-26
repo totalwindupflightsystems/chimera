@@ -15,5 +15,16 @@
       "provider": "zai-glm-default",
       "brief": "/tmp/brief-QA-CHIMERA-V2-44"
     }
-  ]
+  ],
+  "finished_at": "2026-10-26T16:12:10Z",
+  "recovery": {
+    "task_id": "QA-CHIMERA-V2-44",
+    "branch": "wt/QA-CHIMERA-V2-44",
+    "recorded_branch_sha": "5c802603ebc4df1cf51741ef083f267b47ddbce8",
+    "current_main": "51ee4f2b99635c0515fb37a7c673527b3b16fcd2",
+    "branch_state": "branch/worktree already removed; recorded commit is ancestor of current main",
+    "merge": "not required: implementation/docs commit already present in current main ancestry; no live branch to gate or merge",
+    "board_state": "complete as harness-blocked, verified from effective last row",
+    "cleanup": "worktree and branch absent"
+  }
 }
