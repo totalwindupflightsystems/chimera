@@ -1,0 +1,13 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-26-17-41-32",
+  "project": "chimera-v2",
+  "block": null,
+  "wave_budget": 9,
+  "wave_size": 0,
+  "path": "idle after recovery",
+  "reason": "Recovery manifest had zero workers; block_drive.py found 5 effective pending rows across 5 blocks and 0 ready blocks.",
+  "rows": [],
+  "workers": [],
+  "created_at": "2026-10-26T17:41:32Z",
+  "finished_at": "2026-10-26T17:48:00Z"
+}
