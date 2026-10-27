@@ -1,0 +1,22 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-27-21-28-12",
+  "project": "chimera-v2",
+  "block": "README-10",
+  "wave_budget": 12,
+  "slots": 1,
+  "wave_size": 1,
+  "path": "serial fallback: loadavg 11.82 on 16 CPUs yields 1 slot; README-7 is the only ready row selected from the block because README-8/9/10 share README.md and are not independent",
+  "base": "bcb534329534bfc593e92e23a2745dab84232d21",
+  "workers": [
+    {
+      "task_id": "README-7",
+      "worktree": "/home/kara/worktrees/chimera-v2-README-7",
+      "branch": "wt/README-7",
+      "base_sha": "bcb534329534bfc593e92e23a2745dab84232d21",
+      "brief": "/tmp/brief-README-7.txt",
+      "model": "glm-5.3-flash",
+      "provider": "zai-glm-default",
+      "status": "dispatched"
+    }
+  ]
+}
