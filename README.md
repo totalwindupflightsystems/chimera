@@ -76,10 +76,10 @@ readability — the real trace is the complete `DeliberationTrace` dump):
     "total_duration_ms": 15234,
     "worker_failures": [],
     "dispatch_note": null,
-    "dispatch_repairs": [],
-    "answer_degraded": false,
-    "answer_error": null
-  }
+    "dispatch_repairs": []
+  },
+  "answer_degraded": false,
+  "answer_error": null
 }
 ```
 
@@ -644,7 +644,7 @@ Chimera uses LiteLLM under the hood. Supported providers:
 | **Anthropic** | — | ✅ | Sonnet 4, Opus 4.7/4.8, Haiku 4.5 |
 | **OpenAI** | — | ✅ | GPT-5.5, GPT-5.5 Pro, GPT-5.6 (Luna, Sol, Terra variants) |
 | **xAI** | — | ✅ | Grok 4.20 |
-| **Google** | — | ✅ | Gemini 3.5 Flash, 3.1 Pro, 2.5 Flash |
+| **Google** | — | ✅ | Gemini 3.5 Flash, 3.1 Pro (preview), 3.1 Flash Lite (preview), 3 Flash (preview), 3 Pro (preview) |
 | **Z.AI** | ✅ (direct) | ✅ | GLM-5.2 |
 | **MoonshotAI** | — | ✅ | Kimi K2.7 Code, K2.6 |
 | **MiniMax** | — | ✅ | M3 |
@@ -717,7 +717,7 @@ full contract.
 
 ### Release review (2026-10-27)
 
-Reviewed the README against the v0.2.8 release and subsequent changes through 2026-10-27. The shipped `chimera.yaml.example` includes the `speed` formation, and the release workflow's simple/speed MCP probes are covered by the non-tag-gated `tests/test_release_template_formations.py` regression test. The install and quickstart guidance remains consistent with the package entry points and `scripts/quickstart_battery.py`. This review is limited to release-surface freshness; detailed README structure and model-catalog accuracy are tracked separately.
+Reviewed the README against the v0.2.8 release and subsequent changes through 2026-10-27. The shipped `chimera.yaml.example` includes the `speed` formation, and the release workflow's simple/speed MCP probes are covered by the non-tag-gated `tests/test_release_template_formations.py` regression test. The review also reconciled the CLI JSON example and Google model table against the source and live catalog; the source-grounded record is `docs/README_RELEASE_REVIEW_2026-10-27.md`. README structure improvements remain tracked separately by README-8.
 
 *Verification baseline: v0.2.8 (`ba900827`); review date: 2026-10-27.*
 
