@@ -715,6 +715,13 @@ full contract.
 
 ## Contributing
 
+### Release review (2026-10-27)
+
+Reviewed the README against the v0.2.8 release and subsequent changes through 2026-10-27. The shipped `chimera.yaml.example` includes the `speed` formation, and the release workflow's simple/speed MCP probes are covered by the non-tag-gated `tests/test_release_template_formations.py` regression test. The install and quickstart guidance remains consistent with the package entry points and `scripts/quickstart_battery.py`. This review is limited to release-surface freshness; detailed README structure and model-catalog accuracy are tracked separately.
+
+*Verification baseline: v0.2.8 (`ba900827`); review date: 2026-10-27.*
+
+
 Thanks to everyone who has filed an issue, reported a provider regression, or
 sent a patch — Chimera gets better because of it.
 
