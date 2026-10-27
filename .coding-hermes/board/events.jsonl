@@ -1073,3 +1073,4 @@
 {"id":2841,"timestamp":"2026-10-27T18:16:55Z","event_type":"task_created","task_id":"README-10","actor":"foreman","detail":"{\"id\":\"README-10\",\"status\":\"pending\"}"}
 {"id":2842,"timestamp":"2026-10-27T21:31:42Z","event_type":"task_updated","task_id":"README-7","actor":"foreman","detail":"{\"status\":\"pending\"}"}
 {"id":2843,"timestamp":"2026-10-27T21:31:42Z","event_type":"task_dispatched","task_id":"README-7","actor":"foreman","detail":"{\"tick_id\":\"chimera-v2-foreman-2026-10-27-21-28-12\",\"wave\":\".coding-hermes/waves/chimera-v2-foreman-2026-10-27-21-28-12.json\",\"worker_model\":\"glm-5.3-flash\",\"worker_provider\":\"zai-glm-default\",\"worktree\":\"/home/kara/worktrees/chimera-v2-README-7\",\"branch\":\"wt/README-7\",\"base\":\"bcb5343\",\"brief\":\"/tmp/brief-README-7.txt\"}"}
+{"id":2844,"timestamp":"2026-10-27T21:54:03Z","event_type":"task_completed","task_id":"README-7","actor":"foreman","detail":"{\"status\":\"complete\"}"}
