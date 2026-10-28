@@ -521,6 +521,96 @@ install and a real degradation used to print the same words:
 None of these lines changes the exit code: the provider block never fails the run —
 only the deliberation decides pass/fail.
 
+## Build and development
+
+Chimera is a plain Python 3.11+ package (`chimera-deliberation`, hatchling
+build backend, `pyproject.toml`). To hack on it from a checkout:
+
+```bash
+git clone https://github.com/totalwindupflightsystems/chimera.git
+cd chimera
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"       # runtime deps + pytest + ruff + pylsp (guard's lint lane)
+```
+
+The commands the repo's own docs and gates use:
+
+```bash
+.venv/bin/python -m pytest -x --tb=short -q         # unit suite (offline, no API keys)
+.venv/bin/python -m pytest tests/test_engine.py -x --tb=short   # one file
+.venv/bin/python -m pytest --cov=src/chimera --cov-report=term-missing  # coverage
+.venv/bin/ruff check .                              # lint (the same rules CI runs)
+```
+
+The `[dev]` extra carries the server runtime pins (fastapi/uvicorn) because
+the suite imports the API app; `[full]` additionally ships the test runner
+itself, so a fresh `pip install -e ".[full]"` venv can run `pytest tests/ -q`
+directly (both declared in `pyproject.toml`). `tests/integration/` makes real
+provider calls and needs `--run-integration` plus `DEEPSEEK_API_KEY`;
+`tests/compat/` needs `--run-compat` (see
+[CONTRIBUTING.md](CONTRIBUTING.md)).
+
+Docker: the repo ships a PyPI-based image (`Dockerfile`), a build-from-source
+dev image (`Dockerfile.dev`) and a compose file:
+
+```bash
+docker build -f Dockerfile.dev -t chimera-dev .     # build this checkout
+docker run -p 8765:8765 -e DEEPSEEK_API_KEY=sk-... chimera-dev
+cp chimera.yaml.example chimera.yaml && docker compose up -d    # or compose
+```
+
+Run the gateway from a checkout — create the local config first (the repo
+ships no live `chimera.yaml`, see Quickstart):
+
+```bash
+pip install -e ".[full]"     # `chimera serve` needs fastapi+uvicorn ([server] also works)
+chimera config init
+chimera serve                # REST API + web UI on http://localhost:8765
+curl -s localhost:8765/health      # liveness probe (always 200 when alive)
+curl -s localhost:8765/v1/health   # provider health (`healthy` / `degraded`)
+```
+
+## Limits and Known Gaps
+
+Chimera orchestrates live LLM APIs; it ships no model of its own. The
+boundaries a reader should know:
+
+- **Answers require provider credentials and a reachable provider.** Every
+  deliberation is real upstream calls. With no resolvable key
+  (`DEEPSEEK_API_KEY` at minimum — see Configuration) the config still loads,
+  but the answer stage degrades: the `[stage ... unavailable: ...]`
+  placeholder becomes the "answer", `answer_degraded` is `true`, and
+  `--json` / `--quiet` runs exit **2** — the contract documented under
+  Machine-readable output, mirrored by the REST API.
+- **Provider-side failures are surfaced, not hidden.** Quota exhaustion, rate
+  limits, auth rejection or billing faults come back as degraded answers /
+  non-zero exits carrying the provider's own message — upstream conditions,
+  not Chimera bugs. `/v1/health` classifies them (`missing_credentials`,
+  `auth`, `quota`, `timeout`, `slow`, `api`) instead of retrying an already
+  final answer into a fabricated timeout.
+- **Unknown models are rejected, never silently substituted.** A custom DAG,
+  `stage_models` / `worker_model` / `aggregator_model` override naming a model
+  outside the catalog fails validation before any call (the REST API answers
+  HTTP 400 naming the catalog requirement). Fuzzy matching
+  (case-insensitive, unique suffix) applies only to names the dispatcher
+  model emitted itself — and a dispatcher output that is malformed or still
+  unresolvable falls back to a preset formation, visible as
+  `trace.source` = `"fallback"` plus `trace.dispatch_note`.
+- **A failed worker degrades its stage; the run continues.** The stage gets a
+  degraded placeholder response, downstream stages still run, and
+  `trace.worker_failures` names every failure. Only a failure of the ANSWER
+  stage (the aggregator the answer is read from) degrades the run itself.
+- **The web UI is served by the Python process.** `chimera serve` mounts the
+  SPA and its vendored JS bundles from `src/chimera/web/static` at `/web/` —
+  no separate frontend build and no node server.
+
+Deeper references: [docs/CONFIG.md](docs/CONFIG.md) (credential resolution
+chain), [docs/RESILIENCE.md](docs/RESILIENCE.md) and
+[docs/FAILURE_RESILIENCE.md](docs/FAILURE_RESILIENCE.md) (degradation and
+failure semantics), [docs/EDGE_CASES.md](docs/EDGE_CASES.md) (behavior
+notes), [docs/GITREINS.md](docs/GITREINS.md) (local quality gates).
+
 ## Model Selection
 
 The dispatcher picks models using **category-weighted scoring**:
