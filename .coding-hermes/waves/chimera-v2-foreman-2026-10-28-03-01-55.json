@@ -1,0 +1,32 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-28-03-01-55",
+  "project": "chimera-v2",
+  "block": "README-10",
+  "wave_budget": 1,
+  "slots": 1,
+  "wave_size": 1,
+  "path": "serial fallback: WAVE_BUDGET=1 is the hard ceiling for this tick (scheduler-injected), and the README-10 block's remaining rows all edit the single file README.md, so they are not mutually independent. One worker on the block's only genuinely-ready row.",
+  "recovery_first": {
+    "recovered_wave": "chimera-v2-foreman-2026-10-27-21-28-12",
+    "outcome": "README-7 verified green and already merged into main (0 ahead / 6 behind; impl commit 7f98812e ancestor of main); manifest closed with finished_at; worktree removed and local branch deleted."
+  },
+  "block_census_at_tick_start": {
+    "README-8": "genuinely ready (no '^## Build' heading, no '^## (Limits|Known Gaps)' heading)",
+    "README-9": "already satisfied by 7f98812e - closed verification-only this tick",
+    "README-10": "already satisfied by 7f98812e - closed verification-only this tick (its short acceptance oracle was defective and was replaced with a parse-based probe)"
+  },
+  "base": "cafb310193344397711125abbad2e3546a26e039",
+  "workers": [
+    {
+      "task_id": "README-8",
+      "worktree": "/home/kara/worktrees/chimera-v2-README-8",
+      "branch": "wt/README-8",
+      "base_sha": "cafb310",
+      "brief": "/tmp/brief-README-8.txt",
+      "model": "glm-5.3-flash",
+      "provider": "zai-glm-default",
+      "status": "dispatched"
+    }
+  ],
+  "finished_at": null
+}

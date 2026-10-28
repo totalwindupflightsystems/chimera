@@ -16,7 +16,20 @@
       "brief": "/tmp/brief-README-7.txt",
       "model": "glm-5.3-flash",
       "provider": "zai-glm-default",
-      "status": "dispatched"
+      "status": "merged",
+      "merge_disposition": "already merged into main before this recovery tick (wt/README-7 was 0 ahead / 6 behind origin/main; implementation commit 7f98812e is an ancestor of main). No merge action was required; gates re-verified on the merged tree."
     }
-  ]
+  ],
+  "finished_at": "2026-10-28T03:06:51Z",
+  "recovered_by": "chimera-v2-foreman-2026-10-28-03-01-55",
+  "recovery": {
+    "outcome": "complete",
+    "worker_disposition": "README-7: green, already merged (0 ahead / 6 behind main; impl commit 7f98812e ancestor of main)",
+    "gates": "PASS on merged tree: PYTHONPATH=src .venv/bin/python -m pytest tests/test_docs_index.py tests/test_release_template_formations.py -q -> 61 passed; git diff --check PASS",
+    "board_truth": "README-7 status=complete (commit_hash 7f98812e, guard PASS, ci GREEN)",
+    "stale_base_rule": "not applicable: branch is an ancestor of current main (no merge performed, nothing to revert)",
+    "board_rule": "not applicable: no branch diff was merged in this recovery",
+    "cleanup": "worktree /home/kara/worktrees/chimera-v2-README-7 removed; local branch wt/README-7 deleted (was ed8bd3f); remote ref origin/wt/README-7 left as evidence",
+    "prior_closeout": "tick 464 had already closed README-7 (board commits 0a64fc7, 2e16f74); this manifest was left without finished_at by that tick"
+  }
 }
