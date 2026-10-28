@@ -25,8 +25,14 @@
       "brief": "/tmp/brief-README-8.txt",
       "model": "glm-5.3-flash",
       "provider": "zai-glm-default",
-      "status": "dispatched"
+      "status": "merged",
+      "product_commit": "38d92bcf7ea5b78d4fd2b5a1f5be5a7f7bd9db6f",
+      "landing_merge": "3ac84ae8adb3851345b938a35bd91e29be3d5b0e",
+      "rebased_onto": "e8b337c2a3f6b84543d115fd3d4c3a6b9ba607e5",
+      "judge_verdict": "6597c0d1",
+      "gates": "PASS on both the rebased branch tip and the merged tree: pytest 2174/2176 passed, ruff clean, probes 1/1/8, git diff --check clean, 0 deletions, no board paths"
     }
   ],
-  "finished_at": null
+  "block_outcome": "complete: README-7/8/9/10 all complete; block end-to-end acceptance re-run on the merged tree and passing",
+  "finished_at": "2026-10-28T03:42:00Z"
 }
