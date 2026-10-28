@@ -4,7 +4,7 @@
   "wave_budget": 2,
   "slots": 6,
   "wave_size": 1,
-  "path_note": "Budget allowed 2 but the block has only ONE mutually independent work item: QA-CHIMERA-V2-43 (harness detector fix in /home/kara dotfiles repo) and QA-CHIMERA-V2-RELENG-1/2 (battery launch+collect on bunker-mvp) both operate on the bunker-qa battery seam — the battery qa-run.sh is GENERATED from the harness at launch time, so the fix must land before launch for the battery to exercise it. Rows RELENG-1 and RELENG-2 are duplicate filings of the same collect deliverable (one battery run serves both). Sequenced fix->launch->collect, not parallel.",
+  "path_note": "Budget allowed 2 but the block has only ONE mutually independent work item: QA-CHIMERA-V2-43 (harness detector fix in /home/kara dotfiles repo) and QA-CHIMERA-V2-RELENG-1/2 (battery launch+collect on bunker-mvp) both operate on the bunker-qa battery seam \u2014 the battery qa-run.sh is GENERATED from the harness at launch time, so the fix must land before launch for the battery to exercise it. Rows RELENG-1 and RELENG-2 are duplicate filings of the same collect deliverable (one battery run serves both). Sequenced fix->launch->collect, not parallel.",
   "rows": [
     {
       "id": "QA-CHIMERA-V2-43",
@@ -22,5 +22,8 @@
       "id": "QA-CHIMERA-V2-RELENG-1 + QA-CHIMERA-V2-RELENG-2",
       "action": "bunker-qa.sh launch /home/kara/chimera-v2 --evidence /tmp/bunker-qa-evidence-1793154558586-1.jsonl (original refused-run cells archived), then collect loop to OK"
     }
-  ]
+  ],
+  "finished_at": "2026-10-28T17:55:00-05:00",
+  "recovery_verdict": "already_closed_in_board_4c7ae4a",
+  "recovery_notes": "All 3 rows (QA-CHIMERA-V2-43, RELENG-1, RELENG-2) already status=complete in board. Manifest status=dispatched was stale. No merge needed."
 }
