@@ -1,0 +1,25 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-29-11-23-13",
+  "block": "SUP-DEPS-20261029-CHV2",
+  "wave_budget": 5,
+  "slots": 2,
+  "wave_size": 1,
+  "path": "serial-fallback",
+  "why_serial": "block_drive shows exactly one ready row in the DRIVE block (SUP-DEPS-20261029-CHV2; REVIEW-CHIMERA-005 and INT-SEC-001 rows are owner-gated). Fewer than 2 mutually independent ready rows -> serial path per tick contract. Worktree still used per Bane isolation doctrine (dependency majors are prod-touching).",
+  "host_load": "loadavg 13.09/20.21/23.18 on 16 cores at tick start",
+  "rows": [
+    {
+      "task_id": "SUP-DEPS-20261029-CHV2",
+      "title": "Dependency refresh: 26 outdated Python packages in chimera-v2, seven majors",
+      "worktree": "/home/kara/worktrees/chimera-v2-SUP-DEPS-20261029-CHV2",
+      "branch": "wt/SUP-DEPS-20261029-CHV2",
+      "base": "origin/main",
+      "base_sha": "bb23b99",
+      "brief": "/tmp/brief-SUP-DEPS-20261029-CHV2.txt",
+      "worker_model": "glm-5.3-flash",
+      "worker_provider": "zai-glm-default",
+      "gitreins_task": "SUP-DEPS-20261029-CHV2"
+    }
+  ],
+  "created_at": "2026-10-29T11:23:13-05:00"
+}
