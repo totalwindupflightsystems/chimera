@@ -47,9 +47,9 @@ Baseline suite BEFORE any change: `2174 passed, 64 skipped, 0 failed` (exit 0,
 ## Disposition — the seven board-named majors (all HOLD)
 
 Every hold was re-verified this tick against **installed metadata**
-(`importlib.metadata.requires()`), never from the pyproject comment alone. The
-2026-10-21 notes listed only six cap-refusals; this tick's probe found one more:
-litellm 1.99.4 also caps python-dateutil.
+(`importlib.metadata.requires()`), never from the pyproject comment alone.
+Metadata correction (post judge round 1, verified twice): litellm 1.99.4 does
+NOT require python-dateutil — the python-dateutil cap comes from botocore alone.
 
 | Package | old -> new available | Disposition | Reason (verified source) |
 |---|---|---|---|
@@ -58,7 +58,7 @@ litellm 1.99.4 also caps python-dateutil.
 | huggingface_hub | 1.33.0 -> 2.3.0 | **HOLD** | policy-held major (CHANGED vs 10-21 notes): tokenizers 0.23.3 now allows `huggingface-hub>=0.16.4,<3.0`, so it RESOLVES freely — but nothing in chimera, litellm or tokenizers imports huggingface_hub at all (grep of src/, tests/, litellm package: zero importers), so the bump buys nothing testable; per doctrine, re-taking a major to buy nothing is not a fix |
 | importlib_metadata | 8.9.0 -> 10.1.0 | **HOLD** | litellm 1.99.4 requires `importlib-metadata>=8.0.0,<9.0`; resolver-refused |
 | pyflakes | 3.2.0 -> 4.1.0 | **HOLD** | python-lsp-server[pyflakes] (dev extra, load-bearing for the gitreins lsp guard lane) requires `pyflakes>=3.2.0,<3.3.0` |
-| python-dateutil | 2.9.0.post0 -> 3.0.0 | **HOLD** | TWO parent caps (NEW finding vs 10-21 notes): litellm 1.99.4 requires `python-dateutil>=2.1,<3.0` AND botocore 1.43.116 requires `python-dateutil<3.0.0,>=2.1` — resolver-refused |
+| python-dateutil | 2.9.0.post0 -> 3.0.0 | **HOLD** | botocore (1.43.121 after this refresh) requires `python-dateutil<3.0.0,>=2.1` — resolver-refused. (Corrected after judge round 1: the earlier note also credited a litellm cap, but installed litellm 1.99.4 metadata carries NO python-dateutil requirement — botocore is the only capping parent.) |
 | litellm | 1.99.4 -> 1.106.6 | **HOLD** | this pyproject's own cap `litellm>=1.50.0,<1.100`: 1.100.0 replaced the stderr StreamHandler with LevelRoutingStreamHandler (sub-warning records to stdout) — fatal for the MCP stdio JSON-RPC wire |
 
 An eighth major-shaped entry, pycodestyle 2.12.1 -> 2.15.0, is held by
@@ -103,17 +103,25 @@ Count: 17 UPGRADED + 9 HOLD = 26. The lock also DROPPED `tomli 2.4.1` — a
 consequence of coverage 7.17.0 no longer needing the tomli backport on
 Python >= 3.11, not an independent change.
 
-## Live-proof note (:8765 deliberation API)
+## Live proof (:8765 deliberation API — before AND after, per the row)
 
-Per the row's live-proof clause: the supervised :8765 service runs from the MAIN
-checkout and was NOT touched by this worktree work — no dependency in this tree's
-runtime surface moved (litellm 1.99.4, openai 2.54.0, mcp 1.30.0, fastapi floor
-moves land via uv.lock only after the foreman merges+deploys). Pre-state
-witnessed during this tick: `GET localhost:8765/health` -> `{"status":"alive",
-"uptime_models":43,"commit":"9bdb753","version":"0.2.8"}`. The foreman runs the
-before/after live probes around the merge and deploy; the FastAPI bump here is
-proven compatible by the full suite (2174 passed, includes the FastAPI
-TestClient app tests).
+The FastAPI/litellm pair state: litellm HELD at 1.99.4 (unchanged); fastapi floor
+moved 0.156.5 -> 0.162.0. The row's live proof was executed by the foreman around
+merge + deploy (judge round 1 correctly flagged the deferral — recorded here in full):
+
+- **BEFORE** (2026-10-29, pre-merge, running commit 9bdb753):
+  `POST localhost:8765/v1/deliberate {"prompt":"Reply with the single word OK.","formation":"simple"}`
+  -> `http=200`, request_id `e3e59783a47441d9`, merged answer `"OK"`, 18.3s.
+- **AFTER** (2026-10-29, post-deploy, running commit 06639fa == origin/main,
+  venv re-synced to the refreshed lock):
+  the same request -> `http=200`, request_id `02caeb160787470b`, merged answer `"OK"`, 26.9s.
+  `scripts/smoke_live.py` -> **exit 0**: `deployment: CURRENT — running commit 06639fa
+  == expected commit origin/main`, merged answer received (request_id `4ff8daf03691422e`).
+
+Deploy chain: merge 06639fa -> `uv sync --all-extras --inexact` on the MAIN venv ->
+`sudo systemctl restart chimera` -> `/health` reports `commit: 06639fa`. The
+deliberation API serves the refreshed dependency set (fastapi 0.162.0, starlette
+1.10.0, sse-starlette 3.6.0; litellm 1.99.4 / openai 2.54.0 / mcp 1.30.0 unchanged).
 
 ## Gate results
 
