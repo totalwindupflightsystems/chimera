@@ -2332,5 +2332,6 @@ tasks:
   - 'The published artifact passes the release surface: a fresh venv install of the
     0.2.9 artifact runs scripts/quickstart_battery.py --expected-version 0.2.9 with
     exit 0'
-  status: in_progress
+  status: complete
   created_at: '2026-10-30T22:14:42.797612+00:00'
+  completed_at: '2026-10-30T23:08:41.360518+00:00'

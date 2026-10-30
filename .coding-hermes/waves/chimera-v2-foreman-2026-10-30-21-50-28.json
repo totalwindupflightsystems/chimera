@@ -1,0 +1,29 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-10-30-21-50-28",
+  "block": "RELEASE-BLOCKER-004",
+  "wave_budget": 11,
+  "slots": 6,
+  "wave_size": 1,
+  "path": "serial-fallback",
+  "why_serial": "block_drive: 402 rows, 3 pending across 3 blocks, 0 blocks with ready work. The only foreman-actionable row is RELEASE-BLOCKER-004 (blocked_reason names owner/foreman action: isolate or restore dirty files, land version-prep, obtain exact-SHA CI). INT-SEC-001 and REVIEW-CHIMERA-003 are owner-gated (Bane) and not worker tasks. One independent actionable row -> serial path per tick contract.",
+  "host_load": "loadavg 9.78/10.95/10.08 on 16 cores at tick start",
+  "rows": [
+    {
+      "task_id": "RELEASE-BLOCKER-004",
+      "title": "[releng] v0.2.9 cut blocked by dirty tree and missing version-prep commit",
+      "worktree": "/home/kara/worktrees/chimera-v2-RELEASE-BLOCKER-004",
+      "branch": "wt/RELEASE-BLOCKER-004",
+      "base": "origin/main",
+      "base_sha": "b4f4895",
+      "brief": "/tmp/brief-RELEASE-BLOCKER-004.txt",
+      "worker_model": "glm-5.3-flash",
+      "worker_provider": "zai-glm-default",
+      "gitreins_task": "RELEASE-BLOCKER-004",
+      "worker_pid": 1766570,
+      "worker_session": "proc_f72ba1b7a7f3",
+      "work_commit": "1cb6fe8e98afd00c9ba89f74d169f5bffaf40754"
+    }
+  ],
+  "created_at": "2026-10-30T22:12:00Z",
+  "finished_at": "2026-10-30T23:15:00Z"
+}
