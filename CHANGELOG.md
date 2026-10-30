@@ -4,6 +4,18 @@ All notable changes to Chimera will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.9] — 2026-10-30
+
+### Fixed
+
+- `chimera config init` templates include the `speed` formation again — v0.2.8's release gate failed its `--formation=speed` leg with `unknown_formation`.
+- CI classifies the integration math-proof failure class instead of failing opaquely (INT-CI-018).
+
+### Changed
+
+- Seventeen in-bounds dependencies refreshed; the seven major upgrades (openai, mcp, huggingface_hub, importlib_metadata, pyflakes, python-dateutil, litellm) are held with verified caps.
+- README gains Build and Limits/Known Gaps sections plus a post-0.2.8 release-surface review; docs document the `act` emulation limitation (docs/LOCAL_CI.md) and dogfood run 27 fresh-install evidence (install-gate rough).
+
 ## [0.2.8] — 2026-10-25
 
 ### Added
