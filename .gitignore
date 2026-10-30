@@ -39,6 +39,11 @@ namespaces/
 .gitreins/role.db*
 .gitreins/tasks.yaml.lock
 
+# Local tick narration records (source for the DuckBrain narration key) and
+# rebuildable normalized board copies — local-only evidence, never published
+.coding-hermes/narrations/
+.coding-hermes/board/tasks.normalized.jsonl
+
 # Chimera per-install runtime state (blocked-models registry; repo-scoped
 # since CHIMERA-V2-REVIEW-03 — the legacy ~/.chimera home file is no longer
 # read by default). Class rule, not a filename: other install-local state

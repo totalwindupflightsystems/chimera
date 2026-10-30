@@ -2207,3 +2207,130 @@ tasks:
   status: complete
   created_at: '2026-10-21T06:25:11.054161+00:00'
   completed_at: '2026-10-21T06:37:08.813151+00:00'
+- id: INT-CI-014-R2
+  title: Block a dogfood run log added without its index line
+  criteria:
+  - docs/README.md '## Dogfood run logs' lists dogfood/2026-10-23-run26-integration.md
+    (and every later dated log that lands)
+  - pytest tests/test_docs_index.py -q is green at the fix HEAD
+  - 'the dogfood commit path can no longer produce an unindexed log: either the run
+    log and its docs/README.md entry land in the same commit, or the lane runs the
+    docs-index test before pushing'
+  - the added-log gate is wired into .gitreins/pre-commit and proven RED then GREEN
+    through a private index, so the class cannot recur silently
+  status: complete
+  created_at: '2026-10-24T10:18:01.264902+00:00'
+  completed_at: '2026-10-24T10:18:06.163948+00:00'
+- id: DF-CHIMERA-V2-97
+  title: Gate publish on built-artifact boundary test
+  criteria:
+  - ci.yml publish job runs test_built_artifacts_exclude_fleet_config on the BUILT
+    artifact before twine upload (GATED)
+  - tests/test_yaml_example_sanitized.py::test_built_artifacts_exclude_fleet_config
+    exits 0
+  status: complete
+  created_at: '2026-10-24T16:48:37.885379+00:00'
+  completed_at: '2026-10-24T16:56:24.460432+00:00'
+- id: DF-CHIMERA-V2-99
+  title: Make [full] extra testable with suite deps
+  criteria:
+  - fresh [full] venv runs tests/test_lsp_lint_plugins.py without pylsp ModuleNotFoundError
+    (MIRRORED)
+  - fresh [full] venv full suite 0 failed
+  status: complete
+  created_at: '2026-10-24T16:48:38.516748+00:00'
+  completed_at: '2026-10-24T16:56:25.272960+00:00'
+- id: DF-CHIMERA-V2-98
+  title: Deployed :8765 current with HEAD fixes
+  criteria:
+  - scripts/smoke_live.py exits 0 with deployment CURRENT or CODE-CURRENT
+  - /health commit matches HEAD and unit restarted after DF-93 fix
+  status: complete
+  created_at: '2026-10-24T16:48:39.142138+00:00'
+  completed_at: '2026-10-24T16:56:26.067129+00:00'
+- id: DOC-25
+  title: Document agent discovery card route
+  criteria:
+  - Document GET /.well-known/agent-card.json in docs/INTEGRATION.md and docs/SECURITY.md
+    with keyless status and AgentCard purpose; grep verifies both files
+  status: complete
+  created_at: '2026-10-24T22:40:43.776242+00:00'
+  completed_at: '2026-10-24T22:45:48.519648+00:00'
+- id: DOC-26
+  title: Document destructive web debug reset boundary
+  criteria:
+  - Document POST /web/debug/reset in docs/INTEGRATION.md as a dev/test-only destructive
+    reset, including its 404 default gate and session-drop warning; grep -n 'debug/reset'
+    docs/INTEGRATION.md returns the entry.
+  status: complete
+  created_at: '2026-10-25T05:04:07.818918+00:00'
+  completed_at: '2026-10-25T05:09:18.114367+00:00'
+- id: INT-CI-018
+  title: Classify GitHub integration failure 40140359467
+  criteria:
+  - Inspect GitHub run 40140359467 logs and identify the exact failing integration
+    test and AssertionError
+  - Run the current-head integration suite and record whether it passes
+  - If the failure is transient or fixed at current HEAD, document the classification;
+    if a real regression is reproduced, implement the minimal fix with a regression
+    test
+  status: complete
+  created_at: '2026-10-25T11:58:18.091226+00:00'
+  completed_at: '2026-10-25T19:09:23.148228+00:00'
+- id: DF-CHIMERA-V2-100
+  title: 'release-verify fails on every tag: restore the speed formation to the shipped
+    template and add a non-tag-gated regression test'
+  criteria:
+  - chimera.yaml.example declares the speed formation again so a config generated
+    by chimera config init exposes it (grep -c '^  speed:' chimera.yaml.example prints
+    1)
+  - 'both release-gate probe legs pass on this tree: probe_mcp_stdio.py --formation=simple
+    and --formation=speed both exit 0 printing PROBE OK'
+  - a non-tag-gated regression test parses the formations the release-verify job probes
+    out of .github/workflows/ci.yml and asserts the template-generated config declares
+    them; it fails on the pre-fix template
+  status: complete
+  created_at: '2026-10-25T23:41:03.519167+00:00'
+  completed_at: '2026-10-26T00:07:46.520452+00:00'
+- id: README-7
+  title: Review README after v0.2.8
+  criteria:
+  - At the published tip, README.md has a review/update dated at or after v0.2.8,
+    and its user-facing claims are reconciled against the post-release changes; verify
+    with git log and a source-grounded README diff/review artifact. Preserve exact
+    command/output in worker_summary.
+  status: complete
+  created_at: '2026-10-27T21:31:13.532707+00:00'
+  completed_at: '2026-10-27T21:52:13.481917+00:00'
+- id: README-8
+  title: P4 - README.md has no explicit Build or Limits/Known Gaps section for a new
+    reader
+  criteria:
+  - README.md contains an explicit Build/Development answer with the supported build/install
+    command, verified against the repo source
+  - README.md contains an explicit Limits/Known Gaps section naming the provider/live-service
+    and unsupported/partial behavior boundaries
+  - grep -c '^## Build' README.md prints >= 1
+  - grep -cE '^## (Limits|Known Gaps)' README.md prints >= 1
+  status: complete
+  created_at: '2026-10-28T03:10:45.821384+00:00'
+  completed_at: '2026-10-28T03:33:08.670005+00:00'
+- id: RELEASE-BLOCKER-004
+  title: '[releng] Cut v0.2.9: version-prep commit, exact-SHA CI, annotated tag, GitHub
+    Release, artifact gates'
+  criteria:
+  - 'Version stamps are 0.2.9 everywhere: pyproject.toml project.version, src/chimera/__init__.py
+    _FALLBACK_VERSION, and the editable-package version line in uv.lock all read 0.2.9
+    (verify with grep and a TOML parse)'
+  - CHANGELOG.md carries a [0.2.9] dated release section covering the changes since
+    v0.2.8 with an empty [Unreleased] section, matching the layout of the earlier
+    prep commits (git show ba90082 -- CHANGELOG.md)
+  - The annotated tag v0.2.9 points at the version-prep commit, exists on both remotes
+    (git ls-remote origin and github refs/tags/v0.2.9), and gh release view v0.2.9
+    --repo totalwindupflightsystems/chimera shows a published Release object; GitHub
+    CI is green on the prep commit and on the tag
+  - 'The published artifact passes the release surface: a fresh venv install of the
+    0.2.9 artifact runs scripts/quickstart_battery.py --expected-version 0.2.9 with
+    exit 0'
+  status: in_progress
+  created_at: '2026-10-30T22:14:42.797612+00:00'
