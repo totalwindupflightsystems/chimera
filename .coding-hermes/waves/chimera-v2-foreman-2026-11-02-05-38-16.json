@@ -1,0 +1,27 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-02-05-38-16",
+  "block": "REVIEW-CHIMERA-005",
+  "wave_budget": 10,
+  "slots": 6,
+  "wave_size": 0,
+  "path": "verification-only",
+  "why_no_wave": "block_drive found 0 ready rows; REVIEW-CHIMERA-003 and INT-SEC-001 are owner-gated, so no worker dispatch was authorized",
+  "base_sha": "21471f8f2be669e7384a98eeabf1f9e3f218c19e",
+  "rows": [
+    {
+      "task_id": "REVIEW-CHIMERA-003",
+      "status": "pending",
+      "disposition": "owner-gated: Bane archive/delete decision (re-probed 2026-11-02 unchanged: 5 dirty files, 0 unpushed, key present in live config, 0 scheduler lanes)"
+    },
+    {
+      "task_id": "INT-SEC-001",
+      "status": "pending",
+      "disposition": "owner-gated: Bane gateway-key rotation"
+    }
+  ],
+  "local_gate": "PASS: pytest 2176 passed/62 skipped/0 failed; compileall PASS; ruff PASS; fsck PASS; smoke_live PASS",
+  "remote_ci_before_closeout": "green at 21471f8 (latest 3 runs success); exact-head closeout run pending",
+  "workers": [],
+  "finished_at": "2026-11-02T05:47:26Z",
+  "status": "finished"
+}
