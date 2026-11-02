@@ -1,0 +1,36 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-02-15-48-35",
+  "block": "REVIEW-CHIMERA-005",
+  "wave_budget": 11,
+  "slots": 6,
+  "wave_size": 0,
+  "path": "verification-only",
+  "why_no_wave": "block_drive found 0 ready rows; REVIEW-CHIMERA-003 and INT-SEC-001 owner-gated (Bane); the new finding INT-DEEPSEEK-001 filed this tick is owner-gated on external billing, so no worker dispatch was authorized",
+  "base_sha": "6a7f569f0cea8bcbf9c5f4c53a2b0eec8e339f47",
+  "rows": [
+    {
+      "task_id": "REVIEW-CHIMERA-003",
+      "status": "pending",
+      "disposition": "owner-gated: Bane archive/delete decision (re-probed 2026-11-02T15:49Z unchanged: 5 dirty files, 0 unpushed, sk-or-v1 key present in chimera.yaml, 0 scheduler lanes)"
+    },
+    {
+      "task_id": "INT-SEC-001",
+      "status": "pending",
+      "disposition": "owner-gated: Bane gateway-key rotation"
+    },
+    {
+      "task_id": "INT-DEEPSEEK-001",
+      "status": "pending",
+      "disposition": "filed this tick: owner-gated on DeepSeek PAYG recharge/repoint (live smoke 502)"
+    }
+  ],
+  "finding": "live smoke RED (smoke_live.py exit 1, /v1/deliberate HTTP 502, deepseek 'Insufficient Balance') -> filed INT-DEEPSEEK-001",
+  "local_gate": "PASS: pytest 2176 passed/62 skipped/0 failed (116.34s); compileall src/ PASS; ruff check . PASS; git fsck --no-dangling PASS",
+  "remote_ci_before_closeout": "green: latest 3 GitHub Actions runs on main conclusion=success; exact-head closeout run pending",
+  "off_by_one": "sub_12f607 provider-quota-exhaustion-deliberate-502 (post-debug, queued)",
+  "tool_fix": "acceptance_gate.py (untracked ops tooling) read only the legacy 'acceptance' alias -> every canon row graded 'REJECT: empty'; patched foreman-direct (acceptance_criteria first, alias fallback) and verified: board audit 3 open rows 0 failing 3 passing (was 0/3), legacy payload still PASS",
+  "memory": "2e93ab2b-1143-4b7b-a2bc-3951d335c3b3 (readback VERIFIED, key /project/chimera-v2/status, ns chimera-v2)",
+  "workers": [],
+  "finished_at": "2026-11-02T16:10:00Z",
+  "status": "finished"
+}
