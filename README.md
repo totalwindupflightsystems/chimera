@@ -196,7 +196,9 @@ Common knobs can be set from the environment instead of editing the YAML
 (env vars win):
 
 - `CHIMERA_CONFIG` — config file path
-- `CHIMERA_HOST`, `CHIMERA_PORT` — server bind address
+- `CHIMERA_HOST`, `CHIMERA_PORT` — server bind address and port (`CHIMERA_PORT`
+  also governs the listening port inside the Docker image, so it must match the
+  published host port)
 - `CHIMERA_DISPATCHER`, `CHIMERA_WORKER`, `CHIMERA_AGGREGATOR` — model defaults
 - `CHIMERA_LOG_LEVEL` — observability log level
 - `CHIMERA_AUTH_ENABLED`, `CHIMERA_RATE_LIMIT_ENABLED`,
@@ -558,6 +560,16 @@ dev image (`Dockerfile.dev`) and a compose file:
 docker build -f Dockerfile.dev -t chimera-dev .     # build this checkout
 docker run -p 8765:8765 -e DEEPSEEK_API_KEY=sk-... chimera-dev
 cp chimera.yaml.example chimera.yaml && docker compose up -d    # or compose
+```
+
+The images do not pin a `--port` flag: `CHIMERA_PORT` is the one knob that
+decides both the port the container listens on and the host port compose
+publishes, so a non-default port is a single variable on either path:
+
+```bash
+docker run -p 8791:8791 -e CHIMERA_PORT=8791 -e DEEPSEEK_API_KEY=sk-... chimera-dev
+CHIMERA_PORT=8791 docker compose up -d          # publishes AND listens on 8791
+curl -s localhost:8791/v1/health/live           # 200 when the port took effect
 ```
 
 Run the gateway from a checkout — create the local config first (the repo
