@@ -1,0 +1,52 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-04-18-25-47",
+  "tick_number": 486,
+  "mode": "wave-recovery",
+  "block": "README-13",
+  "block_label": "README health sweep 2026-11-03 — documentation/ops findings (README-11, README-12, README-13)",
+  "resumed_from": {
+    "tick_id": "chimera-v2-foreman-2026-11-04-05-45-41",
+    "manifest": ".coding-hermes/waves/chimera-v2-foreman-2026-11-04-05-45-41.json",
+    "state_found": "one dispatched worker (README-13, pid 1102247) dead; branch wt/README-13 with 0 commits ahead of base af9666c and 4 uncommitted files"
+  },
+  "capacity": {
+    "nproc": 16,
+    "loadavg_1m": 11.39,
+    "formula": "max(1,min(6,16-ceil(11.39)))=4",
+    "slots": 4,
+    "wave_budget": 7
+  },
+  "path": "wave-recovery",
+  "why_this_block": "RESUME-FIRST: the previous tick's manifest names block README-13 and it still had a ready row (README-13). block_drive ranks it second (92%), the top-ranked QA block is a remote-harness QA row, not a code row.",
+  "rows_recovered": [
+    {
+      "task_id": "README-13",
+      "state_found": "worker dead (log: 'Gateway disconnected' 2026-11-04T06:04Z); 4 uncommitted files; 0 commits on branch",
+      "recovery": "stewarded the uncommitted tree instead of re-dispatching (worker-uncommitted-work-recovery); dropped the worker's unnecessary compose entrypoint/command override",
+      "worker_commit": "a683005",
+      "judge_first": "e11ffa16 — tier2 INCOMPLETE (README not documented; compose header hardcoded 8765)",
+      "rework_commit": "c9cd53b",
+      "judge_final": "62fdb35e — tier2 COMPLETE, tier1 DEGRADED (docker/docs-only diff)",
+      "merge_commit": "f7fb779",
+      "landed_on": "origin/main + github/main at e2a7342 (board commit), parity 0/0"
+    }
+  ],
+  "rows_already_landed": ["README-11", "README-12"],
+  "worktrees_removed": [
+    "/home/kara/worktrees/chimera-v2-README-13",
+    "/home/kara/worktrees/chimera-v2-README-13-fixup"
+  ],
+  "branches_deleted": ["wt/README-13", "wt/README-13-fixup", "wt/README-11", "wt/README-12"],
+  "gates": {
+    "local": "PASS — docker compose config -q rc=0; live compose CHIMERA_PORT=8791 Up (healthy) + /v1/health/live 200 + logs grep ':8791'=1; default path 8765 via docker run 200; ruff clean; pytest tests/test_cli.py tests/test_config.py 102 passed; scripts/check_docs_index.sh rc=0",
+    "remote_ci": "af9666c run 41853346519 integration leg FAILURE (not this tick's) — local integration run in progress; f7fb779/e2a7342 runs queued at close"
+  },
+  "open_rows_after": {
+    "INT-SEC-001": "owner-gated (gateway key rotation; /openapi.json 404 on 0.22.5)",
+    "REVIEW-CHIMERA-003": "owner decision (dormant ~/chimera v1 duplicate with a literal sk-or key)",
+    "QA-CHIMERA-V2-DOCS-1": "ready, next block (QA-CHIMERA-V2-DOCS-2) — fresh bunker QA launch+collect"
+  },
+  "status": "finished",
+  "finished_at": "2026-11-04T19:05:00Z",
+  "closeout_sha": "PENDING"
+}
