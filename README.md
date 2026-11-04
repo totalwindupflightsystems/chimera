@@ -5,7 +5,7 @@
 [![CI](https://github.com/totalwindupflightsystems/chimera/actions/workflows/ci.yml/badge.svg)](https://github.com/totalwindupflightsystems/chimera/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/chimera-deliberation)](https://pypi.org/project/chimera-deliberation/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Contributor Covenant](https://img.shields.io/badge/Contributor_Covenant-3.0-4baaaa.svg)](CODE_OF_CONDUCT.md)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor_Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 One API call. A team of models. One answer.
