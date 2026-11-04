@@ -2335,3 +2335,37 @@ tasks:
   status: complete
   created_at: '2026-10-30T22:14:42.797612+00:00'
   completed_at: '2026-10-30T23:08:41.360518+00:00'
+- id: README-11
+  title: README badge and Code of Conduct version disagree (Contributor Covenant 3.0
+    vs 2.0)
+  criteria:
+  - 'README.md and CODE_OF_CONDUCT.md agree on one Contributor Covenant version: either
+    the README badge token reads 2.0 (option a, document stays as-is) or CODE_OF_CONDUCT.md
+    carries version 3.0 in its Attribution block with the 3.0 covenant URL (option
+    b). Exactly one of: grep -c Contributor_Covenant-2.0 README.md prints 1, or grep
+    -c version.3.0 CODE_OF_CONDUCT.md prints 1. grep -c contributor-covenant.org/version/
+    CODE_OF_CONDUCT.md prints 1.'
+  status: complete
+  created_at: '2026-11-04T04:33:16.441777+00:00'
+  completed_at: '2026-11-04T05:50:40.408802+00:00'
+- id: README-12
+  title: CODE_OF_CONDUCT.md still carries the unfilled template placeholder INSERT
+    CONTACT METHOD
+  criteria:
+  - 'CODE_OF_CONDUCT.md contains no template placeholder: grep -c INSERT.CONTACT.METHOD
+    CODE_OF_CONDUCT.md prints 0, and the Enforcement section names a concrete, repo-authorized
+    reporting address (an address already published in this repository by the maintainers,
+    e.g. in SECURITY.md or pyproject.toml) rather than an invented one, and the surrounding
+    sentence stays grammatical.'
+  status: in_progress
+  created_at: '2026-11-04T04:33:35.309141+00:00'
+- id: README-13
+  title: 'docker-compose CHIMERA_PORT knob is dead: image CMD pins --port 8765'
+  criteria:
+  - 'CHIMERA_PORT is the single source of the container listening port: Dockerfile
+    and Dockerfile.dev CMD pass no --port flag, the compose port mapping and healthcheck
+    use the same CHIMERA_PORT expression so host and container ports agree, no file
+    still hardcodes a conflicting 8765 where CHIMERA_PORT is advertised, and README
+    documents the behavior consistently with the shipped files.'
+  status: in_progress
+  created_at: '2026-11-04T04:34:00.252116+00:00'

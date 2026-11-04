@@ -1,0 +1,77 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-04-05-45-41",
+  "tick_number": 485,
+  "mode": "resume",
+  "resumed_from": {
+    "tick_id": "chimera-v2-foreman-2026-11-04-04-17-06",
+    "tick_number": 484,
+    "manifest": ".coding-hermes/waves/chimera-v2-foreman-2026-11-04-04-17-06.json",
+    "state_found": "tick 484 wrote the README-13 wave manifest then died before any closeout: README-11 (60b5cbe) and README-12 (863a7f8) had committed in their worktrees but were unmerged; README-13 worktree carried uncommitted edits in 4 files"
+  },
+  "block": "README-13",
+  "block_label": "README health sweep 2026-11-03 — documentation/ops findings (README-11, README-12, README-13)",
+  "block_done_at_open": "10/13 (76%)",
+  "wave_budget": 11,
+  "slots": 2,
+  "capacity": {
+    "nproc": 16,
+    "loadavg_1m": 13.23,
+    "formula": "max(1,min(6,16-ceil(13.23)))=2"
+  },
+  "path": "resume-wave",
+  "why_this_block": "RESUME-FIRST rule: the previous tick's manifest names block README-13, and that block still has ready rows. block_drive.py ranks README-13 third (76%, 3 ready) behind QA-CHIMERA-V2-DOCS-2 (94%) whose two rows are one QA-harness root cause, not worker-executable and not mutually independent.",
+  "wave_size": 1,
+  "wave_size_note": "Only README-13 required a new dispatch: README-11 and README-12 already held committed worker work from tick 484 and were verified + merged by this tick. slots=2 but the block had one dispatchable row; the second slot carried the merge/gate lane.",
+  "base_sha": "728063e",
+  "base_ref": "origin/main",
+  "rows": [
+    {
+      "task_id": "README-11",
+      "status": "merged",
+      "source": "tick-484 worker worktree",
+      "worktree": "/home/kara/worktrees/chimera-v2-README-11",
+      "branch": "wt/README-11",
+      "worker_commit": "60b5cbe",
+      "merge_commit": "c1aefee",
+      "files_owned": ["README.md"]
+    },
+    {
+      "task_id": "README-12",
+      "status": "merged",
+      "source": "tick-484 worker worktree",
+      "worktree": "/home/kara/worktrees/chimera-v2-README-12",
+      "branch": "wt/README-12",
+      "worker_commit": "863a7f8",
+      "merge_commit": "5c76e26",
+      "files_owned": ["CODE_OF_CONDUCT.md"]
+    },
+    {
+      "task_id": "README-13",
+      "status": "dispatched",
+      "worktree": "/home/kara/worktrees/chimera-v2-README-13",
+      "branch": "wt/README-13",
+      "base_sha": "728063e",
+      "files_owned": ["Dockerfile", "Dockerfile.dev", "docker-compose.yml", "chimera.yaml.docker"],
+      "rework": "prior worker left an uncommitted option-(a) implementation (CMD [\"serve\"], ENV defaults, parameterised HEALTHCHECK) that was never verified; re-dispatched with rework instruction to review that tree and prove it live"
+    }
+  ],
+  "workers": [
+    {
+      "task_id": "README-13",
+      "model": "k3",
+      "provider": "kimi-for-coding",
+      "pid": 1102247,
+      "launch_log": "/home/kara/.hermes/cache/scratch/worker-README-13.log",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-README-13-2026-11-04-05-45-41.txt"
+    }
+  ],
+  "gitreins": {
+    "README-11": "complete (verdict 623cb5a2: tier2 COMPLETE, tier1 DEGRADED docs-only rc=2)",
+    "README-12": "in_progress",
+    "README-13": "in_progress"
+  },
+  "local_gate": "PENDING",
+  "remote_ci": "PENDING",
+  "finished_at": null,
+  "status": "running"
+}
