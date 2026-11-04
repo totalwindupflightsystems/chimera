@@ -2367,5 +2367,6 @@ tasks:
     use the same CHIMERA_PORT expression so host and container ports agree, no file
     still hardcodes a conflicting 8765 where CHIMERA_PORT is advertised, and README
     documents the behavior consistently with the shipped files.'
-  status: in_progress
+  status: complete
   created_at: '2026-11-04T04:34:00.252116+00:00'
+  completed_at: '2026-11-04T18:37:36.105221+00:00'

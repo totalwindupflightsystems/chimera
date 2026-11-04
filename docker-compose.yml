@@ -3,8 +3,8 @@
 # Quick start:
 #   1. cp chimera.yaml.example chimera.yaml   (or just set env vars below)
 #   2. docker compose up -d
-#   3. curl http://localhost:8765/v1/health
-#   4. open http://localhost:8765/web/
+#   3. curl http://localhost:${CHIMERA_PORT:-8765}/v1/health
+#   4. open http://localhost:${CHIMERA_PORT:-8765}/web/
 #
 # All settings are configurable via CHIMERA_* env vars —
 # no YAML editing required unless you need fine-grained model catalogs.
@@ -13,8 +13,12 @@ services:
   chimera:
     build: .
     container_name: chimera
+    # CHIMERA_PORT is the single knob for BOTH the port the container
+    # listens on and the host port it is published to.
     ports:
       - "${CHIMERA_PORT:-8765}:${CHIMERA_PORT:-8765}"
+      # Both sides use the same expression, and the image no longer pins
+      # --port in its CMD, so CHIMERA_PORT really governs the listening port.
     environment:
       # ── Server ──
       - CHIMERA_HOST=${CHIMERA_HOST:-0.0.0.0}
