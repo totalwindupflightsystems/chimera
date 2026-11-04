@@ -13,8 +13,12 @@ services:
   chimera:
     build: .
     container_name: chimera
+    # CHIMERA_PORT is the single knob for BOTH the port the container
+    # listens on and the host port it is published to.
     ports:
       - "${CHIMERA_PORT:-8765}:${CHIMERA_PORT:-8765}"
+      # Both sides use the same expression, and the image no longer pins
+      # --port in its CMD, so CHIMERA_PORT really governs the listening port.
     environment:
       # ── Server ──
       - CHIMERA_HOST=${CHIMERA_HOST:-0.0.0.0}

@@ -35,8 +35,14 @@ ENV CHIMERA_CONFIG=/etc/chimera/chimera.yaml
 
 EXPOSE 8765
 
+# Image defaults: CHIMERA_PORT governs the port the container listens on;
+# a compose/environment value still overrides these.
+ENV CHIMERA_HOST=0.0.0.0
+ENV CHIMERA_PORT=8765
+
+# Health check (shell form so CHIMERA_PORT expands at runtime)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8765/v1/health/live || exit 1
+    CMD curl -f http://localhost:${CHIMERA_PORT:-8765}/v1/health/live || exit 1
 
 ENTRYPOINT ["chimera"]
-CMD ["serve", "--host", "0.0.0.0", "--port", "8765"]
+CMD ["serve"]
