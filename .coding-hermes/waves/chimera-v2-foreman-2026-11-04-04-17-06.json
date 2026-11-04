@@ -2,7 +2,7 @@
   "tick_id": "chimera-v2-foreman-2026-11-04-04-17-06",
   "tick_number": 484,
   "block": "README-13",
-  "block_label": "README health sweep 2026-11-03 — documentation/ops findings (README-11, README-12, README-13)",
+  "block_label": "README health sweep 2026-11-03 \u2014 documentation/ops findings (README-11, README-12, README-13)",
   "block_done_at_open": "10/13 (76%)",
   "wave_budget": 8,
   "slots": 3,
@@ -13,47 +13,80 @@
   },
   "wave_size": 3,
   "path": "wave",
-  "why_this_block": "block_drive.py ranked QA-CHIMERA-V2-DOCS-2 highest (94%, 2 ready) but both of its rows are one root cause (COLLECT-ABORT on bunker-mvp, tick-death orphan lock) owned by the QA lane's remote harness — not code-worker executable and not mutually independent. README block is the highest-ranked block with worker-executable, independent rows.",
+  "why_this_block": "block_drive.py ranked QA-CHIMERA-V2-DOCS-2 highest (94%, 2 ready) but both of its rows are one root cause (COLLECT-ABORT on bunker-mvp, tick-death orphan lock) owned by the QA lane's remote harness \u2014 not code-worker executable and not mutually independent. README block is the highest-ranked block with worker-executable, independent rows.",
   "independence_check": "README-11 -> README.md only (option a pinned in brief, option b forbidden so CODE_OF_CONDUCT.md is not touched); README-12 -> CODE_OF_CONDUCT.md only; README-13 -> Dockerfile, Dockerfile.dev, docker-compose.yml only (README edit forbidden in brief to avoid the README.md seam). Disjoint file sets, no depends_on edges on any row.",
   "base_sha": "728063e",
   "base_ref": "origin/main",
   "rows": [
     {
       "task_id": "README-11",
-      "status": "dispatching",
+      "status": "merged",
       "worktree": "/home/kara/worktrees/chimera-v2-README-11",
       "branch": "wt/README-11",
       "base_sha": "728063e",
-      "files_owned": ["README.md"],
-      "fix_direction": "(a) correct the badge token to Contributor_Covenant-2.0; do not touch CODE_OF_CONDUCT.md"
+      "files_owned": [
+        "README.md"
+      ],
+      "fix_direction": "(a) correct the badge token to Contributor_Covenant-2.0; do not touch CODE_OF_CONDUCT.md",
+      "merge_commit": "c1aefee"
     },
     {
       "task_id": "README-12",
-      "status": "dispatching",
+      "status": "merged",
       "worktree": "/home/kara/worktrees/chimera-v2-README-12",
       "branch": "wt/README-12",
       "base_sha": "728063e",
-      "files_owned": ["CODE_OF_CONDUCT.md"],
-      "fix_direction": "replace the INSERT CONTACT METHOD placeholder with dev@totalwindup.com (maintainer-published address, pyproject.toml:11); no invented address"
+      "files_owned": [
+        "CODE_OF_CONDUCT.md"
+      ],
+      "fix_direction": "replace the INSERT CONTACT METHOD placeholder with dev@totalwindup.com (maintainer-published address, pyproject.toml:11); no invented address",
+      "merge_commit": "5c76e26"
     },
     {
       "task_id": "README-13",
-      "status": "dispatching",
+      "status": "merged",
       "worktree": "/home/kara/worktrees/chimera-v2-README-13",
       "branch": "wt/README-13",
       "base_sha": "728063e",
-      "files_owned": ["Dockerfile", "Dockerfile.dev", "docker-compose.yml"],
-      "fix_direction": "fix direction (a): drop the pinned --port from both image CMDs so CHIMERA_PORT governs the listening port; compose mapping + healthcheck already use ${CHIMERA_PORT:-8765}"
+      "files_owned": [
+        "Dockerfile",
+        "Dockerfile.dev",
+        "docker-compose.yml"
+      ],
+      "fix_direction": "fix direction (a): drop the pinned --port from both image CMDs so CHIMERA_PORT governs the listening port; compose mapping + healthcheck already use ${CHIMERA_PORT:-8765}",
+      "worker_commit": "a683005",
+      "merge_commit": "f7fb779"
     }
   ],
   "workers": [
-    {"task_id": "README-11", "model": "k3", "provider": "kimi-for-coding", "pid": null},
-    {"task_id": "README-12", "model": "k3", "provider": "kimi-for-coding", "pid": null},
-    {"task_id": "README-13", "model": "k3", "provider": "kimi-for-coding", "pid": null}
+    {
+      "task_id": "README-11",
+      "model": "k3",
+      "provider": "kimi-for-coding",
+      "pid": null
+    },
+    {
+      "task_id": "README-12",
+      "model": "k3",
+      "provider": "kimi-for-coding",
+      "pid": null
+    },
+    {
+      "task_id": "README-13",
+      "model": "k3",
+      "provider": "kimi-for-coding",
+      "pid": null
+    }
   ],
-  "gitreins": {"README-11": "in_progress", "README-12": "in_progress", "README-13": "in_progress"},
+  "gitreins": {
+    "README-11": "in_progress",
+    "README-12": "in_progress",
+    "README-13": "in_progress"
+  },
   "local_gate": "PENDING",
   "remote_ci": "PENDING",
-  "finished_at": null,
-  "status": "dispatching"
+  "finished_at": "2026-11-04T18:58:00Z",
+  "status": "recovered",
+  "recovered_by_tick": "chimera-v2-foreman-2026-11-04-18-25-47",
+  "recovery_note": "tick 485 recovered this wave (merged README-11/12, re-dispatched README-13) and this tick recovered 485's leftover README-13 work. All three rows are complete on origin/main f7fb779."
 }

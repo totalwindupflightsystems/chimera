@@ -9,7 +9,7 @@
     "state_found": "tick 484 wrote the README-13 wave manifest then died before any closeout: README-11 (60b5cbe) and README-12 (863a7f8) had committed in their worktrees but were unmerged; README-13 worktree carried uncommitted edits in 4 files"
   },
   "block": "README-13",
-  "block_label": "README health sweep 2026-11-03 — documentation/ops findings (README-11, README-12, README-13)",
+  "block_label": "README health sweep 2026-11-03 \u2014 documentation/ops findings (README-11, README-12, README-13)",
   "block_done_at_open": "10/13 (76%)",
   "wave_budget": 11,
   "slots": 2,
@@ -33,7 +33,9 @@
       "branch": "wt/README-11",
       "worker_commit": "60b5cbe",
       "merge_commit": "c1aefee",
-      "files_owned": ["README.md"]
+      "files_owned": [
+        "README.md"
+      ]
     },
     {
       "task_id": "README-12",
@@ -43,16 +45,27 @@
       "branch": "wt/README-12",
       "worker_commit": "863a7f8",
       "merge_commit": "5c76e26",
-      "files_owned": ["CODE_OF_CONDUCT.md"]
+      "files_owned": [
+        "CODE_OF_CONDUCT.md"
+      ]
     },
     {
       "task_id": "README-13",
-      "status": "dispatched",
+      "status": "merged",
       "worktree": "/home/kara/worktrees/chimera-v2-README-13",
       "branch": "wt/README-13",
       "base_sha": "728063e",
-      "files_owned": ["Dockerfile", "Dockerfile.dev", "docker-compose.yml", "chimera.yaml.docker"],
-      "rework": "prior worker left an uncommitted option-(a) implementation (CMD [\"serve\"], ENV defaults, parameterised HEALTHCHECK) that was never verified; re-dispatched with rework instruction to review that tree and prove it live"
+      "files_owned": [
+        "Dockerfile",
+        "Dockerfile.dev",
+        "docker-compose.yml",
+        "chimera.yaml.docker"
+      ],
+      "rework": "prior worker left an uncommitted option-(a) implementation (CMD [\"serve\"], ENV defaults, parameterised HEALTHCHECK) that was never verified; re-dispatched with rework instruction to review that tree and prove it live",
+      "worker_commit": "a683005",
+      "rework_commit": "c9cd53b",
+      "merge_commit": "f7fb779",
+      "verdict": "62fdb35e (tier2 COMPLETE, tier1 DEGRADED)"
     }
   ],
   "workers": [
@@ -70,8 +83,29 @@
     "README-12": "in_progress",
     "README-13": "in_progress"
   },
-  "local_gate": "PENDING",
-  "remote_ci": "PENDING",
-  "finished_at": null,
-  "status": "running"
+  "local_gate": "PASS (docker compose config -q; ruff check src tests; pytest tests/test_cli.py tests/test_config.py = 102 passed; scripts/check_docs_index.sh)",
+  "remote_ci": "queued-for f7fb779 at close; prior tip af9666c integration leg red (filed separately)",
+  "finished_at": "2026-11-04T18:58:00Z",
+  "status": "recovered",
+  "recovered_by_tick": "chimera-v2-foreman-2026-11-04-18-25-47",
+  "recovery": {
+    "README-13": {
+      "state_found": "worker pid 1102247 dead (log ends 'Gateway disconnected', 2026-11-04T06:04Z); branch wt/README-13 at base af9666c with 0 commits ahead and 4 uncommitted files (Dockerfile, Dockerfile.dev, docker-compose.yml, chimera.yaml.docker)",
+      "action": "stewarded the uncommitted tree (worker-uncommitted-work-recovery), dropped an unnecessary compose entrypoint/command override, committed a683005",
+      "judge": "verdict e11ffa16 FAIL/INCOMPLETE (tier2: README not documented, compose header hardcoded 8765)",
+      "rework": "documentation findings fixed foreman-direct, committed c9cd53b",
+      "rejudge": "verdict 62fdb35e tier2 COMPLETE (tier1 DEGRADED: docker/docs-only diff)",
+      "merge": "git merge --no-ff wt/README-13 -> f7fb779, pushed origin + github, parity 0/0",
+      "live_acceptance": "CHIMERA_PORT=8791 docker compose up -d -> Up 21s (healthy); /v1/health/live 200; docker logs grep ':8791' = 1; default path (unset) -> container 8765, 200",
+      "board": "README-13 complete (event 2897)"
+    },
+    "README-11": {
+      "state_found": "already merged by tick 485 (merge c1aefee)",
+      "action": "none - pre-existing closed row verified"
+    },
+    "README-12": {
+      "state_found": "already merged by tick 485 (merge 5c76e26); gitreins record left in_progress with verdict 3bcb6633 tier2 COMPLETE / tier1 DEGRADED (docs-only)",
+      "action": "none - board row was already closed with the DEGRADED disclosure"
+    }
+  }
 }
