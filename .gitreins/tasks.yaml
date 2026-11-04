@@ -2370,3 +2370,13 @@ tasks:
   status: complete
   created_at: '2026-11-04T04:34:00.252116+00:00'
   completed_at: '2026-11-04T18:37:36.105221+00:00'
+- id: INT-CI-020
+  title: Classify and resolve the integration-leg CI red (run 41853346519, af9666c)
+  criteria:
+  - 'Local reproduction at a named tip with exit code+tail; cause named from evidence
+    (code vs secret/billing); if code red: failing test ids, assertions, introducing
+    commit, fix green; if billing: verbatim provider error and account to top up;
+    row complete only when a later main run reports integration=success or cause proven
+    outside repo with owner action in blocked_reason'
+  status: in_progress
+  created_at: '2026-11-04T18:55:52.072720+00:00'
