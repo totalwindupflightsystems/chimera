@@ -13,6 +13,7 @@
 - [RESILIENCE.md](RESILIENCE.md) — retries, backpressure, format negotiation
 - [FAILURE_RESILIENCE.md](FAILURE_RESILIENCE.md) — partial failures, token limits, budget exhaustion
 - [LOCAL_CI.md](LOCAL_CI.md) — reproduce the hosted CI workflow locally with `act` (runner image pin, per-job commands)
+- [operations.md](operations.md) — deploy, supervision/restart policy, health probes, the `/metrics` families and scrape config, incident path
 - [REPO_LAYOUT.md](REPO_LAYOUT.md) — tracked repo-root layout, plus the intentional local-only exceptions (live config, harness state, ignore-rule policy)
 - [GITREINS.md](GITREINS.md) — the quality gate: lanes, DEGRADED-PASS/skip semantics, the staged-diff verdict-ordering trap
 - [traceability-doctrine.md](traceability-doctrine.md) — the `ch:trace` marker grammar, close-out tiers, and the evidence/witness contract

@@ -43,6 +43,7 @@ from chimera.api.rate_limit import RateLimiter
 from chimera.config import ChimeraConfig, load_config, provider_credential_resolved
 from chimera.engine import DeliberationTrace, Engine, WorkerFailure
 from chimera.gateway import LiteLLMGateway, prewarm_litellm_background
+from chimera.metrics import MetricsMiddleware, render_metrics
 from chimera.observability import configure_logging
 
 log = structlog.get_logger("chimera.api")
@@ -242,6 +243,13 @@ def create_app(
             prewarm_task.cancel()
 
     app = FastAPI(title="Chimera", version=__version__, lifespan=lifespan)
+
+    # CHIMERA-V2-OPS-001: every HTTP request is counted and timed. The wrapper is
+    # pure ASGI so SSE bodies pass through unbuffered, and ``GET /metrics``
+    # (registered in _register_routes) renders the registry in Prometheus text
+    # format. Without this the service is only *observable* by asking a user
+    # whether it feels slow.
+    app.add_middleware(MetricsMiddleware)
 
     from fastapi.responses import JSONResponse
 
@@ -1106,6 +1114,24 @@ async def _run_chat_deliberation(request: Request, body: ChatCompletionRequest) 
 
 
 def _register_routes(app: FastAPI) -> None:
+    # ---------------------------------------------------------------- #
+    # Ops: Prometheus scrape surface (CHIMERA-V2-OPS-001)
+    # ---------------------------------------------------------------- #
+
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics() -> Response:
+        """Prometheus text exposition of the request/error/duration registry.
+
+        Served on the API's own listener, so a monitor needs no extra port and
+        no second auth scheme; excluded from the counters it reports, so
+        scraping cannot inflate them. Family names are documented in
+        ``docs/operations.md`` next to the scrape config.
+        """
+        return Response(
+            content=render_metrics(),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
+
     # ---------------------------------------------------------------- #
     # F8: Enhanced health checks
     # ---------------------------------------------------------------- #
