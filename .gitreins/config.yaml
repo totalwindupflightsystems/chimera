@@ -1,3 +1,12 @@
+defaults:
+  # The updater prints "Update available: vX → URL" as the FIRST line of every
+  # gitreins invocation, and the tier1 verdict summary reads the first output
+  # line — so on a host that is one release behind, every tier1 is graded FAIL
+  # while the guard itself exits 0 (log: `overall: PASS (DEGRADED — skipped
+  # checks)`). Disabled here so the gate reports the tree, not the version;
+  # upgrade with `pipx upgrade gitreins` and re-enable when the fleet bumps.
+  check_for_updates: false
+
 guards:
   secrets: true
   lint: true
