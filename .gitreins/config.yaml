@@ -6,13 +6,17 @@ guards:
   # Worktree-safe test lane: a fresh worktree has no .venv (gitignored), and a
   # venv-less pytest resolves OFF PATH to a foreign interpreter whose
   # `import chimera` fails in tests/conftest.py (ModuleNotFoundError). Seed the
-  # venv (dev extra = pytest) when it is missing, then run. NOTE: because the
-  # command does not START with `pytest`, gitreins diff mode cannot narrow it —
-  # a triggered tests lane runs the full suite (the previous `uv run pytest …`
-  # form did not start with pytest either, so narrowing never applied here).
+  # venv (dev extra = pytest) when it is missing, then run the VENV's pytest by
+  # path — the seed only guarantees `.venv/bin/pytest` exists, so a bare
+  # `pytest` still resolved to /usr/bin/pytest and failed at conftest import
+  # with `No module named 'structlog'` on every commit that touched Python.
+  # NOTE: `.venv/bin/pytest` still narrows in `test_mode: diff` — the guard's
+  # target builder matches a `.venv/bin/pytest` invocation — but editing THIS
+  # file is itself a force-full trigger, so a commit that touches it runs the
+  # whole suite (see _FORCE_FULL_TEST_GLOBS in engine/guard_manager.py).
   test_command: >-
     test -x .venv/bin/pytest || uv sync --extra dev;
-    pytest -x --tb=short
+    .venv/bin/pytest -x --tb=short
   dead_code: false
   skylos: false
   lsp: true
