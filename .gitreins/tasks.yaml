@@ -2381,3 +2381,21 @@ tasks:
   status: complete
   created_at: '2026-11-04T18:55:52.072720+00:00'
   completed_at: '2026-11-04T19:12:09.360506+00:00'
+- id: CHIMERA-V2-OPS-001
+  title: Expose a Prometheus /metrics endpoint on the API listener and document the
+    scrape path (ops census metrics P1)
+  criteria:
+  - GET /metrics returns 200 with Prometheus text format 0.0.4 content-type and exposes
+    chimera_requests_total, chimera_request_errors_total and chimera_request_duration_seconds
+  - A served request is counted by route TEMPLATE and status class, an unmatched path
+    is counted as route=<unmatched> client_error, and the scrape endpoint does not
+    count itself
+  - 'tests/test_metrics.py asserts the endpoint and the counters, and fails when the
+    handler is removed (negative control: 3 of 5 tests fail on a stripped tree)'
+  - docs/operations.md documents the deploy path, the metric families and a Prometheus
+    scrape config
+  - python3 ~/.hermes/scripts/fleet_ops_check.py --project chimera-v2 --json reports
+    no check=metrics and no check=deploy-doc gap
+  status: complete
+  created_at: '2026-11-07T17:32:30.037518+00:00'
+  completed_at: '2026-11-07T18:08:51.539973+00:00'
