@@ -1,0 +1,40 @@
+name: qa-chimera-v2
+services:
+  chimera:
+    build:
+      context: /home/bunker-951ddc07/qa-chimera-v2
+      dockerfile: Dockerfile
+    container_name: chimera
+    environment:
+      CHIMERA_AGGREGATOR: deepseek/deepseek-v4-pro
+      CHIMERA_AUTH_ENABLED: "false"
+      CHIMERA_DISPATCHER: deepseek/deepseek-v4-pro
+      CHIMERA_HOST: 0.0.0.0
+      CHIMERA_LOG_LEVEL: info
+      CHIMERA_PORT: "8765"
+      CHIMERA_RATE_LIMIT_ENABLED: "false"
+      CHIMERA_WORKER: deepseek/deepseek-v4-pro
+      DEEPSEEK_KEY: ""
+      OPENROUTER_KEY: ""
+      ZAI_KEY: ""
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:8765/v1/health/live
+      timeout: 5s
+      interval: 30s
+      retries: 3
+      start_period: 10s
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 8765
+        published: "8765"
+        protocol: tcp
+    restart: unless-stopped
+networks:
+  default:
+    name: qa-chimera-v2_default

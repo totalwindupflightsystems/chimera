@@ -1,0 +1,47 @@
+/home/bunker-951ddc07/tools/venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session". Set it to "fixture-scope" to keep the current behavior.
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss........... [  3%]
+........................................................................ [  6%]
+........................................................................ [  9%]
+........................................................................ [ 12%]
+.......................................................................s [ 16%]
+...............................................................s........ [ 19%]
+........................................................................ [ 22%]
+........................................................................ [ 25%]
+........................................................................ [ 28%]
+........................................................................ [ 32%]
+........................................................................ [ 35%]
+........................................................................ [ 38%]
+......................................s................................. [ 41%]
+........................................................................ [ 44%]
+........................................................................ [ 48%]
+........................................................................ [ 51%]
+........................................................................ [ 54%]
+........................................................................ [ 57%]
+........................................................................ [ 60%]
+...........................................................s............ [ 64%]
+........................................................................ [ 67%]
+........................................................................ [ 70%]
+........................................................................ [ 73%]
+......................................................................ss [ 76%]
+........................................................................ [ 80%]
+........................................................................ [ 83%]
+........................................................................ [ 86%]
+........................................................................ [ 89%]
+........................................................................ [ 93%]
+........................................................................ [ 96%]
+........................................................................ [ 99%]
+.............                                                            [100%]
+=============================== warnings summary ===============================
+tests/test_gateway_custom_base_url.py::test_gateway_completion_sends_the_namespaced_upstream_id
+tests/test_litellm_prewarm.py::test_real_litellm_prewarm_completes_offline
+tests/test_server_coverage.py::TestLifespanAndWebRouter::test_lifespan_context_invoked_directly
+  /home/bunker-951ddc07/tools/venv/lib/python3.12/site-packages/litellm/litellm_core_utils/logging_worker.py:76: RuntimeWarning: coroutine 'Logging.async_success_handler' was never awaited
+    self._queue = None
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+2178 passed, 67 skipped, 3 warnings in 149.64s (0:02:29)

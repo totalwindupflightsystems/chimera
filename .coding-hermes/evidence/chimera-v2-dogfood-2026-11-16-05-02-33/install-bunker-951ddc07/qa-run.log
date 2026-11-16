@@ -1,0 +1,11 @@
+comm: file 2 is not in sorted order
+comm: file 1 is not in sorted order
+comm: input is not in sorted order
+HARNESS-COMPOSE=ok
+HARNESS_NODE=ok
+QA-DEXDAT-CORE-15 teardown: removed compose leftovers before the docker legs:
+teardown: rm battery container 22e954d7b456
+teardown: rm battery container 6cadbacc4075
+teardown: rm battery container bddfb0f6c393
+teardown: rm battery container fb6a005cf926
+CELLS-DONE

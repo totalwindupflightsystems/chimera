@@ -85,3 +85,50 @@ Scratch instances used for controlled probes: `8901`, `8902` (bad `allowed_model
 ## Rows filed
 
 `DF-CHIMERA-V2-110`, `DF-CHIMERA-V2-111`, `DF-CHIMERA-V2-112`, `PERF-1` — minted with `board_next_id.py` (DF family → 110–112, `PERF` family → `PERF-1`, both families free beforehand), appended via `boardctl create`, verified on disk (`jq` readback, `boardctl validate` → `RESULT: OK (361 warning(s))`, the pre-existing baseline), no duplicate ids.
+
+## Addendum (run 28, cell closure)
+
+The install-leg cells still running when the run-28 report was written have since finished; they are
+closed here from the collected logs (no re-run, no code change). Evidence:
+`.coding-hermes/evidence/chimera-v2-dogfood-2026-11-16-05-02-33/install-bunker-951ddc07/`
+(`qa-evidence.jsonl`, `qa-run.log`, `qa-logs/qa-logs-3012060/`).
+
+### What actually works (live, first-hand)
+
+The documented compose path, which the battery graded UNVERIFIED, serves on the clean machine:
+
+| probe | result |
+| --- | --- |
+| `docker ps` | `chimera` Up 9 minutes (healthy), `0.0.0.0:8765->8765/tcp` |
+| `GET /v1/health/live` x3 | 200 in 2.87 / 3.08 / 2.43 ms |
+| `GET /v1/health` | 200 in 4.15 ms |
+| `POST /v1/deliberate` (no credentials) | 502 in 7.19 s, body names `DEEPSEEK_API_KEY` and `providers.deepseek.api_key_env` |
+
+The 502 leg is the useful product evidence: an unconfigured deployment comes up healthy and fails
+honestly with an actionable remedy instead of answering with the upstream error (the run-19
+`DF-CHIMERA-V2-71` shape). Nothing to fix on this path.
+
+The 2.4-4.2 ms health numbers are *not* a counter-example to `PERF-1`: with every provider missing
+credentials the probes short-circuit, so the unconfigured path never reaches the slow-provider wait
+that `PERF-1` measures. Hence no new PERF row from this addendum.
+
+### Cell verdicts that contradict their own logs
+
+| cell | reported | its own log says |
+| --- | --- | --- |
+| `chaos-shutdown` | OK | `sd.log` (all 6 lines): `UP=0 STOP=0 RESTART=0 KILL=0 KILLRECOVER=0 DOWN=0` — nothing was operated |
+| `chaos-disconnect` | UNVERIFIED | `disc.log:1` = `NETWORK_CUT_APPLIED`; the hosted suite ended 2178 passed / 67 skipped |
+| `docker-deploy` | UNVERIFIED | serves, per the table above |
+| `ci-pass` (act) | red | `ci.log` holds no step stdout at all, so no failing test is named; `lint` died at `ci.log:65` on `ln: failed to create symbolic link 'python': File exists` (setup-python 3.11 toolcache race between the lint job and matrix leg test-1, an act-only condition) |
+
+`ci.log:126/131/136` are the three matrix legs (3.13 3m26.19s, 3.11 3m34.43s, 3.12 3m43.50s), each
+`exitcode '1': failure`. They are **unattributable**, not "the product is red": the same battery
+reported `toolchain-bootstrap` x5, `fresh-install`, `ruff` (rc=0), the native suite and `docker_build`
+all OK, and run 26 measured 2163 passing tests on a real interpreter at this line of code.
+
+### Left behind
+
+Container `chimera` still running on agent `951ddc07` with port 8765 published; the agent was **not**
+destroyed and the stack was **not** torn down — `docker compose down` and agent destroy are
+destructive and this lane is read-only, so both were left for the foreman. Nothing outside
+`.coding-hermes/` and `docs/dogfood/` was touched.

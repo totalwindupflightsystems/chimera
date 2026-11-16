@@ -1,0 +1,141 @@
+time="2026-11-16T05:39:21Z" level=info msg="Using docker host 'unix:///run/bunker/951ddc07/docker.sock', and daemon socket 'unix:///run/bunker/951ddc07/docker.sock'"
+[CI/lint  ] ⭐ Run Set up job
+[CI/lint  ] 🚀  Start image=catthehacker/ubuntu:act-24.04
+[CI/test-1] ⭐ Run Set up job
+[CI/test-1] 🚀  Start image=catthehacker/ubuntu:act-24.04
+[CI/test-2] ⭐ Run Set up job
+[CI/test-2] 🚀  Start image=catthehacker/ubuntu:act-24.04
+[CI/test-3] ⭐ Run Set up job
+[CI/test-3] 🚀  Start image=catthehacker/ubuntu:act-24.04
+[CI/test-3]   🐳  docker pull image=catthehacker/ubuntu:act-24.04 platform=linux/amd64 username= forcePull=true
+[CI/test-2]   🐳  docker pull image=catthehacker/ubuntu:act-24.04 platform=linux/amd64 username= forcePull=true
+[CI/lint  ]   🐳  docker pull image=catthehacker/ubuntu:act-24.04 platform=linux/amd64 username= forcePull=true
+[CI/test-1]   🐳  docker pull image=catthehacker/ubuntu:act-24.04 platform=linux/amd64 username= forcePull=true
+[CI/test-2]   🐳  docker create image=catthehacker/ubuntu:act-24.04 platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[CI/test-1]   🐳  docker create image=catthehacker/ubuntu:act-24.04 platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[CI/lint  ]   🐳  docker create image=catthehacker/ubuntu:act-24.04 platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[CI/test-3]   🐳  docker create image=catthehacker/ubuntu:act-24.04 platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[CI/test-2]   🐳  docker run image=catthehacker/ubuntu:act-24.04 platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[CI/test-3]   🐳  docker run image=catthehacker/ubuntu:act-24.04 platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[CI/lint  ]   🐳  docker run image=catthehacker/ubuntu:act-24.04 platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[CI/test-1]   🐳  docker run image=catthehacker/ubuntu:act-24.04 platform=linux/amd64 entrypoint=["tail" "-f" "/dev/null"] cmd=[] network="host"
+[CI/test-2]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[CI/lint  ]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[CI/test-1]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[CI/test-3]   🐳  docker exec cmd=[node --no-warnings -e console.log(process.execPath)] user= workdir=
+[CI/test-2]   ✅  Success - Set up job
+[CI/test-3]   ✅  Success - Set up job
+[CI/lint  ]   ✅  Success - Set up job
+[CI/test-1]   ✅  Success - Set up job
+[CI/test-1]   ☁  git clone 'https://github.com/actions/setup-python' # ref=v5
+[CI/lint  ]   ☁  git clone 'https://github.com/actions/setup-python' # ref=v5
+[CI/test-3]   ☁  git clone 'https://github.com/actions/setup-python' # ref=v5
+[CI/test-2]   ☁  git clone 'https://github.com/actions/setup-python' # ref=v5
+[CI/test-1] 🧪  Matrix: map[python-version:3.11]
+[CI/test-1] ⭐ Run Main actions/checkout@v4
+[CI/test-1]   🐳  docker cp src=/home/bunker-951ddc07/qa-chimera-v2/. dst=/home/bunker-951ddc07/qa-chimera-v2
+[CI/test-1]   ✅  Success - Main actions/checkout@v4 [321.30532ms]
+[CI/test-1] ⭐ Run Main Set up Python 3.11
+[CI/test-1]   🐳  docker cp src=/home/bunker-951ddc07/.cache/act/actions-setup-python@v5/ dst=/var/run/act/actions/actions-setup-python@v5/
+[CI/lint  ] ⭐ Run Main actions/checkout@v4
+[CI/lint  ]   🐳  docker cp src=/home/bunker-951ddc07/qa-chimera-v2/. dst=/home/bunker-951ddc07/qa-chimera-v2
+[CI/test-1]   🐳  docker exec cmd=[/opt/acttoolcache/node/24.22.3/x64/bin/node /var/run/act/actions/actions-setup-python@v5/dist/setup/index.js] user= workdir=
+[CI/lint  ]   ✅  Success - Main actions/checkout@v4 [290.578692ms]
+[CI/lint  ] ⭐ Run Main Set up Python
+[CI/lint  ]   🐳  docker cp src=/home/bunker-951ddc07/.cache/act/actions-setup-python@v5/ dst=/var/run/act/actions/actions-setup-python@v5/
+[CI/test-1]   ❓  ::group::Installed versions
+[CI/test-3] 🧪  Matrix: map[python-version:3.13]
+[CI/test-3] ⭐ Run Main actions/checkout@v4
+[CI/test-3]   🐳  docker cp src=/home/bunker-951ddc07/qa-chimera-v2/. dst=/home/bunker-951ddc07/qa-chimera-v2
+[CI/lint  ]   🐳  docker exec cmd=[/opt/acttoolcache/node/24.22.3/x64/bin/node /var/run/act/actions/actions-setup-python@v5/dist/setup/index.js] user= workdir=
+[CI/test-3]   ✅  Success - Main actions/checkout@v4 [329.550065ms]
+[CI/lint  ]   ❓  ::group::Installed versions
+[CI/test-3] ⭐ Run Main Set up Python 3.13
+[CI/test-3]   🐳  docker cp src=/home/bunker-951ddc07/.cache/act/actions-setup-python@v5/ dst=/var/run/act/actions/actions-setup-python@v5/
+[CI/test-2] 🧪  Matrix: map[python-version:3.12]
+[CI/test-2] ⭐ Run Main actions/checkout@v4
+[CI/test-2]   🐳  docker cp src=/home/bunker-951ddc07/qa-chimera-v2/. dst=/home/bunker-951ddc07/qa-chimera-v2
+[CI/test-3]   🐳  docker exec cmd=[/opt/acttoolcache/node/24.22.3/x64/bin/node /var/run/act/actions/actions-setup-python@v5/dist/setup/index.js] user= workdir=
+[CI/test-2]   ✅  Success - Main actions/checkout@v4 [506.475001ms]
+[CI/test-2] ⭐ Run Main Set up Python 3.12
+[CI/test-2]   🐳  docker cp src=/home/bunker-951ddc07/.cache/act/actions-setup-python@v5/ dst=/var/run/act/actions/actions-setup-python@v5/
+[CI/test-3]   ❓  ::group::Installed versions
+[CI/test-2]   🐳  docker exec cmd=[/opt/acttoolcache/node/24.22.3/x64/bin/node /var/run/act/actions/actions-setup-python@v5/dist/setup/index.js] user= workdir=
+[CI/test-2]   ❓  ::group::Installed versions
+[CI/lint  ]   ❗  ::error::ln: failed to create symbolic link 'python': File exists
+[CI/lint  ]   ❗  ::error::The process '/usr/bin/bash' failed with exit code 1
+[CI/lint  ]   ❌  Failure - Main Set up Python [18.423761529s]
+[CI/lint  ] exitcode '1': failure
+[CI/lint  ] ⭐ Run Complete job
+[CI/lint  ]   ✅  Success - Complete job
+[CI/lint  ] 🏁  Job failed
+[CI/test-1]   ❓  ::endgroup::
+[CI/test-1]   ❓ add-matcher /run/act/actions/actions-setup-python@v5/.github/python.json
+[CI/test-1]   ✅  Success - Main Set up Python 3.11 [25.346557053s]
+[CI/test-1]   ⚙  ::set-env:: pythonLocation=/opt/hostedtoolcache/Python/3.11.18/x64
+[CI/test-1]   ⚙  ::set-env:: PKG_CONFIG_PATH=/opt/hostedtoolcache/Python/3.11.18/x64/lib/pkgconfig
+[CI/test-1]   ⚙  ::set-env:: Python_ROOT_DIR=/opt/hostedtoolcache/Python/3.11.18/x64
+[CI/test-1]   ⚙  ::set-env:: Python2_ROOT_DIR=/opt/hostedtoolcache/Python/3.11.18/x64
+[CI/test-1]   ⚙  ::set-env:: Python3_ROOT_DIR=/opt/hostedtoolcache/Python/3.11.18/x64
+[CI/test-1]   ⚙  ::set-env:: LD_LIBRARY_PATH=/opt/hostedtoolcache/Python/3.11.18/x64/lib
+[CI/test-1]   ⚙  ::set-output:: python-version=3.11.18
+[CI/test-1]   ⚙  ::set-output:: python-path=/opt/hostedtoolcache/Python/3.11.18/x64/bin/python
+[CI/test-1]   ⚙  ::add-path:: /opt/hostedtoolcache/Python/3.11.18/x64
+[CI/test-1]   ⚙  ::add-path:: /opt/hostedtoolcache/Python/3.11.18/x64/bin
+[CI/test-1] ⭐ Run Main Create venv and install project
+[CI/test-1]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/2] user= workdir=
+[CI/test-3]   ❓  ::endgroup::
+[CI/test-3]   ❓ add-matcher /run/act/actions/actions-setup-python@v5/.github/python.json
+[CI/test-3]   ✅  Success - Main Set up Python 3.13 [24.111974919s]
+[CI/test-3]   ⚙  ::set-env:: Python2_ROOT_DIR=/opt/hostedtoolcache/Python/3.13.18/x64
+[CI/test-3]   ⚙  ::set-env:: Python3_ROOT_DIR=/opt/hostedtoolcache/Python/3.13.18/x64
+[CI/test-3]   ⚙  ::set-env:: LD_LIBRARY_PATH=/opt/hostedtoolcache/Python/3.13.18/x64/lib
+[CI/test-3]   ⚙  ::set-env:: pythonLocation=/opt/hostedtoolcache/Python/3.13.18/x64
+[CI/test-3]   ⚙  ::set-env:: PKG_CONFIG_PATH=/opt/hostedtoolcache/Python/3.13.18/x64/lib/pkgconfig
+[CI/test-3]   ⚙  ::set-env:: Python_ROOT_DIR=/opt/hostedtoolcache/Python/3.13.18/x64
+[CI/test-3]   ⚙  ::set-output:: python-version=3.13.18
+[CI/test-3]   ⚙  ::set-output:: python-path=/opt/hostedtoolcache/Python/3.13.18/x64/bin/python
+[CI/test-3]   ⚙  ::add-path:: /opt/hostedtoolcache/Python/3.13.18/x64
+[CI/test-3]   ⚙  ::add-path:: /opt/hostedtoolcache/Python/3.13.18/x64/bin
+[CI/test-3] ⭐ Run Main Create venv and install project
+[CI/test-3]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/2] user= workdir=
+[CI/test-2]   ❓  ::endgroup::
+[CI/test-2]   ❓ add-matcher /run/act/actions/actions-setup-python@v5/.github/python.json
+[CI/test-2]   ✅  Success - Main Set up Python 3.12 [23.344529174s]
+[CI/test-2]   ⚙  ::set-env:: PKG_CONFIG_PATH=/opt/hostedtoolcache/Python/3.12.16/x64/lib/pkgconfig
+[CI/test-2]   ⚙  ::set-env:: Python_ROOT_DIR=/opt/hostedtoolcache/Python/3.12.16/x64
+[CI/test-2]   ⚙  ::set-env:: Python2_ROOT_DIR=/opt/hostedtoolcache/Python/3.12.16/x64
+[CI/test-2]   ⚙  ::set-env:: Python3_ROOT_DIR=/opt/hostedtoolcache/Python/3.12.16/x64
+[CI/test-2]   ⚙  ::set-env:: LD_LIBRARY_PATH=/opt/hostedtoolcache/Python/3.12.16/x64/lib
+[CI/test-2]   ⚙  ::set-env:: pythonLocation=/opt/hostedtoolcache/Python/3.12.16/x64
+[CI/test-2]   ⚙  ::set-output:: python-version=3.12.16
+[CI/test-2]   ⚙  ::set-output:: python-path=/opt/hostedtoolcache/Python/3.12.16/x64/bin/python
+[CI/test-2]   ⚙  ::add-path:: /opt/hostedtoolcache/Python/3.12.16/x64
+[CI/test-2]   ⚙  ::add-path:: /opt/hostedtoolcache/Python/3.12.16/x64/bin
+[CI/test-2] ⭐ Run Main Create venv and install project
+[CI/test-2]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/2] user= workdir=
+[CI/test-1]   ✅  Success - Main Create venv and install project [1m6.267704555s]
+[CI/test-1] ⭐ Run Main Run unit tests
+[CI/test-1]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/3] user= workdir=
+[CI/test-3]   ✅  Success - Main Create venv and install project [1m8.267032175s]
+[CI/test-3] ⭐ Run Main Run unit tests
+[CI/test-3]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/3] user= workdir=
+[CI/test-2]   ✅  Success - Main Create venv and install project [1m10.543950794s]
+[CI/test-2] ⭐ Run Main Run unit tests
+[CI/test-2]   🐳  docker exec cmd=[bash -e /var/run/act/workflow/3] user= workdir=
+[CI/test-3]   ❌  Failure - Main Run unit tests [3m26.196812373s]
+[CI/test-3] exitcode '1': failure
+[CI/test-3] ⭐ Run Complete job
+[CI/test-3]   ✅  Success - Complete job
+[CI/test-3] 🏁  Job failed
+[CI/test-1]   ❌  Failure - Main Run unit tests [3m34.437162237s]
+[CI/test-1] exitcode '1': failure
+[CI/test-1] ⭐ Run Complete job
+[CI/test-1]   ✅  Success - Complete job
+[CI/test-1] 🏁  Job failed
+[CI/test-2]   ❌  Failure - Main Run unit tests [3m43.506895102s]
+[CI/test-2] exitcode '1': failure
+[CI/test-2] ⭐ Run Complete job
+[CI/test-2]   ✅  Success - Complete job
+[CI/test-2] 🏁  Job failed
+Error: Job 'lint' failed

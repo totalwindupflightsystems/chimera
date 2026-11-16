@@ -1,0 +1,610 @@
+ Image qa-chimera-v2-chimera Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 538B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 2.78kB done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.11-slim
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 67.80kB done
+#5 DONE 0.0s
+
+#6 [1/6] FROM docker.io/library/python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
+#6 resolve docker.io/library/python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535 0.0s done
+#6 DONE 0.1s
+
+#7 [2/6] RUN apt-get update && apt-get install -y --no-install-recommends     curl     && rm -rf /var/lib/apt/lists/*
+#7 0.187 Hit:1 http://deb.debian.org/debian trixie InRelease
+#7 0.187 Get:2 http://deb.debian.org/debian trixie-updates InRelease [47.3 kB]
+#7 0.191 Get:3 http://deb.debian.org/debian-security trixie-security InRelease [43.4 kB]
+#7 0.212 Get:4 http://deb.debian.org/debian trixie/main amd64 Packages [9678 kB]
+#7 0.307 Get:5 http://deb.debian.org/debian trixie-updates/main amd64 Packages [1108 B]
+#7 0.307 Get:6 http://deb.debian.org/debian-security trixie-security/main amd64 Packages [305 kB]
+#7 1.128 Fetched 10.1 MB in 1s (10.4 MB/s)
+#7 1.128 Reading package lists...
+#7 1.963 Reading package lists...
+#7 2.721 Building dependency tree...
+#7 2.991 Reading state information...
+#7 3.452 The following additional packages will be installed:
+#7 3.453   libbrotli1 libcom-err2 libcurl4t64 libgnutls30t64 libgssapi-krb5-2 libidn2-0
+#7 3.453   libk5crypto3 libkeyutils1 libkrb5-3 libkrb5support0 libldap2 libnghttp2-14
+#7 3.453   libnghttp3-9 libp11-kit0 libpsl5t64 librtmp1 libsasl2-2 libsasl2-modules-db
+#7 3.454   libssh2-1t64 libtasn1-6 libunistring5
+#7 3.456 Suggested packages:
+#7 3.456   gnutls-bin krb5-doc krb5-user
+#7 3.456 Recommended packages:
+#7 3.456   bash-completion krb5-locales libldap-common publicsuffix libsasl2-modules
+#7 3.668 The following NEW packages will be installed:
+#7 3.669   curl libbrotli1 libcom-err2 libcurl4t64 libgnutls30t64 libgssapi-krb5-2
+#7 3.670   libidn2-0 libk5crypto3 libkeyutils1 libkrb5-3 libkrb5support0 libldap2
+#7 3.670   libnghttp2-14 libnghttp3-9 libp11-kit0 libpsl5t64 librtmp1 libsasl2-2
+#7 3.672   libsasl2-modules-db libssh2-1t64 libtasn1-6 libunistring5
+#7 3.734 0 upgraded, 22 newly installed, 0 to remove and 1 not upgraded.
+#7 3.734 Need to get 4885 kB of archives.
+#7 3.734 After this operation, 14.7 MB of additional disk space will be used.
+#7 3.734 Get:1 http://deb.debian.org/debian-security trixie-security/main amd64 libbrotli1 amd64 1.1.0-2+deb13u1 [304 kB]
+#7 3.756 Get:2 http://deb.debian.org/debian trixie/main amd64 libkrb5support0 amd64 1.21.3-5+deb13u1 [33.1 kB]
+#7 3.756 Get:3 http://deb.debian.org/debian trixie/main amd64 libcom-err2 amd64 1.47.2-3+b12 [25.0 kB]
+#7 3.757 Get:4 http://deb.debian.org/debian trixie/main amd64 libk5crypto3 amd64 1.21.3-5+deb13u1 [81.2 kB]
+#7 3.757 Get:5 http://deb.debian.org/debian trixie/main amd64 libkeyutils1 amd64 1.6.3-6 [9456 B]
+#7 3.758 Get:6 http://deb.debian.org/debian trixie/main amd64 libkrb5-3 amd64 1.21.3-5+deb13u1 [326 kB]
+#7 3.762 Get:7 http://deb.debian.org/debian trixie/main amd64 libgssapi-krb5-2 amd64 1.21.3-5+deb13u1 [138 kB]
+#7 3.763 Get:8 http://deb.debian.org/debian trixie/main amd64 libunistring5 amd64 1.3-2 [477 kB]
+#7 3.767 Get:9 http://deb.debian.org/debian trixie/main amd64 libidn2-0 amd64 2.3.8-2 [109 kB]
+#7 3.768 Get:10 http://deb.debian.org/debian trixie/main amd64 libsasl2-modules-db amd64 2.1.28+dfsg1-9 [19.8 kB]
+#7 3.768 Get:11 http://deb.debian.org/debian trixie/main amd64 libsasl2-2 amd64 2.1.28+dfsg1-9 [57.5 kB]
+#7 3.769 Get:12 http://deb.debian.org/debian trixie/main amd64 libldap2 amd64 2.6.10+dfsg-1 [194 kB]
+#7 3.770 Get:13 http://deb.debian.org/debian trixie/main amd64 libnghttp2-14 amd64 1.64.0-1.1+deb13u1 [76.2 kB]
+#7 3.771 Get:14 http://deb.debian.org/debian trixie/main amd64 libnghttp3-9 amd64 1.8.0-1 [67.7 kB]
+#7 3.772 Get:15 http://deb.debian.org/debian trixie/main amd64 libpsl5t64 amd64 0.21.2-1.1+b1 [57.2 kB]
+#7 3.773 Get:16 http://deb.debian.org/debian trixie/main amd64 libp11-kit0 amd64 0.25.5-3 [425 kB]
+#7 3.776 Get:17 http://deb.debian.org/debian trixie/main amd64 libtasn1-6 amd64 4.20.0-2+deb13u1 [50.1 kB]
+#7 3.777 Get:18 http://deb.debian.org/debian trixie/main amd64 libgnutls30t64 amd64 3.8.9-3+deb13u4 [1469 kB]
+#7 3.794 Get:19 http://deb.debian.org/debian trixie/main amd64 librtmp1 amd64 2.4+20151223.gitfa8646d.1-2+b5 [58.8 kB]
+#7 3.794 Get:20 http://deb.debian.org/debian trixie/main amd64 libssh2-1t64 amd64 1.11.1-1+deb13u2 [245 kB]
+#7 3.798 Get:21 http://deb.debian.org/debian-security trixie-security/main amd64 libcurl4t64 amd64 8.14.1-2+deb13u7 [392 kB]
+#7 3.801 Get:22 http://deb.debian.org/debian-security trixie-security/main amd64 curl amd64 8.14.1-2+deb13u7 [270 kB]
+#7 4.021 debconf: unable to initialize frontend: Dialog
+#7 4.021 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#7 4.021 debconf: falling back to frontend: Readline
+#7 4.021 debconf: unable to initialize frontend: Readline
+#7 4.021 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC entries checked: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/x86_64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 8, <STDIN> line 22.)
+#7 4.021 debconf: falling back to frontend: Teletype
+#7 4.033 debconf: unable to initialize frontend: Teletype
+#7 4.033 debconf: (This frontend requires a controlling tty.)
+#7 4.033 debconf: falling back to frontend: Noninteractive
+#7 4.905 Fetched 4885 kB in 0s (52.4 MB/s)
+#7 4.929 Selecting previously unselected package libbrotli1:amd64.
+#7 4.929 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5658 files and directories currently installed.)
+#7 4.934 Preparing to unpack .../00-libbrotli1_1.1.0-2+deb13u1_amd64.deb ...
+#7 4.940 Unpacking libbrotli1:amd64 (1.1.0-2+deb13u1) ...
+#7 4.990 Selecting previously unselected package libkrb5support0:amd64.
+#7 4.991 Preparing to unpack .../01-libkrb5support0_1.21.3-5+deb13u1_amd64.deb ...
+#7 4.994 Unpacking libkrb5support0:amd64 (1.21.3-5+deb13u1) ...
+#7 5.025 Selecting previously unselected package libcom-err2:amd64.
+#7 5.026 Preparing to unpack .../02-libcom-err2_1.47.2-3+b12_amd64.deb ...
+#7 5.028 Unpacking libcom-err2:amd64 (1.47.2-3+b12) ...
+#7 5.059 Selecting previously unselected package libk5crypto3:amd64.
+#7 5.060 Preparing to unpack .../03-libk5crypto3_1.21.3-5+deb13u1_amd64.deb ...
+#7 5.064 Unpacking libk5crypto3:amd64 (1.21.3-5+deb13u1) ...
+#7 5.098 Selecting previously unselected package libkeyutils1:amd64.
+#7 5.100 Preparing to unpack .../04-libkeyutils1_1.6.3-6_amd64.deb ...
+#7 5.102 Unpacking libkeyutils1:amd64 (1.6.3-6) ...
+#7 5.136 Selecting previously unselected package libkrb5-3:amd64.
+#7 5.137 Preparing to unpack .../05-libkrb5-3_1.21.3-5+deb13u1_amd64.deb ...
+#7 5.140 Unpacking libkrb5-3:amd64 (1.21.3-5+deb13u1) ...
+#7 5.196 Selecting previously unselected package libgssapi-krb5-2:amd64.
+#7 5.198 Preparing to unpack .../06-libgssapi-krb5-2_1.21.3-5+deb13u1_amd64.deb ...
+#7 5.200 Unpacking libgssapi-krb5-2:amd64 (1.21.3-5+deb13u1) ...
+#7 5.248 Selecting previously unselected package libunistring5:amd64.
+#7 5.249 Preparing to unpack .../07-libunistring5_1.3-2_amd64.deb ...
+#7 5.252 Unpacking libunistring5:amd64 (1.3-2) ...
+#7 5.309 Selecting previously unselected package libidn2-0:amd64.
+#7 5.310 Preparing to unpack .../08-libidn2-0_2.3.8-2_amd64.deb ...
+#7 5.313 Unpacking libidn2-0:amd64 (2.3.8-2) ...
+#7 5.357 Selecting previously unselected package libsasl2-modules-db:amd64.
+#7 5.359 Preparing to unpack .../09-libsasl2-modules-db_2.1.28+dfsg1-9_amd64.deb ...
+#7 5.362 Unpacking libsasl2-modules-db:amd64 (2.1.28+dfsg1-9) ...
+#7 5.392 Selecting previously unselected package libsasl2-2:amd64.
+#7 5.393 Preparing to unpack .../10-libsasl2-2_2.1.28+dfsg1-9_amd64.deb ...
+#7 5.396 Unpacking libsasl2-2:amd64 (2.1.28+dfsg1-9) ...
+#7 5.432 Selecting previously unselected package libldap2:amd64.
+#7 5.435 Preparing to unpack .../11-libldap2_2.6.10+dfsg-1_amd64.deb ...
+#7 5.438 Unpacking libldap2:amd64 (2.6.10+dfsg-1) ...
+#7 5.485 Selecting previously unselected package libnghttp2-14:amd64.
+#7 5.487 Preparing to unpack .../12-libnghttp2-14_1.64.0-1.1+deb13u1_amd64.deb ...
+#7 5.490 Unpacking libnghttp2-14:amd64 (1.64.0-1.1+deb13u1) ...
+#7 5.537 Selecting previously unselected package libnghttp3-9:amd64.
+#7 5.539 Preparing to unpack .../13-libnghttp3-9_1.8.0-1_amd64.deb ...
+#7 5.543 Unpacking libnghttp3-9:amd64 (1.8.0-1) ...
+#7 5.583 Selecting previously unselected package libpsl5t64:amd64.
+#7 5.585 Preparing to unpack .../14-libpsl5t64_0.21.2-1.1+b1_amd64.deb ...
+#7 5.588 Unpacking libpsl5t64:amd64 (0.21.2-1.1+b1) ...
+#7 5.628 Selecting previously unselected package libp11-kit0:amd64.
+#7 5.630 Preparing to unpack .../15-libp11-kit0_0.25.5-3_amd64.deb ...
+#7 5.632 Unpacking libp11-kit0:amd64 (0.25.5-3) ...
+#7 5.707 Selecting previously unselected package libtasn1-6:amd64.
+#7 5.708 Preparing to unpack .../16-libtasn1-6_4.20.0-2+deb13u1_amd64.deb ...
+#7 5.712 Unpacking libtasn1-6:amd64 (4.20.0-2+deb13u1) ...
+#7 5.751 Selecting previously unselected package libgnutls30t64:amd64.
+#7 5.752 Preparing to unpack .../17-libgnutls30t64_3.8.9-3+deb13u4_amd64.deb ...
+#7 5.756 Unpacking libgnutls30t64:amd64 (3.8.9-3+deb13u4) ...
+#7 5.868 Selecting previously unselected package librtmp1:amd64.
+#7 5.870 Preparing to unpack .../18-librtmp1_2.4+20151223.gitfa8646d.1-2+b5_amd64.deb ...
+#7 5.873 Unpacking librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2+b5) ...
+#7 5.918 Selecting previously unselected package libssh2-1t64:amd64.
+#7 5.919 Preparing to unpack .../19-libssh2-1t64_1.11.1-1+deb13u2_amd64.deb ...
+#7 5.923 Unpacking libssh2-1t64:amd64 (1.11.1-1+deb13u2) ...
+#7 5.972 Selecting previously unselected package libcurl4t64:amd64.
+#7 5.973 Preparing to unpack .../20-libcurl4t64_8.14.1-2+deb13u7_amd64.deb ...
+#7 5.977 Unpacking libcurl4t64:amd64 (8.14.1-2+deb13u7) ...
+#7 6.021 Selecting previously unselected package curl.
+#7 6.023 Preparing to unpack .../21-curl_8.14.1-2+deb13u7_amd64.deb ...
+#7 6.025 Unpacking curl (8.14.1-2+deb13u7) ...
+#7 6.091 Setting up libkeyutils1:amd64 (1.6.3-6) ...
+#7 6.101 Setting up libbrotli1:amd64 (1.1.0-2+deb13u1) ...
+#7 6.110 Setting up libnghttp2-14:amd64 (1.64.0-1.1+deb13u1) ...
+#7 6.120 Setting up libcom-err2:amd64 (1.47.2-3+b12) ...
+#7 6.130 Setting up libkrb5support0:amd64 (1.21.3-5+deb13u1) ...
+#7 6.140 Setting up libsasl2-modules-db:amd64 (2.1.28+dfsg1-9) ...
+#7 6.151 Setting up libp11-kit0:amd64 (0.25.5-3) ...
+#7 6.160 Setting up libunistring5:amd64 (1.3-2) ...
+#7 6.168 Setting up libk5crypto3:amd64 (1.21.3-5+deb13u1) ...
+#7 6.178 Setting up libsasl2-2:amd64 (2.1.28+dfsg1-9) ...
+#7 6.189 Setting up libnghttp3-9:amd64 (1.8.0-1) ...
+#7 6.200 Setting up libtasn1-6:amd64 (4.20.0-2+deb13u1) ...
+#7 6.210 Setting up libkrb5-3:amd64 (1.21.3-5+deb13u1) ...
+#7 6.220 Setting up libssh2-1t64:amd64 (1.11.1-1+deb13u2) ...
+#7 6.232 Setting up libldap2:amd64 (2.6.10+dfsg-1) ...
+#7 6.241 Setting up libidn2-0:amd64 (2.3.8-2) ...
+#7 6.250 Setting up libgssapi-krb5-2:amd64 (1.21.3-5+deb13u1) ...
+#7 6.261 Setting up libgnutls30t64:amd64 (3.8.9-3+deb13u4) ...
+#7 6.271 Setting up libpsl5t64:amd64 (0.21.2-1.1+b1) ...
+#7 6.280 Setting up librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2+b5) ...
+#7 6.288 Setting up libcurl4t64:amd64 (8.14.1-2+deb13u7) ...
+#7 6.298 Setting up curl (8.14.1-2+deb13u7) ...
+#7 6.306 Processing triggers for libc-bin (2.41-12+deb13u4) ...
+#7 DONE 6.6s
+
+#8 [3/6] RUN pip install --no-cache-dir "chimera-deliberation[full]>=0.2.0"
+#8 1.937 Collecting chimera-deliberation>=0.2.0 (from chimera-deliberation[full]>=0.2.0)
+#8 1.972   Downloading chimera_deliberation-0.2.9-py3-none-any.whl.metadata (43 kB)
+#8 1.979      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 43.1/43.1 kB 15.0 MB/s eta 0:00:00
+#8 2.051 Collecting click>=8.0 (from chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 2.059   Downloading click-8.5.1-py3-none-any.whl.metadata (2.6 kB)
+#8 2.085 Collecting httpx2>=2.0 (from chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 2.093   Downloading httpx2-2.16.0-py3-none-any.whl.metadata (10 kB)
+#8 2.138 Collecting httpx>=0.27.0 (from chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 2.146   Downloading httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+#8 2.192 Collecting jsonschema>=4.0 (from chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 2.202   Downloading jsonschema-4.26.0-py3-none-any.whl.metadata (7.6 kB)
+#8 2.783 Collecting litellm<1.100,>=1.50.0 (from chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 2.792   Downloading litellm-1.99.4-cp310-abi3-manylinux_2_28_x86_64.whl.metadata (41 kB)
+#8 2.796      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 41.3/41.3 kB 132.1 MB/s eta 0:00:00
+#8 2.845 Collecting mcp<2.0,>=1.0.0 (from chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 2.853   Downloading mcp-1.30.0-py3-none-any.whl.metadata (9.3 kB)
+#8 3.106 Collecting pydantic>=2.0 (from chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 3.114   Downloading pydantic-2.14.3-py3-none-any.whl.metadata (141 kB)
+#8 3.121      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 141.5/141.5 kB 30.3 MB/s eta 0:00:00
+#8 3.184 Collecting pyyaml>=6.0 (from chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 3.192   Downloading pyyaml-6.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+#8 3.285 Collecting rich>=13.0 (from chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 3.294   Downloading rich-15.0.0-py3-none-any.whl.metadata (18 kB)
+#8 3.326 Collecting structlog>=24.0 (from chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 3.335   Downloading structlog-26.1.0-py3-none-any.whl.metadata (9.7 kB)
+#8 3.520 Collecting fastapi>=0.162.0 (from chimera-deliberation[full]>=0.2.0)
+#8 3.528   Downloading fastapi-0.163.1-py3-none-any.whl.metadata (27 kB)
+#8 3.574 Collecting hatchling>=1.21 (from chimera-deliberation[full]>=0.2.0)
+#8 3.583   Downloading hatchling-1.33.0-py3-none-any.whl.metadata (3.9 kB)
+#8 3.626 Collecting pytest-asyncio>=0.24.0 (from chimera-deliberation[full]>=0.2.0)
+#8 3.635   Downloading pytest_asyncio-1.5.0-py3-none-any.whl.metadata (4.4 kB)
+#8 3.666 Collecting pytest-cov>=5.0 (from chimera-deliberation[full]>=0.2.0)
+#8 3.674   Downloading pytest_cov-7.1.0-py3-none-any.whl.metadata (32 kB)
+#8 3.700 Collecting pytest-timeout>=2.3.0 (from chimera-deliberation[full]>=0.2.0)
+#8 3.710   Downloading pytest_timeout-2.4.0-py3-none-any.whl.metadata (20 kB)
+#8 3.794 Collecting pytest>=8.0 (from chimera-deliberation[full]>=0.2.0)
+#8 3.803   Downloading pytest-9.2.0-py3-none-any.whl.metadata (7.9 kB)
+#8 3.833 Collecting python-lsp-server>=1.12.0 (from python-lsp-server[pycodestyle,pyflakes]>=1.12.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 3.841   Downloading python_lsp_server-1.15.0-py3-none-any.whl.metadata (10 kB)
+#8 4.507 Collecting ruff>=0.16.10 (from chimera-deliberation[full]>=0.2.0)
+#8 4.515   Downloading ruff-0.17.5-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (20 kB)
+#8 4.576 Collecting uvicorn>=0.30.0 (from uvicorn[standard]>=0.30.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 4.585   Downloading uvicorn-0.54.0-py3-none-any.whl.metadata (6.6 kB)
+#8 4.772 Collecting starlette>=0.46.0 (from fastapi>=0.162.0->chimera-deliberation[full]>=0.2.0)
+#8 4.780   Downloading starlette-1.10.0-py3-none-any.whl.metadata (6.6 kB)
+#8 4.819 Collecting anyio>=4.1.0 (from fastapi>=0.162.0->chimera-deliberation[full]>=0.2.0)
+#8 4.827   Downloading anyio-4.16.0-py3-none-any.whl.metadata (4.7 kB)
+#8 4.874 Collecting typing-extensions>=4.8.0 (from fastapi>=0.162.0->chimera-deliberation[full]>=0.2.0)
+#8 4.883   Downloading typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+#8 4.901 Collecting typing-inspection>=0.4.2 (from fastapi>=0.162.0->chimera-deliberation[full]>=0.2.0)
+#8 4.909   Downloading typing_inspection-0.4.5-py3-none-any.whl.metadata (2.6 kB)
+#8 4.928 Collecting annotated-doc>=0.0.2 (from fastapi>=0.162.0->chimera-deliberation[full]>=0.2.0)
+#8 4.935   Downloading annotated_doc-0.0.6-py3-none-any.whl.metadata (6.5 kB)
+#8 4.989 Collecting opentelemetry-api>=1.44.0 (from fastapi>=0.162.0->chimera-deliberation[full]>=0.2.0)
+#8 4.997   Downloading opentelemetry_api-1.45.2-py3-none-any.whl.metadata (1.4 kB)
+#8 5.004 Requirement already satisfied: packaging>=24.2 in /usr/local/lib/python3.11/site-packages (from hatchling>=1.21->chimera-deliberation[full]>=0.2.0) (26.3)
+#8 5.027 Collecting pathspec>=0.10.1 (from hatchling>=1.21->chimera-deliberation[full]>=0.2.0)
+#8 5.034   Downloading pathspec-1.1.1-py3-none-any.whl.metadata (14 kB)
+#8 5.061 Collecting pluggy>=1.0.0 (from hatchling>=1.21->chimera-deliberation[full]>=0.2.0)
+#8 5.069   Downloading pluggy-1.7.0-py3-none-any.whl.metadata (5.0 kB)
+#8 5.113 Collecting tomlkit>=0.11.1 (from hatchling>=1.21->chimera-deliberation[full]>=0.2.0)
+#8 5.121   Downloading tomlkit-0.15.2-py3-none-any.whl.metadata (3.4 kB)
+#8 5.160 Collecting trove-classifiers (from hatchling>=1.21->chimera-deliberation[full]>=0.2.0)
+#8 5.169   Downloading trove_classifiers-2026.9.21.13-py3-none-any.whl.metadata (2.4 kB)
+#8 5.215 Collecting certifi (from httpx>=0.27.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 5.223   Downloading certifi-2026.10.23-py3-none-any.whl.metadata (2.5 kB)
+#8 5.259 Collecting httpcore==1.* (from httpx>=0.27.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 5.267   Downloading httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+#8 5.296 Collecting idna (from httpx>=0.27.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 5.304   Downloading idna-3.20-py3-none-any.whl.metadata (7.2 kB)
+#8 5.332 Collecting h11>=0.16 (from httpcore==1.*->httpx>=0.27.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 5.339   Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+#8 5.388 Collecting httpcore2==2.16.0 (from httpx2>=2.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 5.396   Downloading httpcore2-2.16.0-py3-none-any.whl.metadata (27 kB)
+#8 5.427 Collecting truststore>=0.10 (from httpx2>=2.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 5.435   Downloading truststore-0.10.5-py3-none-any.whl.metadata (4.5 kB)
+#8 5.491 Collecting attrs>=22.2.0 (from jsonschema>=4.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 5.499   Downloading attrs-26.1.0-py3-none-any.whl.metadata (8.8 kB)
+#8 5.523 Collecting jsonschema-specifications>=2023.03.6 (from jsonschema>=4.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 5.531   Downloading jsonschema_specifications-2025.9.1-py3-none-any.whl.metadata (2.9 kB)
+#8 5.578 Collecting referencing>=0.28.4 (from jsonschema>=4.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 5.586   Downloading referencing-0.37.0-py3-none-any.whl.metadata (2.8 kB)
+#8 6.129 Collecting rpds-py>=0.25.0 (from jsonschema>=4.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 6.138   Downloading rpds_py-2026.9.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.1 kB)
+#8 6.260 Collecting fastuuid<1.0,>=0.14.0 (from litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 6.268   Downloading fastuuid-0.14.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (1.1 kB)
+#8 6.433 Collecting openai<3.0.0,>=2.20.0 (from litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 6.442   Downloading openai-2.54.0-py3-none-any.whl.metadata (40 kB)
+#8 6.445      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 40.9/40.9 kB 176.5 MB/s eta 0:00:00
+#8 6.477 Collecting python-dotenv<2.0,>=1.0.0 (from litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 6.486   Downloading python_dotenv-1.2.4-py3-none-any.whl.metadata (29 kB)
+#8 6.560 Collecting tiktoken<1.0,>=0.8.0 (from litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 6.569   Downloading tiktoken-0.14.0-cp311-cp311-manylinux_2_28_x86_64.whl.metadata (6.7 kB)
+#8 6.643 Collecting importlib-metadata<9.0,>=8.0.0 (from litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 6.652   Downloading importlib_metadata-8.9.0-py3-none-any.whl.metadata (4.5 kB)
+#8 7.014 Collecting tokenizers<1.0,>=0.21.0 (from litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 7.023   Downloading tokenizers-0.23.3-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (9.8 kB)
+#8 7.064 Collecting jinja2<4.0,>=3.1.6 (from litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 7.073   Downloading jinja2-3.1.6-py3-none-any.whl.metadata (2.9 kB)
+#8 8.082 Collecting aiohttp<4.0,>=3.14.2 (from litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 8.091   Downloading aiohttp-3.14.5-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (8.3 kB)
+#8 8.147 Collecting pydantic-settings<3.0,>=2.14.1 (from litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 8.155   Downloading pydantic_settings-2.16.3-py3-none-any.whl.metadata (4.0 kB)
+#8 8.862 Collecting boto3<2.0,>=1.43.1 (from litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 8.871   Downloading boto3-1.44.3-py3-none-any.whl.metadata (6.6 kB)
+#8 8.921 Collecting httpx-sse>=0.4 (from mcp<2.0,>=1.0.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 8.929   Downloading httpx_sse-0.4.3-py3-none-any.whl.metadata (9.7 kB)
+#8 9.003 Collecting pyjwt>=2.10.1 (from pyjwt[crypto]>=2.10.1->mcp<2.0,>=1.0.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 9.011   Downloading pyjwt-2.15.1-py3-none-any.whl.metadata (3.5 kB)
+#8 9.039 Collecting python-multipart>=0.0.9 (from mcp<2.0,>=1.0.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 9.047   Downloading python_multipart-0.0.33-py3-none-any.whl.metadata (6.3 kB)
+#8 9.088 Collecting sse-starlette>=1.6.1 (from mcp<2.0,>=1.0.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 9.097   Downloading sse_starlette-3.7.0-py3-none-any.whl.metadata (15 kB)
+#8 9.164 Collecting annotated-types>=0.6.0 (from pydantic>=2.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 9.172   Downloading annotated_types-0.8.0-py3-none-any.whl.metadata (15 kB)
+#8 10.43 Collecting pydantic-core==2.50.4 (from pydantic>=2.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 10.44   Downloading pydantic_core-2.50.4-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (6.6 kB)
+#8 10.49 Collecting iniconfig>=2 (from pytest>=8.0->chimera-deliberation[full]>=0.2.0)
+#8 10.49   Downloading iniconfig-2.3.1-py3-none-any.whl.metadata (2.8 kB)
+#8 10.54 Collecting pygments>=2.15 (from pytest>=8.0->chimera-deliberation[full]>=0.2.0)
+#8 10.54   Downloading pygments-2.21.0-py3-none-any.whl.metadata (2.5 kB)
+#8 11.51 Collecting coverage>=7.10.6 (from coverage[toml]>=7.10.6->pytest-cov>=5.0->chimera-deliberation[full]>=0.2.0)
+#8 11.52   Downloading coverage-7.17.3-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (8.3 kB)
+#8 11.59 Collecting docstring-to-markdown (from python-lsp-server>=1.12.0->python-lsp-server[pycodestyle,pyflakes]>=1.12.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 11.60   Downloading docstring_to_markdown-0.17-py3-none-any.whl.metadata (2.3 kB)
+#8 11.63 Collecting jedi<0.21.0,>=0.17.2 (from python-lsp-server>=1.12.0->python-lsp-server[pycodestyle,pyflakes]>=1.12.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 11.64   Downloading jedi-0.20.1-py2.py3-none-any.whl.metadata (23 kB)
+#8 11.66 Collecting python-lsp-jsonrpc<2.0.0,>=1.1.0 (from python-lsp-server>=1.12.0->python-lsp-server[pycodestyle,pyflakes]>=1.12.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 11.67   Downloading python_lsp_jsonrpc-1.1.2-py3-none-any.whl.metadata (1.5 kB)
+#8 11.80 Collecting ujson>=3.0.0 (from python-lsp-server>=1.12.0->python-lsp-server[pycodestyle,pyflakes]>=1.12.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 11.81   Downloading ujson-6.1.0-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (10.0 kB)
+#8 11.91 Collecting black (from python-lsp-server>=1.12.0->python-lsp-server[pycodestyle,pyflakes]>=1.12.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 11.92   Downloading black-26.10.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (108 kB)
+#8 11.92      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 108.9/108.9 kB 259.7 MB/s eta 0:00:00
+#8 11.98 Collecting pycodestyle<2.13.0,>=2.12.0 (from python-lsp-server[pycodestyle,pyflakes]>=1.12.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 11.99   Downloading pycodestyle-2.12.1-py2.py3-none-any.whl.metadata (4.5 kB)
+#8 12.03 Collecting pyflakes<3.3.0,>=3.2.0 (from python-lsp-server[pycodestyle,pyflakes]>=1.12.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 12.04   Downloading pyflakes-3.2.0-py2.py3-none-any.whl.metadata (3.5 kB)
+#8 12.09 Collecting markdown-it-py>=2.2.0 (from rich>=13.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 12.09   Downloading markdown_it_py-4.3.0-py3-none-any.whl.metadata (7.9 kB)
+#8 12.21 Collecting httptools>=0.8.0 (from uvicorn[standard]>=0.30.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 12.22   Downloading httptools-0.9.0-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (3.5 kB)
+#8 12.29 Collecting uvloop>=0.15.1 (from uvicorn[standard]>=0.30.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 12.29   Downloading uvloop-0.23.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (5.1 kB)
+#8 12.41 Collecting watchfiles>=0.20 (from uvicorn[standard]>=0.30.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 12.42   Downloading watchfiles-1.3.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.9 kB)
+#8 12.62 Collecting websockets>=13.0 (from uvicorn[standard]>=0.30.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 12.63   Downloading websockets-17.4-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (6.3 kB)
+#8 12.68 Collecting aiohappyeyeballs>=2.5.0 (from aiohttp<4.0,>=3.14.2->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 12.69   Downloading aiohappyeyeballs-2.7.1-py3-none-any.whl.metadata (5.9 kB)
+#8 12.71 Collecting aiosignal>=1.4.0 (from aiohttp<4.0,>=3.14.2->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 12.72   Downloading aiosignal-1.4.0-py3-none-any.whl.metadata (3.7 kB)
+#8 12.83 Collecting frozenlist>=1.1.1 (from aiohttp<4.0,>=3.14.2->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 12.83   Downloading frozenlist-1.8.0-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (20 kB)
+#8 13.57 Collecting multidict<8.0,>=4.5 (from aiohttp<4.0,>=3.14.2->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 13.58   Downloading multidict-7.2.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (6.1 kB)
+#8 13.69 Collecting propcache>=0.2.0 (from aiohttp<4.0,>=3.14.2->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 13.69   Downloading propcache-0.5.4-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (25 kB)
+#8 14.12 Collecting yarl<2.0,>=1.25.1 (from aiohttp<4.0,>=3.14.2->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 14.13   Downloading yarl-1.25.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (111 kB)
+#8 14.13      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 111.6/111.6 kB 272.2 MB/s eta 0:00:00
+#8 15.00 Collecting botocore<1.45.0,>=1.44.3 (from boto3<2.0,>=1.43.1->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 15.01   Downloading botocore-1.44.3-py3-none-any.whl.metadata (5.6 kB)
+#8 15.03 Collecting jmespath<2.0.0,>=0.7.1 (from boto3<2.0,>=1.43.1->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 15.04   Downloading jmespath-1.1.0-py3-none-any.whl.metadata (7.6 kB)
+#8 15.08 Collecting s3transfer<0.20.0,>=0.19.0 (from boto3<2.0,>=1.43.1->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 15.08   Downloading s3transfer-0.19.3-py3-none-any.whl.metadata (1.7 kB)
+#8 15.19 Collecting zipp>=3.20 (from importlib-metadata<9.0,>=8.0.0->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 15.20   Downloading zipp-4.1.2-py3-none-any.whl.metadata (3.6 kB)
+#8 15.26 Collecting parso<0.9.0,>=0.8.7 (from jedi<0.21.0,>=0.17.2->python-lsp-server>=1.12.0->python-lsp-server[pycodestyle,pyflakes]>=1.12.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 15.27   Downloading parso-0.8.7-py2.py3-none-any.whl.metadata (8.2 kB)
+#8 15.37 Collecting MarkupSafe>=2.0 (from jinja2<4.0,>=3.1.6->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 15.38   Downloading markupsafe-3.0.4-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.7 kB)
+#8 15.80 Collecting mdurl~=0.1 (from markdown-it-py>=2.2.0->rich>=13.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 15.80   Downloading mdurl-0.1.2-py3-none-any.whl.metadata (1.6 kB)
+#8 15.86 Collecting distro<2,>=1.7.0 (from openai<3.0.0,>=2.20.0->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 15.87   Downloading distro-1.9.0-py3-none-any.whl.metadata (6.8 kB)
+#8 16.08 Collecting jiter<1,>=0.10.0 (from openai<3.0.0,>=2.20.0->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 16.08   Downloading jiter-0.19.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (5.2 kB)
+#8 16.12 Collecting sniffio (from openai<3.0.0,>=2.20.0->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 16.13   Downloading sniffio-1.3.1-py3-none-any.whl.metadata (3.9 kB)
+#8 16.22 Collecting tqdm>4 (from openai<3.0.0,>=2.20.0->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 16.23   Downloading tqdm-4.70.1-py3-none-any.whl.metadata (57 kB)
+#8 16.23      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 57.4/57.4 kB 237.8 MB/s eta 0:00:00
+#8 16.78 Collecting cryptography>=3.4.0 (from pyjwt[crypto]>=2.10.1->mcp<2.0,>=1.0.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 16.79   Downloading cryptography-50.0.2-cp311-abi3-manylinux_2_34_x86_64.whl.metadata (4.4 kB)
+#8 17.60 Collecting regex (from tiktoken<1.0,>=0.8.0->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 17.61   Downloading regex-2026.11.15-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (40 kB)
+#8 17.61      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 40.5/40.5 kB 169.2 MB/s eta 0:00:00
+#8 17.68 Collecting requests (from tiktoken<1.0,>=0.8.0->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 17.68   Downloading requests-2.34.2-py3-none-any.whl.metadata (4.8 kB)
+#8 17.87 Collecting huggingface-hub<3.0,>=0.16.4 (from tokenizers<1.0,>=0.21.0->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 17.88   Downloading huggingface_hub-2.4.0-py3-none-any.whl.metadata (16 kB)
+#8 18.05 Collecting mypy-extensions>=0.4.3 (from black->python-lsp-server>=1.12.0->python-lsp-server[pycodestyle,pyflakes]>=1.12.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 18.06   Downloading mypy_extensions-1.2.0-py3-none-any.whl.metadata (1.1 kB)
+#8 18.12 Collecting platformdirs>=2 (from black->python-lsp-server>=1.12.0->python-lsp-server[pycodestyle,pyflakes]>=1.12.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 18.13   Downloading platformdirs-4.14.5-py3-none-any.whl.metadata (5.7 kB)
+#8 18.18 Collecting pytokens~=0.4.0 (from black->python-lsp-server>=1.12.0->python-lsp-server[pycodestyle,pyflakes]>=1.12.0; extra == "full"->chimera-deliberation[full]>=0.2.0)
+#8 18.19   Downloading pytokens-0.4.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (3.8 kB)
+#8 18.35 Collecting python-dateutil<3.0.0,>=2.1 (from botocore<1.45.0,>=1.44.3->boto3<2.0,>=1.43.1->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 18.35   Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
+#8 18.41 Collecting urllib3!=2.2.0,<3,>=1.25.4 (from botocore<1.45.0,>=1.44.3->boto3<2.0,>=1.43.1->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 18.42   Downloading urllib3-2.8.0-py3-none-any.whl.metadata (7.4 kB)
+#8 18.61 Collecting cffi>=2.0.0 (from cryptography>=3.4.0->pyjwt[crypto]>=2.10.1->mcp<2.0,>=1.0.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 18.62   Downloading cffi-2.1.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.5 kB)
+#8 18.81 Collecting filelock>=3.10.0 (from huggingface-hub<3.0,>=0.16.4->tokenizers<1.0,>=0.21.0->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 18.81   Downloading filelock-4.2.10-py3-none-any.whl.metadata (2.3 kB)
+#8 18.86 Collecting fsspec>=2023.5.0 (from huggingface-hub<3.0,>=0.16.4->tokenizers<1.0,>=0.21.0->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 18.87   Downloading fsspec-2026.9.0-py3-none-any.whl.metadata (10 kB)
+#8 18.96 Collecting hf-xet<2.0.0,>=1.6.0 (from huggingface-hub<3.0,>=0.16.4->tokenizers<1.0,>=0.21.0->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 18.96   Downloading hf_xet-1.8.0-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (4.9 kB)
+#8 19.87 Collecting charset_normalizer<4,>=2 (from requests->tiktoken<1.0,>=0.8.0->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 19.88   Downloading charset_normalizer-3.5.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (46 kB)
+#8 19.89      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 46.4/46.4 kB 86.3 MB/s eta 0:00:00
+#8 20.00 Collecting pycparser (from cffi>=2.0.0->cryptography>=3.4.0->pyjwt[crypto]>=2.10.1->mcp<2.0,>=1.0.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 20.01   Downloading pycparser-3.12-py3-none-any.whl.metadata (9.7 kB)
+#8 20.22 Collecting six>=1.5 (from python-dateutil<3.0.0,>=2.1->botocore<1.45.0,>=1.44.3->boto3<2.0,>=1.43.1->litellm<1.100,>=1.50.0->chimera-deliberation>=0.2.0->chimera-deliberation[full]>=0.2.0)
+#8 20.23   Downloading six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
+#8 20.76 Downloading chimera_deliberation-0.2.9-py3-none-any.whl (1.2 MB)
+#8 20.77    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 97.4 MB/s eta 0:00:00
+#8 20.78 Downloading click-8.5.1-py3-none-any.whl (126 kB)
+#8 20.79    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 126.2/126.2 kB 103.6 MB/s eta 0:00:00
+#8 20.80 Downloading fastapi-0.163.1-py3-none-any.whl (154 kB)
+#8 20.81    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 154.5/154.5 kB 104.9 MB/s eta 0:00:00
+#8 20.82 Downloading hatchling-1.33.0-py3-none-any.whl (78 kB)
+#8 20.82    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 78.8/78.8 kB 124.4 MB/s eta 0:00:00
+#8 20.83 Downloading httpx-0.28.1-py3-none-any.whl (73 kB)
+#8 20.84    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 73.5/73.5 kB 140.9 MB/s eta 0:00:00
+#8 20.85 Downloading httpcore-1.0.9-py3-none-any.whl (78 kB)
+#8 20.85    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 78.8/78.8 kB 130.6 MB/s eta 0:00:00
+#8 20.86 Downloading httpx2-2.16.0-py3-none-any.whl (97 kB)
+#8 20.87    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 97.9/97.9 kB 177.2 MB/s eta 0:00:00
+#8 20.88 Downloading httpcore2-2.16.0-py3-none-any.whl (85 kB)
+#8 20.88    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 85.1/85.1 kB 90.0 MB/s eta 0:00:00
+#8 20.89 Downloading jsonschema-4.26.0-py3-none-any.whl (90 kB)
+#8 20.90    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 90.6/90.6 kB 119.2 MB/s eta 0:00:00
+#8 20.91 Downloading litellm-1.99.4-cp310-abi3-manylinux_2_28_x86_64.whl (23.5 MB)
+#8 21.07    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 23.5/23.5 MB 142.3 MB/s eta 0:00:00
+#8 21.08 Downloading mcp-1.30.0-py3-none-any.whl (234 kB)
+#8 21.09    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 234.6/234.6 kB 102.7 MB/s eta 0:00:00
+#8 21.10 Downloading pydantic-2.14.3-py3-none-any.whl (494 kB)
+#8 21.10    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 494.1/494.1 kB 180.6 MB/s eta 0:00:00
+#8 21.11 Downloading pydantic_core-2.50.4-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (2.3 MB)
+#8 21.13    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.3/2.3 MB 189.4 MB/s eta 0:00:00
+#8 21.14 Downloading pytest-9.2.0-py3-none-any.whl (411 kB)
+#8 21.14    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 411.8/411.8 kB 200.8 MB/s eta 0:00:00
+#8 21.15 Downloading pytest_asyncio-1.5.0-py3-none-any.whl (17 kB)
+#8 21.16 Downloading pytest_cov-7.1.0-py3-none-any.whl (22 kB)
+#8 21.16 Downloading pytest_timeout-2.4.0-py3-none-any.whl (14 kB)
+#8 21.17 Downloading python_lsp_server-1.15.0-py3-none-any.whl (77 kB)
+#8 21.18    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 77.4/77.4 kB 132.6 MB/s eta 0:00:00
+#8 21.19 Downloading pyyaml-6.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (806 kB)
+#8 21.20    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 806.6/806.6 kB 140.0 MB/s eta 0:00:00
+#8 21.21 Downloading rich-15.0.0-py3-none-any.whl (310 kB)
+#8 21.22    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 310.7/310.7 kB 122.3 MB/s eta 0:00:00
+#8 21.23 Downloading ruff-0.17.5-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (10.6 MB)
+#8 21.29    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 10.6/10.6 MB 191.1 MB/s eta 0:00:00
+#8 21.30 Downloading structlog-26.1.0-py3-none-any.whl (73 kB)
+#8 21.30    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 73.8/73.8 kB 141.7 MB/s eta 0:00:00
+#8 21.31 Downloading uvicorn-0.54.0-py3-none-any.whl (87 kB)
+#8 21.31    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 87.4/87.4 kB 239.7 MB/s eta 0:00:00
+#8 21.32 Downloading aiohttp-3.14.5-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (1.9 MB)
+#8 21.33    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.9/1.9 MB 233.9 MB/s eta 0:00:00
+#8 21.34 Downloading annotated_doc-0.0.6-py3-none-any.whl (5.3 kB)
+#8 21.35 Downloading annotated_types-0.8.0-py3-none-any.whl (13 kB)
+#8 21.35 Downloading anyio-4.16.0-py3-none-any.whl (134 kB)
+#8 21.36    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 134.5/134.5 kB 219.5 MB/s eta 0:00:00
+#8 21.37 Downloading attrs-26.1.0-py3-none-any.whl (67 kB)
+#8 21.37    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 67.5/67.5 kB 138.7 MB/s eta 0:00:00
+#8 21.38 Downloading boto3-1.44.3-py3-none-any.whl (140 kB)
+#8 21.39    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 140.2/140.2 kB 143.3 MB/s eta 0:00:00
+#8 21.40 Downloading coverage-7.17.3-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (263 kB)
+#8 21.40    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 263.2/263.2 kB 153.9 MB/s eta 0:00:00
+#8 21.41 Downloading fastuuid-0.14.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (279 kB)
+#8 21.42    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 279.7/279.7 kB 221.6 MB/s eta 0:00:00
+#8 21.43 Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+#8 21.44 Downloading httptools-0.9.0-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (499 kB)
+#8 21.45    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 499.1/499.1 kB 131.0 MB/s eta 0:00:00
+#8 21.46 Downloading httpx_sse-0.4.3-py3-none-any.whl (9.0 kB)
+#8 21.47 Downloading idna-3.20-py3-none-any.whl (69 kB)
+#8 21.47    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 69.6/69.6 kB 146.3 MB/s eta 0:00:00
+#8 21.48 Downloading importlib_metadata-8.9.0-py3-none-any.whl (27 kB)
+#8 21.49 Downloading iniconfig-2.3.1-py3-none-any.whl (7.6 kB)
+#8 21.50 Downloading jedi-0.20.1-py2.py3-none-any.whl (4.9 MB)
+#8 21.53    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.9/4.9 MB 175.3 MB/s eta 0:00:00
+#8 21.54 Downloading jinja2-3.1.6-py3-none-any.whl (134 kB)
+#8 21.54    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 134.9/134.9 kB 160.0 MB/s eta 0:00:00
+#8 21.55 Downloading jsonschema_specifications-2025.9.1-py3-none-any.whl (18 kB)
+#8 21.56 Downloading markdown_it_py-4.3.0-py3-none-any.whl (96 kB)
+#8 21.57    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 97.0/97.0 kB 131.0 MB/s eta 0:00:00
+#8 21.58 Downloading openai-2.54.0-py3-none-any.whl (1.7 MB)
+#8 21.59    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.7/1.7 MB 131.7 MB/s eta 0:00:00
+#8 21.60 Downloading opentelemetry_api-1.45.2-py3-none-any.whl (60 kB)
+#8 21.60    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 60.3/60.3 kB 247.5 MB/s eta 0:00:00
+#8 21.61 Downloading pathspec-1.1.1-py3-none-any.whl (57 kB)
+#8 21.62    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 57.3/57.3 kB 241.8 MB/s eta 0:00:00
+#8 21.62 Downloading pluggy-1.7.0-py3-none-any.whl (27 kB)
+#8 21.63 Downloading pycodestyle-2.12.1-py2.py3-none-any.whl (31 kB)
+#8 21.64 Downloading pydantic_settings-2.16.3-py3-none-any.whl (82 kB)
+#8 21.65    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 82.7/82.7 kB 153.1 MB/s eta 0:00:00
+#8 21.66 Downloading pyflakes-3.2.0-py2.py3-none-any.whl (62 kB)
+#8 21.66    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 62.7/62.7 kB 135.7 MB/s eta 0:00:00
+#8 21.67 Downloading pygments-2.21.0-py3-none-any.whl (1.3 MB)
+#8 21.68    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.3/1.3 MB 214.1 MB/s eta 0:00:00
+#8 21.69 Downloading pyjwt-2.15.1-py3-none-any.whl (33 kB)
+#8 21.70 Downloading python_dotenv-1.2.4-py3-none-any.whl (23 kB)
+#8 21.71 Downloading python_lsp_jsonrpc-1.1.2-py3-none-any.whl (8.8 kB)
+#8 21.72 Downloading python_multipart-0.0.33-py3-none-any.whl (32 kB)
+#8 21.72 Downloading referencing-0.37.0-py3-none-any.whl (26 kB)
+#8 21.73 Downloading rpds_py-2026.9.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (375 kB)
+#8 21.74    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 375.4/375.4 kB 190.1 MB/s eta 0:00:00
+#8 21.75 Downloading sse_starlette-3.7.0-py3-none-any.whl (18 kB)
+#8 21.76 Downloading starlette-1.10.0-py3-none-any.whl (80 kB)
+#8 21.76    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 80.6/80.6 kB 197.3 MB/s eta 0:00:00
+#8 21.77 Downloading tiktoken-0.14.0-cp311-cp311-manylinux_2_28_x86_64.whl (1.2 MB)
+#8 21.78    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 189.8 MB/s eta 0:00:00
+#8 21.79 Downloading tokenizers-0.23.3-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.4 MB)
+#8 21.81    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.4/3.4 MB 207.2 MB/s eta 0:00:00
+#8 21.82 Downloading tomlkit-0.15.2-py3-none-any.whl (52 kB)
+#8 21.82    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 52.2/52.2 kB 175.8 MB/s eta 0:00:00
+#8 21.83 Downloading truststore-0.10.5-py3-none-any.whl (19 kB)
+#8 21.84 Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+#8 21.84    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 45.6/45.6 kB 104.1 MB/s eta 0:00:00
+#8 21.85 Downloading typing_inspection-0.4.5-py3-none-any.whl (14 kB)
+#8 21.86 Downloading ujson-6.1.0-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (56 kB)
+#8 21.87    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 56.2/56.2 kB 124.1 MB/s eta 0:00:00
+#8 21.88 Downloading uvloop-0.23.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (4.0 MB)
+#8 21.91    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.0/4.0 MB 145.3 MB/s eta 0:00:00
+#8 21.92 Downloading watchfiles-1.3.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (458 kB)
+#8 21.92    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 458.4/458.4 kB 242.3 MB/s eta 0:00:00
+#8 21.93 Downloading websockets-17.4-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (226 kB)
+#8 21.94    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 226.0/226.0 kB 187.8 MB/s eta 0:00:00
+#8 21.95 Downloading black-26.10.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (2.0 MB)
+#8 21.96    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.0/2.0 MB 187.6 MB/s eta 0:00:00
+#8 21.97 Downloading certifi-2026.10.23-py3-none-any.whl (135 kB)
+#8 21.98    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 135.1/135.1 kB 120.8 MB/s eta 0:00:00
+#8 21.99 Downloading docstring_to_markdown-0.17-py3-none-any.whl (23 kB)
+#8 22.00 Downloading trove_classifiers-2026.9.21.13-py3-none-any.whl (14 kB)
+#8 22.01 Downloading aiohappyeyeballs-2.7.1-py3-none-any.whl (15 kB)
+#8 22.01 Downloading aiosignal-1.4.0-py3-none-any.whl (7.5 kB)
+#8 22.02 Downloading botocore-1.44.3-py3-none-any.whl (16.4 MB)
+#8 22.11    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.4/16.4 MB 197.9 MB/s eta 0:00:00
+#8 22.12 Downloading cryptography-50.0.2-cp311-abi3-manylinux_2_34_x86_64.whl (4.8 MB)
+#8 22.15    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.8/4.8 MB 217.0 MB/s eta 0:00:00
+#8 22.15 Downloading distro-1.9.0-py3-none-any.whl (20 kB)
+#8 22.16 Downloading frozenlist-1.8.0-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (231 kB)
+#8 22.17    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 231.1/231.1 kB 206.8 MB/s eta 0:00:00
+#8 22.17 Downloading huggingface_hub-2.4.0-py3-none-any.whl (857 kB)
+#8 22.18    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 857.0/857.0 kB 136.0 MB/s eta 0:00:00
+#8 22.20 Downloading jiter-0.19.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (337 kB)
+#8 22.20    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 337.1/337.1 kB 160.5 MB/s eta 0:00:00
+#8 22.21 Downloading jmespath-1.1.0-py3-none-any.whl (20 kB)
+#8 22.22 Downloading markupsafe-3.0.4-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+#8 22.23 Downloading mdurl-0.1.2-py3-none-any.whl (10.0 kB)
+#8 22.24 Downloading multidict-7.2.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (510 kB)
+#8 22.25    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 510.1/510.1 kB 175.3 MB/s eta 0:00:00
+#8 22.26 Downloading mypy_extensions-1.2.0-py3-none-any.whl (5.1 kB)
+#8 22.27 Downloading parso-0.8.7-py2.py3-none-any.whl (107 kB)
+#8 22.27    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 107.0/107.0 kB 159.2 MB/s eta 0:00:00
+#8 22.28 Downloading platformdirs-4.14.5-py3-none-any.whl (35 kB)
+#8 22.29 Downloading propcache-0.5.4-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (235 kB)
+#8 22.30    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 235.4/235.4 kB 128.3 MB/s eta 0:00:00
+#8 22.31 Downloading pytokens-0.4.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (260 kB)
+#8 22.32    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 260.8/260.8 kB 135.1 MB/s eta 0:00:00
+#8 22.33 Downloading s3transfer-0.19.3-py3-none-any.whl (90 kB)
+#8 22.33    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 90.3/90.3 kB 142.5 MB/s eta 0:00:00
+#8 22.34 Downloading tqdm-4.70.1-py3-none-any.whl (80 kB)
+#8 22.35    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 80.2/80.2 kB 161.4 MB/s eta 0:00:00
+#8 22.36 Downloading yarl-1.25.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (117 kB)
+#8 22.36    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 117.7/117.7 kB 100.3 MB/s eta 0:00:00
+#8 22.37 Downloading zipp-4.1.2-py3-none-any.whl (10 kB)
+#8 22.38 Downloading regex-2026.11.15-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (806 kB)
+#8 22.39    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 806.3/806.3 kB 142.6 MB/s eta 0:00:00
+#8 22.40 Downloading requests-2.34.2-py3-none-any.whl (73 kB)
+#8 22.41    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 73.1/73.1 kB 170.7 MB/s eta 0:00:00
+#8 22.41 Downloading sniffio-1.3.1-py3-none-any.whl (10 kB)
+#8 22.43 Downloading cffi-2.1.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (217 kB)
+#8 22.44    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 217.8/217.8 kB 113.8 MB/s eta 0:00:00
+#8 22.45 Downloading charset_normalizer-3.5.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (269 kB)
+#8 22.45    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 270.0/270.0 kB 240.4 MB/s eta 0:00:00
+#8 22.46 Downloading filelock-4.2.10-py3-none-any.whl (218 kB)
+#8 22.47    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 218.0/218.0 kB 123.2 MB/s eta 0:00:00
+#8 22.48 Downloading fsspec-2026.9.0-py3-none-any.whl (221 kB)
+#8 22.48    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 221.7/221.7 kB 217.0 MB/s eta 0:00:00
+#8 22.49 Downloading hf_xet-1.8.0-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (4.3 MB)
+#8 22.53    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.3/4.3 MB 116.9 MB/s eta 0:00:00
+#8 22.54 Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
+#8 22.55    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 229.9/229.9 kB 208.1 MB/s eta 0:00:00
+#8 22.56 Downloading urllib3-2.8.0-py3-none-any.whl (135 kB)
+#8 22.56    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 135.7/135.7 kB 206.7 MB/s eta 0:00:00
+#8 22.57 Downloading six-1.17.0-py2.py3-none-any.whl (11 kB)
+#8 22.58 Downloading pycparser-3.12-py3-none-any.whl (62 kB)
+#8 22.58    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 62.6/62.6 kB 166.1 MB/s eta 0:00:00
+#8 23.59 Installing collected packages: trove-classifiers, zipp, websockets, uvloop, urllib3, ujson, typing-extensions, truststore, tqdm, tomlkit, structlog, sniffio, six, ruff, rpds-py, regex, pyyaml, pytokens, python-multipart, python-dotenv, pyjwt, pygments, pyflakes, pycparser, pycodestyle, propcache, pluggy, platformdirs, pathspec, parso, mypy-extensions, multidict, mdurl, MarkupSafe, jmespath, jiter, iniconfig, idna, httpx-sse, httptools, hf-xet, h11, fsspec, frozenlist, filelock, fastuuid, distro, coverage, click, charset_normalizer, certifi, attrs, annotated-types, annotated-doc, aiohappyeyeballs, yarl, uvicorn, typing-inspection, requests, referencing, python-lsp-jsonrpc, python-dateutil, pytest, pydantic-core, opentelemetry-api, markdown-it-py, jinja2, jedi, importlib-metadata, httpcore2, httpcore, hatchling, cffi, black, anyio, aiosignal, watchfiles, tiktoken, starlette, rich, pytest-timeout, pytest-cov, pytest-asyncio, pydantic, jsonschema-specifications, httpx2, httpx, docstring-to-markdown, cryptography, botocore, aiohttp, sse-starlette, s3transfer, python-lsp-server, pydantic-settings, openai, jsonschema, huggingface-hub, fastapi, tokenizers, mcp, boto3, litellm, chimera-deliberation
+#8 40.61 Successfully installed MarkupSafe-3.0.4 aiohappyeyeballs-2.7.1 aiohttp-3.14.5 aiosignal-1.4.0 annotated-doc-0.0.6 annotated-types-0.8.0 anyio-4.16.0 attrs-26.1.0 black-26.10.1 boto3-1.44.3 botocore-1.44.3 certifi-2026.10.23 cffi-2.1.1 charset_normalizer-3.5.2 chimera-deliberation-0.2.9 click-8.5.1 coverage-7.17.3 cryptography-50.0.2 distro-1.9.0 docstring-to-markdown-0.17 fastapi-0.163.1 fastuuid-0.14.0 filelock-4.2.10 frozenlist-1.8.0 fsspec-2026.9.0 h11-0.16.0 hatchling-1.33.0 hf-xet-1.8.0 httpcore-1.0.9 httpcore2-2.16.0 httptools-0.9.0 httpx-0.28.1 httpx-sse-0.4.3 httpx2-2.16.0 huggingface-hub-2.4.0 idna-3.20 importlib-metadata-8.9.0 iniconfig-2.3.1 jedi-0.20.1 jinja2-3.1.6 jiter-0.19.0 jmespath-1.1.0 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 litellm-1.99.4 markdown-it-py-4.3.0 mcp-1.30.0 mdurl-0.1.2 multidict-7.2.1 mypy-extensions-1.2.0 openai-2.54.0 opentelemetry-api-1.45.2 parso-0.8.7 pathspec-1.1.1 platformdirs-4.14.5 pluggy-1.7.0 propcache-0.5.4 pycodestyle-2.12.1 pycparser-3.12 pydantic-2.14.3 pydantic-core-2.50.4 pydantic-settings-2.16.3 pyflakes-3.2.0 pygments-2.21.0 pyjwt-2.15.1 pytest-9.2.0 pytest-asyncio-1.5.0 pytest-cov-7.1.0 pytest-timeout-2.4.0 python-dateutil-2.9.0.post0 python-dotenv-1.2.4 python-lsp-jsonrpc-1.1.2 python-lsp-server-1.15.0 python-multipart-0.0.33 pytokens-0.4.1 pyyaml-6.0.3 referencing-0.37.0 regex-2026.11.15 requests-2.34.2 rich-15.0.0 rpds-py-2026.9.1 ruff-0.17.5 s3transfer-0.19.3 six-1.17.0 sniffio-1.3.1 sse-starlette-3.7.0 starlette-1.10.0 structlog-26.1.0 tiktoken-0.14.0 tokenizers-0.23.3 tomlkit-0.15.2 tqdm-4.70.1 trove-classifiers-2026.9.21.13 truststore-0.10.5 typing-extensions-4.16.0 typing-inspection-0.4.5 ujson-6.1.0 urllib3-2.8.0 uvicorn-0.54.0 uvloop-0.23.0 watchfiles-1.3.0 websockets-17.4 yarl-1.25.1 zipp-4.1.2
+#8 40.61 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+#8 40.71 
+#8 40.71 [notice] A new release of pip is available: 24.0 -> 26.3
+#8 40.71 [notice] To update, run: pip install --upgrade pip
+#8 DONE 44.6s
+
+#9 [4/6] RUN mkdir -p /etc/chimera
+#9 DONE 0.5s
+
+#10 [5/6] WORKDIR /etc/chimera
+#10 DONE 0.0s
+
+#11 [6/6] COPY chimera.yaml.docker /etc/chimera/chimera.yaml
+#11 DONE 0.0s
+
+#12 exporting to image
+#12 exporting layers
+#12 exporting layers 22.0s done
+#12 exporting manifest sha256:109da2f3fb7f8b53484af1b7cb04029ac7c8ee2cc81d1d02991d31632584b311
+#12 exporting manifest sha256:109da2f3fb7f8b53484af1b7cb04029ac7c8ee2cc81d1d02991d31632584b311 0.0s done
+#12 exporting config sha256:66bbc72b36791002974f3256243900e11bb89198dab0d240e8294f33a2049d4c done
+#12 exporting attestation manifest sha256:b695d6b39b15dd71583776d5c748ae839731afa07cf0b0b6a863180c24017f8e 0.0s done
+#12 exporting manifest list sha256:7011e8caf37362579eacbabcb3bc58a7acf1c6ab4db9d452e84382e3e0644fc1 done
+#12 naming to docker.io/library/qa-chimera-v2-chimera:latest done
+#12 unpacking to docker.io/library/qa-chimera-v2-chimera:latest
+#12 unpacking to docker.io/library/qa-chimera-v2-chimera:latest 8.4s done
+#12 DONE 30.5s
+
+#13 resolving provenance for metadata file
+#13 DONE 0.0s
+ Image qa-chimera-v2-chimera Built 
+ Network qa-chimera-v2_default Creating 
+ Network qa-chimera-v2_default Created 
+ Container chimera Creating 
+ Container chimera Created 
+ Container chimera Starting 
+ Container chimera Started 
