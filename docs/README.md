@@ -59,4 +59,5 @@ against the live deployment, **not** a description of current behavior.
 - [dogfood/2026-10-20-run25-integration.md](dogfood/2026-10-20-run25-integration.md) — run 25, task-router registry source: contract holds, price provenance broken (2026-10-20)
 - [dogfood/2026-10-23-run26-integration.md](dogfood/2026-10-23-run26-integration.md) — run 26, delivery chain: published wheel vs deployed service vs HEAD (2026-10-23)
 - [dogfood/2026-10-26-run27-integration.md](dogfood/2026-10-26-run27-integration.md) — run 27, fresh-install artifact identity + live API re-proof (2026-10-26)
+- [dogfood/2026-11-16-run30-budget-perf-integration.md](dogfood/2026-11-16-run30-budget-perf-integration.md) — run 30, per-stage budget surface + the cost of an explicit formation (2026-11-16)
 - [dogfood/diagnostics.md](dogfood/diagnostics.md) — build/diagnostic trail behind the 2026-08-03 run

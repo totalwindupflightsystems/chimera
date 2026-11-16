@@ -1,0 +1,79 @@
+# Scratch config for dogfood run 30 (chimera-v2): the wall-clock budget surface.
+# A user with one slow provider and one fast one, who wants the deliberation to
+# come back anyway. Two formations: `budgettest` (stub only, deterministic) and
+# `realmix` (one REAL deepseek reviewer + one slow stub reviewer).
+api_keys:
+  deepseek: ${DEEPSEEK_API_KEY}
+  openrouter: ${OPENROUTER_API_KEY}
+
+defaults:
+  dispatcher: deepseek/deepseek-v4-flash
+  default_worker: deepseek/deepseek-v4-flash
+  default_aggregator: deepseek/deepseek-v4-flash
+  lock_dispatcher: true
+  lock_aggregator: true
+
+providers:
+  deepseek:
+    base_url: https://api.deepseek.com/v1
+  stub:
+    base_url: http://127.0.0.1:18777/v1
+    api_key: stub-local-key
+    health_probe: false
+
+models:
+  deepseek/deepseek-v4-flash:
+    categories:
+      technology_code/code_generation/python: 88
+      technology_code/testing_debugging/error_analysis: 70
+      general_knowledge/reasoning/explanation: 75
+    cost_tier: budget
+    provider: deepseek
+  stub/fast:
+    categories:
+      technology_code/code_generation/python: 60
+      general_knowledge/reasoning/explanation: 60
+    cost_tier: budget
+    provider: stub
+    cost_per_1k_input: 0.0
+    cost_per_1k_output: 0.0
+  stub/sleep8:
+    categories:
+      technology_code/code_generation/python: 60
+      general_knowledge/reasoning/explanation: 60
+    cost_tier: budget
+    provider: stub
+    cost_per_1k_input: 0.0
+    cost_per_1k_output: 0.0
+  stub/sleep20:
+    categories:
+      technology_code/code_generation/python: 60
+      general_knowledge/reasoning/explanation: 60
+    cost_tier: budget
+    provider: stub
+    cost_per_1k_input: 0.0
+    cost_per_1k_output: 0.0
+
+formations:
+  # Deterministic budget probe: two workers, one deliberately slow.
+  budgettest:
+    dag:
+      stages:
+        - {id: slow, kind: worker, model: stub/sleep8, depends_on: []}
+        - {id: fast, kind: worker, model: stub/fast, depends_on: []}
+        - {id: verdict, kind: merge, model: stub/fast, depends_on: [slow, fast]}
+      edges: [[slow, verdict], [fast, verdict]]
+  # Same shape, but the slow leg sleeps 20s and the other legs are a REAL model.
+  realmix:
+    dag:
+      stages:
+        - {id: slow, kind: worker, model: stub/sleep20, depends_on: []}
+        - {id: fast, kind: worker, model: deepseek/deepseek-v4-flash, depends_on: []}
+        - {id: verdict, kind: merge, model: deepseek/deepseek-v4-flash, depends_on: [slow, fast]}
+      edges: [[slow, verdict], [fast, verdict]]
+
+timeout:
+  per_stage_s: 30
+  total_s: 120
+  connect_s: 10
+  read_s: 30
