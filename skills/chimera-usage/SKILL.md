@@ -1072,3 +1072,22 @@ python scripts/probe_mcp_stdio.py --formation=speed .venv/bin/chimera-mcp
 The negative CLI contract is also usable: `chimera --formation definitely-not-real run '2+2'` exits 2 and lists the available formations. Before diagnosing a live result, check `/health`'s commit and run `scripts/smoke_live.py`; the service can be CODE-CURRENT against `origin/main` even when its short commit differs because only board/docs paths are ahead.
 
 Run 27 install lesson: `bunker-qa.sh` currently reported `install rc=0 but no artifact found (toolsd...)` after successfully installing `chimera-deliberation 0.2.8` on a fresh agent. For Chimera, the relevant post-install checks are the `chimera` and `chimera-mcp` console scripts plus `chimera --version`; a toolsd result is harness identity evidence, not a Chimera install verdict. Preserve the complete evidence path and classify the battery as untrusted until the external detector is fixed (current recurrence candidate: QA-CHIMERA-V2-44-R2).
+
+## Run 28 — is a live Chimera actually healthy? (2026-11-16)
+
+Scraping `/metrics` cannot answer that. A deliberation in which **every worker model failed** still lands as a clean `2xx`: measured on a fresh instance with a deliberately invalid provider key, `formation=simple` returned HTTP 200 in 9.08 s with `trace.worker_failures` carrying 2 entries (both stages dead, the aggregator alone produced the answer) while `/metrics` showed one `status="2xx"` counter, one duration observation, and no error series at all. No metric carries formation, outcome or worker failures.
+
+So, per surface:
+
+| question | ask |
+|---|---|
+| is the process up, and which build? | `GET /health` (adds `commit` + `version`), `GET /v1/health/live` — both ~2 ms |
+| is the panel actually deliberating? | the response body: `trace.worker_failures` on `/v1/deliberate`, `chimera_worker_failures` / `chimera_degraded_reasons` on `/v1/chat/completions`. Empty list = every stage answered. |
+| which provider is sick? | `GET /v1/health` — `details.providers[name].error_class` (`missing_credentials`/`slow`/`timeout`/`auth`/`quota`/`api`) plus `latency_s`; `credential_sources` says where the key came from |
+| is it slow because of Chimera? | no: deliberation wall time matches `trace.total_duration_ms` and is provider-bound; the only Chimera-owned waits are the health probes (below) |
+
+Do not gate a deploy on `GET /v1/health/ready` with a short timeout. It re-probes providers on **every** call and takes as long as the slowest one — measured 11.03 s and 11.00 s on consecutive calls while one provider sat in the `slow` class. Use `/v1/health/live` for liveness (that is what the Dockerfile healthcheck uses), and `/v1/health` for a cached view (60 s TTL, so poll at an interval that is not exactly 60 s).
+
+Two smaller facts worth knowing before you write a probe: hostile paths are safe for cardinality (25 bogus nested paths produced zero `route=` series, all folded into `route="<unmatched>"`), and an SSE connection is timed as the whole request, so an idle stream shows up as a 20 s "request" — scope any latency query to the route you actually care about.
+
+Related open rows: DF-CHIMERA-V2-110 (unvalidated `allowed_models` → 500), DF-CHIMERA-V2-111 (metrics blind to degradation), DF-CHIMERA-V2-112 (SSE duration in the shared histogram), PERF-1 (`/v1/health/ready` latency pinned to the slowest provider).
