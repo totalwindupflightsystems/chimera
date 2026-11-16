@@ -65,7 +65,7 @@ description: >-
   at HEAD and verified by execution, the published wheel still leaks the
   operator config (97), the deployment is stale (98), and `[full]` is not a
   test environment (99) — install `[dev]` before running the suite.
-version: 1.15.0
+version: 1.16.0
 category: software-development
 ---
 
@@ -1091,3 +1091,63 @@ Do not gate a deploy on `GET /v1/health/ready` with a short timeout. It re-probe
 Two smaller facts worth knowing before you write a probe: hostile paths are safe for cardinality (25 bogus nested paths produced zero `route=` series, all folded into `route="<unmatched>"`), and an SSE connection is timed as the whole request, so an idle stream shows up as a 20 s "request" — scope any latency query to the route you actually care about.
 
 Related open rows: DF-CHIMERA-V2-110 (unvalidated `allowed_models` → 500), DF-CHIMERA-V2-111 (metrics blind to degradation), DF-CHIMERA-V2-112 (SSE duration in the shared histogram), PERF-1 (`/v1/health/ready` latency pinned to the slowest provider).
+
+## Run 29 — using Chimera as a Python library (2026-11-16)
+
+The four lines in README.md:116-134 are real and they work — `load_config()` →
+`Engine(config, LiteLLMGateway(config))` → `await engine.deliberate(prompt)` →
+`result.answer`. Run 29 built a code-review tool with exactly that and the panel
+found a planted `TTLCache.invalidate()` no-op with the correct method, line,
+mechanism and fix. If you are embedding Chimera, that is the shape to use:
+
+```python
+import asyncio
+from chimera import Engine, LiteLLMGateway, load_config
+
+async def main():
+    config = load_config()                      # CHIMERA_CONFIG, or walk-up from cwd
+    engine = Engine(config, LiteLLMGateway(config))
+    result = await engine.deliberate(prompt, "auto")   # 2nd arg = formation
+    print(result.answer)
+    print(result.trace.total_cost, result.trace.request_id,
+          len(result.trace.worker_failures))    # cost/id/degradation live HERE
+
+asyncio.run(main())
+```
+
+Four things the docs do not tell you, measured:
+
+- **Cost and request id are on `result.trace`, not `result`.** `hasattr(result,
+  "total_cost")` and `hasattr(result, "request_id")` are both False; use
+  `result.trace.total_cost` / `.request_id` / `.total_duration_ms` /
+  `.worker_failures`.
+- **The one-argument call runs `formation=auto`**, not `simple`. Auto plans per
+  prompt: a one-word answer cost 2-3 stages and ~13 s, a 35-line code review cost
+  5 stages (3 workers → aggregator → auditor), 26,686 stage tokens and **222 s**,
+  where the fastest worker alone had the right answer in 14.5 s.
+- **Do not pick `simple` when you want cheap.** Same prompt, same process:
+  `auto` 13.4 s / $0.004016, `speed` 12.0 s / $0.004312, `simple` **38.3 s /
+  $0.008821** — `simple` is `workers: 2` resolved through
+  `defaults.default_worker` (`deepseek/deepseek-v4-pro`). `speed` pins cheap models;
+  `auto` adapts.
+- **`observability.log_level` and `observability.use_stdout` do not apply in-process.**
+  Logging is configured by the CLI entrypoint only
+  (`src/chimera/cli/main.py:238,257`). A library call emits info+debug lines to
+  **stdout** (6.3-7.7 KB per deliberation, 0 bytes on stderr) even with
+  `use_stdout: false, log_level: warning` in the loaded config, so a consumer's own
+  JSON on stdout gets corrupted. Until DF-CHIMERA-V2-113 is fixed, call
+  `chimera.observability.configure_logging(config.observability, force_stderr=True)`
+  yourself right after `load_config()`, or keep the consumer's structured output
+  off stdout.
+
+One more: outside a repo checkout, imports take the machine-scoped
+`~/.chimera/blocked-models.json` registry (a `UserWarning` at import says so). Set
+`CHIMERA_BLOCKED_MODELS_PATH` to pin it — a poisoned shared registry blocks models
+for every project on the box for 7 days (DF-CHIMERA-V2-58).
+
+Evidence and the re-runnable probes:
+`.coding-hermes/evidence/chimera-v2-dogfood-2026-11-16-05-02-33/library-consumer/`
+(`run_evidence.py` is the arm that writes the numbers; `probe5.py` isolates the
+stream/level split). Open rows from this run: DF-CHIMERA-V2-113 (observability
+knobs inert in-process), -114 (`simple` is the premium preset),
+-115 (result-field and formation-default docs gaps).

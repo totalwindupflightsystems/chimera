@@ -1160,3 +1160,58 @@ Traps hit in this run (worth reusing):
 Run 27 drove the external MCP client against the repository's real `chimera-mcp` entry point, not a unit test or internal helper. The client completed initialize, tool discovery, and a real `chimera_deliberate` call for both `simple` and the restored `speed` formation. Both returned `PROBE OK`, a non-empty `17 * 23 = 391` answer marker, and no non-JSON stdout pollution. Measured walls were 17.3s (`simple`) and 19.6s (`speed`); a repeated simple run measured 25.5s cold and 20.7s warm. These waits are provider/model-bound, so no PERF row was filed.
 
 The deployed REST service was also exercised through `scripts/smoke_live.py`: `/health` reported commit `9bdb753`; the script returned rc=0, `CODE-CURRENT` against `origin/main` because the path-scoped material diff is empty, and `SMOKE PASS` with a real merged answer. The CLI unknown-formation arm returned rc=2 with the available formation list. The fresh install battery completed through `bunker-qa.sh` on `bunker-mvp` agent `5d53db3f`. Its package install succeeded for `chimera-deliberation 0.2.8`, but the external harness incorrectly graded fresh-install FAIL because it searched for a toolsd artifact; this corroborates QA-CHIMERA-V2-44. The collector recovered teardown and a fresh census confirmed the agent was gone. The act leg remained UNVERIFIED because the container image was absent.
+
+## 2026-11-16 (run 29) — the in-process library seam
+
+Run 29 imported the package the way README.md:116-134 tells a Python user to, and
+built a real consumer with it (`panel_review.py`: file in, multi-model code review
+out). The engine itself behaved: a 60-line `TTLCache` with a planted
+`invalidate()` no-op was diagnosed correctly (method, line, mechanism, fix) in
+222 s cold, and all four lesser defects it listed are real. The findings are all in
+the seam around the engine, and each has a mechanism you can point at.
+
+**Why the library writes to stdout whatever the config says.** Logging is
+configured at the *entrypoint*, not at config load. `configure_logging` is defined
+at `src/chimera/observability.py:38` and called only from the CLI —
+`src/chimera/cli/main.py:238` (machine modes, `force_stderr=True`) and
+`src/chimera/cli/main.py:257` (`configure_logging(cfg.observability,
+force_stderr=True)`). A consumer that calls `load_config()` and builds `Engine`
+itself never runs it, so structlog's default print logger is what emits — stdout,
+verbose — and `observability.log_level` / `observability.use_stdout` are inert.
+Measured with `log_level: warning, use_stdout: false` loaded and confirmed on the
+config object: 9-10 `info` plus 5 `debug` lines and 6.3-7.7 KB on **stdout**, 0
+bytes on stderr, per call; the CLI with the same file put 5 bytes on stdout and
+2.8 KB of warnings on stderr. This is the same defect class that was fixed twice
+before on other surfaces — `DF-CHIMERA-0906-2` (MCP stdio purity, P0) and
+`DF-CHIMERA-0906-5` (CLI answer mixed with log lines). The library is the third
+surface, and it was never in scope of either fix, because neither fix point is the
+logging bootstrap.
+
+**Why `simple` costs more than `auto`.** A preset resolves names through the
+config's defaults: `formations.simple: {workers: 2, aggregator: default}` plus
+`defaults.default_worker: deepseek/deepseek-v4-pro` (`chimera.yaml:11`) means the
+preset called "simple" runs two copies of the most expensive worker in the
+catalog. The trace makes it arithmetic: `simple` = 28.6 s + 13.9 s of
+`deepseek-v4-pro` + a 1.5 s aggregator, $0.008821; `speed` = flash + qwen3-coder,
+$0.004312; `auto` = whatever the dispatcher plans, $0.004016. The name is the
+trap, not the code: nothing in the preset machinery is wrong, but README.md:37 is
+where a user learns the flag exists, and the example uses the most expensive
+value.
+
+**The right way to read a library result.** Cost, request id, duration and worker
+failures are on `result.trace` (`total_cost`, `request_id`, `total_duration_ms`,
+`worker_failures`), not on `result` — `hasattr(result, "total_cost")` is False.
+The README's snippet ends at `result.answer`, and the older 2026-08-13 report
+quoted a library cost, so the shape moved without the doc. If you are writing a
+consumer today: read `result.trace.total_cost` and treat `worker_failures` as the
+honesty signal (the answer can be produced by the aggregator alone while workers
+are dead — run 28's lesson, still true here).
+
+**Two traps this fire cost me, so the next one does not.** (1) Inline
+`python -c` and heredocs are refused on this unattended surface — stage every
+probe as a file and run it by path. (2) A first-run consumer's own bugs look like
+product defects: my initial `shape()` helper clobbered its own `hasattr` booleans
+with the attribute value, which read as "total_cost=None" and nearly became a
+false finding; re-deriving `hasattr` per attribute and dumping `trace_fields` is
+what turned it into the accurate "cost lives on the trace" statement. Measure
+the attribute, not the dict you built from it.

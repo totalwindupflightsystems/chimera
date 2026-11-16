@@ -1,0 +1,228 @@
+{
+  "arms": {
+    "cli_json": {
+      "answer": "PONG",
+      "cost": 0.00434,
+      "formation": "auto",
+      "rc": 0,
+      "source": "auto",
+      "stderr_chars": 2845,
+      "stderr_levels": {
+        "debug": 0,
+        "error": 0,
+        "info": 0,
+        "other": 27,
+        "warning": 0
+      },
+      "stdout_chars": 10946,
+      "stdout_levels": {
+        "debug": 0,
+        "error": 0,
+        "info": 0,
+        "other": 1,
+        "warning": 0
+      },
+      "stdout_repr": "{\"answer\": \"PONG\", \"trace\": {\"request_id\": \"0288701138f6460e\", \"formation\": \"auto\", \"source\": \"auto\", \"dispatch\": {\"stag",
+      "tokens": 22763,
+      "wall_s": 18.218
+    },
+    "cli_quiet": {
+      "rc": 0,
+      "stderr_chars": 2841,
+      "stderr_levels": {
+        "debug": 0,
+        "error": 0,
+        "info": 0,
+        "other": 27,
+        "warning": 0
+      },
+      "stdout_chars": 5,
+      "stdout_levels": {
+        "debug": 0,
+        "error": 0,
+        "info": 0,
+        "other": 1,
+        "warning": 0
+      },
+      "stdout_repr": "PONG\n",
+      "wall_s": 30.733
+    },
+    "lib_auto": {
+      "answer": "PONG",
+      "cost": 0.004016,
+      "formation": "auto",
+      "ok": true,
+      "result_top_level_attrs": {
+        "request_id": false,
+        "total_cost": false,
+        "trace": true
+      },
+      "source": "auto",
+      "stages": [
+        {
+          "kind": "worker",
+          "latency_ms": 1120,
+          "model": "deepseek/deepseek-v4-flash",
+          "stage_id": "worker_1"
+        },
+        {
+          "kind": "worker",
+          "latency_ms": 1959,
+          "model": "openrouter/openai/gpt-5.6-luna",
+          "stage_id": "worker_2"
+        },
+        {
+          "kind": "aggregator",
+          "latency_ms": 2246,
+          "model": "deepseek/deepseek-v4-flash",
+          "stage_id": "aggregator"
+        }
+      ],
+      "stderr_chars": 0,
+      "stderr_levels": {
+        "debug": 0,
+        "error": 0,
+        "info": 0,
+        "other": 0,
+        "warning": 0
+      },
+      "stdout_chars": 6310,
+      "stdout_first_line": "2026-11-16 02:04:37 [info     ] dispatcher_catalog_credentialed_only excluded=['cliproxy/deepseek,deepseek-v4-flash'] formation=auto request_id=aea7a5b6880c4651",
+      "stdout_levels": {
+        "debug": 5,
+        "error": 0,
+        "info": 10,
+        "other": 0,
+        "warning": 0
+      },
+      "stdout_lines": 15,
+      "tokens": 22162,
+      "total_duration_ms": 13366,
+      "wall_s": 13.367,
+      "worker_failures": 0
+    },
+    "lib_simple": {
+      "answer": "PONG",
+      "cost": 0.008821,
+      "formation": "simple",
+      "ok": true,
+      "result_top_level_attrs": {
+        "request_id": false,
+        "total_cost": false,
+        "trace": true
+      },
+      "source": "preset",
+      "stages": [
+        {
+          "kind": "worker",
+          "latency_ms": 28647,
+          "model": "deepseek/deepseek-v4-pro",
+          "stage_id": "worker_1"
+        },
+        {
+          "kind": "worker",
+          "latency_ms": 13859,
+          "model": "deepseek/deepseek-v4-pro",
+          "stage_id": "worker_2"
+        },
+        {
+          "kind": "aggregator",
+          "latency_ms": 1515,
+          "model": "deepseek/deepseek-v4-flash",
+          "stage_id": "aggregator"
+        }
+      ],
+      "stderr_chars": 0,
+      "stderr_levels": {
+        "debug": 0,
+        "error": 0,
+        "info": 0,
+        "other": 0,
+        "warning": 0
+      },
+      "stdout_chars": 7706,
+      "stdout_first_line": "2026-11-16 02:04:51 [info     ] gateway_format_removed         formation=simple provider=deepseek request_id=62bd916e26a54591 requested_type=json_object",
+      "stdout_levels": {
+        "debug": 5,
+        "error": 0,
+        "info": 9,
+        "other": 0,
+        "warning": 0
+      },
+      "stdout_lines": 14,
+      "tokens": 25648,
+      "total_duration_ms": 38339,
+      "wall_s": 38.34,
+      "worker_failures": 0
+    },
+    "lib_speed": {
+      "answer": "PONG",
+      "cost": 0.004312,
+      "formation": "speed",
+      "ok": true,
+      "result_top_level_attrs": {
+        "request_id": false,
+        "total_cost": false,
+        "trace": true
+      },
+      "source": "preset",
+      "stages": [
+        {
+          "kind": "worker",
+          "latency_ms": 2633,
+          "model": "deepseek/deepseek-v4-flash",
+          "stage_id": "worker_1"
+        },
+        {
+          "kind": "worker",
+          "latency_ms": 456,
+          "model": "openrouter/qwen/qwen3-coder",
+          "stage_id": "worker_2"
+        },
+        {
+          "kind": "aggregator",
+          "latency_ms": 1446,
+          "model": "deepseek/deepseek-v4-flash",
+          "stage_id": "aggregator"
+        }
+      ],
+      "stderr_chars": 0,
+      "stderr_levels": {
+        "debug": 0,
+        "error": 0,
+        "info": 0,
+        "other": 0,
+        "warning": 0
+      },
+      "stdout_chars": 7361,
+      "stdout_first_line": "2026-11-16 02:05:30 [info     ] gateway_format_removed         formation=speed provider=deepseek request_id=27a068e882834804 requested_type=json_object",
+      "stdout_levels": {
+        "debug": 5,
+        "error": 0,
+        "info": 9,
+        "other": 0,
+        "warning": 0
+      },
+      "stdout_lines": 14,
+      "tokens": 23344,
+      "total_duration_ms": 12001,
+      "wall_s": 12.002,
+      "worker_failures": 0
+    }
+  },
+  "chimeraconfig_observability": {
+    "langfuse": {
+      "enabled": false,
+      "host": "https://cloud.langfuse.com",
+      "public_key": null,
+      "secret_key": null
+    },
+    "log_level": "warning",
+    "trace_enabled": true,
+    "use_stdout": false
+  },
+  "prompt": "Reply with exactly: PONG",
+  "run": 29,
+  "surface": "in-process Python library (README.md:116-134)",
+  "tick": "chimera-v2-dogfood-2026-11-16-05-02-33"
+}
