@@ -49,6 +49,93 @@ deliberate gap, tracked on the project board rather than papered over here. Use
 `chimera.yaml.example`. `chimera config init` copies it. Model defaults, provider
 credentials and server tuning all live there — see `docs/CONFIG.md`.
 
+The process reads its config **once at boot**: adding a formation or flipping
+`auth.enabled` takes effect only after a restart of whatever supervises the
+service (`docker compose restart`, or `systemctl restart chimera` on a bare host).
+
+## Internal service lane (fleet agents)
+
+Chimera also runs as the fleet's zero-shot answer service: one shared instance,
+reached by agents over the tailnet directly or through 9router.
+
+### Formations meant for fleet traffic
+
+| preset | shape | when |
+|---|---|---|
+| `quick-panel` | 3 flash-tier workers (`deepseek-v4-flash`, `openrouter/qwen/qwen3-coder`, `hermes/glm-5.3-flash`) → one `deepseek-v4-flash` aggregator | default agent lane: a merged answer at flash-tier prices |
+| `panel` | 3 pro-tier workers (`deepseek-v4-pro`, `claude-sonnet-4.6`, `gpt-5.6-sol`) → 2 aggregators, `best_of_n` merge | escalation, when the answer is load-bearing |
+| `quick` | alias of `quick-panel` | 9router strips its prefix, so the upstream model name is the bare formation name |
+
+There is no separate budget knob: the budget cap for `quick-panel` **is** the
+model tier. Every lane in it is a flash model, so one deliberation costs cents
+and cannot be routed onto a quota-limited or pro lane.
+
+Measured 2026-11-16 against the live config through the engine CLI:
+
+```bash
+$ chimera -c chimera.yaml run --formation quick-panel --json '<prompt>'
+formation=quick-panel  workers=3  duration_ms=23793  tokens=74847  cost_usd=0.0121
+```
+
+3 workers across 3 providers plus the aggregator, 23.8 s wall clock, ~$0.012.
+
+### Exposure (tailnet, not public)
+
+The service binds loopback (`127.0.0.1:8765`). Publish it to the tailnet with
+`tailscale serve` — no public ingress, no port-forward, TLS terminated by
+Tailscale:
+
+```bash
+tailscale serve --bg --https=8443 http://127.0.0.1:8765
+tailscale serve status
+#   https://<host>.<tailnet>.ts.net (tailnet only)
+#   |-- / proxy http://127.0.0.1:8765
+```
+
+`serve` (not `funnel`) keeps it reachable only to tailnet members. Revoke with
+`tailscale serve reset`.
+
+### Auth
+
+`auth.enabled: true` with `mode: env` puts a key in front of every route except
+the ones a monitor or catalog needs keylessly: `/health`, `/v1/health`,
+`/v1/health/live`, `/v1/health/ready`, `/v1/models`, `/v1/formations` and
+`/.well-known/agent-card.json`.
+
+The key is `CHIMERA_API_KEY` in `.secrets/chimera.env` (never committed); either
+header is accepted:
+
+```bash
+curl -s https://<host>.<tailnet>.ts.net:8443/v1/models -H "Authorization: Bearer $CHIMERA_API_KEY"
+curl -s https://<host>.<tailnet>.ts.net:8443/v1/models -H "X-API-Key: $CHIMERA_API_KEY"
+```
+
+Clients that already carry it: the Hermes provider block (`api_key_env:
+CHIMERA_API_KEY`) and `scripts/smoke_live.py` (`--api-key`, defaulting to
+`$CHIMERA_API_KEY`). A protected route without the key answers `401`; a keyless
+route answers `200` either way. A wrong or stale key is a client-side problem —
+`/v1/health` stays `degraded`-free because health does not authenticate.
+
+### 9router upstream lane
+
+9router carries chimera as one more upstream, so any fleet agent that already
+talks to 9router can name `chim/quick` or `chim/panel` instead of holding a
+chimera-specific base URL:
+
+| field | value |
+|---|---|
+| node type | `openai-compatible` |
+| prefix | `chim` |
+| base URL | `https://<host>.<tailnet>.ts.net:8443/v1` |
+| api key | the same `CHIMERA_API_KEY` |
+| models | `chim/quick` → formation `quick`, `chim/panel` → formation `panel` |
+
+9router strips the prefix before forwarding, so the upstream model name is the
+bare formation name — that is why `quick` exists as an alias of `quick-panel`.
+Liveness: `GET /v1/models` from an agent through 9router must list both ids, and
+a `POST /v1/chat/completions` with `{"model":"chim/quick"}` returns a single
+merged answer (not one worker's).
+
 ## Health
 
 Three probes, all on the API listener, all cheap to scrape:

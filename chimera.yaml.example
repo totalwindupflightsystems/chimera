@@ -19,6 +19,13 @@ defaults:
   default_aggregator: deepseek/deepseek-v4-flash
   lock_dispatcher: false
   lock_aggregator: true
+# REST API auth. Left OFF in the public starter so a fresh checkout answers on
+# localhost with no setup; set `enabled: true` once the service is reachable from
+# anywhere but loopback. Health, /v1/models and /v1/formations stay keyless even
+# when it is on. The key comes from CHIMERA_API_KEY (env or .env file).
+auth:
+  enabled: false
+  mode: env
 formations:
   # CLI default (`chimera -f auto`): the dispatcher designs the DAG itself.
   auto:
@@ -38,6 +45,29 @@ formations:
       - default
     merge: best_of_n
     workers: 2
+  # Fast agent lane: 3 flash-tier workers + one small aggregator. The budget cap
+  # is the model tier — no pro/premium/quota-limited lanes in this preset.
+  quick-panel: &quick_panel
+    aggregator: deepseek/deepseek-v4-flash
+    workers: 3
+    worker_models:
+      - deepseek/deepseek-v4-flash
+      - openrouter/qwen/qwen3-coder
+      - zai-coding-plan/glm-5.2
+  # 9router strips its model prefix before forwarding, so a lane registered as
+  # chim/quick reaches the API as the bare name "quick": keep the alias.
+  quick: *quick_panel
+  # Escalation lane: pro-tier workers, two aggregators merged best-of-n.
+  panel:
+    aggregators:
+      - deepseek/deepseek-v4-flash
+      - deepseek/deepseek-v4-pro
+    merge: best_of_n
+    workers: 3
+    worker_models:
+      - deepseek/deepseek-v4-pro
+      - openrouter/anthropic/claude-fable-5
+      - zai-coding-plan/glm-5.2
   # Post-hoc auditor stage. The web-SSE integration battery posts
   # simple/debate/audit; CI runs against THIS file, so it must exist here.
   audit:
