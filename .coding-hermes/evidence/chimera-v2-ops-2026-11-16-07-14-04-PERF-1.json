@@ -1,0 +1,62 @@
+{
+  "tick": "chimera-v2-ops-2026-11-16-07-14-04",
+  "row_id": "PERF-1",
+  "measured_at": "2026-11-16",
+  "published_tip": "c62eecf3e84457304b0de74414b591aa1ae1e2f4",
+  "service": "http://127.0.0.1:8765",
+  "probes": [
+    {
+      "command": "curl -sS -m 20 -o <scratch>/ready-body.json -w 'http_code=%{http_code}\\ntime_total=%{time_total}\\ncontent_type=%{content_type}\\n' http://127.0.0.1:8765/v1/health/ready",
+      "stdout": "http_code=200\\ntime_total=4.140028\\ncontent_type=application/json\\nelapsed_seconds=4.14\\nrc=0",
+      "response_summary": {
+        "status": "ready",
+        "unhealthy_providers": ["cliproxy"],
+        "slow_providers": []
+      }
+    },
+    {
+      "command": "curl -sS -m 10 -o <scratch>/live-body.txt -w 'http_code=%{http_code}\\ntime_total=%{time_total}\\ncontent_type=%{content_type}\\n' http://127.0.0.1:8765/v1/health/live",
+      "stdout": "http_code=200\\ntime_total=0.001156\\ncontent_type=application/json\\nelapsed_seconds=0.00\\nrc=0",
+      "body": "{\"status\":\"alive\",\"uptime_models\":48,\"commit\":\"5146d46\",\"version\":\"0.2.9\"}"
+    },
+    {
+      "command": "curl -sS -m 20 -o <scratch>/refresh-body.json -w 'http_code=%{http_code}\\ntime_total=%{time_total}\\ncontent_type=%{content_type}\\n' 'http://127.0.0.1:8765/v1/health?refresh=1'",
+      "stdout": "http_code=200\\ntime_total=2.579194\\ncontent_type=application/json\\nelapsed_seconds=2.58\\nrc=0",
+      "response_summary": {
+        "status": "degraded",
+        "unhealthy_providers": ["cliproxy"],
+        "details_providers": {
+          "hermes": {"healthy": true, "model_tested": "hermes/glm-5.3-flash"},
+          "deepseek": {"healthy": true, "model_tested": "deepseek/deepseek-v4-flash"},
+          "router9": {"healthy": true, "model_tested": "router9/ds/deepseek-v4-flash"},
+          "cliproxy": {"healthy": false, "error_class": "missing_credentials"}
+        }
+      }
+    },
+    {
+      "command": "curl -sS -m 10 -o <scratch>/cached-body.json -w 'http_code=%{http_code}\\ntime_total=%{time_total}\\ncontent_type=%{content_type}\\n' http://127.0.0.1:8765/v1/health",
+      "stdout": "http_code=200\\ntime_total=6.491715\\ncontent_type=application/json\\nelapsed_seconds=6.49\\nrc=0",
+      "response_summary": {
+        "status": "degraded",
+        "unhealthy_providers": ["cliproxy"],
+        "cache_age_s": null
+      }
+    }
+  ],
+  "listener_probe": {
+    "command": "ss -ltnp | grep ':8765'",
+    "stdout": "LISTEN 0 2048 127.0.0.1:8765 0.0.0.0:* users:((\"chimera\",pid=849707,fd=13))"
+  },
+  "interpretation": {
+    "acceptance_1_under_2s_with_hanging_provider": "UNMET/UNMEASURED: no hanging-provider fixture was introduced; current readiness was 4.140028s and refresh health was 2.579194s.",
+    "acceptance_2_per_provider_error_class_and_latency": "PARTIAL: current response identifies cliproxy missing_credentials and reports no slow provider, but the observed response did not include latency_s for providers.",
+    "acceptance_3_cached_millisecond_scale_and_ttl": "UNMET in this sample: the subsequent /v1/health call returned 6.491715s and cache_age_s=null, so this was not a valid cache-hit measurement.",
+    "mechanism": "The prior slow-hermes condition is not present in this live sample; the current degraded provider is cliproxy with missing credentials. The row remains pending because the literal performance acceptance is not proven."
+  },
+  "changed": [],
+  "deliberately_left_alone": [
+    "No service restart: the service was live and the active ops tick was in flight.",
+    "No scheduler mutation: the scheduler database is read-only operational state.",
+    "No cleanup: no regenerability proof existed or was needed."
+  ]
+}
