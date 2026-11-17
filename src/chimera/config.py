@@ -237,6 +237,21 @@ class ServerConfig(BaseModel):
     ~10.3s vs ~2.8-3.2s warm) briefly exceeds the budget.  ``0`` disables the
     grace and reproduces the previous cancel-at-deadline behaviour exactly.
     """
+    health_endpoint_budget_s: float = Field(default=1.5, gt=0)
+    """Wall-clock bound on how long an uncached ``/v1/health`` /
+    ``/v1/health/ready`` call may wait on a fresh provider probe (PERF-1).
+
+    The probe itself keeps its own ``health_timeout_s`` (+ grace) budget and
+    runs to completion in a background task; the endpoint only stops waiting
+    for it here.  Whatever the background probe already settled comes back
+    fresh; providers still in flight are served last-known (``stale`` +
+    ``age_s``) or — when they have never answered at all — as
+    ``error_class: "in_flight"``.  The default keeps worst-case uncached
+    latency well under 2 s even when a provider hangs to the full
+    ``health_timeout_s``, which is what a health endpoint must promise a
+    monitor.  Set it above ``health_timeout_s + health_probe_grace_s`` to
+    restore the old fully blocking behaviour exactly.
+    """
     litellm_prewarm: bool = True
     """Fire a non-blocking LiteLLM warm-up when the API server starts
     (CHIMERA-V2-REVIEW-04).

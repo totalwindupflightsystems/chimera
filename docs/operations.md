@@ -149,6 +149,25 @@ Three probes, all on the API listener, all cheap to scrape:
 `/health` is what the container healthcheck uses; use `/v1/health/ready` in a
 load-balancer or k8s readiness gate.
 
+Probe latency and intervals (PERF-1):
+
+* The provider verdicts behind `/v1/health` and `/v1/health/ready` are cached
+  for a TTL of 60s (set on `_ProviderHealthCache` in `create_app`; `?refresh=1`
+  on `/v1/health` bypasses it). A poll running at EXACTLY the TTL always reads
+  a miss — the entry's age has reached the TTL by the next poll — so poll
+  FASTER than the TTL (e.g. every 45s) if you want every scrape served from
+  cache at millisecond scale.
+* An uncached call (first call, expired TTL, or `?refresh=1`) waits at most
+  `server.health_endpoint_budget_s` (default 1.5s) for a fresh probe. The
+  probe keeps its own `server.health_timeout_s` (default 10s) budget and
+  finishes in the background; while it runs the endpoints serve last-known
+  verdicts (`stale: true` + `age_s` per provider) or `error_class:
+  "in_flight"` for providers that have never answered — named additively in
+  the top-level `in_flight_providers` list. Neither `in_flight` nor `stale`
+  changes the healthy/degraded math: an unmeasured provider is not a proven
+  failure, and the real class (`slow`, `api`, ...) appears once its probe
+  lands.
+
 ## Metrics
 
 `GET /metrics` serves the Prometheus text exposition format (0.0.4) from the
