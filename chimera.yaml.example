@@ -3,9 +3,9 @@
 # Chimera boots from this file as-is: export at least DEEPSEEK_API_KEY and the
 # `simple` formation works. It deliberately carries a tiny catalog and two
 # standard providers. For the full operator reference — 40+ models with
-# complete category maps, custom DAG formations, local-gateway and CLI-proxy
-# providers, tuning knobs — see chimera.yaml.fleet in the repo root (kept in
-# the checkout only; it is NOT shipped in the wheel).
+# complete category maps, custom DAG formations, lane aliases, local-gateway
+# and CLI-proxy providers, tuning knobs — see chimera.yaml.fleet in the repo
+# root (kept in the checkout only; it is NOT shipped in the wheel).
 #
 # Every credential below is a ${ENV_VAR} reference, resolved at load time from
 # the environment or a .env file next to your config. Never inline a real key.
@@ -46,27 +46,15 @@ formations:
     merge: best_of_n
     workers: 2
   # Fast agent lane: 3 flash-tier workers + one small aggregator. The budget cap
-  # is the model tier — no pro/premium/quota-limited lanes in this preset.
-  quick-panel: &quick_panel
+  # is the model tier — no pro/premium/quota-limited lanes in this preset. The
+  # operator lane aliases for it (9router prefix-stripped `quick`) live in
+  # chimera.yaml.fleet.
+  quick-panel:
     aggregator: deepseek/deepseek-v4-flash
     workers: 3
     worker_models:
       - deepseek/deepseek-v4-flash
       - openrouter/qwen/qwen3-coder
-      - zai-coding-plan/glm-5.2
-  # 9router strips its model prefix before forwarding, so a lane registered as
-  # chim/quick reaches the API as the bare name "quick": keep the alias.
-  quick: *quick_panel
-  # Escalation lane: pro-tier workers, two aggregators merged best-of-n.
-  panel:
-    aggregators:
-      - deepseek/deepseek-v4-flash
-      - deepseek/deepseek-v4-pro
-    merge: best_of_n
-    workers: 3
-    worker_models:
-      - deepseek/deepseek-v4-pro
-      - openrouter/anthropic/claude-fable-5
       - zai-coding-plan/glm-5.2
   # Post-hoc auditor stage. The web-SSE integration battery posts
   # simple/debate/audit; CI runs against THIS file, so it must exist here.
@@ -118,15 +106,6 @@ models:
     cost_tier: premium
     provider: zai
     enabled: true
-  openrouter/anthropic/claude-fable-5:
-    categories:
-      technology_code/code_generation/python: 97
-      complex_reasoning_agency/multi_step_planning/task_decomposition: 98
-      general_knowledge/reasoning/explanation: 97
-      creative_conversational/creative_writing/storytelling: 92
-    cost_tier: premium
-    provider: openrouter
-    enabled: true
 server:
   host: 0.0.0.0
   port: 8765
@@ -135,16 +114,3 @@ observability:
   log_level: warning
   use_stdout: false
   trace_enabled: true
-  langfuse:
-    enabled: false
-selector:
-  price_sensitivity: 0.0
-provider_discovery: true
-timeout:
-  total_s: 600.0
-  per_stage_s: 300.0
-  idle_s: 30.0
-  min_tokens_per_second: 0.0
-  connect_s: 10.0
-  read_s: 30.0
-  retry_s: 60.0
