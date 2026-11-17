@@ -2399,3 +2399,16 @@ tasks:
   status: complete
   created_at: '2026-11-07T17:32:30.037518+00:00'
   completed_at: '2026-11-07T18:08:51.539973+00:00'
+- id: INT-CI-014-R3
+  title: Index the two stranded 2026-11-16 dogfood run logs (run28 + run29) in docs/README.md
+    so the fresh-checkout suite is green at HEAD
+  criteria:
+  - 1. docs/README.md lists BOTH docs/dogfood/2026-11-16-run28-integration.md and
+    docs/dogfood/2026-11-16-run29-library-integration.md in the '## Dogfood run logs'
+    section, and the already-indexed run30 entry stays. 2. '.venv/bin/python -m pytest
+    tests/test_docs_index.py -q' exits 0 at HEAD (currently 3 failed, 61 passed).
+    3. '.venv/bin/python -m pytest -q' (full suite, no -x, no -k) is green so the
+    ~1300 tests the -x abort skipped actually run.
+  status: complete
+  created_at: '2026-11-17T10:18:11.331302+00:00'
+  completed_at: '2026-11-17T10:30:10.033081+00:00'
