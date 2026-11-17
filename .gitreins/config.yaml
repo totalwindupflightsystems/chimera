@@ -17,6 +17,13 @@ guards:
   test_command: >-
     test -x .venv/bin/pytest || uv sync --extra dev;
     .venv/bin/pytest -x --tb=short
+  # The gate must be able to finish the suite it demands. Measured at HEAD
+  # 06ef557: the full suite is 155s on an idle box and 180-232s under fleet
+  # load, so the 180s default made EVERY Python commit unpassable — on
+  # CHIMERA-V2-REVIEW-07 the worker's fix ran green (2232 passed, 3 skipped,
+  # 180.25s) and the hook still blocked it twice with "Tests timed out after
+  # 180s". 600s is a ceiling, not a target: a hung suite still fails.
+  test_timeout: 600
   dead_code: false
   skylos: false
   lsp: true
