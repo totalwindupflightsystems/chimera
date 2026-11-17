@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,49 @@ from chimera.config import ChimeraConfig
 from chimera.gateway import GatewayResponse
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _drain_litellm_before_loop_shutdown() -> Any:
+    """Flush/stop LiteLLM's worker on its owning loop, before cancellation.
+
+    LiteLLM 1.99.4 logging_worker.py:76 drops the old queue on a loop switch,
+    releasing unawaited Logging.async_success_handler coroutines. Its atexit
+    flush is too late, and Runner's blanket task cancellation can cancel a
+    newly scheduled worker before its cleanup runs. Use the supported flush()
+    (which also waits for dequeued callbacks) and stop() BEFORE that happens.
+
+    A session-finalizer or pytest-asyncio fixture alone cannot cover all our
+    loop owners: async tests, synchronous asyncio.run() tests and TestClient's
+    AnyIO portal each use asyncio.Runner (Python >=3.11). Wrap their teardown,
+    not completion calls, so background logging stays asynchronous in tests.
+    No warnings are filtered and failed drains fail the test teardown.
+    """
+    original_close = asyncio.Runner.close
+
+    def close(runner: asyncio.Runner) -> None:
+        # Do not import LiteLLM eagerly or initialize an unused/closed Runner.
+        # _loop and _bound_loop identify ownership without creating a new loop
+        # or attempting to await another thread's worker.
+        module = sys.modules.get("litellm.litellm_core_utils.logging_worker")
+        worker = getattr(module, "GLOBAL_LOGGING_WORKER", None)
+        loop = getattr(runner, "_loop", None)
+        try:
+            if loop is not None and worker is not None and worker._bound_loop is loop:
+
+                async def drain() -> None:
+                    try:
+                        await asyncio.wait_for(worker.flush(), timeout=5.0)
+                    finally:
+                        await worker.stop()
+
+                loop.run_until_complete(drain())
+        finally:
+            original_close(runner)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(asyncio.Runner, "close", close)
+        yield
 
 
 @pytest.fixture(scope="session", autouse=True)
