@@ -26,7 +26,7 @@ import subprocess
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -241,6 +241,11 @@ def create_app(
         yield
         if prewarm_task is not None and not prewarm_task.done():
             prewarm_task.cancel()
+        # PERF-1: a provider probe refresh may still be in flight (a hung
+        # provider keeps its probe outstanding up to timeout + grace, past any
+        # request that waited on it).  Cancel it here so shutdown does not
+        # leave the loop closing over a pending task.
+        app.state.provider_health_cache.cancel_refresh()
 
     app = FastAPI(title="Chimera", version=__version__, lifespan=lifespan)
 
@@ -894,6 +899,16 @@ class _ProviderHealthCache:
     Thread-safe via :class:`threading.Lock` (the probe function is async, but
     the lock only guards the timestamp/result bookkeeping, which is sync).
     Clock is ``time.monotonic`` — immune to wall-clock adjustments.
+
+    PERF-1 turns the miss path from "probe inline, however long it takes"
+    into stale-while-revalidate with a single-flight refresh: the endpoint
+    waits at most ``server.health_endpoint_budget_s`` for a background
+    refresh task (:meth:`begin_refresh`), then serves last-known verdicts
+    (:meth:`get_stale`) or ``in_flight`` markers for providers still being
+    probed.  Exactly one refresh task runs at a time (probe calls burn real
+    tokens), and a probe failure is recorded on :attr:`refresh_error` so the
+    endpoint can keep reporting the pre-PERF-1 degraded contract instead of
+    an unhandled task exception.
     """
 
     def __init__(self, ttl_s: float = 60.0) -> None:
@@ -901,6 +916,10 @@ class _ProviderHealthCache:
         self._lock = threading.Lock()
         self._computed_at: float | None = None  # monotonic clock
         self._results: dict[str, dict[str, Any]] | None = None
+        # PERF-1 refresh machinery — asyncio-side, touched only from the
+        # event loop (the endpoints and the refresh wrapper are all async).
+        self._refresh_task: asyncio.Task[None] | None = None
+        self._refresh_error: str | None = None
 
     def get(self) -> tuple[dict[str, dict[str, Any]] | None, float | None]:
         """Return ``(provider_results, age_s)`` — ``(None, None)`` on a miss.
@@ -931,6 +950,82 @@ class _ProviderHealthCache:
         with self._lock:
             self._results = None
             self._computed_at = None
+
+    def get_stale(self) -> tuple[dict[str, dict[str, Any]] | None, float | None]:
+        """``(provider_results, age_s)`` even past the TTL — stale-serve seam.
+
+        :meth:`get` reads a miss once the entry expires, which is right for
+        the fresh-serve contract but wrong for the PERF-1 partial path: while
+        a refresh is in flight the endpoint wants the LAST KNOWN verdicts,
+        with their age, exactly because they may be old.  Returns
+        ``(None, None)`` when nothing has ever been computed.
+        """
+        with self._lock:
+            if self._results is None or self._computed_at is None:
+                return None, None
+            return self._results, time.monotonic() - self._computed_at
+
+    def in_flight_refresh(self) -> asyncio.Task[None] | None:
+        """The live refresh task, if one is running on THIS event loop.
+
+        Loop identity is the guard: a task left over from a previous loop
+        (test clients run one loop per request; uvicorn workers restart
+        loops) must never be awaited cross-loop, so it reads as
+        not-in-flight and the caller starts a new refresh instead.
+        """
+        task = self._refresh_task
+        if task is None or task.done():
+            return None
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:  # pragma: no cover - callers are async endpoints
+            return None
+        return task if task.get_loop() is running else None
+
+    def begin_refresh(
+        self,
+        probe_factory: Callable[[], Coroutine[Any, Any, dict[str, dict[str, Any]]]],
+    ) -> asyncio.Task[None]:
+        """Adopt a probe as THE single in-flight refresh task.
+
+        *probe_factory* is a zero-arg factory rather than a bare coroutine so
+        the coroutine is only built when the wrapper actually starts — a
+        refresh cancelled before its first tick must not orphan a
+        never-awaited coroutine.  The wrapper stores the verdict when it
+        lands, records a probe failure on :attr:`refresh_error` (and logs it)
+        instead of raising, and never leaves an unretrieved task exception
+        behind.  Caller contract: :meth:`in_flight_refresh` returned ``None``
+        immediately before — the check and this call are await-free, so on
+        one loop the guard is race-free and at most one probe round runs at a
+        time (probes burn real tokens).
+        """
+
+        async def _run() -> None:
+            try:
+                results = await probe_factory()
+            except Exception as exc:
+                with self._lock:
+                    self._refresh_error = str(exc)[:200]
+                log.warning("provider_health_refresh_failed", error=str(exc)[:200])
+                return
+            self.store(results)
+            with self._lock:
+                self._refresh_error = None
+
+        task = asyncio.create_task(_run())
+        self._refresh_task = task
+        return task
+
+    def cancel_refresh(self) -> None:
+        """Cancel an outstanding refresh task (app shutdown hygiene)."""
+        task = self._refresh_task
+        if task is not None and not task.done():
+            task.cancel()
+
+    @property
+    def refresh_error(self) -> str | None:
+        """``str`` of the last failed refresh probe, or ``None``."""
+        return self._refresh_error
 
 
 async def _run_chat_deliberation(request: Request, body: ChatCompletionRequest) -> ChatCompletionResponse:
@@ -1183,19 +1278,44 @@ def _register_routes(app: FastAPI) -> None:
         verdict for it is unchanged, and it still degrades the report.
 
         Provider probe results are served from a TTL cache (default 60s,
-        REV-CHIMERA-V2-20261005-1): the first call probes every provider,
-        calls inside the window return the cached verdict with ``age_s``
-        (seconds since it was computed; 0 for a fresh probe) and make NO new
-        probe calls. ``?refresh=1`` bypasses the cache and forces a fresh
-        probe. ``age_s`` is additive — it appears on BOTH the cached and the
-        fresh paths.
+        REV-CHIMERA-V2-20261005-1): calls inside the window return the cached
+        verdict with ``age_s`` (seconds since it was computed; 0 for a fresh
+        probe) and make NO new probe calls. ``?refresh=1`` bypasses the cache
+        and forces a fresh probe. ``age_s`` is additive — it appears on BOTH
+        the cached and the fresh paths, and on every snapshot-backed partial
+        payload (below); it is ABSENT only when nothing has ever been probed
+        (pure ``in_flight`` serve), because there is then no cached verdict
+        for an age to refer to.
+
+        PERF-1 bounds the ENDPOINT, not just each probe: an uncached call
+        (first call, expired TTL, or ``?refresh=1``) waits at most
+        ``server.health_endpoint_budget_s`` (default 1.5s) for the probe and
+        then answers anyway. The probe keeps its own ``health_timeout_s`` +
+        grace budget and finishes in a background task; when it lands, its
+        verdicts are stored and the next call serves them fresh. While it is
+        still running, the response is a PARTIAL payload: providers whose
+        last snapshot verdict exists are served with ``stale: true`` and the
+        snapshot's ``age_s`` added to their entry, and providers that have
+        never answered read ``error_class: "in_flight"`` (in the additive
+        top-level ``in_flight_providers`` list, and excluded from the status
+        math like every other unmeasured class). A never-answered provider is
+        therefore distinguishable from one that answered ``age_s`` ago, and
+        the slow provider stays identifiable through its cached
+        ``error_class``/``latency_s`` once its probe lands. An explicit
+        ``?refresh=1`` never serves the stale snapshot — it reads
+        ``in_flight`` until the fresh probe it forced has landed.
+
+        Monitor-interval guidance (PERF-1): the TTL default (60s) lives on
+        ``_ProviderHealthCache`` in ``create_app``. A poller running at
+        EXACTLY the TTL always reads a miss (the entry's age has reached the
+        TTL by the next poll), so every poll paid the full probe wait before
+        PERF-1; now it pays at most ``health_endpoint_budget_s`` while the
+        real probe finishes in the background. Poll FASTER than the TTL
+        (e.g. every 45s) and every call is a TTL hit served at millisecond
+        scale.
         """
         cfg: ChimeraConfig = request.app.state.config
         cache: _ProviderHealthCache = request.app.state.provider_health_cache
-        if not refresh:
-            cached_results, cached_age_s = cache.get()
-        else:
-            cached_results, cached_age_s = None, None  # bypass: force a fresh probe
         # CH-GAP-053: count only the providers the config declared — the
         # providers map also carries auto-discovery additions, which used to
         # inflate this count. Discovery-added names are reported separately.
@@ -1218,16 +1338,25 @@ def _register_routes(app: FastAPI) -> None:
         # Optional provider connectivity check
         try:
             gw = request.app.state.engine.gateway
-            if cached_results is not None:
-                # TTL hit: serve the stored verdict without touching providers.
-                provider_status = cached_results
-                age_s = cached_age_s
-            else:
-                provider_status = await _check_providers(cfg, gw)
-                age_s = 0  # fresh probe, computed just now
-                cache.store(provider_status)
+            provider_status, age_s, serve_state = await _provider_verdicts(
+                cfg,
+                gw,
+                cache,
+                refresh=refresh,
+            )
+            if serve_state == "refresh_failed":
+                # PERF-1: the probe runs in a background task now, so its
+                # failure surfaces here (recorded on the cache) instead of
+                # unwinding through an await. Same contract as the pre-PERF-1
+                # probe exception — the handler below: degraded, every
+                # configured provider named, real reason in details.error.
+                raise RuntimeError(cache.refresh_error or "provider probe failed")
             details["providers"] = provider_status
-            details["age_s"] = round(age_s, 3)
+            if age_s is not None:
+                details["age_s"] = round(age_s, 3)
+            # PERF-1: a pure in-flight payload has no snapshot to date, so
+            # ``age_s`` — "seconds since the cached verdict was computed" —
+            # is truthfully inapplicable and stays absent.
 
             slow = _slow_provider_names(provider_status)
             # DF-CHIMERA-V2-27: the degradation list excludes the ``slow``
@@ -1236,6 +1365,7 @@ def _register_routes(app: FastAPI) -> None:
             # ``healthy`` / ``[]`` with the slow names in their own array.
             # CH-GAP-059: it also excludes the model-less discovery additions,
             # which are returned alongside it for their own top-level key.
+            # PERF-1: the ``in_flight`` class is unmeasured the same way.
             unhealthy, discovered_not_configured = _health_degraded_provider_names(
                 cfg,
                 provider_status,
@@ -1250,6 +1380,9 @@ def _register_routes(app: FastAPI) -> None:
                 "discovered_not_configured": discovered_not_configured,
                 "slow_providers": slow,
                 "probe_skipped_providers": _probe_skipped_provider_names(
+                    provider_status,
+                ),
+                "in_flight_providers": _in_flight_provider_names(
                     provider_status,
                 ),
                 "details": details,
@@ -1294,11 +1427,34 @@ def _register_routes(app: FastAPI) -> None:
         but the body now names the cause (``slow_providers`` with their
         latency) instead of leaving it implicit in the per-provider detail,
         so it is distinguishable from every real failure.
+
+        PERF-1 shares ``/v1/health``'s bounded verdict path: readiness waits
+        at most ``server.health_endpoint_budget_s`` for the (single-flight,
+        background) probe instead of blocking for the full
+        ``health_timeout_s`` + grace, and serves the same TTL cache. A
+        provider that has never answered reads ``error_class: "in_flight"``
+        (named in the additive ``in_flight_providers`` list and in the 503
+        detail) — distinguishable from one whose ``age_s``-old cached verdict
+        said healthy. Readiness can therefore answer 503 ``in_flight`` ONCE
+        right after a cold start and 200 on the next poll once the background
+        probe has landed: it is never PERMANENTLY unready for a healthy
+        service, and it never lies about how old the verdict it served is.
         """
         cfg: ChimeraConfig = request.app.state.config
         try:
             gw = request.app.state.engine.gateway
-            provider_status = await _check_providers(cfg, gw)
+            provider_status, _age_s, serve_state = await _provider_verdicts(
+                cfg,
+                gw,
+                request.app.state.provider_health_cache,
+                refresh=False,
+            )
+            if serve_state == "refresh_failed":
+                # PERF-1: probe failure recorded by the background task —
+                # same 503-with-reason contract as the pre-PERF-1 exception.
+                raise RuntimeError(
+                    request.app.state.provider_health_cache.refresh_error or "provider probe failed",
+                )
             ready = any(p["healthy"] for p in provider_status.values())
             if ready:
                 # CH-GAP-059: the same aggregation as /v1/health — this field
@@ -1313,6 +1469,9 @@ def _register_routes(app: FastAPI) -> None:
                     "probe_skipped_providers": _probe_skipped_provider_names(
                         provider_status,
                     ),
+                    "in_flight_providers": _in_flight_provider_names(
+                        provider_status,
+                    ),
                     "providers": provider_status,
                 }
             # DF-CHIMERA-V2-27: name WHICH condition made this unready. A
@@ -1321,14 +1480,20 @@ def _register_routes(app: FastAPI) -> None:
             # the slow case (the gateway answered /v1/models fine; only the
             # probe budget was too small), and an operator chasing the wrong
             # condition is exactly the confusion this ticket exists to remove.
+            # PERF-1 adds the same for the in-flight case: the probes may
+            # still land, which is not the same as either verdict.
             slow = _slow_provider_names(provider_status)
             skipped = _probe_skipped_provider_names(provider_status)
+            in_flight = _in_flight_provider_names(provider_status)
             reasons = []
             if slow:
                 reasons.append(f"no probe answered inside server.health_timeout_s (slow: {', '.join(slow)})")
             if skipped:
                 reasons.append(f"live health probe disabled (health_probe: false: {', '.join(skipped)})")
-            if len(reasons) == len(provider_status):
+            if in_flight:
+                reasons.append(f"probes still in flight (in_flight: {', '.join(in_flight)})")
+            named = set(slow) | set(skipped) | set(in_flight)
+            if len(reasons) == len(provider_status) or named >= set(provider_status):
                 detail = "Not ready — " + "; ".join(reasons)
             else:
                 detail = "Not ready — no providers reachable"
@@ -1785,6 +1950,126 @@ def _probe_skipped_provider_names(
     )
 
 
+#: ``error_class`` meaning "the probe for this provider is running right now
+#: and has outlived the endpoint's ``server.health_endpoint_budget_s`` waiting
+#: budget, and no previous verdict exists to serve" (PERF-1).  Like ``slow``
+#: and ``probe_skipped`` it is an UNMEASURED class — nothing was proven about
+#: the provider, so it must not degrade ``status`` — but unlike ``slow`` it
+#: says the probe may still land (in the background) rather than that it was
+#: cancelled at a budget.
+_IN_FLIGHT_ERROR_CLASS = "in_flight"
+
+
+def _in_flight_provider_names(
+    provider_status: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Sorted names of the providers whose probe is still in flight (PERF-1)."""
+    return sorted(
+        name for name, info in provider_status.items() if info.get("error_class") == _IN_FLIGHT_ERROR_CLASS
+    )
+
+
+def _in_flight_entry() -> dict[str, Any]:
+    """The per-provider payload for a probe that is running, no verdict yet.
+
+    Shape mirrors the other unmeasured entries (``probe_skipped``): honest
+    ``healthy: False`` + a ``note`` as the machine-readable reason + the
+    ``error_class`` the top-level list is derived from.  Deliberately NO
+    ``age_s``/``latency_s`` — nothing has been measured yet, and a number
+    here would be fabrication.
+    """
+    return {
+        "healthy": False,
+        "error_class": _IN_FLIGHT_ERROR_CLASS,
+        "note": "probe in flight; no verdict yet",
+    }
+
+
+def _in_flight_verdicts(config: ChimeraConfig) -> dict[str, dict[str, Any]]:
+    """``in_flight`` entries for every configured provider (PERF-1 partial)."""
+    return {name: _in_flight_entry() for name in config.providers}
+
+
+def _stale_provider_verdicts(
+    config: ChimeraConfig,
+    snapshot: dict[str, dict[str, Any]],
+    snapshot_age_s: float,
+) -> dict[str, dict[str, Any]]:
+    """Last-known verdicts for every configured provider, labelled stale (PERF-1).
+
+    Each entry is a COPY of the snapshot's verdict decorated additively with
+    ``stale: True`` and the snapshot's ``age_s`` — the cached entry itself is
+    never mutated, so the next fresh store keeps its plain shape.  A provider
+    the snapshot does not know (the config grew since the last probe) has
+    never answered and gets the ``in_flight`` marker instead: distinguishable
+    from one that answered ``age_s`` ago, which is the whole point.
+    """
+    age_s = round(snapshot_age_s, 3)
+    verdicts: dict[str, dict[str, Any]] = {}
+    for name in config.providers:
+        entry = snapshot.get(name)
+        if isinstance(entry, dict):
+            verdicts[name] = {**entry, "stale": True, "age_s": age_s}
+        else:
+            verdicts[name] = _in_flight_entry()
+    return verdicts
+
+
+async def _provider_verdicts(
+    config: ChimeraConfig,
+    gateway: Any,
+    cache: _ProviderHealthCache,
+    *,
+    refresh: bool,
+) -> tuple[dict[str, dict[str, Any]], float | None, str]:
+    """Provider verdicts for the health endpoints, with a bounded wait (PERF-1).
+
+    Order of preference:
+
+    1. TTL hit → the cached verdicts verbatim (``cached``); no probe traffic.
+    2. ``refresh=1`` or TTL miss → join-or-start the single background
+       refresh (:meth:`_ProviderHealthCache.begin_refresh`) and wait for it
+       up to ``server.health_endpoint_budget_s``.  Done in time → fresh
+       verdicts (``fresh``), stored for the next call.
+    3. Budget expired with the probe still running → ``partial``: last-known
+       verdicts (each decorated ``stale`` + ``age_s``) where a snapshot
+       exists, ``in_flight`` markers where none does.  An explicit
+       ``refresh=1`` is NEVER served from the snapshot — the caller asked for
+       fresh data, not stale data — so it reads ``in_flight`` everywhere the
+       probe has not yet answered.
+    4. The refresh task failed → ``refresh_failed`` (no verdicts; the reason
+       is on ``cache.refresh_error`` and the endpoints keep the pre-PERF-1
+       probe-exception contract).
+
+    Returns ``(provider_status, age_s, serve_state)``.  ``age_s`` is the age
+    of the snapshot that backs the payload (0 for fresh/cached verdicts
+    computed by this call's wait, ``None`` when no snapshot exists and the
+    payload is pure ``in_flight`` markers — those entries have no age).
+    """
+    if not refresh:
+        cached_results, cached_age_s = cache.get()
+        if cached_results is not None:
+            return cached_results, cached_age_s, "cached"
+
+    task = cache.in_flight_refresh()
+    if task is None:
+        task = cache.begin_refresh(lambda: _check_providers(config, gateway))
+    done, _pending = await asyncio.wait({task}, timeout=config.server.health_endpoint_budget_s)
+    if done:
+        results, age_s = cache.get()
+        if results is not None:
+            return results, age_s, "fresh"
+        if cache.refresh_error is not None:
+            return {}, None, "refresh_failed"
+        # A cancelled task also reads "done" without storing anything (the
+        # shutdown path) — fall through to the partial serve below.
+
+    snapshot, snapshot_age_s = cache.get_stale()
+    if refresh or snapshot is None or snapshot_age_s is None:
+        return _in_flight_verdicts(config), None, "partial"
+    return _stale_provider_verdicts(config, snapshot, snapshot_age_s), snapshot_age_s, "partial"
+
+
 def _degraded_provider_names(
     provider_status: dict[str, dict[str, Any]],
 ) -> list[str]:
@@ -1797,21 +2082,25 @@ def _degraded_provider_names(
     exhausted quota — with the two UNMEASURED classes filtered out:
 
     * ``slow`` — the probe never answered inside the budget;
-    * ``probe_skipped`` — the operator disabled the live probe.
+    * ``probe_skipped`` — the operator disabled the live probe;
+    * ``in_flight`` — the probe is still running past the endpoint's
+      ``health_endpoint_budget_s`` waiting budget (PERF-1); it may still land
+      in the background, and until it does nothing was measured.
 
     This is what keeps the signals distinct instead of collapsing them:
     ``status`` stays ``healthy`` and ``unhealthy_providers`` stays ``[]``
     when the only non-healthy providers are unmeasured (they are named in
-    ``slow_providers`` / ``probe_skipped_providers``, with the measured
-    ``latency_s`` for the slow ones), while a provider that fails a
-    different way still reads exactly as before. A class this module does
-    not classify — including a legacy ``timeout`` emitted by an older
+    ``slow_providers`` / ``probe_skipped_providers`` / ``in_flight_providers``,
+    with the measured ``latency_s`` for the slow ones), while a provider that
+    fails a different way still reads exactly as before. A class this module
+    does not classify — including a legacy ``timeout`` emitted by an older
     producer, whose task was cancelled at the deadline — counts as a
     degradation: an unexplained class is never silently promoted to healthy.
     """
     unmeasured = {
         _SLOW_ERROR_CLASS,
         _PROBE_SKIPPED_ERROR_CLASS,
+        _IN_FLIGHT_ERROR_CLASS,
     }
     return [
         name
@@ -2021,10 +2310,30 @@ async def _check_providers(
     tasks = {
         asyncio.create_task(check_one(provider_name)): provider_name for provider_name in config.providers
     }
-    done, pending = await asyncio.wait(
-        tasks,
-        timeout=config.server.health_timeout_s,
-    )
+    try:
+        done, pending = await asyncio.wait(
+            tasks,
+            timeout=config.server.health_timeout_s,
+        )
+
+        # DF-CHIMERA-V2-17: a probe still outstanding at the deadline gets a
+        # short, bounded grace window to land (resolved below).
+        if pending and config.server.health_probe_grace_s > 0:
+            late_done, pending = await asyncio.wait(
+                pending,
+                timeout=config.server.health_probe_grace_s,
+            )
+            done |= late_done
+    except BaseException:
+        # PERF-1 hygiene: the refresh wrapper runs this coroutine in a
+        # background task that can be cancelled while probes are still
+        # outstanding (app shutdown, or a caller that stopped waiting).
+        # Cancel the per-provider subtasks too, so a hung probe cannot
+        # outlive the loop that spawned it.
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
     # DF-CHIMERA-V2-27: a probe that never answers inside the budget is
     # ``slow``, NOT a bare ``timeout``.  Measured live: the ``hermes`` gateway
@@ -2042,18 +2351,13 @@ async def _check_providers(
     )
 
     # DF-CHIMERA-V2-17: a probe still outstanding at the deadline gets a
-    # short, bounded grace window to land.  One that finishes inside it is
-    # resolved from its REAL result below (the ``done``-set handling is
-    # shared), so a cold-start probe that merely needed litellm's one-off
-    # warm-up reports ``quota``/``auth``/``api`` + ``model_tested`` instead of
-    # a fabricated ``timeout``.  ``health_probe_grace_s: 0`` skips the wait
-    # entirely and reproduces the cancel-at-deadline behaviour exactly.
-    if pending and config.server.health_probe_grace_s > 0:
-        late_done, pending = await asyncio.wait(
-            pending,
-            timeout=config.server.health_probe_grace_s,
-        )
-        done |= late_done
+    # short, bounded grace window to land (moved inside the cancellation
+    # guard above by PERF-1 — one that finishes inside it is resolved from
+    # its REAL result by the shared ``done``-set handling below, so a
+    # cold-start probe that merely needed litellm's one-off warm-up reports
+    # ``quota``/``auth``/``api`` + ``model_tested`` instead of a fabricated
+    # ``timeout``).  ``health_probe_grace_s: 0`` skips the wait entirely and
+    # reproduces the cancel-at-deadline behaviour exactly.
 
     # The probes cancelled below are cancelled AFTER the grace window closed,
     # so their measured wait includes it (the DF-CHIMERA-V2-27 latency is the

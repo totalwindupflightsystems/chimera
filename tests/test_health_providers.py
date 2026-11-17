@@ -817,14 +817,19 @@ def test_health_response_keeps_every_pre_existing_key(
 
     assert r.status_code == 200
     data = r.json()
+    # PERF-1 adds ``in_flight_providers`` additively (sorted names of the
+    # providers whose probe is still running); it is present and empty on a
+    # complete serve exactly like ``slow_providers``.
     assert set(data) == {
         "status",
         "unhealthy_providers",
         "discovered_not_configured",
         "slow_providers",
         "probe_skipped_providers",
+        "in_flight_providers",
         "details",
     }
+    assert data["in_flight_providers"] == []
     # Additive key (CH-GAP-059): absent from the math, never omitted, and
     # empty when the config declared everything it carries.
     assert data["discovered_not_configured"] == []
