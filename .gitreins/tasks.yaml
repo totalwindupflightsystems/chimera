@@ -2411,7 +2411,7 @@ tasks:
     ~1300 tests the -x abort skipped actually run.
   status: complete
   created_at: '2026-11-17T10:18:11.331302+00:00'
-  completed_at: '2026-11-17T10:30:10.033081+00:00'
+  completed_at: '2026-11-17T19:54:01.435791+00:00'
 - id: CH-MAINT-012
   title: Trim chimera.yaml.example back to the 120-line minimal budget
   criteria:
@@ -2419,15 +2419,16 @@ tasks:
     with quick-panel+auth documented; full pytest -q green
   status: complete
   created_at: '2026-11-17T16:06:47.405983+00:00'
-  completed_at: '2026-11-17T16:36:18.160184+00:00'
+  completed_at: '2026-11-17T21:39:22.620989+00:00'
 - id: PERF-1
   title: Bounds the uncached provider probe so /v1/health and /v1/health/ready answer
     fast
   criteria:
   - uncached /v1/health and /v1/health/ready return under 2s with one hanging provider;
     per-provider error_class+latency_s retained; cached path stays ms-scale
-  status: in_progress
+  status: complete
   created_at: '2026-11-17T16:06:48.017191+00:00'
+  completed_at: '2026-11-17T18:15:32.799681+00:00'
 - id: DF-CHIMERA-V2-119
   title: chimera serve honours --config instead of silently serving a different config
   criteria:
@@ -2442,15 +2443,17 @@ tasks:
   - script with log_level=warning/use_stdout=false emits zero [level] lines on stdout
     and routes to stderr; use_stdout=true puts them back; regression test on library
     path
-  status: in_progress
+  status: complete
   created_at: '2026-11-17T16:06:49.203082+00:00'
+  completed_at: '2026-11-17T17:07:37.587648+00:00'
 - id: PERF-2
   title: Explicit formation no longer pays a full dispatcher LLM call
   criteria:
   - trace.dispatch absent/null for explicit formation; stub panel total_duration_ms
     ~8.1s not ~22.5s; docs/CONFIG.md states any retained call cost
-  status: in_progress
+  status: complete
   created_at: '2026-11-17T16:06:49.731716+00:00'
+  completed_at: '2026-11-17T18:08:08.083395+00:00'
 - id: CHIMERA-V2-REVIEW-08
   title: credential_sources reports the real configured source for a literal api_keys
     key
@@ -2458,5 +2461,16 @@ tasks:
   - POST /v1/deliberate 200 with trace.credential_sources naming the configured source
     not missing; regression test with literal api_keys fixture; focused+unit gate+ruff
     green
-  status: in_progress
+  status: complete
   created_at: '2026-11-17T16:06:50.398373+00:00'
+  completed_at: '2026-11-17T21:45:01.965939+00:00'
+- id: CHIMERA-V2-REVIEW-07
+  title: Stop the un-awaited litellm Logging.async_success_handler RuntimeWarning
+    in the full test gate
+  criteria:
+  - The project test gate '.venv/bin/python -m pytest tests/ --ignore=tests/integration
+    --ignore=tests/compat -q' exits 0 with zero 'was never awaited' RuntimeWarning
+    lines and >= 2229 passed; ruff check on source is clean; unrelated warnings stay
+    visible (narrow filter or real teardown only)
+  status: in_progress
+  created_at: '2026-11-17T21:37:53.875677+00:00'

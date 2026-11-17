@@ -1,0 +1,30 @@
+{
+  "tick": "chimera-v2-foreman-2026-11-17-21-02-51",
+  "block": "CHIMERA-V2-REVIEW-09",
+  "mode": "serial",
+  "slots": 1,
+  "slots_reason": "slots = max(1, min(6, nproc - ceil(loadavg))) = max(1, min(6, 16 - 30)) = 1 at compose time (loadavg 29.4-37.9; two sibling lane workers on auger plus fleet load). Load is not an idle reason: one worker dispatched.",
+  "reconciled_first": {
+    "block": "PERF-2",
+    "note": "previous tick's rows landed in origin/main but the closeouts were blocked at the consent gate; closed this tick with live/merged-tree evidence (PERF-1, PERF-2), plus stranded-but-landed rows CH-MAINT-012, INT-CI-014-R3, CHIMERA-V2-REVIEW-08"
+  },
+  "rows": [
+    {
+      "id": "CHIMERA-V2-REVIEW-07",
+      "worktree": "/home/kara/worktrees/chimera-v2-CHIMERA-V2-REVIEW-07",
+      "branch": "wt/CHIMERA-V2-REVIEW-07",
+      "base_sha": "06ef557",
+      "model": "openai/gpt-6.1-terra",
+      "provider": "xkiro",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-CHIMERA-V2-REVIEW-07.txt",
+      "dispatch_session": "proc_2a3d04cea005",
+      "dispatched_at": "2026-11-17T21:56Z"
+    }
+  ],
+  "deferred_rows": [
+    {
+      "id": "CHIMERA-V2-REVIEW-09",
+      "reason": "independent of REVIEW-07 (docs/CONFIG.md + README.md + a new hermetic fixture test, vs tests/conftest.py + pyproject.toml), but only one slot was available at compose time; it stays the block's next ready row for the next tick or for repopulation once this worker lands."
+    }
+  ]
+}
