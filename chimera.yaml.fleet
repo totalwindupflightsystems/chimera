@@ -34,6 +34,30 @@ formations:
     worker_models:
     - deepseek/deepseek-v4-flash
     - openrouter/qwen/qwen3-coder
+  # Escalation lane: pro-tier workers, two aggregators merged best-of-n.
+  # (Moved here from chimera.yaml.example, CH-MAINT-012: operator-grade lane.)
+  panel:
+    aggregators:
+    - deepseek/deepseek-v4-flash
+    - deepseek/deepseek-v4-pro
+    merge: best_of_n
+    workers: 3
+    worker_models:
+    - deepseek/deepseek-v4-pro
+    - openrouter/anthropic/claude-fable-5
+    - zai-coding-plan/glm-5.2
+  # Quick-panel fast lane + 9router lane alias (CH-MAINT-012: the alias is
+  # operator wiring, so it lives in the fleet reference). 9router strips its
+  # model prefix before forwarding, so a lane registered as chim/quick reaches
+  # the API as the bare name "quick": keep the alias.
+  quick-panel: &quick_panel
+    aggregator: deepseek/deepseek-v4-flash
+    workers: 3
+    worker_models:
+    - deepseek/deepseek-v4-flash
+    - openrouter/qwen/qwen3-coder
+    - zai-coding-plan/glm-5.2
+  quick: *quick_panel
   spec-writer:
     dag:
       stages:
