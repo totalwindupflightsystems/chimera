@@ -638,20 +638,24 @@ records which step succeeded:
 
 | # | Source | Label | Meaning |
 |---|---|---|---|
-| 0 | `providers.<name>.api_key` (literal or `${VAR}`) | *no entry* | An inline key wins and the env resolver never runs for that provider. |
-| 1 | Process environment (`api_key_env` first, then the canonical name, then `<PROVIDER>_API_KEY`) | `process_env` | Exported in the environment that launched Chimera — systemd `Environment=`/`EnvironmentFile=`, shell export, container env. |
-| 2 | Repo-level `.env` beside `chimera.yaml` | `repo_dotenv` | Injected into the process env at load time, and only for variables the real environment did **not** already set, so row 1 keeps precedence. |
-| 3 | `~/.hermes/.env` | `hermes_dotenv_fallback` | Host-specific Hermes dotenv, consulted only when the variable is absent from the process env. **The one source a user would not expect.** |
+| 0 | `api_keys.<provider>` holding a literal key | `api_keys` | The gateway consults the shortcut first, so a non-empty literal **is** the credential it uses (CHIMERA-V2-REVIEW-08 — previously mislabeled `missing`). |
+| 0 | `api_keys.<provider>` = `` `${VAR}` `` | rows 2-4, or `missing` | A token is judged by the provenance of the env var it names, never by the entry name. |
+| 1 | `providers.<name>.api_key` (literal key) | `provider.api_key` | An inline key wins and the env resolver never runs for that provider (applies when no `api_keys` entry covers it). |
+| 2 | Process environment (`api_key_env` first, then the canonical name, then `<PROVIDER>_API_KEY`) | `process_env` | Exported in the environment that launched Chimera — systemd `Environment=`/`EnvironmentFile=`, shell export, container env. |
+| 3 | Repo-level `.env` beside `chimera.yaml` | `repo_dotenv` | Injected into the process env at load time, and only for variables the real environment did **not** already set, so row 2 keeps precedence. |
+| 4 | `~/.hermes/.env` | `hermes_dotenv_fallback` | Host-specific Hermes dotenv, consulted only when the variable is absent from the process env. **The one source a user would not expect.** |
 | — | none of the above | `missing` | Nothing satisfied the key; the provider is unusable until something does. |
 
 Both credential shapes are covered: `providers.<name>.api_key_env` (explicit)
 and the shipped-template `api_keys: {deepseek: ${DEEPSEEK_API_KEY}}` shortcut.
 For an `api_keys` entry the provenance is read from the `${VAR}` token itself,
 so `acme: ${ACME_TOKEN}` is judged by `ACME_TOKEN`'s origin rather than a
-guessed `ACME_API_KEY` name.
+guessed `ACME_API_KEY` name; a **literal** value in the shortcut is labeled
+`api_keys` directly, because that exact value is what the gateway consults
+first.
 
-A provider with **no entry at all** is one the resolver never looked at — an
-inline `api_key`, a provider added by auto-discovery, or a config object built
+A provider with **no entry at all** is one the resolver never looked at — a
+provider added by auto-discovery, or a config object built
 programmatically. Absent means *unknown*, not `missing`: never read absence as
 either success or failure. A config built in code records no provenance, so
 the trace field is an empty object there — the field is additive and never

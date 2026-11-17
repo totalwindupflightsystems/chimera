@@ -586,7 +586,8 @@ curl -X POST http://localhost:8765/v1/deliberate \
 Response includes full trace with per-stage tokens, latency, cost, model selection,
 and all prompts/responses. `trace.credential_sources` maps each provider to the
 source that satisfied its API key at config load (`process_env` /
-`repo_dotenv` / `hermes_dotenv_fallback` / `missing`) — provider names and
+`repo_dotenv` / `hermes_dotenv_fallback` / `api_keys` / `provider.api_key` /
+`missing`) — provider names and
 labels only, never key material; the same map is on `GET /v1/health` under
 `details.credential_sources` (see
 [CONFIG.md → Credential Sources](CONFIG.md#credential-sources)).
@@ -765,7 +766,7 @@ Field semantics:
 | `details.providers_configured` | `int` | How many providers the config **declared** — discovery additions are not counted |
 | `details.providers_discovered` | `string[]` | Sorted names in `providers` the config did not declare (auto-discovery additions), including those that *do* own a model |
 | `details.providers` | `object` | Per-provider probe result: `healthy` plus `model_tested` when it answered, else `error` + `error_class` (`missing_credentials` / `slow` / `timeout` / `auth` / `quota` / `api` / `probe_skipped`) or a note-only entry |
-| `details.credential_sources` | `object` | Where each provider's key resolved from — `process_env`, `repo_dotenv`, `hermes_dotenv_fallback` or `missing`. Labels only, never key values |
+| `details.credential_sources` | `object` | Where each provider's key resolved from — `process_env`, `repo_dotenv`, `hermes_dotenv_fallback`, `api_keys`, `provider.api_key` or `missing`. Labels only, never key values |
 | `details.commit` / `details.version` | `string` | The running process's git commit and package version; compare `commit` against `git rev-parse --short HEAD` to prove the deployment matches the checkout |
 | `details.age_s` | `float` | Seconds since the cached probe was computed (`0` on a fresh probe). Provider results are served from a 60 s TTL cache; `?refresh=1` bypasses it and forces a live probe |
 
