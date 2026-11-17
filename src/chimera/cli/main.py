@@ -145,7 +145,13 @@ class ChimeraGroup(click.Group):
     mutually_exclusive={"quiet"},
     help="Print one JSON object (answer + full trace) to stdout.",
 )
-@click.option("-c", "--config", "config_path", default=None, help="Path to chimera.yaml.")
+@click.option(
+    "-c",
+    "--config",
+    "config_path",
+    default=None,
+    help="Path to chimera.yaml (overrides the CHIMERA_CONFIG env var and the cwd search).",
+)
 @click.option(
     "--allow-custom-dag",
     is_flag=True,
@@ -965,7 +971,14 @@ def serve(ctx: click.Context, host: str | None, port: int | None) -> None:
 
     host = host or _os.environ.get("CHIMERA_HOST") or config.server.host
     port = port or int(_os.environ.get("CHIMERA_PORT", 0)) or config.server.port
-    run_api(host, port)
+    # DF-CHIMERA-V2-119: forward the config THIS command already loaded from
+    # the global --config flag. run() used to re-load with no path and
+    # silently re-resolve from CHIMERA_CONFIG / the cwd walk-up, so
+    # ``chimera --config P serve`` served a different file than P. The
+    # precedence (explicit flag > CHIMERA_CONFIG > cwd walk-up) is decided
+    # ONCE inside load_config, at the _load_cfg call above; the resolved
+    # object itself travels into the server from here.
+    run_api(host, port, config=config)
 
 
 @main.command()
