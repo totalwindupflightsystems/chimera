@@ -1,0 +1,84 @@
+{
+  "wave_id": "chimera-v2-foreman-2026-11-17-15-27-14",
+  "tick": "chimera-v2-foreman-2026-11-17-15-27-14",
+  "project": "chimera-v2",
+  "workdir": "/home/kara/chimera-v2",
+  "created_at": "2026-11-17T20:40:00Z",
+  "base": "origin/main",
+  "base_sha": "33fcb0a",
+  "worker_model": "glm-5.3-flash",
+  "worker_provider": "zai-glm-default",
+  "lane_switch": {
+    "from": "openai/gpt-6.1-terra @ xkiro",
+    "why": "provider-side scheduled maintenance: HTTP 503 {'error': {'code': 'model_maintenance', 'message': 'Model \"openai/gpt-6.1-terra\" is temporarily unavailable for scheduled maintenance. Service is expected to resume by 2026-11-19T16:25:12Z'}}; a live probe of openai/gpt-6.1-sol on the same provider returned the same 503 model_maintenance, so the whole family is out, not one model.",
+    "first_dispatch": "6 workers dispatched 2026-11-17T~11:08 local on xkiro; all six sat in the client's 600s retry backoff with zero worktree changes; killed at ~11:20 after confirming NO partial work existed (all six worktrees clean at base 33fcb0a) and re-dispatched on the fallback lane.",
+    "sanctioned_by": "scheduler tick prompt: switch the model only on an actual unavailable/rate-limited failure",
+    "to": "glm-5.3-flash @ zai-glm-default",
+    "verified_live": "in-flight API call observed in agent.log at 11:22:16 (model=glm-5.3-flash provider=custom latency=7.4s) and both P1 workers created their worktree venv before the remaining four were launched"
+  },
+  "slots": 6,
+  "wave_budget": 9,
+  "slots_formula": "max(1, min(6, nproc(16) - ceil(loadavg 9.99)=10)) = 6",
+  "block": "CH-MAINT-012",
+  "block_note": "Resume of the standing INT-CI-014-R3 claim: its last AC (full suite green) is blocked on CH-MAINT-012, the P1 that fixes the two pre-existing reds. Remaining slots filled per foreman skill clause 17 (waves cross blocks) from independent ready rows.",
+  "rows": [
+    {
+      "row": "CH-MAINT-012",
+      "priority": "P1",
+      "role": "block anchor",
+      "worktree": "/home/kara/worktrees/chimera-v2-CH-MAINT-012",
+      "branch": "wt/CH-MAINT-012",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-CH-MAINT-012-20261117b.txt",
+      "seam": "chimera.yaml.example + tests/test_yaml_example_sanitized.py",
+      "unblocks": "INT-CI-014-R3 AC#3 (full suite green)"
+    },
+    {
+      "row": "PERF-1",
+      "priority": "P1",
+      "worktree": "/home/kara/worktrees/chimera-v2-PERF-1",
+      "branch": "wt/PERF-1",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-PERF-1-20261117b.txt",
+      "seam": "src/chimera/api/server.py health probe region (884-1340) + config.py health settings"
+    },
+    {
+      "row": "DF-CHIMERA-V2-119",
+      "priority": "P2",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-119",
+      "branch": "wt/DF-CHIMERA-V2-119",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-DF-CHIMERA-V2-119-20261117b.txt",
+      "seam": "src/chimera/cli/main.py serve/config path resolution"
+    },
+    {
+      "row": "DF-CHIMERA-V2-113",
+      "priority": "P2",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-113",
+      "branch": "wt/DF-CHIMERA-V2-113",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-DF-CHIMERA-V2-113-20261117b.txt",
+      "seam": "src/chimera/observability.py + Engine construction"
+    },
+    {
+      "row": "PERF-2",
+      "priority": "P2",
+      "worktree": "/home/kara/worktrees/chimera-v2-PERF-2",
+      "branch": "wt/PERF-2",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-PERF-2-20261117b.txt",
+      "seam": "src/chimera/dispatcher.py + engine deliberate() + docs/CONFIG.md custom-DAG"
+    },
+    {
+      "row": "CHIMERA-V2-REVIEW-08",
+      "priority": "P2",
+      "worktree": "/home/kara/worktrees/chimera-v2-CHIMERA-V2-REVIEW-08",
+      "branch": "wt/CHIMERA-V2-REVIEW-08",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-CHIMERA-V2-REVIEW-08-20261117b.txt",
+      "seam": "src/chimera/config.py credential_sources + gateway.py key resolution"
+    }
+  ],
+  "excluded": [
+    {"row": "DF-CHIMERA-V2-108", "why": "owns chimera.yaml.example as ops writer; its AC#2/AC#3 are owner-gated (tailnet exposure, 9router server-side lane + ROUTER9_API_KEY). One writer per tick: CH-MAINT-012 takes the config seam this tick."},
+    {"row": "RELEASE-READINESS-2026-11-16 / RELEASE-PARITY-2026-11-16", "why": "releng rows -> releng lane; cut/no-cut is not foreman work."},
+    {"row": "QA-CHIMERA-V2-46/47/48/49/50/DOCS-1", "why": "QA-harness defects -> qa-foreman lane."},
+    {"row": "INT-SEC-001", "why": "owner-gated credential rotation."},
+    {"row": "DF-CHIMERA-V2-116 / -117", "why": "both ride the X-Chimera-Timeout header seam; only one may enter a wave and neither fits the 6 slots this tick."}
+  ],
+  "merge_policy": "serial merge into main, rebase on current origin/main, 0 deletions check, ruff+pytest on the MERGED tree, push origin, verify parity 0."
+}
