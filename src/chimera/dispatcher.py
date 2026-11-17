@@ -242,6 +242,17 @@ class DispatchOutcome:
     ``ended_at - started_at`` and the reported elapsed milliseconds cannot
     disagree.
     """
+    skipped: bool = False
+    """True when NO dispatcher model call was made (PERF-2).
+
+    An explicit formation (a config-defined DAG or a named non-auto preset
+    without ``dispatch_prompts``) carries its own structure, so the plan is
+    synthesized deterministically (:func:`synthesize_explicit_plan`) instead
+    of billed through the dispatcher model. ``messages`` is empty,
+    ``response`` is a zero-token placeholder that no consumer may surface —
+    the engine maps a skipped outcome to ``trace.dispatch = None`` — and
+    ``latency_ms`` is 0 by construction.
+    """
 
 
 # --------------------------------------------------------------------------- #
@@ -916,6 +927,43 @@ def _templated_worker_prompt(stage_id: str, config: ChimeraConfig) -> str:
     )
 
 
+def synthesize_explicit_plan(dag: FormationDAG, config: ChimeraConfig, *, source: str) -> DispatchResult:
+    """Deterministic dispatch plan for an EXPLICIT formation — no model call (PERF-2).
+
+    An explicit formation (a config-defined DAG or a named non-auto preset)
+    already fixes the full stage structure and every model, so the dispatcher's
+    only remaining contribution was prose: per-worker task prompts and merge
+    instructions. This function produces those deterministically instead of
+    billing a provider round-trip for them:
+
+    * workers get the same templated task prompt the dispatcher-failure
+      fallback has always used (:func:`_templated_worker_prompt`);
+    * ``aggregator_instructions`` / ``stage_instructions`` stay empty, so the
+      aggregator module's built-in per-kind instructions apply
+      (``aggregator._stage_instructions`` defaults for aggregator/merge/audit);
+    * ``output_schema`` stays ``None`` — the client's per-request schema
+      override still wins, and no schema the config never asked for is
+      invented.
+
+    The structure is honored verbatim (``formation=dag``) and ``source``
+    keeps the caller's formation label (``"preset"`` / ``"custom"``), so the
+    trace contract is unchanged apart from the missing dispatcher call.
+    """
+    worker_prompts = [
+        WorkerPrompt(stage_id=s.id, model=s.model, prompt=_templated_worker_prompt(s.id, config))
+        for s in dag.stages
+        if s.kind == "worker"
+    ]
+    return DispatchResult(
+        formation=dag,
+        worker_prompts=worker_prompts,
+        aggregator_instructions="",
+        stage_instructions={},
+        output_schema=None,
+        source=source,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Dispatcher
 # --------------------------------------------------------------------------- #
@@ -938,28 +986,47 @@ class Dispatcher:
         custom_dag: FormationDAG | None = None,
         model_override: str | None = None,
     ) -> DispatchOutcome:
-        """Run the single dispatcher model call.
+        """Run the dispatcher call — or SKIP it for an explicit formation (PERF-2).
 
         When ``custom_dag`` is supplied (a validated client/config-defined DAG),
-        the DESIGN phase is skipped: the dispatcher only performs the FILL-IN pass
-        (writing per-worker prompts + merge instructions) against that fixed DAG.
-        Otherwise the preset (``formation``) or ``auto`` path is used.
+        or the named ``formation`` preset resolves to a non-auto structure, the
+        DAG is already explicit configuration: by default the plan is
+        synthesized deterministically (:func:`synthesize_explicit_plan`) and NO
+        dispatcher model call is made — the outcome carries ``skipped=True``.
+        A preset that sets ``dispatch_prompts: true`` opts back into the
+        fill-in pass (the pre-PERF-2 behavior) for that structure.
+
+        Otherwise the preset (``formation``) or ``auto`` path is used, exactly
+        as before: one dispatcher model call designs the formation and writes
+        all prompts.
 
         ``model_override`` (a request-level ``dispatcher_model``) routes the
         dispatcher call itself to that model for this dispatch only; ``None``
-        uses the configured ``defaults.dispatcher``.
+        uses the configured ``defaults.dispatcher``. It is inert on a skipped
+        dispatch (there is no call to route).
         """
         self._model_override = model_override
         try:
             start = time.monotonic()
+            preset = self._resolve_preset(formation)
+            authored = preset is not None and not preset.is_auto and preset.dispatch_prompts
             if custom_dag is not None:
-                messages, response, result = await self._dispatch_custom(user_prompt, custom_dag)
-            else:
-                preset = self._resolve_preset(formation)
-                if preset is not None and not preset.is_auto:
+                if authored:
+                    messages, response, result = await self._dispatch_custom(user_prompt, custom_dag)
+                else:
+                    return self._skipped_outcome(
+                        synthesize_explicit_plan(custom_dag, self.config, source="custom"), start
+                    )
+            elif preset is not None and not preset.is_auto:
+                if authored:
                     messages, response, result = await self._dispatch_preset(user_prompt, formation, preset)
                 else:
-                    messages, response, result = await self._dispatch_auto(user_prompt)
+                    preset_dag = build_preset_dag(preset, self.config)
+                    return self._skipped_outcome(
+                        synthesize_explicit_plan(preset_dag, self.config, source="preset"), start
+                    )
+            else:
+                messages, response, result = await self._dispatch_auto(user_prompt)
             # One reading pair serves both the elapsed milliseconds and the
             # span's timeline position (CH-GAP-056) — the wall-clock bracket
             # covers the fallback path too: a dispatcher whose gateway call
@@ -976,6 +1043,28 @@ class Dispatcher:
             )
         finally:
             self._model_override = None
+
+    def _skipped_outcome(self, result: DispatchResult, started: float) -> DispatchOutcome:
+        """Bundle a synthesized explicit-formation plan with NO model call (PERF-2).
+
+        The placeholder ``GatewayResponse`` is never surfaced: the engine maps
+        a skipped outcome to ``trace.dispatch = None`` instead of building a
+        span from it, so no fake latency/tokens/cost ever reach the trace.
+        """
+        return DispatchOutcome(
+            result=result,
+            messages=[],
+            response=GatewayResponse(
+                text="",
+                model=self._model_override or self.model,
+                tokens_input=0,
+                tokens_output=0,
+            ),
+            latency_ms=0,
+            started_at=started,
+            ended_at=started,
+            skipped=True,
+        )
 
     def _resolve_preset(self, formation: str) -> FormationPreset | None:
         if formation not in self.config.formations:
@@ -1054,4 +1143,5 @@ __all__ = [
     "build_dispatcher_prompt",
     "build_preset_dag",
     "parse_dispatch_result",
+    "synthesize_explicit_plan",
 ]

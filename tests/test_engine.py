@@ -559,10 +559,11 @@ async def test_progressive_worker_sends_wait_messages_then_trigger(config) -> No
 
     assert result.answer is not None
 
-    # Calls: dispatcher + wait_msg_A + wait_msg_B + trigger_worker + aggregator
-    # The dispatcher call has response_format, progressive calls have temperature=0.3
+    # Calls: 2 wait_msg + trigger_worker + aggregator. PERF-2: the request DAG
+    # skips the dispatcher call, so there is no dispatch leg here.
+    # The progressive calls have temperature=0.3
     all_calls = gw.calls
-    assert len(all_calls) >= 5, f"Expected 5+ calls (dispatch + 2 wait + trigger + agg), got {len(all_calls)}"
+    assert len(all_calls) >= 4, f"Expected 4+ calls (2 wait + trigger + agg), got {len(all_calls)}"
 
     # Find all progressive/worker calls with temperature=0.3 (wait + trigger)
     temp03_calls = [c for c in all_calls if c[2].get("temperature") == 0.3]
@@ -733,9 +734,10 @@ async def test_progressive_via_overrides_applies_to_workers(config) -> None:
 
     assert result.answer is not None
 
-    # Progressive should have been applied: 2 wait calls + 1 trigger call + dispatcher + aggregator
+    # Progressive should have been applied: 2 wait calls + 1 trigger call + aggregator.
+    # PERF-2: the request DAG skips the dispatcher call, so there is no dispatch leg.
     all_calls = gw.calls
-    assert len(all_calls) >= 5, f"Expected 5+ calls, got {len(all_calls)}"
+    assert len(all_calls) >= 4, f"Expected 4+ calls, got {len(all_calls)}"
 
     temp03_calls = [c for c in all_calls if c[2].get("temperature") == 0.3]
     assert len(temp03_calls) == 3, f"Expected 3 temp=0.3 calls (2 wait + 1 trigger), got {len(temp03_calls)}"

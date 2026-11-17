@@ -206,6 +206,41 @@ my-chain:
 
 Stage kinds: `worker`, `aggregator`, `merge`, `audit`.
 
+#### The dispatcher call: skipped for explicit formations (PERF-2)
+
+A custom DAG or any named non-auto preset is **executed without a dispatcher
+model call**. The config already fixes the full structure and every model, so
+Chimera synthesizes the plan deterministically instead of paying a provider
+round-trip to restate it:
+
+- workers receive the templated task prompt (`You are worker '<id>'. Solve the
+  user's request as completely as you can.` — the same text the
+  dispatcher-failure fallback has always used);
+- `aggregator` / `merge` / `audit` stages receive the aggregator module's
+  built-in per-kind instructions;
+- `trace.dispatch` is `null` in the JSON trace (not a zeroed span), and the
+  run's `total_cost` / `total_tokens` cover the stage calls alone.
+
+Measured on the run-30 budget panel (two stub workers + one merge, dispatcher
+on a real DeepSeek model): the explicit formation used to pay **14.5 s of a
+22.5 s wall — 64 % — and 100 % of the run's cost ($0.001387, 1070 prompt +
+2044 completion tokens)** for that one call. With the skip, the same command
+runs in ~8.1 s at $0.00 (stub stages only).
+
+To restore the dispatcher-authored fill-in pass (task-specific per-worker
+prompts and merge instructions, at the latency/cost above), set
+`dispatch_prompts: true` on the formation:
+
+```yaml
+my-chain:
+  dispatch_prompts: true   # one extra dispatcher call per run (opt-in)
+  dag:
+    stages: ...
+```
+
+`dispatch_prompts` only ever adds the call back for an explicit formation;
+`auto` formations always keep the dispatcher, unchanged.
+
 ---
 
 ## `auto_formation`
@@ -240,7 +275,10 @@ enabled catalog — the pre-restriction behavior.
 **Scope.** Only dispatcher-generated `auto` formations are restricted:
 
 - Named presets and custom DAGs are never rewritten — their structure is
-  explicit configuration and is honored verbatim.
+  explicit configuration and is honored verbatim. Since PERF-2 they also skip
+  the dispatcher call entirely (see
+  [Custom DAG](#custom-dag-fully-defined-structure)); `dispatch_prompts: true`
+  on a formation opts back into it.
 - Request-level overrides remain authoritative:
   `allowed_models`, `worker_model`, `stage_models`, `dispatcher_model`, and
   `aggregator_model` behave exactly as documented and can force any catalog

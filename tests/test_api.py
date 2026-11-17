@@ -163,6 +163,9 @@ def test_chat_completions_usage_is_deliberation_wide(config) -> None:  # type: i
     ``completion_tokens`` (``total_tokens - dispatch input``), so a client doing
     usage accounting got a wrong input/output split.
     """
+    # PERF-2: keep the dispatcher leg in the aggregate — this test pins that a
+    # dispatch span (when one exists) is counted exactly once.
+    config.formations["simple"].dispatch_prompts = True
     worker_calls = {"n": 0}
 
     def responder(model, messages, response_format=None, **kw):  # type: ignore[no-untyped-def]

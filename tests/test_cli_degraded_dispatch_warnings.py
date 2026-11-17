@@ -109,11 +109,19 @@ MID_DAG: dict[str, Any] = {
 def _write_config(
     tmp_path: Path, *, dag: dict[str, Any] | None = CODE_REVIEW_DAG, per_stage_s: float = 120.0
 ) -> Path:
-    """A minimal, hermetic config: no discovery, no credentials, stub gateway."""
+    """A minimal, hermetic config: no discovery, no credentials, stub gateway.
+
+    ``dispatch_prompts: true`` keeps this module's scenario reachable after
+    PERF-2: these tests pin the degraded-DISPATCH warning, which requires the
+    dispatcher fill-in call to actually run (and fail) on an explicit
+    formation — exactly the wiring this module was written against pre-PERF-2.
+    """
     doc = copy.deepcopy(CONFIG_DICT)
     doc["provider_discovery"] = False
     doc["timeout"] = {"per_stage_s": per_stage_s}
-    doc["formations"] = {"code-review": {"dag": copy.deepcopy(dag or CODE_REVIEW_DAG)}}
+    doc["formations"] = {
+        "code-review": {"dag": copy.deepcopy(dag or CODE_REVIEW_DAG), "dispatch_prompts": True}
+    }
     path = tmp_path / "chimera.yaml"
     path.write_text(yaml.safe_dump(doc), encoding="utf-8")
     return path
@@ -323,6 +331,9 @@ def test_json_custom_dag_dispatcher_fallback_warns(tmp_path, monkeypatch) -> Non
     result = _invoke(
         config,
         "--json",
+        "-f",
+        "code-review",  # PERF-2: names the dispatch_prompts formation so the
+        # fill-in call (and its failure) actually runs for the inline DAG.
         "--dag",
         json.dumps(INLINE_DAG),
         "--allow-custom-dag",

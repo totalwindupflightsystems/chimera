@@ -678,7 +678,8 @@ def _print_trace(trace: Any) -> None:
             f"${span.cost:.6f}",
         )
 
-    row(trace.dispatch)
+    if trace.dispatch is not None:
+        row(trace.dispatch)  # PERF-2: None when the dispatcher call was skipped
     for span in trace.stages:
         row(span)
     console.print(table)

@@ -469,7 +469,7 @@ async def session_chat(
             user_prompt=body.prompt,
             answer=turn_answer,
             formation=body.formation,
-            dispatch_model=trace.get("dispatch", {}).get("model", ""),
+            dispatch_model=(trace.get("dispatch") or {}).get("model", ""),
             worker_models=workers,
             aggregator_model=aggregator_model,
             total_tokens=trace.get("total_tokens", 0),

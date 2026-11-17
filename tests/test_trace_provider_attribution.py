@@ -95,6 +95,10 @@ def _config_dict(
         "default_worker": ROUTER9_MODEL,
         "default_aggregator": OPENROUTER_MODEL,
     }
+    # PERF-2: an explicit DAG skips the dispatcher unless the formation opts in.
+    # Tests that assert on the DISPATCH SPAN itself run `fillin` so the
+    # dispatcher call still happens; the rest stay on `auto` (skipped, hermetic).
+    config["formations"]["fillin"] = {"dispatch_prompts": True}
     return config
 
 
@@ -165,11 +169,15 @@ def _scripted_acompletion(payload: str):  # type: ignore[no-untyped-def]
     return _complete
 
 
-async def _deliberate(config: ChimeraConfig, dag: dict[str, Any], payload: str):  # type: ignore[no-untyped-def]
-    """Run a real deliberate through the real gateway (LiteLLM stubbed)."""
+async def _deliberate(config: ChimeraConfig, dag: dict[str, Any], payload: str, formation: str = "auto"):  # type: ignore[no-untyped-def]
+    """Run a real deliberate through the real gateway (LiteLLM stubbed).
+
+    ``formation="fillin"`` opts an explicit DAG back into the dispatcher call
+    (PERF-2) for tests that assert on the dispatch span itself.
+    """
     gateway = LiteLLMGateway(config)
     with patch("litellm.acompletion", new=_scripted_acompletion(payload)):
-        return await Engine(config, gateway).deliberate("task", "auto", dag=dag, allow_custom_dag=True)
+        return await Engine(config, gateway).deliberate("task", formation, dag=dag, allow_custom_dag=True)
 
 
 def _spans(result) -> dict[str, StageSpan]:  # type: ignore[no-untyped-def]
@@ -281,7 +289,7 @@ def test_stage_span_attribution_fields_default_to_empty() -> None:
 async def test_successful_stage_spans_carry_the_resolved_route() -> None:
     """Worker (generic base_url) and aggregator (native) attribution, plus the
     serialized trace the API hands back."""
-    result = await _deliberate(_config(), _dag(ROUTER9_MODEL), _payload(ROUTER9_MODEL))
+    result = await _deliberate(_config(), _dag(ROUTER9_MODEL), _payload(ROUTER9_MODEL), formation="fillin")
 
     assert result.trace.source == "custom"
     spans = _spans(result)
@@ -359,7 +367,7 @@ async def test_dispatch_span_carries_the_dispatcher_routes_own_attribution() -> 
     with patch("litellm.acompletion", new=_scripted_acompletion(payload)):
         result = await Engine(config, gateway).deliberate(
             "task",
-            "auto",
+            "fillin",
             overrides=DeliberationOverrides(dispatcher_model=ROUTER9_MODEL),
             dag=_dag(OPENROUTER_MODEL),
             allow_custom_dag=True,
@@ -387,8 +395,8 @@ async def test_dispatch_span_timestamps_are_real_and_differ_per_run() -> None:
     constant (or a re-timed "now" captured after the fact) cannot satisfy the
     bracket/ordering relation against the call it measured.
     """
-    first = await _deliberate(_config(), _dag(ROUTER9_MODEL), _payload(ROUTER9_MODEL))
-    second = await _deliberate(_config(), _dag(ROUTER9_MODEL), _payload(ROUTER9_MODEL))
+    first = await _deliberate(_config(), _dag(ROUTER9_MODEL), _payload(ROUTER9_MODEL), formation="fillin")
+    second = await _deliberate(_config(), _dag(ROUTER9_MODEL), _payload(ROUTER9_MODEL), formation="fillin")
 
     s1, s2 = first.trace.dispatch, second.trace.dispatch
     for span in (s1, s2):
@@ -441,7 +449,7 @@ async def test_degraded_and_unattributed_spans_report_empty_provider() -> None:
 
     gateway = FakeGateway(responder)
     result = await Engine(_config(), gateway).deliberate(
-        "task", "auto", dag=_dag(ROUTER9_MODEL), allow_custom_dag=True
+        "task", "fillin", dag=_dag(ROUTER9_MODEL), allow_custom_dag=True
     )
 
     spans = _spans(result)
@@ -481,7 +489,7 @@ async def test_failed_dispatcher_call_keeps_empty_attribution() -> None:
         return resp("WORKER OUTPUT", model, 10, 10)
 
     result = await Engine(_config(), FakeGateway(responder)).deliberate(
-        "task", "auto", dag=_dag(ROUTER9_MODEL), allow_custom_dag=True
+        "task", "fillin", dag=_dag(ROUTER9_MODEL), allow_custom_dag=True
     )
 
     dispatch = result.trace.dispatch
@@ -516,6 +524,9 @@ async def test_api_trace_payload_exposes_the_resolved_route() -> None:
             "/v1/deliberate",
             json={
                 "prompt": "hi",
+                # PERF-2: `fillin` opts the explicit DAG back into the
+                # dispatcher call so the dispatch span reaches the API payload.
+                "formation": "fillin",
                 "dag": _dag(ROUTER9_MODEL),
                 "allow_custom_dag": True,
             },

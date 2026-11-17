@@ -314,11 +314,13 @@ async def test_trace_cost_uses_the_entries_provider_rate(
     wrong_in = CLINEPASS_IN_PER_M / 1000
     wrong_out = CLINEPASS_OUT_PER_M / 1000
 
-    spans = [*result.trace.workers, result.trace.aggregator, result.trace.dispatch]
+    # PERF-2: the request-level DAG skips the dispatcher call — there is no
+    # dispatch span to bill here, and the stage spans carry the pricing proof.
+    assert result.trace.dispatch is None
+    spans = [*result.trace.workers, result.trace.aggregator]
     assert all(span is not None for span in spans)
     assert result.trace.workers and result.trace.aggregator is not None
     for span in spans:
-        assert span is not None
         assert span.model == TARGET
         expected = rate_in * span.tokens_input / 1000.0 + rate_out * span.tokens_output / 1000.0
         billed_wrong = wrong_in * span.tokens_input / 1000.0 + wrong_out * span.tokens_output / 1000.0
@@ -331,4 +333,4 @@ async def test_trace_cost_uses_the_entries_provider_rate(
     assert (worker.tokens_input, worker.tokens_output) == (100, 200)
     assert worker.cost == pytest.approx(0.000135)  # 100*0.00015/1k + 200*0.0006/1k
     assert worker.cost != pytest.approx(0.000308)  # clinepass: 0.44/1.32 per M
-    assert result.trace.total_cost == pytest.approx(0.000405)  # 3 spans
+    assert result.trace.total_cost == pytest.approx(0.000270)  # 2 spans (no dispatch span)

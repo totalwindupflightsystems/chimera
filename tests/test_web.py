@@ -457,6 +457,9 @@ def test_delete_session_route_404s_on_unknown_session(config) -> None:  # type: 
 
 
 def test_session_chat_runs_engine_records_turn_and_injects_history(config) -> None:  # type: ignore[no-untyped-def]
+    # PERF-2: the history preamble is observed through the dispatcher prompt,
+    # so the `simple` formation must keep its dispatcher fill-in call here.
+    config.formations["simple"].dispatch_prompts = True
     dispatch_messages: list[str] = []
     client = _client(config, dispatch_messages)
     session_id = client.post("/web/sessions").json()["session_id"]
