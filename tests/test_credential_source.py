@@ -8,7 +8,8 @@ which makes "did I configure credentials?" undiagnosable on a fresh install.
 These tests pin the additive observability:
 
 * every provider key carries a source label — ``process_env`` /
-  ``repo_dotenv`` / ``hermes_dotenv_fallback`` / ``missing`` — recorded at
+  ``repo_dotenv`` / ``hermes_dotenv_fallback`` / ``api_keys`` /
+  ``provider.api_key`` / ``missing`` — recorded at
   load time on ``ChimeraConfig.credential_sources``;
 * the hermes-dotenv fallback additionally emits a WARNING naming the
   provider and the fallback path (never the value);
@@ -41,16 +42,20 @@ from fastapi.testclient import TestClient  # noqa: E402
 from chimera import config as chimera_config  # noqa: E402
 from chimera.api.server import create_app  # noqa: E402
 from chimera.config import (  # noqa: E402
+    CREDENTIAL_SOURCE_API_KEYS,
     CREDENTIAL_SOURCE_HERMES_DOTENV_FALLBACK,
     CREDENTIAL_SOURCE_MISSING,
     CREDENTIAL_SOURCE_PROCESS_ENV,
+    CREDENTIAL_SOURCE_PROVIDER_API_KEY,
     CREDENTIAL_SOURCE_REPO_DOTENV,
     ChimeraConfig,
     load_config,
     provider_credential_source,
 )
 from chimera.engine import Engine  # noqa: E402
+from chimera.gateway import LiteLLMGateway  # noqa: E402
 from tests.conftest import CONFIG_DICT, FakeGateway, dispatch_json, resp  # noqa: E402
+from tests.test_gateway_custom_base_url import _compat_stub  # noqa: E402
 
 #: Env var whose absence forces the hermes-dotenv fallback in these tests.
 #: Deliberately NOT a name a real host exports (the delenv makes even that
@@ -61,6 +66,10 @@ ENV_KEY = "DF90_TEST_PROVIDER_KEY"
 #: The hermes-dotenv fallback value used in fallback tests. Any appearance of
 #: this sentinel in trace / health / log output is a leak — asserted nowhere.
 SECRET_SENTINEL = "df90-secret-value-xyzzy"
+
+#: A literal key written on a provider entry in fixture configs — never real
+#: material; the tests that use it assert it appears in no observable output.
+PROVIDER_ENTRY_KEY = "df90-provider-entry-literal"
 
 PROVIDER_DICT: dict = {
     "providers": {"df90prov": {"base_url": "https://df90.example/v1", "api_key_env": ENV_KEY}},
@@ -172,6 +181,42 @@ def test_missing_key_labeled_missing_and_no_crash() -> None:
     assert [entry for entry in logs if entry["event"] == "api_key_source_fallback"] == []
 
 
+def test_provider_literal_api_key_labeled_provider_api_key() -> None:
+    """A literal key on the provider entry is labeled ``provider.api_key``
+    when no api_keys shortcut covers the provider (CHIMERA-V2-REVIEW-08):
+    the gateway's fallback reads exactly this value, so the trace must name
+    the surface instead of leaving the provider unlabeled."""
+    cfg_dict = copy.deepcopy(PROVIDER_DICT)
+    cfg_dict["providers"]["df90prov"] = {"base_url": "https://df90.example/v1", "api_key": PROVIDER_ENTRY_KEY}
+    cfg = ChimeraConfig.model_validate(cfg_dict)
+    assert cfg.providers["df90prov"].api_key == PROVIDER_ENTRY_KEY
+    assert cfg.credential_sources["df90prov"] == CREDENTIAL_SOURCE_PROVIDER_API_KEY
+
+
+def test_provider_literal_api_key_defers_to_api_keys_shortcut(tmp_path) -> None:
+    """Gateway order pinned: with BOTH a provider-entry literal and an
+    ``api_keys`` shortcut, the shortcut's label wins — that is the key the
+    gateway consults first (the validator records nothing for a
+    shortcut-covered provider)."""
+    cfg_dict = _api_keys_cfg_dict(provider_api_key_env=False, raw_value=SECRET_SENTINEL)
+    cfg_dict["providers"]["df90prov"]["api_key"] = PROVIDER_ENTRY_KEY
+    config_path = tmp_path / "chimera.yaml"
+    config_path.write_text(yaml.safe_dump(cfg_dict), encoding="utf-8")
+    cfg = load_config(config_path)
+    assert cfg.api_keys["df90prov"] == SECRET_SENTINEL
+    assert cfg.credential_sources["df90prov"] == CREDENTIAL_SOURCE_API_KEYS
+
+
+def test_provider_empty_literal_api_key_labeled_missing() -> None:
+    """An empty-string literal on the provider entry is configured but
+    unusable (the gateway would pass "") — honest ``missing``, not an
+    invented surface name."""
+    cfg_dict = copy.deepcopy(PROVIDER_DICT)
+    cfg_dict["providers"]["df90prov"] = {"base_url": "https://df90.example/v1", "api_key": ""}
+    cfg = ChimeraConfig.model_validate(cfg_dict)
+    assert cfg.credential_sources["df90prov"] == CREDENTIAL_SOURCE_MISSING
+
+
 def test_deepseek_hermes_fallback_labeled_and_warns(monkeypatch, tmp_path) -> None:
     """The filed scenario, verbatim: DEEPSEEK_API_KEY unset, a hermes-dotenv
     fallback present → source ``hermes_dotenv_fallback`` and a WARNING naming
@@ -247,17 +292,19 @@ def test_repo_dotenv_beats_hermes_fallback_label(monkeypatch, tmp_path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _api_keys_cfg_dict(provider_api_key_env: bool) -> dict:
+def _api_keys_cfg_dict(provider_api_key_env: bool, raw_value: str | None = None) -> dict:
     """Template-shaped config: ``api_keys: {<prov>: ${VAR}}``.
 
     ``provider_api_key_env=False`` isolates the substitution path (the
-    per-provider validator contributes nothing).
+    per-provider validator contributes nothing).  ``raw_value`` replaces the
+    ``${VAR}`` token with a literal key — the api_keys-only credential shape
+    of CHIMERA-V2-REVIEW-08.
     """
     provider: dict = {"base_url": "https://df90.example/v1"}
     if provider_api_key_env:
         provider["api_key_env"] = ENV_KEY
     return {
-        "api_keys": {"df90prov": "${" + ENV_KEY + "}"},
+        "api_keys": {"df90prov": raw_value if raw_value is not None else "${" + ENV_KEY + "}"},
         "providers": {"df90prov": provider},
         "models": {},
         "defaults": {
@@ -305,6 +352,46 @@ def test_api_keys_missing_substitution_labeled_missing(tmp_path) -> None:
     cfg = load_config(config_path)
     assert cfg.api_keys["df90prov"] == ""
     assert cfg.credential_sources["df90prov"] == CREDENTIAL_SOURCE_MISSING
+
+
+def test_api_keys_literal_value_labeled_api_keys(tmp_path) -> None:
+    """A literal key in the ``api_keys`` shortcut is labeled ``api_keys``
+    (CHIMERA-V2-REVIEW-08): that exact value is what the gateway consults
+    first, so a successful route must name this source instead of reporting
+    ``missing``."""
+    config_path = tmp_path / "chimera.yaml"
+    config_path.write_text(
+        yaml.safe_dump(_api_keys_cfg_dict(provider_api_key_env=False, raw_value=SECRET_SENTINEL)),
+        encoding="utf-8",
+    )
+    cfg = load_config(config_path)
+    assert cfg.api_keys["df90prov"] == SECRET_SENTINEL
+    assert cfg.credential_sources["df90prov"] == CREDENTIAL_SOURCE_API_KEYS
+
+
+def test_api_keys_literal_empty_labeled_missing(tmp_path) -> None:
+    """An empty literal in the shortcut contributes no usable key — honest
+    ``missing`` (the gateway would pass "")."""
+    config_path = tmp_path / "chimera.yaml"
+    config_path.write_text(
+        yaml.safe_dump(_api_keys_cfg_dict(provider_api_key_env=False, raw_value="")),
+        encoding="utf-8",
+    )
+    cfg = load_config(config_path)
+    assert cfg.credential_sources["df90prov"] == CREDENTIAL_SOURCE_MISSING
+
+
+def test_api_keys_substitution_beats_provider_entry_label(monkeypatch, tmp_path) -> None:
+    """Gateway order pinned: provider-entry literal + ``${VAR}`` shortcut →
+    the substitution's provenance wins, because ``config.api_keys`` is what
+    the gateway consults first."""
+    monkeypatch.setenv(ENV_KEY, "from-process-env")
+    cfg_dict = _api_keys_cfg_dict(provider_api_key_env=False)
+    cfg_dict["providers"]["df90prov"]["api_key"] = PROVIDER_ENTRY_KEY
+    config_path = tmp_path / "chimera.yaml"
+    config_path.write_text(yaml.safe_dump(cfg_dict), encoding="utf-8")
+    cfg = load_config(config_path)
+    assert cfg.credential_sources["df90prov"] == CREDENTIAL_SOURCE_PROCESS_ENV
 
 
 # --------------------------------------------------------------------------- #
@@ -391,6 +478,8 @@ def test_no_key_material_in_trace_health_or_logs(monkeypatch, tmp_path) -> None:
         CREDENTIAL_SOURCE_PROCESS_ENV,
         CREDENTIAL_SOURCE_REPO_DOTENV,
         CREDENTIAL_SOURCE_HERMES_DOTENV_FALLBACK,
+        CREDENTIAL_SOURCE_API_KEYS,
+        CREDENTIAL_SOURCE_PROVIDER_API_KEY,
         CREDENTIAL_SOURCE_MISSING,
     }
 
@@ -410,3 +499,106 @@ def test_provider_credential_source_unknown_provider_is_none() -> None:
     cfg = ChimeraConfig.model_validate(copy.deepcopy(CONFIG_DICT))
     assert provider_credential_source(cfg, "zai") is None
     assert provider_credential_source(cfg, "not-a-provider") is None
+
+
+# --------------------------------------------------------------------------- #
+# 6. End-to-end: a successful generic-provider route names its REAL source
+#    (CHIMERA-V2-REVIEW-08) — real socket, real LiteLLM, loopback stub
+# --------------------------------------------------------------------------- #
+
+#: Provider/model names mirroring the filed evidence: a generic
+#: OpenAI-compatible provider with a locally configured literal key.
+REVIEW08_PROVIDER = "mock"
+REVIEW08_MODEL_ID = "mock/m1"
+REVIEW08_KEY = "rev08-literal-mock-key"
+#: The second fixture literal (provider-entry shape) — deliberately distinct
+#: from REVIEW08_KEY so the two tests cannot pass on each other's labels.
+REVIEW08_PROVIDER_ENTRY_KEY = "rev08-provider-entry-mock-key"
+
+
+def _review08_config_dict(base_url: str, *, via_api_keys: bool) -> dict:
+    """A generic-provider config whose ONLY credential is a literal key."""
+    provider: dict = {"base_url": base_url}
+    if not via_api_keys:
+        provider["api_key"] = REVIEW08_PROVIDER_ENTRY_KEY
+    cfg: dict = {
+        "providers": {REVIEW08_PROVIDER: provider},
+        "models": {
+            REVIEW08_MODEL_ID: {
+                "categories": {
+                    "code": 90.0,
+                    "analysis": 90.0,
+                    "design": 90.0,
+                    "audit": 90.0,
+                    "reasoning": 90.0,
+                },
+                "cost_tier": "budget",
+                "provider": REVIEW08_PROVIDER,
+            }
+        },
+        "defaults": {
+            "dispatcher": REVIEW08_MODEL_ID,
+            "default_worker": REVIEW08_MODEL_ID,
+            "default_aggregator": REVIEW08_MODEL_ID,
+        },
+        "auto_formation": {"restrict_to_credentialed_providers": False},
+        "retry": {"max_attempts": 1, "base_delay_ms": 1, "max_delay_ms": 5},
+        "observability": {"log_level": "warning", "trace_enabled": False},
+    }
+    if via_api_keys:
+        cfg["api_keys"] = {REVIEW08_PROVIDER: REVIEW08_KEY}
+    return cfg
+
+
+def _review08_deliberation(tmp_path, cfg_dict: dict):  # type: ignore[no-untyped-def]
+    """load_config → REAL LiteLLMGateway engine → POST /v1/deliberate.
+
+    The stub's prose output is not valid dispatch JSON, so the run degrades
+    to the generic fallback DAG — every stage still routes over the socket
+    through the literal key, which is the filed evidence's shape (dispatch,
+    worker, aggregator all on the generic provider, HTTP 200).
+    """
+    config_path = tmp_path / "chimera.yaml"
+    config_path.write_text(yaml.safe_dump(cfg_dict), encoding="utf-8")
+    cfg = load_config(config_path)
+    engine = Engine(cfg, LiteLLMGateway(cfg))
+    client = TestClient(create_app(config=cfg, engine=engine))
+    return client.post("/v1/deliberate", json={"prompt": "hello", "formation": "auto"})
+
+
+def test_successful_route_names_literal_api_keys_source(monkeypatch, tmp_path) -> None:
+    """AC (CHIMERA-V2-REVIEW-08), api_keys-only literal: HTTP 200 with
+    ``trace.credential_sources.mock`` naming ``api_keys`` — not ``missing``
+    — while the stub received exactly the configured key on every request."""
+    with _compat_stub() as (base_url, seen):
+        r = _review08_deliberation(tmp_path, _review08_config_dict(base_url, via_api_keys=True))
+    assert r.status_code == 200, r.text
+    trace = r.json()["trace"]
+    source = trace["credential_sources"][REVIEW08_PROVIDER]
+    assert source == CREDENTIAL_SOURCE_API_KEYS
+    assert source != CREDENTIAL_SOURCE_MISSING
+    # The gateway kept using the configured literal: every request the stub
+    # saw carried it as the Bearer credential.
+    assert seen, "the loopback stub saw no requests"
+    assert all(req["authorization"] == f"Bearer {REVIEW08_KEY}" for req in seen), [
+        req["authorization"] for req in seen
+    ]
+    # Labels only — the key value never surfaces in the response body.
+    assert REVIEW08_KEY not in r.text
+
+
+def test_successful_route_names_provider_api_key_source(monkeypatch, tmp_path) -> None:
+    """AC (CHIMERA-V2-REVIEW-08), provider.api_key-only literal: same
+    contract with the key on the provider entry instead of the shortcut."""
+    with _compat_stub() as (base_url, seen):
+        r = _review08_deliberation(tmp_path, _review08_config_dict(base_url, via_api_keys=False))
+    assert r.status_code == 200, r.text
+    trace = r.json()["trace"]
+    source = trace["credential_sources"][REVIEW08_PROVIDER]
+    assert source == CREDENTIAL_SOURCE_PROVIDER_API_KEY
+    assert source != CREDENTIAL_SOURCE_MISSING
+    assert seen, "the loopback stub saw no requests"
+    assert all(req["authorization"] == f"Bearer {REVIEW08_PROVIDER_ENTRY_KEY}" for req in seen), [
+        req["authorization"] for req in seen
+    ]
+    assert REVIEW08_PROVIDER_ENTRY_KEY not in r.text

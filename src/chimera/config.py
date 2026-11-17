@@ -31,6 +31,12 @@ CREDENTIAL_SOURCE_PROCESS_ENV = "process_env"
 CREDENTIAL_SOURCE_REPO_DOTENV = "repo_dotenv"
 CREDENTIAL_SOURCE_HERMES_DOTENV_FALLBACK = "hermes_dotenv_fallback"
 CREDENTIAL_SOURCE_MISSING = "missing"
+# Literal configured keys (CHIMERA-V2-REVIEW-08): the label names the YAML
+# surface the key was written on — never the value.  These mirror the
+# resolution order ``Gateway.complete`` actually consults: ``api_keys``
+# first, then ``providers.<name>.api_key`` as the fallback.
+CREDENTIAL_SOURCE_API_KEYS = "api_keys"
+CREDENTIAL_SOURCE_PROVIDER_API_KEY = "provider.api_key"
 
 #: Display form of the Hermes dotenv path, used verbatim in warning logs so
 #: the operator can go look at the exact file that satisfied a key.
@@ -426,14 +432,18 @@ class ChimeraConfig(BaseModel):
     (DF-CHIMERA-V2-90).
 
     Maps provider name → one of ``process_env``, ``repo_dotenv``,
-    ``hermes_dotenv_fallback`` or ``missing``.  ``exclude=True`` keeps it out
+    ``hermes_dotenv_fallback``, ``api_keys``, ``provider.api_key`` or
+    ``missing`` — the label mirrors the resolution order
+    ``Gateway.complete`` consults for the key it actually uses
+    (CHIMERA-V2-REVIEW-08): an ``api_keys`` shortcut entry wins, then the
+    provider entry's ``api_key``.  ``exclude=True`` keeps it out
     of every serialization, mirroring ``configured_provider_names``: it is
     load-time bookkeeping, not a YAML field, so ``model_validate`` /
     ``model_copy`` / hand-built fixtures are unaffected.  Consumers read it
     for observability (the deliberation trace's ``credential_sources`` and
     ``/v1/health`` ``details.credential_sources``); a provider absent from
-    the map is one the resolver never looked at (no ``api_key_env`` —
-    typically a discovery addition or an inline ``api_key``).
+    the map is one the resolver never looked at (no ``api_key_env``, no
+    ``api_keys`` entry, no ``api_key`` — typically a discovery addition).
 
     Only labels travel here — never a key value.
     """
@@ -501,6 +511,20 @@ class ChimeraConfig(BaseModel):
                         source=CREDENTIAL_SOURCE_HERMES_DOTENV_FALLBACK,
                         path=_HERMES_DOTENV_DISPLAY,
                     )
+            elif provider.api_key is not None and provider_name not in self.api_keys:
+                # A literal key on the provider entry (CHIMERA-V2-REVIEW-08):
+                # the env resolver never runs for it, and with no ``api_keys``
+                # shortcut the gateway's fallback reads exactly this value.
+                # Non-empty → the honest label names the YAML surface (when a
+                # shortcut DOES exist, ``config.api_keys`` wins at the gateway
+                # and ``_apply_api_keys_credential_sources`` owns the label).
+                # An empty literal is configured but unusable (the gateway
+                # would pass "") → honest ``missing`` instead of leaving the
+                # provider unlabeled (absent must keep meaning "never looked
+                # at").
+                self.credential_sources[provider_name] = (
+                    CREDENTIAL_SOURCE_PROVIDER_API_KEY if provider.api_key else CREDENTIAL_SOURCE_MISSING
+                )
         return self
 
     def get_model(self, name: str) -> ModelEntry:
@@ -680,7 +704,8 @@ def provider_credential_source(config: ChimeraConfig, provider_name: str) -> str
     """The recorded source label for *provider_name*'s API key, or ``None``.
 
     Returns one of the ``CREDENTIAL_SOURCE_*`` labels (``process_env``,
-    ``repo_dotenv``, ``hermes_dotenv_fallback``, ``missing``) for providers
+    ``repo_dotenv``, ``hermes_dotenv_fallback``, ``api_keys``,
+    ``provider.api_key``, ``missing``) for providers
     the load-time resolver looked at, and ``None`` when the config carries no
     provenance for the provider — programmatically built fixtures, a
     discovery addition, or a pre-recording config object.  Callers must
@@ -871,10 +896,14 @@ def _apply_api_keys_credential_sources(config: ChimeraConfig, raw_tokens: dict[s
     The shipped templates resolve keys through ``api_keys: {deepseek:
     ${DEEPSEEK_API_KEY}}`` — env substitution, not the per-provider
     ``api_key_env`` validator — so without this pass those providers would be
-    absent from ``credential_sources`` (DF-CHIMERA-V2-90).  Sources come from
-    the substitution record; a provider that has no recorded substitution and
-    no validator-recorded entry is labeled ``missing``.  Does not overwrite
-    an entry the provider validator already recorded.
+    absent from ``credential_sources`` (DF-CHIMERA-V2-90).  This pass is
+    authoritative for every provider an ``api_keys`` entry covers:
+    ``Gateway.complete`` consults ``config.api_keys`` FIRST, so the label
+    here — substitution provenance for a ``${VAR}`` token, ``api_keys`` for
+    a literal value, ``missing`` when the entry contributes no usable key —
+    replaces any earlier entry for the same provider (CHIMERA-V2-REVIEW-08;
+    the reverse ordering let a provider-entry label describe a key the
+    gateway never used).
 
     ``raw_tokens`` maps each ``api_keys`` entry to its PRE-substitution raw
     value (captured by ``load_config`` before ``_substitute_env`` ran), so
@@ -882,7 +911,8 @@ def _apply_api_keys_credential_sources(config: ChimeraConfig, raw_tokens: dict[s
     rather than guessed from the entry name — an entry like ``acme:
     ${ACME_TOKEN}`` must be judged by ACME_TOKEN's provenance, not by an
     invented ``ACME_API_KEY`` name.  A raw value that is not a single
-    ``${VAR}`` token falls back to the conventional name (best effort).
+    ``${VAR}`` token is a literal key: labeled ``api_keys`` when non-empty,
+    ``missing`` otherwise.
     """
     provider_env_by_key: dict[str, str] = {}
     for provider_name, provider in config.providers.items():
@@ -890,15 +920,26 @@ def _apply_api_keys_credential_sources(config: ChimeraConfig, raw_tokens: dict[s
             provider_env_by_key[provider.api_key_env] = provider_name
     for key_name in config.api_keys:
         provider_name = provider_env_by_key.get(key_name, key_name)
-        if provider_name in config.credential_sources:
-            continue
         token_match = _ENV_PATTERN.fullmatch(raw_tokens.get(key_name, ""))
-        env_var = (
-            token_match.group(1)
-            if token_match
-            else _PROVIDER_API_KEY_ENV.get(key_name.lower(), key_name.upper())
-        )
-        source = _SUBSTITUTION_SOURCES.get(env_var, CREDENTIAL_SOURCE_MISSING)
+        if token_match is not None:
+            # ``${VAR}`` substitution: the token names the env var whose
+            # provenance the substitution record holds (``missing`` when the
+            # var satisfied nothing — the substituted value is "" and the
+            # shortcut contributes no usable key).
+            env_var = token_match.group(1)
+            source = _SUBSTITUTION_SOURCES.get(env_var, CREDENTIAL_SOURCE_MISSING)
+        elif config.api_keys.get(key_name):
+            # A literal key written in the YAML shortcut
+            # (CHIMERA-V2-REVIEW-08): this exact value is what
+            # ``Gateway.complete`` consults FIRST, so the honest source is
+            # the shortcut itself — not a guessed conventional env var,
+            # which is what made a successful route report ``missing``.
+            source = CREDENTIAL_SOURCE_API_KEYS
+        else:
+            # An empty literal (or a non-token shape that resolved to
+            # nothing usable): no working key — missing.
+            source = CREDENTIAL_SOURCE_MISSING
+        # Authoritative for shortcut-covered providers (see docstring).
         config.credential_sources[provider_name] = source
         if source == CREDENTIAL_SOURCE_HERMES_DOTENV_FALLBACK:
             _log_warning(
