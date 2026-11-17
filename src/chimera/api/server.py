@@ -659,7 +659,9 @@ def aggregate_usage(trace: DeliberationTrace) -> tuple[int, int, int]:
     and the total matches ``trace.total_tokens``, which the engine computes
     over the identical span set.
     """
-    spans = [trace.dispatch, *trace.stages]
+    # PERF-2: a skipped dispatch leaves ``trace.dispatch`` None, and the
+    # aggregate then covers the stage spans alone.
+    spans = [span for span in (trace.dispatch, *trace.stages) if span is not None]
     prompt_tokens = sum(span.tokens_input for span in spans)
     completion_tokens = sum(span.tokens_output for span in spans)
     return prompt_tokens, completion_tokens, prompt_tokens + completion_tokens

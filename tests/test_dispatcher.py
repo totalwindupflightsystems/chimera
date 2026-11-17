@@ -465,7 +465,13 @@ def test_client_dag_resolves_default_alias(config) -> None:  # type: ignore[no-u
 
 @pytest.mark.asyncio
 async def test_custom_dag_dispatch_fills_prompts_and_honors_structure(config) -> None:  # type: ignore[no-untyped-def]
-    """allow_custom_dag: dispatcher is called once to FILL-IN, structure honored."""
+    """``dispatch_prompts`` formation + custom DAG: one FILL-IN call, structure honored.
+
+    PERF-2 made the fill-in pass opt-in: a request-level DAG without a
+    ``dispatch_prompts`` preset skips the dispatcher entirely (see
+    ``tests/test_explicit_formation_dispatch_skip.py``), so this test opts in
+    through the formation it names.
+    """
     dag_dict = _client_dag(
         workers=[("researcher", "deepseek/deepseek-chat")],
         aggregator="zai-coding-plan/glm-5.2",
@@ -483,8 +489,9 @@ async def test_custom_dag_dispatch_fills_prompts_and_honors_structure(config) ->
         return resp(f"[output from {model}]", model)
 
     gw = FakeGateway(responder)
+    config.formations["customfill"] = FormationPreset(dispatch_prompts=True)
     custom_dag = build_dag_from_dict(dag_dict, config)
-    outcome = await Dispatcher(config, gw).dispatch("task", "auto", custom_dag=custom_dag)
+    outcome = await Dispatcher(config, gw).dispatch("task", "customfill", custom_dag=custom_dag)
     assert outcome.result.source == "custom"
     # Structure honored exactly
     assert outcome.result.formation.stage_ids() == ["researcher", "aggregator"]

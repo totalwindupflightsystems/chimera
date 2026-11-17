@@ -37,6 +37,7 @@ from chimera.dispatcher import (
     FormationDAG,
     Stage,
     _repair_formation,
+    blocked_catalog_models,
     build_dag_from_dict,
 )
 from chimera.exceptions import BudgetExhaustedError
@@ -168,7 +169,14 @@ class DeliberationTrace(BaseModel):
     request_id: str
     formation: str
     source: str
-    dispatch: StageSpan
+    dispatch: StageSpan | None = None
+    """The dispatcher's own call span — ``None`` when there was NO dispatcher
+    call (PERF-2): an explicit formation (config-defined DAG or a named
+    non-auto preset without ``dispatch_prompts``) has its plan synthesized
+    deterministically, so there is no call to attribute, and this stays
+    ``null`` in the JSON rather than an empty span with fake numbers. A
+    ``None`` dispatch contributes nothing to ``total_cost`` / ``total_tokens``
+    (they are computed over the stage spans alone in that case)."""
     workers: list[StageSpan] = Field(default_factory=list)
     aggregator: StageSpan | None = None
     stages: list[StageSpan] = Field(default_factory=list)
@@ -515,6 +523,13 @@ def _apply_unblocked_worker_models(
     Non-worker stages are untouched (the engine already retries a failed
     aggregator with ``defaults.default_aggregator``).
     """
+    # PERF-2: with the dispatcher model call skipped for explicit formations,
+    # the catalog freshness sweep that used to run inside
+    # ``build_dispatcher_prompt`` (via ``blocked_catalog_models``) would never
+    # fire there. Run it here — every run, every formation — so a replaced
+    # provider key still clears its stale credential block (the DF-CHIMERA-V2-6
+    # self-heal) instead of only when a dispatcher prompt happens to be built.
+    blocked_catalog_models(config)
     registry = blocked_models.shared_registry
     blocked_stages = [
         stage
@@ -766,8 +781,12 @@ class Engine:
                 it overrides the dispatcher's.
             dag: Optional client-defined DAG definition (a mapping with ``stages``
                 and ``edges``). Requires ``allow_custom_dag=True``; otherwise a
-                ``ValueError`` is raised. When enabled, the dispatcher skips the
-                DESIGN pass and only fills in per-stage prompts/instructions.
+                ``ValueError`` is raised. Since PERF-2 the dispatcher model call
+                is skipped entirely for an explicit structure: the plan is
+                synthesized deterministically (templated worker prompts,
+                aggregator defaults) and ``trace.dispatch`` is None. A config
+                preset with ``dispatch_prompts: true`` named as ``formation``
+                opts back into the dispatcher-authored fill-in pass.
             allow_custom_dag: Must be True for ``dag`` to be accepted.
             stage_observer: Optional per-call callback invoked as
                 ``observer(payload_dict)`` when a worker/aggregator/merge/audit
@@ -803,7 +822,11 @@ class Engine:
             custom_dag=custom_formation,
             model_override=disp_override,
         )
-        dispatch_span = self._build_dispatch_span(outcome, formation)
+        # PERF-2: an explicit formation (config DAG / named non-auto preset)
+        # is synthesized without a dispatcher model call; there is no call to
+        # attribute, so no dispatch span is fabricated for it and the trace's
+        # ``dispatch`` stays None.
+        dispatch_span = None if outcome.skipped else self._build_dispatch_span(outcome, formation)
 
         # CH-GAP-044: engine-side repair safety net. The dispatcher sometimes
         # emits edges referencing an aggregator/merge stage it omitted from
@@ -1819,7 +1842,7 @@ class Engine:
         request_id: str,
         formation: str,
         dispatch: DispatchResult,
-        dispatch_span: StageSpan,
+        dispatch_span: StageSpan | None,
         stage_spans: dict[str, StageSpan],
         answer_stage_id: str,
         started: float,
@@ -1831,7 +1854,12 @@ class Engine:
             (s for s in stage_spans.values() if s.kind in {"aggregator", "merge", "audit"}),
             None,
         )
-        all_spans: list[StageSpan] = [dispatch_span, *stage_spans.values()]
+        # PERF-2: a skipped dispatch contributes no span, so the run totals
+        # are computed over the stage spans alone — cost/tokens still add up
+        # exactly (nothing is double-counted or invented).
+        all_spans: list[StageSpan] = ([dispatch_span] if dispatch_span is not None else []) + list(
+            stage_spans.values()
+        )
         total_cost = round(sum(s.cost for s in all_spans), 6)
         total_tokens = sum(s.tokens_input + s.tokens_output for s in all_spans)
         # DF-CHIMERA-V2-55: name every stage the token cap cut off. A capped
@@ -1918,16 +1946,19 @@ def _maybe_langfuse(trace: DeliberationTrace, user_prompt: str) -> None:
     # Langfuse is best-effort telemetry: it must never break a deliberation.
     try:
         trace_obj = client.trace(id=trace.request_id, name="chimera.deliberation")
-        trace_obj.generation(
-            name="dispatch",
-            model=trace.dispatch.model,
-            input=user_prompt,
-            output=trace.dispatch.response,
-            usage={
-                "prompt": trace.dispatch.tokens_input,
-                "completion": trace.dispatch.tokens_output,
-            },
-        )
+        # PERF-2: an explicit formation has no dispatcher call, so there is no
+        # dispatch generation to export.
+        if trace.dispatch is not None:
+            trace_obj.generation(
+                name="dispatch",
+                model=trace.dispatch.model,
+                input=user_prompt,
+                output=trace.dispatch.response,
+                usage={
+                    "prompt": trace.dispatch.tokens_input,
+                    "completion": trace.dispatch.tokens_output,
+                },
+            )
         for span in trace.stages:
             trace_obj.generation(
                 name=span.stage_id,

@@ -179,7 +179,9 @@ async def test_keyless_run_is_an_mcp_error(config) -> None:  # type: ignore[no-u
     trace = payload["trace"]
     assert trace["request_id"]
     assert trace["answer_stage_id"]
-    assert trace["dispatch"]["kind"] == "dispatch"
+    # PERF-2: the explicit `simple` formation skips the dispatcher call, so
+    # there is no dispatch span to attribute — the trace carries null instead.
+    assert trace["dispatch"] is None
     assert trace["worker_failures"], "the failed stages must stay inspectable"
     failure = trace["worker_failures"][0]
     assert set(failure) == {"stage_id", "model", "error"}

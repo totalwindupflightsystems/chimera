@@ -169,6 +169,20 @@ class FormationPreset(BaseModel):
     merge: str | None = None
     audit: str | None = None
     dag: dict[str, Any] | None = None
+    dispatch_prompts: bool = False
+    """Keep the dispatcher LLM call that authors per-stage prompts and merge
+    instructions for this formation (PERF-2).
+
+    The default (``false``) runs an explicit formation with NO dispatcher
+    model call: the structure below is executed verbatim, workers get the
+    deterministic templated task prompt, and non-worker stages get the
+    aggregator module's built-in per-kind instructions. Set ``true`` to
+    restore the pre-PERF-2 fill-in pass — one extra provider call on
+    ``defaults.dispatcher`` that rewrites nothing structural but bills real
+    latency and tokens (measured: 14.5s and the entire run's cost on the
+    run-30 budget panel). ``auto`` formations always keep the dispatcher;
+    this flag only ever ADDS a call back for an explicit formation.
+    """
 
     @property
     def is_auto(self) -> bool:
