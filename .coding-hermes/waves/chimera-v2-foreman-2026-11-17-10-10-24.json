@@ -1,0 +1,64 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-17-10-10-24",
+  "tick_number": 488,
+  "mode": "serial",
+  "block": "INT-CI-014-R3",
+  "block_label": "Fresh-checkout suite red at HEAD — two 2026-11-16 dogfood logs are referenced nowhere (third recurrence of the docs-index rot class)",
+  "capacity": {
+    "nproc": 16,
+    "loadavg_1m": 11.95,
+    "formula": "max(1,min(6,16-ceil(11.95)))=4",
+    "slots": 4,
+    "wave_budget": 9,
+    "wave_size_dispatched": 1
+  },
+  "path": "serial",
+  "why_no_wave": "the chosen block has exactly ONE ready row (INT-CI-014-R3) after block_drive ranked it the top DRIVE line (95% done, P1). A wave needs >=2 mutually independent ready rows INSIDE the same block; slots=4 was available but there was no second independent row to fan out to, and the tick contract forbids switching blocks while the selected block has a ready row.",
+  "selection": {
+    "block_drive_top": "INT-CI-014-R3 pending=1 ready=1 blocked=0 done=22/23 (95%) prio=P1",
+    "resume_first_check": "the board's most recent events (2951) belong to the chimera-v2-ops lane and name DF-CHIMERA-V2-108, whose verdict is partial_hold with an owner/release-gated next step (live service reload + tailnet publish + 9router lane registration on another host) — not worker-dispatchable work. No foreman-lane block was in flight (previous foreman tick 2026-11-04).",
+    "premise_verified": "at c8ee6d6: .venv/bin/python -m pytest tests/test_docs_index.py -q -> 3 failed, 61 passed (run28, run29, test_no_dogfood_log_is_stranded_at_head)"
+  },
+  "base_sha": "c8ee6d66cb72d3ce9e920883d97f3c24bf656243",
+  "rows": [
+    {
+      "task_id": "INT-CI-014-R3",
+      "status_after_tick": "pending (fix landed; AC#1+AC#2 MET, AC#3 blocked)",
+      "disposition": "worker landed the fix in the shared checkout at 14c6f3e, pushed to origin/main; row deliberately left pending because AC#3 requires a green full suite and two PRE-EXISTING reds block it",
+      "work_commit": "14c6f3e0e2840a7c2008f284b1b6c136a510a6d5",
+      "judge_verdict_dir": ".gitreins/history/2026-11-17/cc543acd/verdict.json",
+      "judge_result": "passed=false tier1=true tier2=INCOMPLETE 5/6 criteria (only criterion 3 red)"
+    }
+  ],
+  "rows_filed": [
+    {
+      "task_id": "CH-MAINT-012",
+      "priority": "P1",
+      "why": "the two pre-existing suite reds that block INT-CI-014-R3 AC#3: private tailnet hosts leaked into tracked content by a board row (public-mirror risk) and chimera.yaml.example regrown to 150 lines past its 120-line budget"
+    }
+  ],
+  "workers": [
+    {
+      "task_id": "INT-CI-014-R3",
+      "model": "openai/gpt-6.1-terra",
+      "provider": "xkiro",
+      "pid": 2742794,
+      "workdir": "/home/kara/chimera-v2 (shared checkout, no worktree by design of the serial path)",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-intci014r3-20261117.txt",
+      "outcome": "exit 0, one commit, docs/README.md only (+2 lines)"
+    }
+  ],
+  "gates": {
+    "local_gate": "PASS tests/test_docs_index.py -q -> 64 passed in 0.28s; FAIL full suite -> 2 failed, 2184 passed, 62 skipped (both failures pre-existing and filed as CH-MAINT-012)",
+    "guard": "Tier 1 DEGRADED PASS on the docs-only commit (secrets + lsp graded, lint/tests skipped on a docs-only diff) — expected class",
+    "remote_ci": "github mirror: last 4 runs success but at ff5a762 = GREEN_STALE_MIRROR; github/main diverges from gitlab main (3 vs 25) — already tracked by RELEASE-PARITY-2026-11-16, no duplicate filed"
+  },
+  "left_uncommitted_by_design": [
+    "docker-compose.yml (sibling residue; the tier-2 judge flagged it as an uncommitted edit repointing the default model to an id in no catalog entry)",
+    "reports/model_sync_weekly.md (sibling residue, model-sync cron output)",
+    ".gitreins/rescued-20261105/, .gitreins/rescued-20261115/ (guard rescue artefacts)",
+    ".coding-hermes/board/facts_*.jsonl (untracked measurement sidecars)"
+  ],
+  "finished_at": "2026-11-17T10:39:00Z",
+  "status": "finished"
+}
