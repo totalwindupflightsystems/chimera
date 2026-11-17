@@ -41,7 +41,7 @@ from chimera.dispatcher import (
 )
 from chimera.exceptions import BudgetExhaustedError
 from chimera.gateway import Gateway, GatewayError, GatewayResponse
-from chimera.observability import get_langfuse
+from chimera.observability import apply_config_observability, get_langfuse
 
 log = structlog.get_logger("chimera.engine")
 
@@ -653,6 +653,13 @@ class Engine:
     )
 
     def __init__(self, config: ChimeraConfig, gateway: Gateway) -> None:
+        # DF-CHIMERA-V2-113: apply the config's observability (level + sink)
+        # so the in-process library path honours observability.log_level /
+        # use_stdout — the CLI/API/MCP surfaces configure logging explicitly
+        # before building an Engine, and their force_stderr pins win over this
+        # apply (see apply_config_observability). Idempotent via the
+        # (stream, level) once-guard in configure_logging.
+        apply_config_observability(config.observability)
         self._config_original = config
         self._config = config.model_copy(deep=True)
         self._config_checksum = self._compute_config_checksum(self._config_original)

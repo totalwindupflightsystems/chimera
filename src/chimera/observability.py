@@ -27,6 +27,14 @@ _LOGGER_CONFIGURED = False
 #: identical re-applies stay cheap.
 _CONFIGURED_STREAM: TextIO | None = None
 _CONFIGURED_LEVEL: int | None = None
+#: True while the process's logging is force-pinned to stderr by a
+#: ``configure_logging(..., force_stderr=True)`` caller (CLI ``--quiet``/
+#: ``--json`` via ``cli._load_cfg``, MCP stdio transport). Cleared by the next
+#: non-forced configure. ``apply_config_observability`` (the Engine/library
+#: path) defers to this pin so a config ``use_stdout: true`` flip can never
+#: re-corrupt a stdout contract that another surface already pinned away
+#: (DF-CHIMERA-V2-3 / DF-CHIMERA-0906-2).
+_FORCED_STDERR_PIN = False
 _LANGFUSE_CLIENT: Any = None
 
 
@@ -51,9 +59,13 @@ def configure_logging(obs: Observability, *, force_stderr: bool = False) -> stru
     configuration so earlier-created module loggers rebind to the new stream
     on their next use.
     """
-    global _LOGGER_CONFIGURED, _CONFIGURED_STREAM, _CONFIGURED_LEVEL
+    global _LOGGER_CONFIGURED, _CONFIGURED_STREAM, _CONFIGURED_LEVEL, _FORCED_STDERR_PIN
     level = getattr(logging, obs.log_level.upper(), logging.INFO)
     stream: TextIO = sys.stderr if force_stderr else _log_stream(obs)
+    # Record the caller's pin intent even when the once-guard below skips the
+    # re-apply: apply_config_observability consults this later (Engine
+    # construction after a CLI/MCP pin must keep stderr).
+    _FORCED_STDERR_PIN = force_stderr
 
     if not (_LOGGER_CONFIGURED and _CONFIGURED_STREAM is stream and level == _CONFIGURED_LEVEL):
         logging.basicConfig(
@@ -95,6 +107,30 @@ def configure_logging(obs: Observability, *, force_stderr: bool = False) -> stru
     return structlog.get_logger("chimera")
 
 
+def apply_config_observability(obs: Observability) -> structlog.stdlib.BoundLogger:
+    """Apply ``config.observability`` for in-process consumers (DF-CHIMERA-V2-113).
+
+    ``Engine.__init__`` calls this so a library consumer — ``Engine(config,
+    LiteLLMGateway(config))`` per the README block, with no CLI/API/MCP
+    surface involved — gets ``observability.log_level`` and
+    ``observability.use_stdout`` honoured without having to know an internal
+    call name. Idempotent: the ``(stream, level)`` once-guard in
+    :func:`configure_logging` makes repeated Engine constructions cheap, and
+    structlog keeps a single global pipeline with no handler list to
+    duplicate, so applying twice never double-prints.
+
+    If a ``force_stderr`` pin is active in this process (CLI ``--quiet``/
+    ``--json`` via ``cli._load_cfg``, or the MCP stdio transport), the pin
+    wins: the stream stays on stderr and only the level/langfuse side of the
+    config re-applies. That is what keeps the CLI stdout contracts
+    byte-for-byte — a config ``use_stdout: true`` flip cannot re-corrupt a
+    stdout contract another surface already pinned away (DF-CHIMERA-V2-3 /
+    DF-CHIMERA-0906-2). Without the pin (the plain library path) this is
+    exactly ``configure_logging(obs)``.
+    """
+    return configure_logging(obs, force_stderr=_FORCED_STDERR_PIN)
+
+
 def get_logger(name: str = "chimera") -> structlog.stdlib.BoundLogger:
     """Return a bound logger without reconfiguring."""
     if not _LOGGER_CONFIGURED:
@@ -133,4 +169,28 @@ def get_langfuse() -> Any:
     return _LANGFUSE_CLIENT
 
 
-__all__ = ["_log_stream", "configure_logging", "get_langfuse", "get_logger"]
+# DF-CHIMERA-V2-113: route the UNCONFIGURED structlog default to stderr.
+#
+# Every chimera module (engine, dispatcher, aggregator, gateway,
+# provider_discovery, task_router_registry) grabs ``structlog.get_logger`` at
+# import time. When nothing ever calls ``configure_logging`` — the plain
+# library path before ``Engine.__init__`` applies ``config.observability`` —
+# structlog's stock default prints bracket-level console lines to STDOUT, so
+# even the ``load_config()``-phase provider-discovery lines polluted stdout
+# ahead of Engine construction. Configuring a conservative stderr default at
+# import (only when structlog is still unconfigured — a host application that
+# configured structlog BEFORE importing chimera keeps its own pipeline) makes
+# stderr the sink for that window; ``configure_logging`` /
+# ``apply_config_observability`` remain the authoritative re-apply afterwards.
+if not structlog.is_configured():
+    structlog.configure(
+        processors=[
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.JSONRenderer(),
+        ],
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+    )
+
+
+__all__ = ["_log_stream", "apply_config_observability", "configure_logging", "get_langfuse", "get_logger"]
