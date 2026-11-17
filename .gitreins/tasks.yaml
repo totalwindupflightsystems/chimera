@@ -2472,5 +2472,6 @@ tasks:
     --ignore=tests/compat -q' exits 0 with zero 'was never awaited' RuntimeWarning
     lines and >= 2229 passed; ruff check on source is clean; unrelated warnings stay
     visible (narrow filter or real teardown only)
-  status: in_progress
+  status: complete
   created_at: '2026-11-17T21:37:53.875677+00:00'
+  completed_at: '2026-11-17T22:13:33.217366+00:00'
