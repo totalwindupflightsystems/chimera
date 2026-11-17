@@ -1,0 +1,97 @@
+{
+  "tick": "chimera-v2-ops-2026-11-17-10-10-24",
+  "actor": "chimera-v2-ops",
+  "row": "DF-CHIMERA-V2-108",
+  "measured_at_utc": "2026-11-17T10:14:43Z",
+  "repo_tip": "c8ee6d66cb72d3ce9e920883d97f3c24bf656243",
+  "verdict": "partial_hold",
+  "row_status_after": "pending",
+  "headline_finding": "The live chimera service (pid 849707, started 2026-11-16T05:07:58Z) runs a config snapshot that predates the 2026-11-16T07:33:43Z edit to chimera.yaml (/home/kara/chimera-v2/chimera.yaml, mtime 2026-11-16 02:33:43 -0500). Consequence measured twice: (a) the panel/quick-panel/quick formations the file defines are ABSENT from the running registry, so POST /v1/deliberate with formation=quick-panel returns 422 'Unknown formation'; (b) the auth block the file defines (auth.enabled: true, mode: env, CHIMERA_API_KEY present in the process environ) is NOT loaded, so a keyless POST /v1/deliberate reaches the handler instead of answering 401 as docs/operations.md:112-114 specifies.",
+  "probes": {
+    "live_process": {
+      "cmd": "ps -eo pid,lstart,etimes,args | grep '[c]himera serve'",
+      "output": "849707 Mon Nov 16 00:07:58 2026 104645 /home/kara/chimera-v2/.venv/bin/python3 /home/kara/chimera-v2/.venv/bin/chimera serve --host 127.0.0.1 --port 8765",
+      "config_env": "CHIMERA_CONFIG=/home/kara/chimera-v2/chimera.yaml (same file the scratch instance loaded)",
+      "listeners": "ss -ltn | grep -c ':8765' -> 1, only 127.0.0.1:8765"
+    },
+    "live_formations": {
+      "cmd": "curl -sS -m 20 http://127.0.0.1:8765/v1/formations | jq -r 'keys|join(\" \")'",
+      "output": "audit auto debate simple spec-writer speed",
+      "has_quick": "jq -r 'has(\"quick-panel\") or has(\"quick\")' -> false"
+    },
+    "live_config_drift": {
+      "chimera_yaml_mtime": "2026-11-16 02:33:43.475742022 -0500",
+      "quick_panel_lines_on_disk": "chimera.yaml:47 quick-panel: &quick_panel ; chimera.yaml:56 quick: *quick_panel (grep -n)",
+      "auth_block_on_disk": "chimera.yaml:19-21 auth: enabled: true / mode: env",
+      "tracked_example": "chimera.yaml.example:50 quick-panel: &quick_panel ; chimera.yaml.example:59 quick: *quick_panel",
+      "process_started_before_edit": true
+    },
+    "live_auth_not_enforced": {
+      "cmd": "curl -sS -X POST http://127.0.0.1:8765/v1/deliberate -H 'Content-Type: application/json' -d '{\"prompt\":\"x\",\"formation\":\"nope-not-a-formation\"}'",
+      "output": "http=422 body {\"detail\":\"Unknown formation: nope-not-a-formation\"} (raised at src/chimera/api/server.py:780, i.e. inside the handler; verify_api_key would have answered 401 first)",
+      "contrast": "same keyless call against a scratch instance running the CURRENT chimera.yaml -> http=401"
+    },
+    "scratch_instance": {
+      "cmd": "set -a && . ./.secrets/chimera.env && set +a && CHIMERA_CONFIG=/home/kara/chimera-v2/chimera.yaml ./.venv/bin/chimera serve --host 127.0.0.1 --port 8799",
+      "ready": "GET /v1/health/live -> 200 after 4s",
+      "formations": "audit auto debate panel quick quick-panel simple spec-writer speed",
+      "keyless_deliberate": "http=401 (auth gate live under the current config)",
+      "teardown": "kill listener pid 2653806 -> listeners_after=0, matching processes=0"
+    },
+    "ac1_quick_panel_timing": {
+      "cmd": "curl -sS -m 145 -H \"X-API-Key: $CHIMERA_API_KEY\" -H 'Content-Type: application/json' -X POST http://127.0.0.1:8799/v1/deliberate -d '{\"prompt\":\"Reply with the word ok.\",\"formation\":\"quick-panel\"}'",
+      "http": 200,
+      "curl_total_s": 11.211508,
+      "answer": "ok",
+      "trace_total_duration_ms": 11209,
+      "request_id": "776a14dc275f4019",
+      "workers": [
+        {"stage_id": "worker_1", "model": "deepseek/deepseek-v4-flash", "latency_ms": 1945, "cost_usd": 0.0001545},
+        {"stage_id": "worker_2", "model": "openrouter/qwen/qwen3-coder", "latency_ms": 2210, "cost_usd": 0.0000275},
+        {"stage_id": "worker_3", "model": "hermes/glm-5.3-flash", "latency_ms": "see trace (under the 3-worker fan-out)"}
+      ],
+      "under_60s": true,
+      "caveat": "Measured on a scratch instance of the same checkout + same config file, NOT on the live process, which cannot resolve the formation at all. The arm's literal transport (HTTP POST /v1/deliberate) was kept."
+    },
+    "ac2_tailnet_exposure": {
+      "bind": "ss -ltn | grep ':8765' -> 127.0.0.1:8765 only",
+      "tailscale_ip": "karahermes-mde-7840hs-2 (tailnet; address withheld by the repo guard)",
+      "serve_status": "tailscale serve status -> published: https 443 (-> 127.0.0.1:7860 + /disk/ /drives/ /printer/ paths), http 9443 (/tmp/strata-bootstrap). No 8443 entry, so the documented recipe (docs/operations.md:89 'tailscale serve --bg --https=8443 http://127.0.0.1:8765') is NOT applied.",
+      "verdict": "UNMET"
+    },
+    "ac3_9router_lane": {
+      "cmd": "curl -sS -H \"Authorization: Bearer $ROUTER9_API_KEY\" http://master001:20128/v1/models",
+      "http": 200,
+      "total_s": 4.567705,
+      "model_count": 354,
+      "chim_matches": "jq -r '[.data[].id | select(test(\"chim\";\"i\"))] | length' -> 0",
+      "verdict": "UNMET"
+    },
+    "ac4_config_docs": {
+      "config_arm": "MET - tracked chimera.yaml.example:50 (quick-panel) + :59 (quick alias)",
+      "docs_arm": "PARTIAL - docs/operations.md:56 'Internal service lane (fleet agents)' exists and documents quick-panel/panel/quick, tailnet exposure and the auth surface, but the criterion names a README ops section and README.md has 0 matches for 'internal service' / 'quick-panel'",
+      "verdict": "PARTIAL"
+    },
+    "host_hygiene": {
+      "disk": "df -h /home -> /dev/nvme0n1p2 1.8T 1.3T used 448G avail 75%",
+      "disk_verdict": "no action; above the reclaim threshold"
+    }
+  },
+  "changed": [
+    "nothing on the host; no service restart; live pid 849707 lstart unchanged (Mon Nov 16 00:07:58 2026) before and after the tick",
+    "one scratch chimera instance launched on 127.0.0.1:8799 for the AC#1 timing measurement and killed; 0 listeners / 0 processes afterwards"
+  ],
+  "repo_gate": {
+    "blocker": "the repo's own Tier 1 pre-commit hook (arm 2, DF-CHIMERA-V2-24, tests/private_host_scan.py) scans EVERY staged text file and blocked this board commit because the already-published event id=2948 (actor chimera-v2-pm, 2026-11-17T05:01:16Z) carried the tailnet address of karahermes-mde-7840hs-2 in its detail text. The scan is whole-file, not diff-scoped, so no board commit could land until that published line was remediated.",
+    "action": "that one line was sanitized in this commit: the address was replaced by the host name in event 2948's detail text; id, actor, timestamp, event_type and every other line are byte-identical (git diff -U0 shows exactly 2 changed lines: 2948 and the new event).",
+    "residual": ".coding-hermes/board/tasks.jsonl still carries the same tailnet address once, inside DF-CHIMERA-V2-108's AC#2 text (published). It was NOT edited, because a criterion's literal text is not an ops tick's to rewrite; the next actor that stages that file will hit the same block and should sanitize the address to the host name rather than bypass the hook.",
+    "bypass_used": "none - the gate was satisfied by removing the leak, not by --no-verify"
+  },
+  "left_alone": [
+    "the live service restart: applying the drifted config also deploys 13 commits of engine code (running 5146d46, tip c8ee6d6) while RELEASE-READINESS-2026-11-16 is NO-GO and INT-CI-014-R3 records the fresh-checkout suite red at HEAD - not a bounded reversible ops change",
+    "tailscale serve publication (AC#2): publishing now would expose an UNAUTHENTICATED deliberation route on the tailnet, because the auth block is not loaded in the running process",
+    "9router chim/* lane registration: server-side on master001, outside this project's worktree",
+    "shared-checkout residue: docker-compose.yml + reports/model_sync_weekly.md modified, .gitreins/rescued-2026110{5,15}/ untracked - sibling-lane work, not staged or reverted"
+  ],
+  "next_fire": "Order the AC#2 fix as auth-then-expose: restart the service on the current chimera.yaml (single change that loads quick-panel + the auth block AND deploys tip code - needs the release gate's call, not an ops tick's), prove keyless /v1/deliberate returns 401 and keyed quick-panel returns 200 on the live pid, then publish with `tailscale serve --bg --https=8443 http://127.0.0.1:8765` and re-measure from a second tailnet host."
+}
