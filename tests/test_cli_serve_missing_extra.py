@@ -207,7 +207,7 @@ def test_serve_normal_path_still_forwards_host_and_port(
     captured: dict[str, Any] = {}
 
     def _seam() -> Any:
-        return lambda host, port: captured.update({"host": host, "port": port})
+        return lambda host, port, config=None: captured.update({"host": host, "port": port, "config": config})
 
     monkeypatch.setattr(cli_main, "_import_run_api", _seam)
 
@@ -215,7 +215,10 @@ def test_serve_normal_path_still_forwards_host_and_port(
 
     assert result.exit_code == 0, result.output
     # CONFIG_DICT ships server.host=127.0.0.1, server.port=8000.
-    assert captured == {"host": "127.0.0.1", "port": 8000}
+    assert captured["host"] == "127.0.0.1"
+    assert captured["port"] == 8000
+    # DF-CHIMERA-V2-119: the normal path also forwards the LOADED config.
+    assert captured["config"] is not None
 
 
 def test_serve_help_lists_host_and_port() -> None:

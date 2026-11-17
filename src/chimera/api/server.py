@@ -2172,11 +2172,26 @@ def _warn_if_auth_key_but_auth_disabled(cfg: ChimeraConfig) -> None:
     )
 
 
-def run(host: str | None = None, port: int | None = None) -> None:
-    """Run the API server with uvicorn (``chimera serve`` entrypoint)."""
+def run(
+    host: str | None = None,
+    port: int | None = None,
+    config: ChimeraConfig | None = None,
+) -> None:
+    """Run the API server with uvicorn (``chimera serve`` entrypoint).
+
+    ``config`` is an already-resolved config (DF-CHIMERA-V2-119): the CLI
+    forwards the object it loaded from the global ``--config`` flag, so the
+    file the user pointed at is the file that is served. Previously ``run``
+    re-loaded the config with NO path, silently re-resolving from
+    ``CHIMERA_CONFIG`` / the cwd walk-up — ``chimera --config P serve``
+    served whatever it found there instead of P. With ``None`` (programmatic
+    callers / older call shapes) the historical fallback applies:
+    ``load_config()`` with the precedence its docstring documents (explicit
+    path > ``CHIMERA_CONFIG`` > cwd walk-up — decided in exactly one place).
+    """
     import uvicorn
 
-    cfg = load_config()
+    cfg = config if config is not None else load_config()
     # DF-CHIMERA-V2-56 / DF-CHIMERA-V2-76: at startup, before the port binds
     # — not on the first request, when the 401s (or the unauthenticated
     # writes) have already confused everyone.

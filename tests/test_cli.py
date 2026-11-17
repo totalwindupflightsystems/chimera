@@ -15,6 +15,7 @@ from click.testing import CliRunner  # noqa: E402
 
 from chimera.cli.main import _elide_worker_error, _repair_note_detail, main  # noqa: E402
 from chimera.config import load_config  # noqa: E402
+from tests.conftest import CONFIG_DICT  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Existing tests (unchanged)
@@ -417,10 +418,10 @@ def test_cli_verbose_no_stages(config_file, monkeypatch) -> None:
 
 
 def _capture_run_api(captured: dict) -> object:
-    """Return a callable that records (host, port) into *captured*."""
+    """Return a callable that records (host, port, config) into *captured*."""
 
-    def _run(host, port):
-        captured.update({"host": host, "port": port})
+    def _run(host, port, config=None):  # type: ignore[no-untyped-def]
+        captured.update({"host": host, "port": port, "config": config})
 
     return _run
 
@@ -443,6 +444,10 @@ def test_cli_serve_with_host_port(config_file, monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     assert captured["host"] == "0.0.0.0"
     assert captured["port"] == 9999
+    # DF-CHIMERA-V2-119: serve forwards the config IT loaded from -c, not a
+    # re-resolved one — the catalog names the fixture's models.
+    assert captured["config"] is not None
+    assert set(captured["config"].models) == set(CONFIG_DICT["models"])
 
 
 def test_cli_serve_defaults_from_config(config_file, monkeypatch) -> None:
