@@ -1,0 +1,45 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-18-00-54-47",
+  "block": "CHIMERA-V2-REVIEW-09 (resumed from chimera-v2-foreman-2026-11-17-23-36-42)",
+  "block_resume_from": "chimera-v2-foreman-2026-11-17-23-36-42 (manifest: drive block CHIMERA-V2-REVIEW-09)",
+  "wave_mode": "verification-only",
+  "wave_size": 0,
+  "wave_reason": "The resumed block's three rows all have their work ALREADY LANDED in main: REVIEW-07 merged at 3210bc6 (gitreins verdict complete), REVIEW-08 merged at f7a9f41 (gitreins verdict complete), REVIEW-09 committed at 25486c1 (gitreins task created+started by the prior sibling tick, judge pending). Dispatching a worker onto landed rows would be phantom work; the remaining work is verify + judge + close, which is foreman-direct. slots = max(1, min(6, nproc - ceil(loadavg))) = max(1, min(6, 16-6)) = 6 at compose time (loadavg 5.29), WAVE_BUDGET=12 — capacity existed but the block has zero dispatchable rows this tick.",
+  "rows": [
+    {
+      "task_id": "CHIMERA-V2-REVIEW-07",
+      "status": "in_progress->complete",
+      "disposition": "work merged 3210bc6 (verified ancestor of main); gitreins verdict complete; closing on fresh unit-gate + focused-test evidence"
+    },
+    {
+      "task_id": "CHIMERA-V2-REVIEW-08",
+      "status": "in_progress->complete",
+      "disposition": "work merged f7a9f41 (verified ancestor of main, SALVAGED landing by prior tick); gitreins verdict complete; closing on fresh unit-gate + focused-test evidence"
+    },
+    {
+      "task_id": "CHIMERA-V2-REVIEW-09",
+      "status": "pending->complete",
+      "disposition": "work committed 25486c1 == HEAD; criteria verified present on tree (docs/CONFIG.md custom-endpoint section, README.md:756 example, 27+25 test functions in the two hermetic test files); judged this tick via gitreins task complete with the soft-reset staging pattern (base 9d2d56b)"
+    }
+  ],
+  "base_sha": "9d2d56bb2985daa27fd1bb2bab7161b8a6d7a08a",
+  "local_gate": "pytest tests/ --ignore=tests/integration --ignore=tests/compat -q (fresh run, see receipt) + ruff check",
+  "remote_ci_before_closeout": "green (gh run list totalwindupflightsystems/chimera: 3/3 success on main, latest 2026-11-17T15:38:43Z; github mirror itself is 49/3 diverged — tracked by RELEASE-PARITY-2026-11-16)",
+  "workers": [],
+  "finished_at": "2026-11-18T01:46:04Z",
+  "status": "finished",
+  "closeout": {
+    "rows_closed": [
+      "CHIMERA-V2-REVIEW-07 (d5c4e4e)",
+      "CHIMERA-V2-REVIEW-08 (f7a9f41)",
+      "CHIMERA-V2-REVIEW-09 (b60ad70)"
+    ],
+    "gitreins_verdict_dir": ".gitreins/history/2026-11-18/b7c1e5e5",
+    "work_commits": [
+      "b60ad70",
+      "0e4c6d7"
+    ],
+    "local_gate": "unit gate 2237 passed / 1 skipped (env-artifact failure re-run green); ruff clean",
+    "remote_ci": "green 3/3 (github mirror, latest 2026-11-17T15:38:43Z)"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-17-23-36-42",
+  "block": "CHIMERA-V2-REVIEW-09",
+  "block_resume_from": "chimera-v2-foreman-2026-11-17-21-02-51 (receipt: drive block CHIMERA-V2-REVIEW-09)",
+  "wave_mode": "serial",
+  "wave_size": 1,
+  "wave_reason": "slots = max(1, min(6, nproc - ceil(loadavg))) = max(1, min(6, 16 - 15)) = 1 at compose time (loadavg 14.43/16.06/19.54 from fleet siblings). WAVE_BUDGET=6 is a ceiling, not an entitlement; slots=1 forces the serial path per the block-drive rule. Load is not an idle reason: one worker dispatched. The block's other two rows (CHIMERA-V2-REVIEW-07, CHIMERA-V2-REVIEW-08) are landed-but-withheld on the CH-MAINT-013 judge hang and cannot take a code worker.",
+  "rows": [
+    {
+      "id": "CHIMERA-V2-REVIEW-09",
+      "title": "[P3] Generic local OpenAI-compatible provider seam lacks a minimal documented credential fixture path",
+      "worktree": "/home/kara/worktrees/chimera-v2-CHIMERA-V2-REVIEW-09",
+      "branch": "wt/CHIMERA-V2-REVIEW-09",
+      "base_sha": "a30a18f",
+      "brief": "/tmp/brief-CHIMERA-V2-REVIEW-09",
+      "model": "gpt-6.1-sol",
+      "provider": "openai-codex",
+      "seat_note": "AUTHORITATIVE seat openai/gpt-6.1-terra @ xkiro probed before dispatch: 90s timeout, zero output — consistent with the documented 503 model_maintenance until 2026-11-19T16:25:12Z (CH-MAINT-013, prior receipt). Actual unavailable failure, so switched to gpt-6.1-sol @ openai-codex (probe: replied OK), the seat that did the prior tick's work."
+    }
+  ],
+  "serial_fallback_reason": "slots=1 (box loaded); block has only one worker-dispatchable ready row this tick."
+}
