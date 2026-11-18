@@ -529,9 +529,10 @@ Two optional credential fields per provider:
 | `api_key` | Literal key value, or a `${VAR}` token (never hardcode a real key). |
 
 A provider with a **loopback** `base_url` and neither field set is treated as
-keyless (a local `lmstudio`/`ollama`/llama.cpp/vLLM endpoint): credential
-errors from it keep their raw upstream text instead of naming an env var that
-does not exist, and no key is required for it to run.
+keyless **for credential-error diagnostics**: errors keep their raw upstream
+text instead of naming an env var that does not exist. This does not guarantee
+that the OpenAI-compatible SDK can run without a key. For a reproducible local
+fixture, explicitly pass a dummy key as in the example below.
 
 ### Custom OpenAI-compatible endpoints
 
@@ -549,6 +550,105 @@ Endpoints that serve **namespaced** model ids of their own keep their inner
 slashes — only the one catalog prefix goes:
 `router9/ds/deepseek-v4-flash` reaches 9router as `ds/deepseek-v4-flash`, and
 `router9/openrouter/x-ai/grok-4.6` as `openrouter/x-ai/grok-4.6`.
+
+#### Minimal local fixture
+
+This smoke test needs no real provider, model download, task-router registry,
+or real credential. Run from the root of a fresh clone. Install the dev extra
+because the fixture reuses the repository's pytest-backed loopback helper:
+
+```bash
+uv venv
+UV_LINK_MODE=copy uv pip install -e '.[dev]'
+```
+
+Save the following complete config as `local-fixture.yaml` in that checkout;
+do not merge in the shipped template's `api_keys` or defaults:
+
+```yaml
+provider_discovery: false
+providers:
+  mock:
+    base_url: http://127.0.0.1:18081/v1
+    api_key_env: CHIMERA_LOCAL_FIXTURE_KEY
+models:
+  mock/m1:
+    provider: mock
+    cost_tier: budget
+    categories:
+      code: 90
+defaults:
+  dispatcher: mock/m1
+  default_worker: mock/m1
+  default_aggregator: mock/m1
+formations:
+  simple:
+    workers: 1
+    aggregator: default
+```
+
+In terminal 1, start the existing hermetic OpenAI-compatible test fixture:
+
+```bash
+.venv/bin/python -u -c 'from threading import Event; from tests.test_gateway_custom_base_url import _compat_stub; exec("with _compat_stub(port=18081) as (url, seen):\n    print(url, flush=True)\n    Event().wait()")'
+```
+
+Wait for `http://127.0.0.1:18081/v1` to print. The fixture binds only to loopback,
+returns `STUB-OK`, and is not a production server or an authentication validator.
+If either demo port is occupied, stop the demo and choose unused ports, updating
+the config/fixture port together and the serve/curl port together; do not probe
+an unrelated service already listening there.
+
+In terminal 2 (also at the checkout root), export the **value** of the dummy
+credential in the same shell that launches Chimera, then start the REST server:
+
+```bash
+export CHIMERA_LOCAL_FIXTURE_KEY=local-fixture-only
+.venv/bin/chimera --config local-fixture.yaml serve --host 127.0.0.1 --port 18082
+```
+
+After server startup, in terminal 3:
+
+```bash
+curl --noproxy '*' -sS -i http://127.0.0.1:18082/v1/deliberate \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"hello","formation":"simple"}'
+```
+
+Expected: HTTP **200**, `answer: "STUB-OK"`, and
+`trace.credential_sources.mock: "process_env"`. Every upstream request goes to
+`/v1/chat/completions` with model `m1` and `Authorization: Bearer local-fixture-only`.
+The `simple` formation uses the configured default worker/aggregator; this is a
+transport/config smoke test, not a demonstration of multi-model answer quality.
+Use Ctrl-C in terminals 1 and 2 to stop both servers.
+
+**Credential shape matters, including on loopback.** `api_key_env` is the
+variable's **name**; exporting that variable supplies its value at config load
+(process env first, then `.env` beside the config, then `~/.hermes/.env`). A
+variable name alone is not a credential. No top-level `api_keys` is needed for
+the example. Alternatively, remove `api_key_env` and add
+`api_keys: {mock: "${CHIMERA_LOCAL_FIXTURE_KEY}"}` at the top level, keeping the
+same export. `api_keys.mock` is checked first: an empty string (including an
+unresolved `${VAR}`) shadows the provider-entry key; omit the shortcut rather
+than leaving an empty one. A dummy literal `providers.mock.api_key:
+local-fixture-only` also works for this fixture, but never inline real secrets.
+These details match `load_config()` / `_resolve_provider_api_keys()` in
+`src/chimera/config.py` and `LiteLLMGateway.complete()` in `src/chimera/gateway.py`.
+
+**Negative control:** stop terminal 2, run `unset CHIMERA_LOCAL_FIXTURE_KEY`, and
+restart the same serve command without exporting a key. On a fresh clone with
+no matching dotenv entry or ambient OpenAI SDK key, the same POST returns HTTP
+**502** with `error.type: "upstream_error"` and a message naming
+`CHIMERA_LOCAL_FIXTURE_KEY`. `GET /v1/health` additionally reports
+`details.providers.mock.error_class: "missing_credentials"`. A reachable
+loopback address does not make this SDK path keyless. The recipe deliberately
+passes a dummy key instead of depending on SDK-global credentials or implicit
+keyless behavior. The hermetic regression strips those ambient credentials and
+tests both copies of this YAML:
+
+```bash
+.venv/bin/python -m pytest tests/test_credential_source.py -k documented_local_fixture -q
+```
 
 That is what makes a local, non-LiteLLM-prefixed service usable as a
 first-class provider. The shipped example config wires the **Hermes gateway**

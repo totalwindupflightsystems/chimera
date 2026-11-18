@@ -418,6 +418,11 @@ line-length = 110
 # only, which is also what docs/GITREINS.md documents for the lint lane
 # ("ruff check over the staged Python files"). CH-LINT-DRIFT-001.
 include = ["*.py", "*.pyi"]
+# Frozen run artifacts, not source: .coding-hermes/evidence/ holds captured
+# dogfood/QA evidence whose bytes are fingerprinted at capture time and must
+# never be restyled or lint-fixed. Excluded from both the lint and format
+# lanes; all real sources stay fully covered (`ruff check .` green at HEAD).
+extend-exclude = [".coding-hermes/evidence"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "C4"]

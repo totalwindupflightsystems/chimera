@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import copy
 import json
+from pathlib import Path
 
 import pytest
 import structlog.testing
@@ -602,3 +603,76 @@ def test_successful_route_names_provider_api_key_source(monkeypatch, tmp_path) -
         req["authorization"] for req in seen
     ]
     assert REVIEW08_PROVIDER_ENTRY_KEY not in r.text
+
+
+# CHIMERA-V2-REVIEW-09: exercise the documentation itself, not a lookalike dict.
+LOCAL_FIXTURE_ENV = "CHIMERA_LOCAL_FIXTURE_KEY"
+LOCAL_FIXTURE_KEY = "local-fixture-only"
+LOCAL_FIXTURE_DOCS = ("README.md", "docs/CONFIG.md")
+
+
+def _documented_local_fixture_config(doc: str) -> dict:
+    text = (Path(__file__).resolve().parents[1] / doc).read_text(encoding="utf-8")
+    section = text.split("#### Minimal local fixture", 1)[1]
+    snippet = section.split("```yaml\n", 1)[1].split("```", 1)[0]
+    raw = yaml.safe_load(snippet)
+    assert raw["provider_discovery"] is False
+    assert raw["providers"]["mock"] == {
+        "base_url": "http://127.0.0.1:18081/v1",
+        "api_key_env": LOCAL_FIXTURE_ENV,
+    }
+    assert "api_keys" not in raw  # no empty shortcut shadowing the provider key
+    assert set(raw["models"]) == {"mock/m1"}
+    return raw
+
+
+@pytest.mark.parametrize("doc", LOCAL_FIXTURE_DOCS)
+def test_documented_local_fixture_reaches_provider(monkeypatch, tmp_path, doc: str) -> None:
+    """The copied YAML, env var, real gateway and loopback socket return 200."""
+    monkeypatch.setenv(LOCAL_FIXTURE_ENV, LOCAL_FIXTURE_KEY)
+    raw = _documented_local_fixture_config(doc)
+    with _compat_stub() as (base_url, seen):
+        # Only the ephemeral port differs from the copy-paste recipe.
+        raw["providers"]["mock"]["base_url"] = base_url
+        path = tmp_path / "local-fixture.yaml"
+        path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+        cfg = load_config(path)
+        assert cfg.providers["mock"].api_key == LOCAL_FIXTURE_KEY
+        assert cfg.credential_sources["mock"] == CREDENTIAL_SOURCE_PROCESS_ENV
+        with TestClient(create_app(config=cfg)) as client:
+            response = client.post("/v1/deliberate", json={"prompt": "hello", "formation": "simple"})
+    assert response.status_code == 200, response.text
+    assert response.json()["answer"] == "STUB-OK"
+    assert response.json()["trace"]["credential_sources"]["mock"] == CREDENTIAL_SOURCE_PROCESS_ENV
+    assert seen, "the documented config never reached the fixture"
+    assert all(request["path"] == "/v1/chat/completions" for request in seen)
+    assert all(request["body"]["model"] == "m1" for request in seen)
+    assert all(request["authorization"] == f"Bearer {LOCAL_FIXTURE_KEY}" for request in seen)
+    assert LOCAL_FIXTURE_KEY not in response.text
+
+
+@pytest.mark.parametrize("doc", LOCAL_FIXTURE_DOCS)
+def test_documented_local_fixture_missing_credentials_is_typed(monkeypatch, tmp_path, doc: str) -> None:
+    """A reachable fixture does not turn missing credentials into success."""
+    import litellm
+
+    monkeypatch.delenv(LOCAL_FIXTURE_ENV, raising=False)
+    for name in ("OPENAI_API_KEY", "OPENAI_KEY", "MOCK_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(litellm, "api_key", None)
+    monkeypatch.setattr(litellm, "openai_key", None)
+    raw = _documented_local_fixture_config(doc)
+    with _compat_stub() as (base_url, seen):
+        raw["providers"]["mock"]["base_url"] = base_url
+        path = tmp_path / "local-fixture.yaml"
+        path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+        cfg = load_config(path)
+        assert cfg.credential_sources["mock"] == CREDENTIAL_SOURCE_MISSING
+        with TestClient(create_app(config=cfg)) as client:
+            health = client.get("/v1/health").json()
+            response = client.post("/v1/deliberate", json={"prompt": "hello", "formation": "simple"})
+    assert health["details"]["providers"]["mock"]["error_class"] == "missing_credentials"
+    assert response.status_code == 502, response.text
+    assert response.json()["error"]["type"] == "upstream_error"
+    assert LOCAL_FIXTURE_ENV in response.json()["error"]["message"]
+    assert not seen, "a missing key unexpectedly reached the fixture"

@@ -558,7 +558,8 @@ dev image (`Dockerfile.dev`) and a compose file:
 
 ```bash
 docker build -f Dockerfile.dev -t chimera-dev .     # build this checkout
-docker run -p 8765:8765 -e DEEPSEEK_API_KEY=sk-... chimera-dev
+# pass the key through the host environment; never inline a key value:
+docker run -p 8765:8765 -e DEEPSEEK_API_KEY chimera-dev
 cp chimera.yaml.example chimera.yaml && docker compose up -d    # or compose
 ```
 
@@ -567,7 +568,7 @@ decides both the port the container listens on and the host port compose
 publishes, so a non-default port is a single variable on either path:
 
 ```bash
-docker run -p 8791:8791 -e CHIMERA_PORT=8791 -e DEEPSEEK_API_KEY=sk-... chimera-dev
+docker run -p 8791:8791 -e CHIMERA_PORT=8791 -e DEEPSEEK_API_KEY chimera-dev
 CHIMERA_PORT=8791 docker compose up -d          # publishes AND listens on 8791
 curl -s localhost:8791/v1/health/live           # 200 when the port took effect
 ```
@@ -765,6 +766,46 @@ Endpoints that serve **namespaced** model ids of their own keep the inner
 slashes: the catalog id `router9/ds/deepseek-v4-flash` reaches 9router as
 `ds/deepseek-v4-flash` (not `deepseek-v4-flash`), and
 `router9/openrouter/x-ai/grok-4.6` as `openrouter/x-ai/grok-4.6`.
+
+#### Minimal local fixture
+
+For a fresh clone, this complete single-provider config uses an **exported
+variable's value**, not the variable name as a key. Save it as
+`local-fixture.yaml` in the checkout (do not merge it into the larger template):
+
+```yaml
+provider_discovery: false
+providers:
+  mock:
+    base_url: http://127.0.0.1:18081/v1
+    api_key_env: CHIMERA_LOCAL_FIXTURE_KEY
+models:
+  mock/m1:
+    provider: mock
+    cost_tier: budget
+    categories:
+      code: 90
+defaults:
+  dispatcher: mock/m1
+  default_worker: mock/m1
+  default_aggregator: mock/m1
+formations:
+  simple:
+    workers: 1
+    aggregator: default
+```
+
+Export `CHIMERA_LOCAL_FIXTURE_KEY=local-fixture-only` in the shell that starts
+Chimera. `api_key_env` resolves the named variable onto `providers.mock.api_key`;
+no `api_keys` entry is required. The catalog id `mock/m1` reaches the fixture
+as `m1`. `provider_discovery: false` keeps this example independent of the
+external model registry. The dummy credential is required for this recipe even
+on loopback; it is not a real secret or a claim of keyless SDK behavior.
+
+See the [copy-paste fixture launch and HTTP request](docs/CONFIG.md#minimal-local-fixture)
+for the fresh-clone setup, three-terminal smoke test, alternative `api_keys`
+shape, and typed missing-credential result. Expected result: HTTP 200 with
+`answer: "STUB-OK"`.
 
 That is how the local **Hermes gateway** (`:8642`, OpenAI-compatible) plugs in
 as a first-class provider:

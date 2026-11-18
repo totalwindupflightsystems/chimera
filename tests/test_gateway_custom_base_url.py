@@ -109,8 +109,12 @@ def _config_dict(
 
 
 @contextmanager
-def _compat_stub() -> Iterator[tuple[str, list[dict[str, Any]]]]:
-    """A loopback OpenAI-compatible stub; yields ``(base_url, seen_requests)``."""
+def _compat_stub(*, port: int = 0) -> Iterator[tuple[str, list[dict[str, Any]]]]:
+    """A loopback OpenAI-compatible stub; yields ``(base_url, seen_requests)``.
+
+    Tests default to an ephemeral port; the documented local recipe selects
+    a fixed port so its config can be copied without editing the URL.
+    """
     seen: list[dict[str, Any]] = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -153,7 +157,7 @@ def _compat_stub() -> Iterator[tuple[str, list[dict[str, Any]]]]:
         def log_message(self, *args: Any) -> None:  # noqa: ANN401
             """Silence the per-request stderr line (keeps pytest output clean)."""
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
