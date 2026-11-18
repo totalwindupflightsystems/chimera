@@ -1,0 +1,32 @@
+{
+  "tick": "chimera-v2-foreman-2026-11-18-02-09-27",
+  "board_tick": 491,
+  "project": "chimera-v2",
+  "block": "RELEASE-PARITY-2026-11-16",
+  "path": "serial",
+  "path_reason": "The release block has exactly ONE implementable ready row (RELEASE-PARITY-2026-11-16). Its sibling RELEASE-READINESS-2026-11-16 is a gate row whose acceptance depends on this row's reconciled SHA + version-prep commit, so it is not independent. slots=6 (nproc 16, load 4.11) but independence, not capacity, caps the wave at 1.",
+  "wave_budget": 4,
+  "slots": 6,
+  "wave_size": 1,
+  "rows": [
+    {
+      "id": "RELEASE-PARITY-2026-11-16",
+      "priority": "P1",
+      "worktree": "/home/kara/worktrees/chimera-v2-RELEASE-PARITY-2026-11-16",
+      "branch": "wt/RELEASE-PARITY-2026-11-16",
+      "base": "origin/main",
+      "base_sha": "4de647bb0bd41a9e387e0364981b941a1753b95f",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-RELEASE-PARITY-2026-11-18.txt",
+      "worker_model": "openai/gpt-6.1-terra",
+      "worker_provider": "xkiro",
+      "scope": "merge github/main (3 board commits) into the branch; version-prep 0.3.0 across pyproject.toml/src/chimera/__init__.py/uv.lock; CHANGELOG promotion; local gate",
+      "forbidden": ["push", "tag", "release", "touch docker-compose.yml", "touch reports/model_sync_weekly.md"]
+    }
+  ],
+  "foreman_direct_in_parallel": [
+    "board row annotation (worktree/branch) before dispatch",
+    "board/.gitignore facts_*.jsonl class rule (dirty-tree release blocker, COS-dated)",
+    "block acceptance evidence collection at merge time"
+  ],
+  "created_at": "2026-11-18T02:09:27Z"
+}

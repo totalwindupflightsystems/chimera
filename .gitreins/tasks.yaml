@@ -2488,3 +2488,17 @@ tasks:
   status: complete
   created_at: '2026-11-17T23:50:06.320162+00:00'
   completed_at: '2026-11-18T01:18:23.734471+00:00'
+- id: RELEASE-PARITY-2026-11-16
+  title: Reconcile github/gitlab main parity and cut the v0.3.0 version-prep commit
+  criteria:
+  - '1. Local main contains a merge of github/main so one SHA is an ancestor of both
+    remotes and both pushes are fast-forward. 2. Version surfaces pyproject.toml project.version,
+    src/chimera/__init__.py _FALLBACK_VERSION and the uv.lock editable package version
+    all read 0.3.0. 3. CHANGELOG.md promotes the Unreleased section into a dated [0.3.0]
+    section with Added (Prometheus /metrics feat e8cabaa), Fixed and Changed subsections
+    drawn from v0.2.9..HEAD, Unreleased empty above it. 4. No tag created or moved;
+    no release object created. 5. Merged tree passes the local gate: pytest suite
+    green.'
+  status: complete
+  created_at: '2026-11-18T02:26:39.835871+00:00'
+  completed_at: '2026-11-18T03:00:58.106742+00:00'
