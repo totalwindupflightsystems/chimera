@@ -4,6 +4,30 @@ All notable changes to Chimera will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-11-18
+
+### Added
+
+- **Prometheus `GET /metrics` on the API listener** (CHIMERA-V2-OPS-001). A dependency-free registry — request counter, latency histogram, and an error counter split by cause — rendered in the Prometheus text format 0.0.4 and served from the same listener as the API. Labels are route *templates* and an unmatched request collapses to `<unmatched>`, so a scanner cannot mint one time series per hit; the scrape endpoint is excluded from its own counters and the middleware is pure ASGI, so SSE bodies are never re-framed. Ships with `docs/operations.md`: deploy path, supervision and restart policy, the probe/health routes, the metric families, a `prometheus.yml` scrape block, and the incident path.
+
+### Fixed
+
+- `chimera serve` honours the global `--config` flag and refuses an ambiguous config path instead of silently serving a different configuration (DF-CHIMERA-V2-119).
+- An in-process `Engine` applies `observability.log_level` and `observability.use_stdout`; embedded callers previously had both ignored, with lines landing on stdout (DF-CHIMERA-V2-113).
+- `credential_sources` reports the configured credential source instead of missing, with `docs/CONFIG.md` and `docs/OPENAI_API.md` updated to match (CHIMERA-V2-REVIEW-08).
+- `CHIMERA_PORT` governs the container port again — the image `CMD` no longer pins `--port`, which had made the documented variable inert (README-13).
+
+### Changed
+
+- `/v1/health` and `/v1/health/ready` are bounded by a new `server.health_endpoint_budget_s` (default 1.5s) over a stale-while-revalidate single-flight probe: uncached `/v1/health` went 11.028s → 1.502s and `/v1/health/ready` 11.012s → 1.501s against a hanging provider, and a 60s poll no longer pays the full wait (PERF-1). Partial answers stay honest — `stale: true` with per-provider `age_s`, and a provider that has never answered reads `error_class: "in_flight"`.
+- Explicit formations skip the dispatcher LLM call: a config-defined DAG or a named non-auto preset is now synthesized deterministically, so a run that paid 17969ms and $0.0013677 in dispatcher time issues no dispatcher call at all (trace 25997ms → 10418ms) (PERF-2). A formation can set `dispatch_prompts: true` to opt back in.
+- `chimera.yaml.example` is back inside its 120-line minimal budget; fleet-operator settings moved to `chimera.yaml.fleet` (CH-MAINT-012).
+- The local OpenAI-compatible provider seam is documented end to end in `README.md` and `docs/CONFIG.md`, covering the custom provider base-URL path and credential-source precedence (CHIMERA-V2-REVIEW-09).
+- `docs/operations.md` joins the documentation index, and the README states that `CHIMERA_PORT` governs the container port (README-13).
+- The 2026-11-16 run-28 and run-29 dogfood logs are indexed, so a fresh checkout passes the docs-index gate (INT-CI-014-R3).
+- `CODE_OF_CONDUCT.md` carries the maintainer contact that was left as a placeholder, and the README badge names Contributor Covenant 2.0 to match the file (README-11/12).
+- gitlab and github main are reconciled onto a single mainline, so either remote now serves the same release candidate (RELEASE-PARITY-2026-11-16).
+
 ## [0.2.9] — 2026-10-30
 
 ### Fixed
