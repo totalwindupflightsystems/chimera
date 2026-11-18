@@ -43,6 +43,11 @@ pipeline:
       type: script
       run: gitreins guard
       on_fail: block
+      # Step budget must exceed the guard's own test ceiling (test_timeout: 600,
+      # suite measured 155-232s): the judge's tier1 step default is 120s, which
+      # timed out on CHIMERA-V2-REVIEW-09 and DEGRADED an otherwise all-PASS
+      # tier2 verdict (verdict dir 2026-11-18/11e3938a). 600s, same ceiling.
+      timeout: 600
   - id: tier2
     type: ai_eval
     true:
