@@ -71,7 +71,12 @@ description: >-
   provider health before spending a run, the health-vs-readiness cold-cache
   asymmetry, and why trace token counts are provider-reported and must not
   be billed off.
-version: 1.17.0
+  v1.18.0 adds the 2026-11-20 run-33 RATE-LIMIT section: one logical call
+  costs 3 upstream requests per attempt (inner SDK retries), retry jitter is
+  correlated across concurrent callers, a recovered 429 leaves no log line
+  and no metric, and a provider's Retry-After overrides retry.base_delay_ms
+  with no cap — with the arrival-count method that produced the numbers.
+version: 1.18.0
 category: software-development
 ---
 
@@ -1209,3 +1214,46 @@ Evidence and the re-runnable probes:
 stream/level split). Open rows from this run: DF-CHIMERA-V2-113 (observability
 knobs inert in-process), -114 (`simple` is the premium preset),
 -115 (result-field and formation-default docs gaps).
+
+## Run 33 (2026-11-20) — what a 429 actually costs you (v1.18.0)
+
+Read this before you tune `retry:` in `chimera.yaml`, and before you tell anyone a Chimera call
+equals `max_attempts` provider requests. It does not. Measured on `f47c0e4` with a metering stub
+upstream that timestamps every arrival on its own clock (so nothing here trusts Chimera's logs —
+there are none for retries):
+
+| `retry.max_attempts` | upstream requests | wall (always-429) |
+|---|---|---|
+| 1 | 3 | 4.81 s |
+| 3 (default) | 9 | 11.0 s |
+| 5 | 15 | 19.8 s |
+
+Recipes:
+
+- **Count upstream requests, not retries.** The multiplier is 3× because the OpenAI SDK's default
+  `max_retries=2` is still active inside litellm on Chimera's production call path —
+  `num_retries=0` is set only on the prewarm call (`src/chimera/gateway.py:128`). Budget
+  `max_attempts × 3` provider calls, and do not read `docs/RESILIENCE.md` F7 as a request count
+  (`DF-CHIMERA-V2-126`).
+- **A transient 429 is silent.** One blip turned a 0.11 s call into **2.1077 s** with zero
+  `gateway_retry` log lines and no retry/attempt/rate-limit series in `/metrics` (the exposition has
+  requests, errors and duration only). If your alerting depends on knowing a provider wobbled, it
+  cannot know (`DF-CHIMERA-V2-128`).
+- **Your `retry.base_delay_ms` is not in charge when the provider sends `Retry-After`.** It wins,
+  linearly and uncapped: `Retry-After: 1` → 2.113 s, `Retry-After: 5` → 10.114 s for one blip,
+  while the config asked for a 500 ms first delay. A provider can set your p95; cap it at your edge
+  or expect the header's value (`DF-CHIMERA-V2-129`).
+- **Do not rely on the jitter to spread a herd.** It is `hash(str(attempt))` — a process-wide
+  constant per attempt — so concurrent callers share one delay: 4 in-flight calls landed within
+  0.2–0.9 ms of each other with identical `delay_ms` (385, 385, 385, 385). Across processes
+  `PYTHONHASHSEED` hides it, which is why single-shot CLI runs look fine (`DF-CHIMERA-V2-127`).
+- **Credit where it is due:** recovery always produced a real answer (or an honest 502 — never a
+  fabricated one), and the served process has a working prewarm, so a clean call is 0.1048 s cold /
+  0.1117 s warm. The retry layer is survivable; it is only unbounded and invisible.
+
+Open rows from this run: `DF-CHIMERA-V2-126`/`-127`/`-128`/`-129`. Install leg this time was
+**proven on a clean machine** (bunker battery: fresh-install OK, 2234 tests passed, lint OK,
+docker_build OK; `ci-pass` FAIL is `act` dying in `setup/index.js`, not a red repo). Evidence and
+re-runnable probes:
+`.coding-hermes/evidence/chimera-v2-dogfood-2026-11-20-06-01-48/run33-retry-resilience/`
+(`stub429.py` + `probe_retry.py` for arrivals, `retry_after.sh` for the header arms).
