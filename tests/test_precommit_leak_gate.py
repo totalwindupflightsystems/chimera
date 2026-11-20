@@ -44,6 +44,7 @@ from tests.private_host_scan import (
 REPO = Path(__file__).resolve().parents[1]
 HOOK_SOURCE = REPO / ".gitreins" / "pre-commit"
 SCANNER_SOURCE = REPO / "tests" / "private_host_scan.py"
+DOCS_CHECKER_SOURCE = REPO / "scripts" / "check_docs_index.sh"
 
 TIMEOUT_S = 120
 
@@ -217,6 +218,11 @@ def hook_repo(tmp_path: Path) -> Path:
     scanner = repo / "tests" / "private_host_scan.py"
     scanner.parent.mkdir(exist_ok=True)
     scanner.write_bytes(SCANNER_SOURCE.read_bytes())
+    # The docs-index arm also REFUSES a commit when its checker is missing
+    # (DF-CHIMERA-V2-135) — a real checkout carries it, so mirror that too.
+    docs_checker = repo / "scripts" / "check_docs_index.sh"
+    docs_checker.parent.mkdir(exist_ok=True)
+    docs_checker.write_bytes(DOCS_CHECKER_SOURCE.read_bytes())
     seed = _commit(repo, "README.md", "seed\n", "seed")
     assert seed.returncode == 0, f"seed commit failed:\n{seed.stdout}{seed.stderr}"
     return repo

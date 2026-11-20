@@ -50,14 +50,35 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
 SRC="$ROOT/$SRC_REL"
-DEST="$ROOT/$DEST_REL"
-HOOK_DIR="$(dirname "$DEST")"
+
+# The EFFECTIVE hooks directory — the one `git commit` will actually consult —
+# not the literal `.git/hooks` path. In a linked worktree `.git` is a FILE, so a
+# repo-local RELATIVE `core.hooksPath=.git/hooks` resolves to a directory that
+# does not exist; git then finds NO hook at all and skips the gate in silence
+# (`git hook run pre-commit` -> "error: cannot find a hook named pre-commit").
+# Deriving DEST from `git rev-parse --git-path hooks` makes this installer grade
+# the same path a commit does, and lets it refuse out loud instead of
+# "installing" into nowhere.
+HOOK_DIR="$(git rev-parse --git-path hooks)"
+DEST="$HOOK_DIR/pre-commit"
+DEST_REL="${HOOK_DIR#./}/pre-commit"
 
 if [ ! -f "$SRC" ]; then
   echo "error: $SRC_REL is missing — there is nothing to install" >&2
   exit 1
 fi
 if [ ! -d "$HOOK_DIR" ]; then
+  if [ -f "$ROOT/.git" ]; then
+    echo "error: git finds NO pre-commit hook in this checkout — refusing to install into nothing." >&2
+    echo "  this is a LINKED WORKTREE (.git is a file) and git resolves hooks to [$HOOK_DIR]," >&2
+    echo "  which does not exist. core.hooksPath=$(git config --get core.hooksPath 2>/dev/null || echo '<unset>')" >&2
+    echo "  A RELATIVE core.hooksPath cannot work in a worktree: every commit here runs" >&2
+    echo "  NO hooks at all, silently (DF-CHIMERA-V2-135). Repair with either:" >&2
+    echo "    git config --unset core.hooksPath          # hooks resolve to the common dir" >&2
+    echo "    git config core.hooksPath \"\$(git rev-parse --git-common-dir)/hooks\"" >&2
+    echo "  then re-run: bash scripts/install_hooks.sh" >&2
+    exit 1
+  fi
   echo "error: $HOOK_DIR is not a directory — is this a normal clone (not a bare repo)?" >&2
   exit 1
 fi
@@ -137,5 +158,10 @@ else
   TMP=""
   echo "Installed: $SRC_REL -> $DEST_REL ($(size_of "$DEST") bytes, $(hash_of "$SRC"))"
 fi
+
+# The path the commit will consult is the path this installer just wrote —
+# printed so a worktree that resolves hooks somewhere unexpected is visible
+# instead of assumed (DF-CHIMERA-V2-135).
+echo "Effective hook path: $(git rev-parse --git-path hooks/pre-commit)"
 
 report_other_hooks

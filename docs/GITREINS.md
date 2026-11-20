@@ -195,6 +195,49 @@ variable that turns the gate off. AGENTS.md forbids it for code changes — use 
 for a docs-only change or a GitReins self-upgrade, and expect CI to re-run the
 same guards regardless.
 
+`--no-verify` leaves **no trace in the commit**, so a commit that skipped the
+hook is indistinguishable in the repository from one that passed it. That is why
+the arms themselves fail closed: the docs-index arm refuses the commit when
+`scripts/check_docs_index.sh` is missing instead of warning `SKIPPED`, and the
+checker exits `2` (could not grade) rather than reporting a clean pass when it
+cannot read the checkout or the index (DF-CHIMERA-V2-135).
+
+### A relative `core.hooksPath` silently disables every hook in a worktree
+
+Measured on a linked worktree of this repo (DF-CHIMERA-V2-135):
+
+```console
+$ git config core.hooksPath
+.git/hooks
+$ git rev-parse --git-path hooks/pre-commit     # what git will consult
+.git/hooks/pre-commit
+$ test -e "$(git rev-parse --git-path hooks/pre-commit)" || echo MISSING
+MISSING
+$ git hook run pre-commit
+error: cannot find a hook named pre-commit
+```
+
+In a worktree `.git` is a **file** (`gitdir: …/worktrees/<name>`), and a
+relative `core.hooksPath` is resolved against the working-tree root — so it
+points into a directory that does not exist. Git does not warn: it finds no
+hook, runs nothing, and the commit lands ungraded, looking perfectly normal.
+With `core.hooksPath` unset, git resolves hooks in the **common** dir, which a
+worktree does share.
+
+`scripts/install_hooks.sh` therefore derives its destination from
+`git rev-parse --git-path hooks` (the effective path), and when that directory
+cannot exist it refuses with a named diagnosis — printing `core.hooksPath`, the
+worktree cause, and both repairs — instead of the generic "`.git/hooks` is not a
+directory — is this a normal clone (not a bare repo)?" message, which reads like
+a bare-repo problem and hides the real one. Repair, in a worktree:
+
+```bash
+git config --unset core.hooksPath                                    # recommended
+# or, if a path must stay set, make it absolute:
+git config core.hooksPath "$(git rev-parse --git-common-dir)/hooks"
+bash scripts/install_hooks.sh --check
+```
+
 ## Reading the verdict (engine 0.13.0+)
 
 One header line, then one summary line per lane: `✓` ran and passed, `✗` ran and

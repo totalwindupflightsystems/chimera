@@ -50,6 +50,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 HOOK_SOURCE = REPO / ".gitreins" / "pre-commit"
 INSTALLER = REPO / "scripts" / "install_hooks.sh"
+CHECKER = REPO / "scripts" / "check_docs_index.sh"
 AGENTS = REPO / "AGENTS.md"
 GUARD_DOC = REPO / "docs" / "GITREINS.md"
 GITLEAKS_CONFIG = REPO / ".gitleaks.toml"
@@ -225,6 +226,12 @@ def _repo(tmp_path: Path, *, install_hook: bool, name: str = "repo") -> Path:
     assert init.returncode == 0, f"git init failed: {init.stderr}"
 
     (repo / ".gitreins" / "pre-commit").write_bytes(HOOK_SOURCE.read_bytes())
+    # The docs-index arm REFUSES a commit when its checker is missing
+    # (DF-CHIMERA-V2-135), so a fixture without it can only ever exercise the
+    # blocked path. Ship the checker: the engine cases must grade a real gate.
+    checker = repo / "scripts" / "check_docs_index.sh"
+    checker.parent.mkdir(parents=True, exist_ok=True)
+    checker.write_bytes(CHECKER.read_bytes())
     if install_hook:
         dest = repo / ".git" / "hooks" / "pre-commit"
         dest.write_bytes(HOOK_SOURCE.read_bytes())
@@ -588,6 +595,79 @@ def test_installer_check_detects_drift_and_dry_run_writes_nothing(tmp_path: Path
     assert dest.read_bytes() == HOOK_SOURCE.read_bytes(), "the installer did not restore the drifted hook"
     assert drifted != HOOK_SOURCE.read_bytes()
     assert _run(INSTALLER, repo, env, "--check").rc == 0
+
+
+# ── the two silent-pass bypasses (DF-CHIMERA-V2-135) ────────────────────────
+#
+# Commit 194dcaf added a dated docs/dogfood/ run log with no index line and
+# landed anyway, leaving main red on a clean clone. Both arms could report a
+# PASS while grading nothing:
+#
+#   * the hook arm warned "docs-index gate SKIPPED — … is missing" and let the
+#     commit through, so removing the checker disarmed the rule silently;
+#   * a RELATIVE core.hooksPath in a linked worktree resolves to a directory
+#     that cannot exist (`.git` is a file there), so git finds NO hook at all
+#     and every commit in that worktree is ungraded — with no warning.
+
+
+def test_hook_blocks_when_the_docs_index_gate_is_missing(tmp_path: Path) -> None:
+    """A missing checker is a BLOCKED commit, not a warning and a pass."""
+    repo = _repo(tmp_path, install_hook=True)
+    env = _child_env(tmp_path, _tool_bin(tmp_path))
+    (repo / "scripts" / "check_docs_index.sh").unlink()
+
+    _stage(repo, "notes.txt")
+
+    blocked = _hook(repo, env)
+    assert blocked.rc != 0, (
+        "the hook committed with the docs-index gate missing — deleting the "
+        f"checker disarms the same-commit rule silently:\n{blocked.output}"
+    )
+    assert "COMMIT BLOCKED" in blocked.stderr, blocked.output
+    assert "docs-index gate is not armed" in blocked.stderr, blocked.output
+    assert "scripts/check_docs_index.sh" in blocked.stderr, blocked.output
+
+
+def test_installer_refuses_a_worktree_where_git_cannot_find_hooks(tmp_path: Path) -> None:
+    """A worktree whose hooksPath cannot resolve must be REFUSED, with the cause.
+
+    Premise checked first: `git rev-parse --git-path hooks/pre-commit` — the
+    path git itself consults — does not exist in such a worktree, so no hook of
+    any kind can run there. The pre-fix installer did exit non-zero here, but
+    with a generic "`.git/hooks` is not a directory — is this a normal clone
+    (not a bare repo)?" message that names neither the worktree nor
+    `core.hooksPath` nor a repair. The installer must diagnose the real cause.
+    """
+    repo = _repo(tmp_path, install_hook=False)
+    env = _child_env(tmp_path, _tool_bin(tmp_path))
+    # The worktree is a checkout of HEAD, so the tracked hook must BE in it.
+    assert _git(repo, "add", ".gitreins/pre-commit").returncode == 0
+    committed = _git(
+        repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "base"
+    )
+    assert committed.returncode == 0, f"the fixture repo cannot hold a worktree: {committed.stderr}"
+
+    wt = tmp_path / "wt"
+    added = _git(repo, "worktree", "add", "-q", str(wt))
+    assert added.returncode == 0, f"git worktree add failed: {added.stderr}"
+
+    # The standing fleet pattern, and the trap: a RELATIVE hooksPath.
+    assert _git(repo, "config", "core.hooksPath", ".git/hooks").returncode == 0
+    effective = _git(wt, "rev-parse", "--git-path", "hooks/pre-commit")
+    assert effective.returncode == 0, effective.stderr
+    assert not (wt / effective.stdout.strip()).exists(), (
+        "premise: the effective hook path must not exist in this worktree, "
+        f"otherwise there is no bypass to refuse ({effective.stdout.strip()})"
+    )
+
+    refused = _run(INSTALLER, wt, env, "--check")
+    assert refused.rc != 0, (
+        "the installer accepted a worktree in which git can find no hook — it "
+        f"would 'install' into a path never consulted:\n{refused.output}"
+    )
+    assert "core.hooksPath" in refused.stderr, refused.output
+    assert "worktree" in refused.stderr.lower(), refused.output
+    assert "git config --unset core.hooksPath" in refused.stderr, refused.output
 
 
 # ── premise guards (documentation and the tracked script) ───────────────────
