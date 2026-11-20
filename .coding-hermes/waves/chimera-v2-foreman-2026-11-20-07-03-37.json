@@ -1,0 +1,46 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-20-07-03-37",
+  "tick_number": 491,
+  "project": "chimera-v2",
+  "workdir": "/home/kara/chimera-v2",
+  "path": "serial",
+  "wave_budget": 1,
+  "slots": 1,
+  "slot_reason": "nproc 16, loadavg 23.20 at admission -> max(1, min(6, 16-24)) = 1 slot",
+  "block": "INT-CI-021",
+  "rows": ["INT-CI-021"],
+  "worker_model": "openai/gpt-6.1-terra",
+  "worker_provider": "xkiro",
+  "brief": "/tmp/brief-INT-CI-021-chimera-491.txt",
+  "base_commit": "d274585",
+  "branch": "main",
+  "started_at": "2026-11-20T12:05:00Z",
+  "status": "landed",
+  "landed_at": "2026-11-20T10:08:00Z",
+  "landing_commits": {
+    "f47c0e4": "worker: .gitreins/config.yaml static_analysis + static_analysis_tools(python=[mypy])",
+    "194dcaf": "foreman: hook_timeout 900 (> test_timeout 600), removed schema-invalid defaults.provider/api_key_env, security_scan moved under defaults",
+    "67963e4": "foreman: board close-out — INT-CI-021 complete + closure event with '✓ static_analysis' + INT-CI-022 filed"
+  },
+  "verification": {
+    "guard": "Tier 1: DEGRADED PASS (skips: lint=all 3 file(s) excluded by ruff config); static_analysis PASS",
+    "mypy": ".venv/bin/mypy 2.4.1 -> exit 0 on a quiet run",
+    "tier2_verdict": "cc1b185a — tier2 PASS 3/3 criteria; tier1 FAIL environmental (secrets lane over untracked .env; real mypy diagnostic on click stub)",
+    "remote_parity": "origin/main == github/main == 6928e58 (ahead 0 on both)",
+    "ci": "run 44714520131 @6928e58: lint/unit(3.11,3.12,3.13)/packaging-smoke success; integration failure = deepseek Insufficient Balance (INT-CI-022)"
+  },
+  "filed": ["INT-CI-022"],
+  "closed": ["INT-CI-021"],
+  "duckbrain": {
+    "namespace": "chimera-v2",
+    "domain": "event",
+    "id": "a50add5f-914a-473a-a4b4-c9f3a4ac5ce7",
+    "verify_matches": 1
+  },
+  "notes": [
+    "Worker dispatches 1-4 produced zero-byte logs; dispatch 5 (prompt = read_file the brief) committed the work.",
+    "Tier-2 judge lanes rotated: default deepseek (402 balance) -> fireworks kimi-k3 (hung >20min, killed) -> ollama-cloud glm-5.3-flash (2 verdicts) -> 6th run killed after verdict cc1b185a landed.",
+    "Killing a running `gitreins task complete` drops the task from .gitreins/tasks.yaml; re-create + grep-assert before re-completing.",
+    "Stale verdict 7d3c03d4 was snapshotted 38s before the closure commit; criterion 3 is satisfied in cc1b185a."
+  ]
+}
