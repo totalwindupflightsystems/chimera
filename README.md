@@ -372,7 +372,7 @@ gated). A scrape therefore works with `auth.enabled: true` and no credential;
 sending the bearer key is harmless, and every `/v1/*` data route still answers
 `401` without it. The keyless paths are described in
 [docs/SECURITY.md → Unauthenticated Endpoints](docs/SECURITY.md#unauthenticated-endpoints)
-(that list does not yet name `/metrics`; the route is ungated, which is what the
+(that list names `GET /metrics`; the route is ungated, which is what the
 scrape relies on). Verify on your own deployment:
 `curl -o /dev/null -w '%{http_code}' localhost:8765/metrics` → `200`.
 
