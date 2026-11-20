@@ -67,6 +67,41 @@ below applies to 0.13.0+.
 | `lint` | `ruff check` over the staged Python files | BLOCKS — a failing lint lane makes the run FAIL (exit 1). The pre-commit hook delegates to this same command, so a lint finding blocks a commit too (see "The pre-commit hook" below). |
 | `tests` | `pytest` (see test mode) | BLOCKS |
 | `lsp` | `pylsp` over the staged files | BLOCKS |
+| `static_analysis` | `mypy` over the WHOLE tree | BLOCKS — see below |
+
+### The `static_analysis` lane (INT-CI-021)
+
+The lane is enabled only when `guards.static_analysis_tools` names a tool for the
+repo's language; Python is selected by PACKAGING MARKER (`pyproject.toml`), and
+an empty map selects nothing, so the lane used to report `~ static_analysis —
+skipped (…no tool selected…)` on every run — a skip, and a degraded run because
+`allow_skips` stays unset.
+
+Unlike `lint`/`tests`/`lsp` this lane is **not** staged-diff scoped: the engine
+runs exactly `mypy --no-error-summary --explicit-package-bases .` with the repo
+root as cwd, so it grades the whole tree every time. Two consequences:
+
+* **`[tool.mypy]` in `pyproject.toml` is load-bearing.** It pins
+  `python_version`, sets `ignore_missing_imports` (third-party libraries without
+  stubs), maps first-party imports via `mypy_path = "src"`, and `exclude`s the
+  generated trees — `mutants/` (a copy of the tree per surviving mutant) and
+  `.venv/`. `tests/` is excluded on purpose: the lane grades `src/` + `scripts/`.
+* **`src/chimera/py.typed` is load-bearing.** With the PEP 561 marker present the
+  package is a typed package, so `chimera.*` imports are checked as source
+  instead of reported `[import-untyped]`.
+
+`mypy` is declared in the `dev` extra because the binary is resolved from PATH
+(same rule as `pylsp`); the documented guard command above puts that venv first,
+so a contributor who ran the documented install has the lane. Reproduce the
+verdict directly with:
+
+```bash
+PATH="$(git rev-parse --show-toplevel)/.venv/bin:$PATH" \
+  .venv/bin/mypy --no-error-summary --explicit-package-bases . ; echo exit=$?
+```
+
+A file added under `src/chimera/` with a plain type error turns that command red
+(exit 1) — the lane grades real code, it is not a vacuous green.
 
 `test_mode: diff` grades the **staged diff**, not the working tree: the file list
 comes from `git diff --cached`. **Stage before you guard** (`git add <files>`) —

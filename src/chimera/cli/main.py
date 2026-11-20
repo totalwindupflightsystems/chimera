@@ -29,6 +29,7 @@ import asyncio
 import json
 import shutil
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -87,17 +88,17 @@ class MutuallyExclusiveOption(click.Option):
     def _display_name(self, ctx: click.Context, param_name: str) -> str:
         """The long spelling the user typed (``--json``, not ``--json_output``)."""
         if param_name == self.name:
-            opts = self.opts
+            opts: Any = self.opts
         else:
             sibling = next((p for p in ctx.command.params if p.name == param_name), None)
-            opts = getattr(sibling, "opts", ()) or ()
+            opts = getattr(sibling, "opts", None) or ()
         longs = [opt for opt in opts if opt.startswith("--")]
         if longs:
             return min(longs, key=len)
         return "--" + param_name.replace("_", "-")
 
     def handle_parse_result(
-        self, ctx: click.Context, opts: dict[str, Any], args: list[str]
+        self, ctx: click.Context, opts: Mapping[str, Any], args: list[str]
     ) -> tuple[Any, list[str]]:
         if opts.get(self.name):
             clashes = sorted(name for name in self.mutually_exclusive if opts.get(name))
@@ -118,7 +119,12 @@ class ChimeraGroup(click.Group):
     subcommands like ``chimera formations``.
     """
 
-    def resolve_command(self, ctx: click.Context, args: list[str]) -> tuple[str, click.Command, list[str]]:
+    # Same (optional) shape click's own ``Group.resolve_command`` declares: the
+    # returned name/command are ``None`` when click itself could not resolve
+    # them, and click's dispatch handles that case.
+    def resolve_command(
+        self, ctx: click.Context, args: list[str]
+    ) -> tuple[str | None, click.Command | None, list[str]]:
         cmd_name = args[0] if args else ""
         if cmd_name in self.commands:
             return super().resolve_command(ctx, args)

@@ -124,7 +124,8 @@ def _schema_restatement(schema: dict[str, Any]) -> str:
     property, and — the failure this exists for — that an array-of-strings
     property must be a JSON array, never a comma-joined string.
     """
-    properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    raw_properties = schema.get("properties")
+    properties: dict[Any, Any] = raw_properties if isinstance(raw_properties, dict) else {}
     required = [r for r in (schema.get("required") or []) if isinstance(r, str)]
 
     described: list[str] = []

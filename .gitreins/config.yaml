@@ -30,7 +30,13 @@ guards:
   lsp_tools:
   - pylsp
   static_analysis: true
-  static_analysis_tools: {}
+  # INT-CI-021: an empty mapping made this lane select no tool, so it reported
+  # SKIP on every run — a configured-but-missing tool is a SKIP, never a silent
+  # pass (REVIEW-GITREINS-018), and a skip degrades the whole run. Python is
+  # selected by packaging marker (pyproject.toml); the engine runs exactly
+  # `mypy --no-error-summary --explicit-package-bases .`, resolved from PATH.
+  static_analysis_tools:
+    python: ["mypy"]
 pipeline:
   stages:
   - id: tier1

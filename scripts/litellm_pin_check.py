@@ -316,7 +316,9 @@ def parse_version(text: str | None) -> tuple[int, int, int] | None:
     match = _VER_RE.match(text.strip())
     if match is None:
         return None
-    return tuple(int(group) if group else 0 for group in match.groups())
+    groups = match.groups()
+    major, minor, patch = (int(g) if g else 0 for g in groups)
+    return major, minor, patch
 
 
 def format_version(version: tuple[int, int, int]) -> str:
@@ -546,7 +548,10 @@ def run_check(target: str | None, scratch: bool) -> dict:
 
     report["detail"] = child
     report["litellm_version"] = child.get("litellm_version")
-    verdict, reason = derive_verdict(child, parse_version(VERSION_CAP))
+    cap = parse_version(VERSION_CAP)
+    if cap is None:  # only if VERSION_CAP is edited into something unparseable
+        raise AssertionError(f"VERSION_CAP is not a parseable version: {VERSION_CAP!r}")
+    verdict, reason = derive_verdict(child, cap)
     report["verdict"] = verdict
     report["reason"] = reason
     return report

@@ -153,7 +153,10 @@ def _configure_langfuse(obs: Observability) -> None:
     if _LANGFUSE_CLIENT is not None:
         return
     try:
-        from langfuse import Langfuse  # type: ignore[import-not-found]
+        # Optional dependency: not installed in a plain install, and the guard's
+        # [tool.mypy] sets ignore_missing_imports, so no per-import ignore here
+        # (it would be reported as an unused-ignore).
+        from langfuse import Langfuse
     except ImportError:
         get_logger().warning("langfuse.enabled=true but 'langfuse' package is not installed; skipping")
         return

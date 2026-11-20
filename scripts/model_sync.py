@@ -678,11 +678,17 @@ def _recency_sort_key(candidate: dict[str, Any]) -> tuple[float, int, float, str
     score = candidate.get("recency_score")
     score = float(score) if isinstance(score, (int, float)) and not isinstance(score, bool) else 0.0
     recency_ts = candidate.get("recency_ts")
-    dated = isinstance(recency_ts, (int, float)) and not isinstance(recency_ts, bool)
+    # One narrowing for both the "is dated" flag and the sort value, so the two
+    # cannot disagree (`float(None)` was reachable through the old boolean).
+    timestamp = (
+        float(recency_ts)
+        if isinstance(recency_ts, (int, float)) and not isinstance(recency_ts, bool)
+        else None
+    )
     return (
         -score,
-        0 if dated else 1,
-        -float(recency_ts) if dated else 0.0,
+        0 if timestamp is not None else 1,
+        -timestamp if timestamp is not None else 0.0,
         str(candidate.get("model_id", "")),
     )
 
@@ -932,7 +938,7 @@ def scan_models_dev(
     # the lab's own block must not duplicate: the lane scan skips ids the lab
     # block already produced.
     if snapshot is not None and snapshot.source == "task-router":
-        lane_rows: dict[str, list[tuple[str, dict[str, Any], dict[str, Any]]]] = {}
+        lane_rows: dict[str, list[tuple[str, str, dict[str, Any]]]] = {}
         for lane_id, lane_block in snapshot.data.items():
             if lane_id == "_fetched_at" or not isinstance(lane_block, dict):
                 continue

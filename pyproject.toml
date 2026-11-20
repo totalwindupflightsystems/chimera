@@ -360,6 +360,14 @@ dev = [
     # isolation), so hatchling must be importable from the test environment,
     # not just from pip's ephemeral build env.
     "hatchling>=1.21",
+    # INT-CI-021: the guard's `static_analysis` lane runs
+    # `mypy --no-error-summary --explicit-package-bases .` and resolves the
+    # binary with shutil.which(), i.e. from PATH only — same resolution rule as
+    # the `lsp` lane above. The documented guard command puts this venv first on
+    # PATH, so the dev extra is what makes the lane deterministic: without it the
+    # lane skips ("no static analysis tool on PATH (mypy not installed)") and the
+    # run degrades instead of grading types.
+    "mypy>=1.11",
 ]
 full = [
     "fastapi>=0.162.0",
@@ -382,6 +390,9 @@ full = [
     "python-lsp-server[pycodestyle,pyflakes]>=1.12.0",
     "hatchling>=1.21",
     "ruff>=0.16.10",
+    # Mirrors [dev] (INT-CI-021): the guard's static_analysis lane resolves mypy
+    # from PATH, and this extra is what a `.[full]`-only environment installs.
+    "mypy>=1.11",
 ]
 
 [project.scripts]
@@ -430,6 +441,50 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "C4"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.mypy]
+# INT-CI-021: the guard's `static_analysis` lane runs exactly
+# `mypy --no-error-summary --explicit-package-bases .` from the repo root
+# (engine/static_analysis.py `_build_command`), i.e. over the WHOLE tree rather
+# than the staged diff. Everything below exists so that command grades this
+# project's own sources and nothing else, and so the lane is a real gate rather
+# than the vacuous green a missing tool used to produce.
+python_version = "3.11"
+
+# Resolve first-party imports to THIS checkout's `src/` (with the PEP 561 marker
+# `src/chimera/py.typed` present, `chimera.*` is then checked as source instead
+# of read as an untyped installed package).
+mypy_path = "src"
+
+# Third-party libraries without PEP 561 stubs (structlog, litellm, jsonschema,
+# the click/rich plugin surface, ...). Enumerating them module by module drifts
+# with the dependency set, and each one is a missing-stub complaint rather than a
+# type error in our code. First-party imports stay fully checked — mypy reports
+# an unknown `chimera.*` submodule even with this on.
+ignore_missing_imports = true
+
+# A stale `# type: ignore` hides a real error the moment the underlying issue is
+# fixed, so keep the escapes honest. The tree passes with this on.
+warn_unused_ignores = true
+
+# Generated and gitignored trees must not be graded. `exclude` stops DISCOVERY
+# only (patterns are searched against the path relative to the cwd; directories
+# carry a trailing slash), so `mypy .` still checks every real source file.
+exclude = [
+  # Mutation-testing artifacts — a copy of the tree per surviving mutant, and
+  # 1577 of the 2126 diagnostics at the base commit. `git check-ignore mutants`
+  # resolves to `.gitignore:12:mutants/`.
+  "^mutants/",
+  # The virtualenv itself (`.gitignore:3:.venv/`): installed copies of this very
+  # package, never this checkout's source.
+  "^\\.venv/",
+  # The gate grades `src/` + `scripts/`, NOT the test tree. Including it today
+  # costs 162 real fixes spread over ~30 files (mock `object` annotations,
+  # `unittest.mock.MagicMock` attribute access, loose fixture dicts) — far more
+  # than the handful a typing pass on this row can honestly absorb — so the test
+  # tree is out of scope here on purpose, not because it is green.
+  "^tests/",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

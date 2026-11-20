@@ -171,6 +171,50 @@ def test_guard_doc_is_linked_from_the_docs_index(basename: str) -> None:
     )
 
 
+def test_static_analysis_lane_runs_mypy_over_src_and_scripts() -> None:
+    """INT-CI-021: the ``static_analysis`` lane must grade real code, not skip.
+
+    ``static_analysis: true`` with an EMPTY ``static_analysis_tools`` map selects
+    no tool for Python, so the lane reported SKIP on every run — and because
+    ``allow_skips`` is deliberately unset that degraded every commit. The three
+    halves below are what make it a gate: the tool named in the config, the tool
+    declared where the documented install puts it on PATH, and a ``[tool.mypy]``
+    scope that excludes the generated trees (``mutants/`` alone carried 1577 of
+    the 2126 diagnostics) while keeping ``src/`` graded.
+    """
+    config = _text(CONFIG)
+    assert re.search(r"^\s*static_analysis:\s*true\s*$", config, re.MULTILINE), (
+        ".gitreins/config.yaml disabled the static_analysis lane"
+    )
+    assert re.search(r"^\s*python:\s*\[\s*\"mypy\"\s*\]\s*$", config, re.MULTILINE), (
+        ".gitreins/config.yaml no longer selects mypy for Python — the lane goes "
+        "back to a SKIP, which degrades every run"
+    )
+
+    # The guard resolves the binary from PATH, and the documented guard command
+    # puts this venv first; the dev extra is what installs it there.
+    assert "mypy" in _requirement_names(_dev_extra()), (
+        'the dev extra does not declare mypy, so `pip install -e ".[dev]"` leaves the lane without its tool'
+    )
+
+    data = tomllib.loads(_text(PYPROJECT))
+    mypy_cfg = data.get("tool", {}).get("mypy", {})
+    assert mypy_cfg, "pyproject.toml has no [tool.mypy] section"
+    assert mypy_cfg.get("ignore_missing_imports") is True, (
+        "[tool.mypy] does not set ignore_missing_imports — the tree does not pass "
+        "without it (third-party libraries ship no stubs)"
+    )
+    excludes = " ".join(mypy_cfg.get("exclude", []))
+    assert "mutants" in excludes, (
+        "[tool.mypy] does not exclude mutants/ — mutation artifacts alone were "
+        "1577 of the 2126 diagnostics at the base commit"
+    )
+    assert (REPO / "src" / "chimera" / "py.typed").is_file(), (
+        "src/chimera/py.typed is missing — first-party imports revert to "
+        "[import-untyped] and the package publishes no PEP 561 marker"
+    )
+
+
 def test_lsp_lane_is_still_enabled_in_the_guard_config() -> None:
     """Premise guard: the lane these docs are about is configured and enabled.
 

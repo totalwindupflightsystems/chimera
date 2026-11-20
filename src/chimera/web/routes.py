@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -744,7 +744,10 @@ def _unknown_session_stream(session_id: str) -> StreamingResponse:
     subscriber is ever registered, so nothing leaks into the broadcaster.
     """
 
-    def generate() -> AsyncIterator[str]:
+    def generate() -> Iterator[str]:
+        """A SYNC generator: the two frames are already formatted, so there is
+        nothing to await — ``StreamingResponse`` accepts a plain iterator and
+        closes it after the terminal frame."""
         yield SSEEvent(
             event="error",
             data={"reason": "unknown_session", "session_id": session_id},

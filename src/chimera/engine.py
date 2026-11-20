@@ -902,7 +902,10 @@ class Engine:
         )
 
         # Extract iteration count from the results sentinel (stored by _run_dag).
-        iteration_count: int = stage_results.pop("_iteration_count", 1)  # type: ignore[misc]
+        # ``stage_results`` is typed for stage outputs, so the int sentinel is
+        # narrowed explicitly rather than cast away.
+        sentinel = stage_results.pop("_iteration_count", 1)
+        iteration_count: int = sentinel if isinstance(sentinel, int) else 1
 
         answer, answer_stage_id = self._select_answer(outcome.result.formation, stage_results)
         # Drain any tasks spawned by an async stage observer before returning,
@@ -1068,8 +1071,8 @@ class Engine:
             for stage in ready:
                 if not stage.iterate_on:
                     continue
-                span = spans.get(stage.id)
-                if span is None or not self._check_iteration_needed(stage, span):
+                stage_span = spans.get(stage.id)
+                if stage_span is None or not self._check_iteration_needed(stage, stage_span):
                     continue
                 count = iteration_counts.get(stage.id, 0)
                 if count >= stage.iteration_limit:
@@ -1150,8 +1153,9 @@ class Engine:
         # Clamp per-stage to total if total is set
         if timeout_total_s is not None and timeout_total_s > 0:
             per_stage = min(per_stage, timeout_total_s) if per_stage > 0 else timeout_total_s
-        if per_stage <= 0:
-            per_stage = None  # unlimited
+        # ``None`` means "no per-stage timeout" for the call sites below, which is
+        # a different state from a non-positive configured limit.
+        stage_timeout: float | None = None if per_stage <= 0 else per_stage
 
         # DF-CHIMERA-V2-18: the web layer's live DAG needs stage progress DURING
         # the run, so this fires before the model call is awaited. Best-effort:
@@ -1174,7 +1178,7 @@ class Engine:
                     iteration_feedback=iteration_feedback,
                     max_tokens=max_tokens,
                 ),
-                timeout=per_stage,
+                timeout=stage_timeout,
             )
         except TimeoutError:
             latency_ms = int((time.monotonic() - start) * 1000)
@@ -1182,11 +1186,11 @@ class Engine:
                 "engine_stage_timeout",
                 stage=stage.id,
                 model=stage.model,
-                timeout_s=per_stage or 0,
+                timeout_s=stage_timeout or 0,
             )
             return self._degraded_stage(
                 stage,
-                GatewayError(f"timed out after {per_stage or 0:.0f}s"),
+                GatewayError(f"timed out after {stage_timeout or 0:.0f}s"),
                 [],
                 latency_ms,
                 started_at=start,

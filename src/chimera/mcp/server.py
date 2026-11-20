@@ -112,7 +112,11 @@ def build_server(
     # Re-check this seam when the mcp pin is bumped: a future SDK that exposes
     # the kwarg should be used instead of this private assignment.
     server._mcp_server.version = __version__
-    state = {"engine": engine or Engine(cfg, LiteLLMGateway(cfg)), "config": cfg}
+    # ``Any`` values on purpose: the engine and the config are both optional
+    # inputs (``Engine | None`` / ``ChimeraConfig | None`` resolved above), and
+    # the tools read them back through this mapping — typing it precisely would
+    # only re-state the narrowing the constructor already did.
+    state: dict[str, Any] = {"engine": engine or Engine(cfg, LiteLLMGateway(cfg)), "config": cfg}
 
     @server.tool()
     async def chimera_deliberate(
@@ -243,7 +247,11 @@ def build_server(
         # scripted client parses) and ``structuredContent`` in the wrapped
         # ``{"result": …}`` shape the declared ``-> str`` output schema
         # requires (the SDK validates it before handing the result over).
-        return CallToolResult(
+        return CallToolResult(  # type: ignore[return-value]
+            # The SDK's tool runner (``func_metadata.convert_result``) passes a
+            # returned ``CallToolResult`` through verbatim, so this is a supported
+            # return for a ``-> str`` tool; the annotation must stay ``str``
+            # because it is what the tool advertises as its output schema.
             content=[TextContent(type="text", text=text)],
             structuredContent={"result": text},
             isError=True,

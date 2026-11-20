@@ -72,9 +72,10 @@ def ensure_litellm_quiet(litellm_module: Any | None = None) -> Any:
     if litellm_module is None:
         import litellm as litellm_module
 
-    litellm_module.suppress_debug_info = True
-    litellm_module.set_verbose = False
-    return litellm_module
+    module: Any = litellm_module
+    module.suppress_debug_info = True
+    module.set_verbose = False
+    return module
 
 
 async def prewarm_litellm(litellm_module: Any | None = None) -> bool:
@@ -114,12 +115,13 @@ async def prewarm_litellm(litellm_module: Any | None = None) -> bool:
     if litellm_module is None:
         import litellm as litellm_module
 
+    module: Any = litellm_module
     # Same stdout-hygiene contract as every gateway call site: the lazy
     # import and the completion must never print to stdout (MCP stdio wire).
-    ensure_litellm_quiet(litellm_module)
+    ensure_litellm_quiet(module)
 
     try:
-        result = litellm_module.acompletion(
+        result = module.acompletion(
             model="openai/gpt-3.5-turbo",
             messages=[{"role": "user", "content": "warm"}],
             mock_response="ok",

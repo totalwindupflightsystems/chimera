@@ -1018,6 +1018,9 @@ def drive_stdio(
         cwd=cwd,
     )
     assert proc.stdin is not None and proc.stdout is not None
+    # Bound once: the nested ``_drain`` closure reads this pipe, and narrowing on
+    # the ``proc.stdout`` ATTRIBUTE does not carry into a nested function.
+    out = proc.stdout
 
     msgs = build_messages(formation)
     proc.stdin.write("".join(json.dumps(m) + "\n" for m in msgs).encode())
@@ -1029,12 +1032,12 @@ def drive_stdio(
     def _drain() -> None:
         nonlocal buf
         try:
-            ready, _, _ = select.select([proc.stdout], [], [], 0)
+            ready, _, _ = select.select([out], [], [], 0)
         except (ValueError, OSError):
             return
         if not ready:
             return
-        chunk = os.read(proc.stdout.fileno(), 65536)
+        chunk = os.read(out.fileno(), 65536)
         if not chunk:
             return
         buf += chunk

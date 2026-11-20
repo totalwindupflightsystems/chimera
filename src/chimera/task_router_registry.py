@@ -134,13 +134,13 @@ def locate_task_router_models() -> Path:
 
     for path in candidates:
         if path.is_file():
-            if home_registry is not None and path != home_registry:
+            if home is not None and home_registry is not None and path != home_registry:
                 _warn_home_registry_missing(home, home_registry, path)
             return path
 
     if explicit:
         raise TaskRouterRegistryError(f"configured table does not exist: {candidates[0]}")
-    if home_registry is not None:
+    if home is not None and home_registry is not None:
         _warn_home_registry_missing(home, home_registry, None)
     tried = ", ".join(str(path) for path in candidates)
     raise TaskRouterRegistryError(f"task-router table not found (tried: {tried})")

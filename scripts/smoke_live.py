@@ -63,11 +63,20 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from typing import NamedTuple
+from collections.abc import Callable
+from typing import Any, NamedTuple
 
 DEFAULT_BASE_URL = "http://localhost:8765"
 DEFAULT_PROMPT = "What is the capital of France? Answer in one short sentence."
 SMOKE_FORMATION = "simple"  # deterministic 2-worker + aggregator pipeline, cheap
+
+#: The injectable git runner: ``(argv, cwd) -> (returncode, stdout)``, where a
+#: ``None`` return code means git could not be run at all.  Production is
+#: :func:`_git_run`; the suite injects a fake of the same shape
+#: (``tests/test_smoke_live.py::FakeGit``), which is why the parity classifiers
+#: take a runner instead of spawning git themselves.  Typed as a callable — an
+#: ``object`` annotation made every ``runner(...)`` call an untyped operation.
+GitRunner = Callable[[list[str], str | None], tuple[int | None, str]]
 
 #: ``error_class`` meaning "no API key resolved for this provider".  A fresh
 #: install legitimately has these, so they are INFORMATION, not a degradation.
@@ -147,7 +156,9 @@ def _message_without_class_prefix(error: str, error_class: str) -> str:
     return text
 
 
-def provider_health_lines(details: dict, unhealthy_providers: list[str] | None = None) -> list[str]:
+def provider_health_lines(
+    details: dict[str, Any] | None, unhealthy_providers: list[str] | None = None
+) -> list[str]:
     """The provider-health report for a ``/v1/health`` payload, split by MEANING.
 
     Three cases that used to print identical wording are different findings:
@@ -388,16 +399,16 @@ def _git_run(args: list[str], cwd: str | None = None) -> tuple[int | None, str]:
         return None, ""
 
 
-def _resolve_commit(commit: str, run: object, cwd: str | None) -> str | None:
+def _resolve_commit(commit: str, run: GitRunner, cwd: str | None) -> str | None:
     """The full sha ``commit`` resolves to, or None when it cannot be verified."""
-    code, out = run(["git", "rev-parse", "--verify", f"{commit}^{{commit}}"], cwd)  # type: ignore[operator]
+    code, out = run(["git", "rev-parse", "--verify", f"{commit}^{{commit}}"], cwd)
     return out.splitlines()[0].strip() if code == 0 and out.strip() else None
 
 
 def resolve_expected_commit(
     explicit: str | None,
     *,
-    run: object = None,
+    run: GitRunner | None = None,
     cwd: str | None = None,
 ) -> tuple[str | None, str]:
     """The commit the deployment is compared against, and how it was chosen.
@@ -426,7 +437,7 @@ def resolve_expected_commit(
         return ref, f"--expected-commit {ref}"
 
     try:
-        code, out = runner(  # type: ignore[operator]
+        code, out = runner(
             ["git", "rev-parse", "--verify", f"{DEFAULT_EXPECTED_REF}^{{commit}}"],
             cwd,
         )
@@ -452,7 +463,7 @@ def classify_deployment_parity(
     running_commit: object,
     head_commit: object,
     *,
-    run: object = None,
+    run: GitRunner | None = None,
     cwd: str | None = None,
 ) -> DeploymentParity:
     """Classify the gap between the commit ``/health`` reports and the expected commit.

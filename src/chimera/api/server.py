@@ -30,7 +30,7 @@ from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Generic, TypeVar
 
 import structlog
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -428,7 +428,13 @@ class DeliberateResponse(BaseModel):
     clean responses stay byte-identical (``response_model_exclude_none``)."""
 
 
-class _IdempotencyCache:
+#: Response model held by an :class:`_IdempotencyCache` entry — a Pydantic
+#: response model per surface (``DeliberateResponse`` or
+#: ``ChatCompletionResponse``), never a mix under one key.
+_ResponseT = TypeVar("_ResponseT")
+
+
+class _IdempotencyCache(Generic[_ResponseT]):
     """Bounded, app-scoped response cache keyed on client idempotency keys.
 
     LRU-capped at ``CAPACITY`` entries. Per-key asyncio locks coalesce
@@ -442,26 +448,31 @@ class _IdempotencyCache:
     a client bug (UUID reuse, retry framework regenerating the prompt) and
     must never silently return the original answer — the endpoint rejects
     it with HTTP 409 instead.
+
+    Generic over the response model because ONE app-scoped cache backs both
+    surfaces (``POST /v1/deliberate`` caches ``DeliberateResponse``,
+    ``POST /v1/chat/completions`` caches ``ChatCompletionResponse``); the keys
+    are namespaced (``chat:``) so the two never cross-replay.
     """
 
     CAPACITY = 512
 
     def __init__(self, capacity: int = CAPACITY) -> None:
         self._capacity = capacity
-        self._store: OrderedDict[str, tuple[DeliberateResponse, str]] = OrderedDict()
+        self._store: OrderedDict[str, tuple[_ResponseT, str]] = OrderedDict()
         self._locks: dict[str, asyncio.Lock] = {}
 
-    def get(self, key: str) -> DeliberateResponse | None:
+    def get(self, key: str) -> _ResponseT | None:
         resp = self.get_entry(key)
         return resp[0] if resp is not None else None
 
-    def get_entry(self, key: str) -> tuple[DeliberateResponse, str] | None:
+    def get_entry(self, key: str) -> tuple[_ResponseT, str] | None:
         entry = self._store.get(key)
         if entry is not None:
             self._store.move_to_end(key)
         return entry
 
-    def put(self, key: str, response: DeliberateResponse, body_hash: str = "") -> None:
+    def put(self, key: str, response: _ResponseT, body_hash: str = "") -> None:
         self._store[key] = (response, body_hash)
         self._store.move_to_end(key)
         while len(self._store) > self._capacity:
@@ -1030,12 +1041,18 @@ class _ProviderHealthCache:
         return self._refresh_error
 
 
-async def _run_chat_deliberation(request: Request, body: ChatCompletionRequest) -> ChatCompletionResponse:
+async def _run_chat_deliberation(
+    request: Request, body: ChatCompletionRequest
+) -> Response | ChatCompletionResponse:
     """Run one chat-completions deliberation (validation + engine call).
 
     Extracted so the endpoint's idempotency wrapper (DF-CHIMERA-V2-84)
     can call it on a cache miss while the no-key path stays byte-identical
     to the pre-idempotency behavior (same shape as _execute_deliberation).
+
+    Returns the Pydantic success model, or a ``Response`` for the error arms
+    that must carry their own status code (``JSONResponse`` 404/502): FastAPI
+    serializes a returned ``Response`` as-is, bypassing ``response_model``.
     """
     from fastapi.responses import JSONResponse
 
