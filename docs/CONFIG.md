@@ -424,6 +424,42 @@ below — a model configured with `{code: 90}` scores on every path under
 Prefer long-form paths for precise control; aliases are a convenience and
 apply the same score to every path under their target subtree.
 
+### Learning category scores from stored traces
+
+`scripts/bandit_lite.py` turns the traces Chimera already stores into bounded
+score corrections, so a catalog does not have to be hand-tuned forever. It reads
+the `{"answer", "trace"}` documents written from `chimera --json run` (a file, a
+directory of them, or JSONL) and scores one observation per worker/aggregator
+stage: an accept when the stage produced an answer, a reject when the trace shows
+a degraded placeholder, an empty or truncated (`finish_reason: "length"`)
+response, a `degraded` flag, or a `worker_failures` entry naming that stage. The
+category is the stage's own `category` field when a trace carries one, otherwise
+the selector's keyword path for the stage prompt — resolved to the catalog key
+with the same exact / parent / alias precedence the selector uses, so the number
+adjusted is the number actually scored.
+
+For one `(model, category)` pair with `a` accepts and `r` rejects:
+
+```text
+delta = clamp(step * (a - r) / n, -step, +step)
+new   = clamp(score + delta, floor, ceiling)
+```
+
+A pair therefore moves at most `--step` points per run (default 2), never leaves
+`--floor`/`--ceiling` (default 1 / 99), and never moves at all below
+`--min-samples` observations (default 5) — a no-op on insufficient evidence
+rather than a drift on noise.
+
+**Dry run is the default**: the script prints the proposed table and writes
+nothing. `--write` applies the deltas, rewriting only the matched score lines
+(comments and ordering survive); a match it cannot locate unambiguously aborts
+the run with nothing written, and shipped templates are never write targets.
+
+```bash
+.venv/bin/python scripts/bandit_lite.py --traces traces/            # dry run
+.venv/bin/python scripts/bandit_lite.py --traces traces/ --write    # apply
+```
+
 **Cost tiers** determine default pricing when `cost_per_1k_*` is not set:
 
 | Tier | $/1K input | $/1K output |
