@@ -65,7 +65,13 @@ description: >-
   at HEAD and verified by execution, the published wheel still leaks the
   operator config (97), the deployment is stale (98), and `[full]` is not a
   test environment (99) — install `[dev]` before running the suite.
-version: 1.16.0
+  v1.17.0 adds the 2026-11-20 run-31 PROVIDER-RESILIENCE section: the
+  aggregator has no fallback provider (one dead key = workers paid and
+  discarded, exit 2 after 83-187s, retry 2.3x slower), how to check
+  provider health before spending a run, the health-vs-readiness cold-cache
+  asymmetry, and why trace token counts are provider-reported and must not
+  be billed off.
+version: 1.17.0
 category: software-development
 ---
 
@@ -1140,7 +1146,59 @@ Four things the docs do not tell you, measured:
   yourself right after `load_config()`, or keep the consumer's structured output
   off stdout.
 
-One more: outside a repo checkout, imports take the machine-scoped
+## Run 31 (2026-11-20) — surviving a dead provider (v1.17.0)
+
+Read this before your first paid run: **the aggregator stage has no fallback provider.** If
+the model a formation names as its aggregator is dead — capped plan, zero balance, vendor
+outage — the workers still run, you still pay for them, and then the run exits **2** with the
+failure text in `answer`. Measured on `d274585`, same prompt, same box, same hour:
+
+| what held the aggregator | wall | exit | result |
+|---|---|---|---|
+| `deepseek/deepseek-v4-flash` (no balance) | 82,577 ms | 2 | degraded, worker output discarded |
+| same, immediate retry | 186,852 ms | 2 | degraded — retry cost 2.3x |
+| `openrouter/.../qwen3.7-plus` (unavailable) | 113,729 ms | 2 | degraded |
+| `google/gemini-3.1-pro-preview` (live) | 94,877 ms | 0 | clean answer, $0.082058 |
+
+Recipes:
+
+- **Check the provider before you spend the run.** `curl -s 'http://127.0.0.1:8765/v1/health?refresh=1' | jq -r '.details.providers | to_entries[] | "\(.key) \(.value.healthy) \(.value.error_class // "-")"'`
+  — provider detail lives under `.details.providers` (top-level `.providers` is null).
+- **Treat `rc=2` as "no answer", not "bad answer".** `.answer` on that path is a placeholder
+  of the form `[stage aggregator (...) unavailable: ...]`. Check `answer_degraded` before you
+  show a user anything, and print `answer_error` — it is usually one line naming the real
+  cause (`Insufficient Balance`, `unavailable`).
+- **Pin the aggregator to something you know is alive** when the answer matters. In your own
+  `chimera.yaml` a formation is a plain mapping: give `aggregator:` a model whose plan you
+  control, and edit it once rather than re-running a dead panel. Editing config is safe (a
+  scratch copy plus `-c` is enough for a one-off).
+- **`/v1/health` can say `healthy` while `/v1/health/ready` says 503** — for the first ~1.5 s
+  of a cold or refreshed probe cache, health excludes in-flight providers, so green there
+  means "nothing known yet". Steady state is genuinely fine (367 probes over 420 s: 0 x 503,
+  mean 0.114 s). If you gate a pod on readiness, set `timeoutSeconds` above the 1.5 s probe
+  budget; the docs never say so (`DF-CHIMERA-V2-123`).
+- **Do not bill or budget off `trace.stages[].tokens_*`.** They are provider-reported and
+  unvalidated: one worker reported 149,511 input tokens for a 352-character prompt. `trace`
+  also has no `total_tokens_input`/`total_tokens_output` — use `trace.total_cost`, which is
+  computed from price tables, not from those counts.
+- **Tracing shows the stage label, not the stage input.** The aggregator's traced `prompt` is
+  the string `merge stage 'aggregator' over upstream: worker_1, worker_2, worker_3` (68 chars)
+  while its reported input is thousands of tokens — upstream answers are passed out of band.
+  Do not conclude from the trace string that the aggregator never saw the workers.
+- **Fresh install (`config init`) defaults its aggregator to a model whose key may be dead**,
+  so the first command can exit 2 in ~11 s. Edit the aggregator before the first real run.
+  The `blocked-models state outside any repo checkout` UserWarning on every invocation is
+  benign — pin it with `CHIMERA_BLOCKED_MODELS_PATH` if it bothers your stdout parsing
+  (`DF-CHIMERA-V2-124`).
+
+Open rows from this run: `DF-CHIMERA-V2-120` (no aggregator fallback), `-121` (trace token
+accounting), `-122` (health vs readiness cold asymmetry), `-123` (readiness timeout docs),
+`-124` (blocked-models warning on a fresh install), plus `SKIPPED-INSTALL-CHIMERA-V2-21`
+(ephemeral bunker leg skipped — no accepted SSH key from this box; compensated with a clean
+CPython 3.14 wheel install). Evidence and re-run recipe:
+`.coding-hermes/evidence/chimera-v2-dogfood-2026-11-20-06-01-48/run31-provider-resilience/`.
+
+**One more, run-29 library note:** outside a repo checkout, imports take the machine-scoped
 `~/.chimera/blocked-models.json` registry (a `UserWarning` at import says so). Set
 `CHIMERA_BLOCKED_MODELS_PATH` to pin it — a poisoned shared registry blocks models
 for every project on the box for 7 days (DF-CHIMERA-V2-58).

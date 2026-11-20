@@ -1,0 +1,15 @@
+--- t1
+health code=200 t=1.519528
+ready code=503 t=1.516595
+{"status":"healthy","in_flight":13,"unhealthy":0,"measured":13}
+{"detail":"Not ready — probes still in flight (in_flight: anthropic, cliproxy, cloudflare-ai-gateway, cloudflare-workers-ai, deepseek, gitlab, google, hermes,
+--- t2
+health code=200 t=1.502401
+ready code=503 t=1.501633
+{"status":"healthy","in_flight":13,"unhealthy":0,"measured":13}
+{"detail":"Not ready — probes still in flight (in_flight: anthropic, cliproxy, cloudflare-ai-gateway, cloudflare-workers-ai, deepseek, gitlab, google, hermes,
+--- t3
+health code=200 t=1.501950
+ready code=503 t=1.502795
+{"status":"healthy","in_flight":13,"unhealthy":0,"measured":13}
+{"detail":"Not ready — probes still in flight (in_flight: anthropic, cliproxy, cloudflare-ai-gateway, cloudflare-workers-ai, deepseek, gitlab, google, hermes,

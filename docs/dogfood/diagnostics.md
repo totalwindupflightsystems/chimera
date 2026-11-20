@@ -1215,3 +1215,59 @@ with the attribute value, which read as "total_cost=None" and nearly became a
 false finding; re-deriving `hasattr` per attribute and dumping `trace_fields` is
 what turned it into the accurate "cost lives on the trace" statement. Measure
 the attribute, not the dict you built from it.
+
+## 2026-11-20 (run 31) — one dead aggregator, measured four ways
+
+The question was not "does deliberation work" (runs 1-30 answered that) but "what does a
+user lose when one provider in the panel is dead" — the ordinary self-host failure. Setup:
+one real CFO decision prompt, four arms, nothing differing between them except which
+provider held the **aggregator** stage; wall clocked with `date +%s.%N`, output to
+`--json`, exit code captured.
+
+```
+run1  quick-panel, aggregator deepseek/deepseek-v4-flash  82,577 ms  rc=2  degraded
+run2  same, immediate retry                              186,852 ms  rc=2  degraded
+survivor1  dispatcher off deepseek, aggregator qwen3.7-plus  113,729 ms  rc=2  degraded
+survivor2  aggregator google/gemini-3.1-pro-preview           94,877 ms  rc=0  clean, $0.082058
+```
+
+Three of four arms burned 83-187 s, produced worker output that was already paid for
+(`worker_1` 441 input tokens / 4,446 ms; `worker_2` 309 output; `worker_3` 1,169 output) and
+then threw it away, because the aggregator had no second provider to fall back to. The exit
+code is not a crash: `src/chimera/cli/main.py:399-407` maps `answer_degraded` to
+`sys.exit(2)`, and `.answer` then holds the engine's placeholder text
+(`[stage aggregator (...) unavailable: ...]`) rather than an answer. Write that shape
+exactly, or the next reader believes the field was empty.
+
+**How the four arms were built without touching the repo.** `chimera.yaml` was copied to a
+scratch directory and patched there (`survivor`, `survivor2` formations, dispatcher pinned to
+`openrouter/qwen/qwen3-coder`); every invocation used `-c <scratch>/survivor.yaml`. The repo
+config and the product source were never modified — this lane files rows, it does not fix.
+
+**Cold-vs-steady readiness, and why the first reading was wrong.** A fresh `serve` on a
+scratch port with a cold probe cache reported, in the same second:
+`/v1/health` → 200 `{"status":"healthy","in_flight":13,"unhealthy":0}` in 1.519 s and
+`/v1/health/ready` → 503 `"Not ready — probes still in flight (in_flight: anthropic, ...)"` in
+1.517 s, reproduced 3/3. That looks like a flapping gate. It is not: 367 one-second probes
+over 420 s gave **0 x 503**, mean 0.114 s, max 1.503 s. The honest finding is the cold-state
+asymmetry (health green when nothing is measured), not a rate — `DF-CHIMERA-V2-122` says
+exactly that, and the steady-state numbers are in the row so nobody has to trust the
+inference.
+
+**Two measurement traps worth carrying forward.** (1) The traced `prompt` of a stage is not
+the stage's input: the aggregator's traced prompt is 68 characters (`merge stage
+'aggregator' over upstream: worker_1, worker_2, worker_3`) while its reported input is 2,562
+tokens, because upstream answers are passed out of band. Reading only the trace string
+produces a false "the aggregator never sees the workers" row. (2) Provider-reported usage is
+not checked against the prompt it claims to have read: `hermes/glm-5.3-flash` reported
+`tokens_input=149,511` for a **352-character** prompt (98.2% of the run's input tokens), and
+`trace` exposes no total to catch it — so any consumer that meters off the trace inherits a
+number nobody validated (`DF-CHIMERA-V2-121`).
+
+**Install leg, stated as skipped.** `bunker-qa.sh`'s ephemeral leg could not run: SSH to the
+bunker host returns `Permission denied (publickey,password)`, and minting a credential is
+forbidden here. Filed as `SKIPPED-INSTALL-CHIMERA-V2-21` with the probe transcript, then
+compensated locally in a real fresh environment — wheel from HEAD, clean CPython 3.14 venv,
+`chimera --version` rc=0, `config init`, and one live run that failed on provider billing in
+10.7 s. That compensation is also the P1's second reproduction: the config-init default
+aggregator is a dead key, so a brand-new user's first command exits 2.
