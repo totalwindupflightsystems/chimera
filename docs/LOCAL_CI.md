@@ -134,6 +134,15 @@ separate from native pytest results when documenting act reproduction.
     tests fail (they do not skip), so a bare `act -q` ends non-zero on the
     `integration` job alone. That is a missing-secret artifact, not a workflow
     defect — do not "fix" it by skipping the job.
+  - `integration` is **non-blocking on purpose** (`continue-on-error: true`,
+    INT-CI-022): the account behind `secrets.DEEPSEEK_API_KEY` is unfunded, so
+    every deliberation call is rejected with DeepSeek's `402 Insufficient
+    Balance` and the job can only fail. The suite still runs in full and its log
+    is kept; the job's last step prints the recorded reason and writes it to the
+    run summary. When the account is funded the leg passes and that step says so
+    — then delete `continue-on-error` to make it blocking again. A failure with
+    no `Insufficient Balance` in the log is annotated as a code regression, not
+    billing.
   - `publish` and `release-verify` are tag-ref gated (`refs/tags/v*`) and are
     skipped for a branch push.
   - `lint`, `test` and `packaging-smoke` are the jobs to use as the local gate;

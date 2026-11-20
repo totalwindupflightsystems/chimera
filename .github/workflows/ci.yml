@@ -85,6 +85,21 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # INT-CI-022 — this is the only job in the workflow that SPENDS a real
+    # provider credential (`secrets.DEEPSEEK_API_KEY`), and that account is
+    # unfunded. DeepSeek rejects every deliberation call with its billing
+    # error, so on 2026-11-20 the leg failed 31x for a BILLING STATE, not for
+    # code (run 44704272700: every other job green, `integration` the sole
+    # failure):
+    #   litellm.BadRequestError: OpenAIException - Insufficient Balance
+    #     (request_id: 399f8709-7f03-401e-8e7e-0ff5606b1c2e)
+    # Topping the account up is an owner decision, so the leg is deliberately
+    # NON-BLOCKING (arm (b) of INT-CI-022) while still EXECUTING the whole
+    # tests/integration/ suite: coverage, the full log, and per-test results
+    # all stay — a provider billing state simply no longer turns `main`
+    # permanently red. Delete `continue-on-error` once the account is funded;
+    # the report step below says so explicitly whenever the leg passes.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -100,9 +115,66 @@ jobs:
           .venv/bin/pip install -e ".[full]"
 
       - name: Run integration tests
-        run: .venv/bin/python -m pytest tests/integration/ --run-integration -v --tb=long
+        # `tee` leaves the pytest output on disk for the report step, which uses
+        # it to tell a provider-billing failure apart from a real integration
+        # regression. `pipefail` is load-bearing: without it the pipeline takes
+        # tee's exit status (always 0) and this step would read as PASSING no
+        # matter what the suite did.
+        run: |
+          set -o pipefail
+          .venv/bin/python -m pytest tests/integration/ --run-integration -v --tb=long 2>&1 | tee integration-leg.log
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+      - name: Degraded-leg report — record the billing reason (INT-CI-022)
+        # `always()` so the reason is on the run even when the suite above fails
+        # (that is the expected state while the provider account is unfunded).
+        if: always()
+        run: |
+          LOG=integration-leg.log
+          REASON='integration leg non-blocking: provider account unfunded (402 Insufficient Balance) — tracked as INT-CI-022; funding is an owner decision'
+
+          failed=0
+          if [ -f "$LOG" ]; then
+            # pytest's own summary line is the authoritative failure count.
+            failed=$(sed -nE 's/.*(^|[^0-9])([0-9]+) failed.*/\2/p' "$LOG" | tail -1)
+            failed=${failed:-0}
+            billing=$(grep -c 'Insufficient Balance' "$LOG" 2>/dev/null || true)
+            billing=${billing:-0}
+          else
+            billing=0
+          fi
+
+          # One string, one place: the annotation, the step summary and the
+          # stdout all quote the same recorded reason.
+          echo "::warning title=integration leg is non-blocking (INT-CI-022)::${REASON}"
+          echo "$REASON"
+          {
+            echo "### Integration leg — non-blocking (INT-CI-022)"
+            echo
+            echo "$REASON"
+            echo
+            echo "- pytest failures this run: ${failed}"
+            echo "- 'Insufficient Balance' occurrences: ${billing}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$failed" -eq 0 ]; then
+            # The suite passed: the credential is funded (or the leg was
+            # narrowed), so the non-blocking flag has served its purpose.
+            echo "::warning title=integration leg passed — restore blocking::the suite passed at this run; delete 'continue-on-error: true' from the integration job to make the leg blocking again"
+            exit 0
+          fi
+
+          if [ "$billing" -gt 0 ]; then
+            echo "Classified: provider billing (${billing} billing rejections behind ${failed} failed test(s)) — matches the recorded INT-CI-022 state."
+            exit 0
+          fi
+
+          # Failed WITHOUT the billing signature: that is a code regression, not
+          # a billing state. The job is non-blocking by design, so surface it as
+          # a loud error annotation instead of silently absorbing it.
+          echo "::error title=integration regression, not billing::${failed} integration test(s) failed with no 'Insufficient Balance' in the log — this is a CODE regression, not the INT-CI-022 billing state"
+          exit 0
 
   packaging-smoke:
     needs: [lint, test]
