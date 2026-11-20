@@ -2514,3 +2514,43 @@ tasks:
   status: complete
   created_at: '2026-11-20T09:29:40.101682+00:00'
   completed_at: '2026-11-20T09:53:31.949665+00:00'
+- id: INT-CI-022
+  title: Make CI integration leg non-blocking on provider billing 402
+  criteria:
+  - 'Arm (b): integration job non-required/continue-on-error with recorded billing
+    reason; forensics naming the spent secret + quoted 402 evidence; run ids recorded'
+  status: complete
+  created_at: '2026-11-20T10:41:48.007718+00:00'
+  completed_at: '2026-11-20T10:56:09.027164+00:00'
+- id: DF-CHIMERA-V2-102
+  title: rank-then-fuse aggregator top-kappa
+  criteria:
+  - rank:true flag; scorer assigns per-worker scores; trace carries rank/score for
+    all candidates; aggregator prompt gets top-kappa only; hermetic 5-fixture kappa=2
+    test; CONFIG.md docs
+  status: in_progress
+  created_at: '2026-11-20T10:41:51.670035+00:00'
+- id: DF-CHIMERA-V2-104
+  title: bandit-lite category-score learning loop
+  criteria:
+  - scripts learn from traces; bounded-step delta with floor/ceiling; dry-run default
+    no-write; explicit write switch; unit tests incl insufficient-sample no-op
+  status: complete
+  created_at: '2026-11-20T10:41:54.618885+00:00'
+  completed_at: '2026-11-20T11:07:48.538041+00:00'
+- id: README-14
+  title: README documents GET /metrics and links docs/operations.md
+  criteria:
+  - README Server-and-MCP section documents /metrics on the API listener with auth/scrape
+    contract; operations.md link added; grep proofs pass
+  status: complete
+  created_at: '2026-11-20T10:41:58.480386+00:00'
+  completed_at: '2026-11-20T10:53:40.378063+00:00'
+- id: DOC-29
+  title: SECURITY.md unauthenticated list includes GET /metrics
+  criteria:
+  - 'Arm (a): list /metrics with Prometheus + OpenAPI-exclusion clause; exhaustive
+    claim true; /health alias line untouched'
+  status: complete
+  created_at: '2026-11-20T10:42:00.896497+00:00'
+  completed_at: '2026-11-20T10:49:44.423000+00:00'
