@@ -280,3 +280,45 @@ def test_checker_is_wired_into_the_precommit_hook() -> None:
         ".gitreins/pre-commit does not invoke scripts/check_docs_index.sh — the "
         "same-commit rule is inert at commit time"
     )
+
+
+# ── Fail closed (DF-CHIMERA-V2-135) ──────────────────────────────────────────
+#
+# A gate that cannot GRADE must not report a pass. The pre-fix checker read its
+# staged set as `git diff --cached … || true`, so an unreadable index produced an
+# empty set, "no dogfood log added", and exit 0 — a blind pass indistinguishable
+# from a real one. Same shape for a checkout it cannot see. Both now exit 2.
+
+
+def test_checker_fails_closed_when_it_cannot_read_the_index(tmp_path: Path) -> None:
+    """An unreadable index is "could not grade" (2), never a clean pass (0)."""
+    corrupt = tmp_path / "index"
+    corrupt.write_bytes(b"this is not a git index\n")
+    env = {**os.environ, "GIT_INDEX_FILE": str(corrupt)}
+
+    proc = subprocess.run(
+        ["bash", str(CHECKER)], cwd=REPO, env=env, capture_output=True, text=True, timeout=GIT_TIMEOUT_S
+    )
+    assert proc.returncode == 2, (
+        "the checker reported a verdict over an index it could not read "
+        f"(exit {proc.returncode}):\nstdout={proc.stdout}\nstderr={proc.stderr}"
+    )
+    assert "could not list the staged files" in proc.stderr, (
+        f"the refusal does not name the failed input:\n{proc.stderr}"
+    )
+
+
+def test_checker_fails_closed_outside_a_git_checkout(tmp_path: Path) -> None:
+    """No repository means no verdict — exit 2, not a reassuring green line."""
+    env = {**os.environ, "GIT_CEILING_DIRECTORIES": str(tmp_path)}
+    env.pop("GIT_DIR", None)
+    env.pop("GIT_INDEX_FILE", None)
+
+    proc = subprocess.run(
+        ["bash", str(CHECKER)], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=GIT_TIMEOUT_S
+    )
+    assert proc.returncode == 2, (
+        f"the checker passed outside a git checkout (exit {proc.returncode}):\n"
+        f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    )
+    assert "not a git checkout" in proc.stderr, f"the refusal is not explicit:\n{proc.stderr}"

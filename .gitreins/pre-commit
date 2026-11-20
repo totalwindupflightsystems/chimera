@@ -152,16 +152,25 @@ fi
 # travel together, graded against the index AS COMMITTED. Fifth recurrence of the
 # class (CI-FIX-001, DOC-2, INT-CI-014), so it is a gate, not a reminder.
 DOCS_INDEX_GATE="scripts/check_docs_index.sh"
-if [ -f "$DOCS_INDEX_GATE" ]; then
-  set +e
-  bash "$DOCS_INDEX_GATE"
-  DOCS_RC=$?
-  set -e
-  if [ "$DOCS_RC" -ne 0 ]; then
-    exit 1
-  fi
-else
-  echo "⚠ GitReins Tier 1: docs-index gate SKIPPED — $DOCS_INDEX_GATE is missing" >&2
+# Fail closed (DF-CHIMERA-V2-135): a MISSING gate is not a pass. The old arm
+# warned "SKIPPED" and let the commit through, so deleting or renaming the
+# checker silently disarmed the same-commit rule — the exact shape of a bypass
+# that leaves no trace in the commit.
+if [ ! -f "$DOCS_INDEX_GATE" ]; then
+  echo "" >&2
+  echo "COMMIT BLOCKED: the docs-index gate is not armed — $DOCS_INDEX_GATE is missing." >&2
+  echo "  Restore it (git checkout -- $DOCS_INDEX_GATE) and re-commit." >&2
+  echo "  A gate that cannot run is not a gate that passed (DF-CHIMERA-V2-135)." >&2
+  exit 1
+fi
+set +e
+bash "$DOCS_INDEX_GATE"
+DOCS_RC=$?
+set -e
+if [ "$DOCS_RC" -ne 0 ]; then
+  echo "" >&2
+  echo "COMMIT BLOCKED: the docs-index gate refused this commit (exit $DOCS_RC)." >&2
+  exit 1
 fi
 
 # ── 4. The quality harness (gitreins guard) ──────────────
