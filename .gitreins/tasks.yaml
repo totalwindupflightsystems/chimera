@@ -2502,3 +2502,15 @@ tasks:
   status: complete
   created_at: '2026-11-18T02:26:39.835871+00:00'
   completed_at: '2026-11-18T03:00:58.106742+00:00'
+- id: INT-CI-021
+  title: 'Guard static_analysis lane always SKIPs: static_analysis_tools is {} in
+    .gitreins/config.yaml'
+  criteria:
+  - 1) .gitreins/config.yaml sets static_analysis_tools with a python entry (mypy)
+    that exists on the host. 2) gitreins guard --full on a clean tree no longer prints
+    '[SKIP] static_analysis' with the no-tool reason; the lane either PASSes or names
+    a real tool failure. 3) The exact guard output line is recorded in the board closure
+    event.
+  status: complete
+  created_at: '2026-11-20T09:29:40.101682+00:00'
+  completed_at: '2026-11-20T09:53:31.949665+00:00'
