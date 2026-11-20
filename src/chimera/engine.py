@@ -21,7 +21,7 @@ import structlog
 from pydantic import BaseModel, Field
 
 from chimera import blocked_models
-from chimera.aggregator import Aggregator, StageResult
+from chimera.aggregator import Aggregator, RankPass, RankPolicy, StageResult
 from chimera.config import (
     ChimeraConfig,
     DeliberationOverrides,
@@ -56,6 +56,23 @@ DEFAULT_STAGE_TIMEOUT_S: float = 120.0
 #: ``iterate_on`` triggers re-iteration when its response contains
 #: ``"passed": false`` (case-insensitive, allowing whitespace).
 _RE_ITERATION_SIGNAL = re.compile(r'"passed"\s*:\s*false\s*[,}]', re.IGNORECASE)
+
+
+class RankedCandidateSpan(BaseModel):
+    """One traced candidate from a rank-then-fuse pre-merge pass.
+
+    ``rank`` is 1-based over every candidate the scorer saw and ``kept`` says
+    whether its output reached the merge prompt — a dropped candidate is
+    traced, not erased, so a run's ranking decision is auditable after the
+    fact (DF-CHIMERA-V2-102). ``score`` is ``None`` when the scorer returned no
+    number for that candidate (it is then ranked after every scored one).
+    """
+
+    stage_id: str
+    model: str
+    score: float | None = None
+    rank: int
+    kept: bool
 
 
 class StageSpan(BaseModel):
@@ -107,6 +124,35 @@ class StageSpan(BaseModel):
     constrained than requested (DF-CHIMERA-V2-53). ``None`` for pass-through
     routes, plain calls, and gateways that carry no side-band (test doubles);
     never guessed from the model or provider name."""
+
+    ranked_candidates: list[RankedCandidateSpan] = Field(default_factory=list)
+    """Every candidate scored by a rank-then-fuse pre-merge pass
+    (DF-CHIMERA-V2-102), in rank order — INCLUDING the ones dropped from the
+    merge prompt (``kept: false``). Empty when the stage did no ranking, so
+    the field is additive and un-ranked runs serialize exactly as before.
+
+    The span's ``prompt`` is the merge input that was actually sent, i.e. the
+    top-``rank_kappa`` candidates only: the two together are the evidence that
+    a run ranked five outputs and fed two of them."""
+    rank_kappa: int | None = None
+    """How many candidates the merge prompt was allowed to keep, or ``None``
+    when this stage did not rank."""
+    rank_model: str = ""
+    """Model that served the scorer call (``""`` when no ranking ran)."""
+    rank_tokens_input: int = 0
+    rank_tokens_output: int = 0
+    """Tokens spent by the scorer call — counted in the run totals (the
+    scorer is real provider spend), never folded into this stage's own
+    ``tokens_*``."""
+    rank_cost: float = 0.0
+    """Cost of the scorer call, priced with the same catalog rates as any
+    other stage (0.0 when no ranking ran)."""
+    rank_error: str | None = None
+    """Why the pre-merge ranking did NOT take effect, when it was attempted and
+    failed (scorer upstream error / unparseable answer). ``None`` for a
+    successful pass and for a stage that never ranked. On a failed pass every
+    upstream output still reached the merge prompt — the run degrades to the
+    un-ranked behaviour rather than dropping a worker's work."""
 
 
 #: Constant for the metadata key carrying a lossy format-negotiation outcome.
@@ -890,6 +936,11 @@ class Engine:
             output_schema or (overrides.output_schema if overrides else None) or outcome.result.output_schema
         )
 
+        # DF-CHIMERA-V2-102: rank-then-fuse. A formation that sets
+        # ``rank: true`` ranks its upstream outputs before the merge; every
+        # other formation gets ``None`` and merges exactly as before.
+        rank_policy = self._resolve_rank_policy(formation)
+
         stage_spans, stage_results = await self._run_dag(
             outcome.result,
             user_prompt,
@@ -899,6 +950,7 @@ class Engine:
             timeout_per_stage_s=overrides.timeout_per_stage_s if overrides else None,
             max_tokens=overrides.max_tokens if overrides else None,
             stage_observer=stage_observer,
+            rank=rank_policy,
         )
 
         # Extract iteration count from the results sentinel (stored by _run_dag).
@@ -959,6 +1011,36 @@ class Engine:
             raise ValueError("Custom DAG requires allow_custom_dag=True")
         return build_dag_from_dict(dag, self.config)
 
+    def _resolve_rank_policy(self, formation: str) -> RankPolicy | None:
+        """Build the rank-then-fuse policy for *formation*, or ``None``.
+
+        Only a named formation preset can carry the flag (``rank: true``); the
+        ``auto`` formation and client-supplied DAGs have no preset to read it
+        from and therefore never rank. The scorer model is the preset's
+        ``rank_model`` when it resolves to a live catalog entry, else the
+        aggregator stage's own model — an unknown/disabled scorer must degrade
+        to "score with the stage model", never fail the deliberation.
+        """
+        preset = self.config.formations.get(formation)
+        if preset is None or not preset.rank:
+            return None
+
+        scorer_model: str | None = None
+        if preset.rank_model:
+            resolved = self.config.resolve_model_alias(preset.rank_model)
+            entry = self.config.models.get(resolved)
+            if entry is None or not entry.enabled:
+                log.warning(
+                    "rank_model_unusable",
+                    formation=formation,
+                    rank_model=preset.rank_model,
+                    resolved=resolved,
+                    fallback="aggregator stage model",
+                )
+            else:
+                scorer_model = resolved
+        return RankPolicy(kappa=preset.kappa, model=scorer_model)
+
     # ------------------------------------------------------------------ #
     # DAG execution
     # ------------------------------------------------------------------ #
@@ -974,6 +1056,7 @@ class Engine:
         timeout_per_stage_s: float | None = None,
         max_tokens: int | None = None,
         stage_observer: Callable[[dict[str, Any]], Any] | None = None,
+        rank: RankPolicy | None = None,
     ) -> tuple[dict[str, StageSpan], dict[str, StageResult]]:
         dag = dispatch.formation
         topo = dag.topo_order()
@@ -1014,6 +1097,7 @@ class Engine:
                         max_tokens=max_tokens,
                         iteration_feedback=feedback_map.get(s.id),
                         stage_observer=stage_observer,
+                        rank=rank,
                     )
                 )
                 for s in ready
@@ -1144,6 +1228,7 @@ class Engine:
         max_tokens: int | None = None,
         iteration_feedback: str | None = None,
         stage_observer: Callable[[dict[str, Any]], Any] | None = None,
+        rank: RankPolicy | None = None,
     ) -> tuple[StageResult, StageSpan]:
         dep_results = [results[d] for d in stage.depends_on if d in results]
 
@@ -1167,8 +1252,9 @@ class Engine:
         )
         start = time.monotonic()
         messages: list[dict[str, str]] = []
+        rank_pass: RankPass | None = None
         try:
-            messages, response = await asyncio.wait_for(
+            messages, response, rank_pass = await asyncio.wait_for(
                 self._call_stage(
                     stage,
                     dispatch,
@@ -1177,6 +1263,7 @@ class Engine:
                     output_schema,
                     iteration_feedback=iteration_feedback,
                     max_tokens=max_tokens,
+                    rank=rank,
                 ),
                 timeout=stage_timeout,
             )
@@ -1204,9 +1291,19 @@ class Engine:
                 output_schema,
                 exc,
                 start,
+                rank=rank,
             )
 
-        return self._build_stage_result(stage, response, messages, start, user_prompt, dispatch, dep_results)
+        return self._build_stage_result(
+            stage,
+            response,
+            messages,
+            start,
+            user_prompt,
+            dispatch,
+            dep_results,
+            rank_pass=rank_pass,
+        )
 
     async def _handle_stage_failure(
         self,
@@ -1217,6 +1314,8 @@ class Engine:
         output_schema: dict[str, Any] | None,
         exc: Exception,
         start: float,
+        *,
+        rank: RankPolicy | None = None,
     ) -> tuple[StageResult, StageSpan]:
         """Retry aggregator/merge/audit stages: model fallback → plain-text fallback."""
         latency_ms = int((time.monotonic() - start) * 1000)
@@ -1231,7 +1330,7 @@ class Engine:
         if stage.model != fallback_model:
             retry_stage = stage.model_copy(update={"model": fallback_model})
             try:
-                messages, response = await self._call_stage(
+                messages, response, rank_pass = await self._call_stage(
                     retry_stage,
                     dispatch,
                     dep_results,
@@ -1245,7 +1344,14 @@ class Engine:
                     fallback=fallback_model,
                 )
                 return self._build_stage_result(
-                    stage, response, messages, start, user_prompt, dispatch, dep_results
+                    stage,
+                    response,
+                    messages,
+                    start,
+                    user_prompt,
+                    dispatch,
+                    dep_results,
+                    rank_pass=rank_pass,
                 )
             except GatewayError:
                 pass  # fall through to plain-text retry
@@ -1253,7 +1359,7 @@ class Engine:
         # Retry 2: plain text (no output_schema) — catches json_schema/json_object
         # provider incompatibilities (e.g. DeepSeek requires "json" in prompt).
         try:
-            messages, response = await self._call_stage(
+            messages, response, rank_pass = await self._call_stage(
                 stage,
                 dispatch,
                 dep_results,
@@ -1266,7 +1372,14 @@ class Engine:
                 model=stage.model,
             )
             return self._build_stage_result(
-                stage, response, messages, start, user_prompt, dispatch, dep_results
+                stage,
+                response,
+                messages,
+                start,
+                user_prompt,
+                dispatch,
+                dep_results,
+                rank_pass=rank_pass,
             )
         except GatewayError as exc2:
             return self._degraded_stage(stage, exc2, [], latency_ms, started_at=start)
@@ -1280,6 +1393,8 @@ class Engine:
         user_prompt: str,
         dispatch: DispatchResult,
         dep_results: list[StageResult],
+        *,
+        rank_pass: RankPass | None = None,
     ) -> tuple[StageResult, StageSpan]:
         """Build a (StageResult, StageSpan) pair for a successful stage call."""
         latency_ms = int((time.monotonic() - start) * 1000)
@@ -1293,6 +1408,33 @@ class Engine:
         # off the response's metadata side-band (empty for a gateway that
         # carries none, e.g. a test double).
         provider, wire_model, api_base = _route_attribution(response)
+        rank_fields: dict[str, Any] = {}
+        if rank_pass is not None:
+            rank_fields = {
+                "ranked_candidates": [
+                    RankedCandidateSpan(
+                        stage_id=candidate.stage_id,
+                        model=candidate.model,
+                        score=candidate.score,
+                        rank=candidate.rank,
+                        kept=candidate.kept,
+                    )
+                    for candidate in rank_pass.candidates
+                ],
+                "rank_kappa": rank_pass.kappa,
+                "rank_model": rank_pass.model,
+                "rank_tokens_input": rank_pass.tokens_input,
+                "rank_tokens_output": rank_pass.tokens_output,
+                "rank_cost": _stage_cost(
+                    rank_pass.model,
+                    self.config,
+                    rank_pass.tokens_input,
+                    rank_pass.tokens_output,
+                )
+                if rank_pass.tokens_input or rank_pass.tokens_output
+                else 0.0,
+                "rank_error": rank_pass.error,
+            }
         span = StageSpan(
             stage_id=stage.id,
             kind=stage.kind,
@@ -1311,6 +1453,7 @@ class Engine:
             ended_at=ended,
             finish_reason=response.finish_reason,
             negotiated_format=_format_negotiation(response),
+            **rank_fields,
         )
         result = StageResult(
             stage_id=stage.id,
@@ -1330,8 +1473,9 @@ class Engine:
         *,
         iteration_feedback: str | None = None,
         max_tokens: int | None = None,
-    ) -> tuple[list[dict[str, str]], GatewayResponse]:
-        """Make the actual model call for a stage; returns (messages, response)."""
+        rank: RankPolicy | None = None,
+    ) -> tuple[list[dict[str, str]], GatewayResponse, RankPass | None]:
+        """Make the actual model call for a stage. Returns (messages, response, rank_pass)."""
         if stage.kind == "worker":
             messages = self._worker_messages(
                 stage, dispatch, user_prompt, iteration_feedback=iteration_feedback
@@ -1364,8 +1508,8 @@ class Engine:
             if max_tokens is not None:
                 kwargs["max_tokens"] = max_tokens
             response = await self.gateway.complete(stage.model, messages, **kwargs)
-            return messages, response
-        response = await self.aggregator.execute(
+            return messages, response, None
+        response, rank_pass, merge_messages = await self.aggregator.execute_ranked(
             stage,
             dispatch,
             dep_results,
@@ -1373,6 +1517,7 @@ class Engine:
             output_schema=output_schema,
             max_prompt_tokens=self.config.max_aggregator_context_tokens,
             max_tokens=max_tokens,
+            rank=rank,
         )
 
         # ── Mechanical schema validation for AUDIT stages ──────────
@@ -1398,7 +1543,12 @@ class Engine:
             else:
                 log.info("engine_audit_validation_passed", stage=stage.id)
 
-        return [], response
+        # A ranked run records the merge prompt it ACTUALLY sent, so the trace
+        # proves which outputs survived ranking (DF-CHIMERA-V2-102). Un-ranked
+        # runs keep their compact summary unchanged.
+        if rank is not None:
+            return merge_messages, response, rank_pass
+        return [], response, rank_pass
 
     def _degraded_stage(
         self,
@@ -1864,8 +2014,13 @@ class Engine:
         all_spans: list[StageSpan] = ([dispatch_span] if dispatch_span is not None else []) + list(
             stage_spans.values()
         )
-        total_cost = round(sum(s.cost for s in all_spans), 6)
-        total_tokens = sum(s.tokens_input + s.tokens_output for s in all_spans)
+        # DF-CHIMERA-V2-102: the pre-merge scorer call is real provider spend,
+        # so it is counted in the run totals (kept separate from the stage's
+        # own ``tokens_*``/``cost``, which stay the merge call's numbers).
+        total_cost = round(sum(s.cost + s.rank_cost for s in all_spans), 6)
+        total_tokens = sum(
+            s.tokens_input + s.tokens_output + s.rank_tokens_input + s.rank_tokens_output for s in all_spans
+        )
         # DF-CHIMERA-V2-55: name every stage the token cap cut off. A capped
         # worker's fragment still reaches the aggregator and the merged answer
         # reads as clean prose — these entries are the visible marker that it

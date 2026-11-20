@@ -184,6 +184,40 @@ class FormationPreset(BaseModel):
     this flag only ever ADDS a call back for an explicit formation.
     """
 
+    rank: bool = False
+    """Rank-then-fuse pre-merge ranking for this formation's aggregator stage
+    (DF-CHIMERA-V2-102, LLM-Blender PairRanker class).
+
+    When ``true``, one cheap scorer call scores every upstream output before
+    the merge, the aggregator prompt carries only the top :attr:`kappa`
+    candidates, and the trace records every scored candidate with its rank and
+    score. ``false`` (the default) feeds every upstream output to the merge —
+    the pre-DF-CHIMERA-V2-102 behaviour, byte for byte.
+
+    Scoring is best-effort: a scorer call that fails or answers unparseably
+    leaves the merge input untouched (every candidate still reaches the
+    aggregator) and records the failure as ``rank_error`` on the aggregator's
+    trace span, so a cheap pass can never silently drop a worker's work.
+    """
+
+    kappa: int = Field(default=3, ge=1)
+    """How many ranked candidates reach the merge prompt when :attr:`rank` is
+    on. Only consulted when there are MORE upstream candidates than ``kappa``
+    — with 3 or fewer outputs every one of them is merged as before. Must be
+    at least 1: a merge prompt with no upstream outputs cannot produce an
+    answer."""
+
+    rank_model: str | None = None
+    """Optional model alias for the scorer call (default: the aggregator
+    stage's own model).
+
+    The scorer is a small, bounded call over the candidate outputs — point it
+    at a budget model when the aggregator is a premium one. Aliases resolve
+    through :meth:`ChimeraConfig.resolve_model_alias`; an unknown or disabled
+    model falls back to the stage model with a logged warning rather than
+    failing the deliberation.
+    """
+
     @property
     def is_auto(self) -> bool:
         return self.mode == "auto"

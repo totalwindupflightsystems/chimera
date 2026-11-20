@@ -206,6 +206,55 @@ my-chain:
 
 Stage kinds: `worker`, `aggregator`, `merge`, `audit`.
 
+### Rank-then-fuse: `rank` / `kappa` / `rank_model`
+
+Optional pre-merge ranking (LLM-Blender PairRanker class, DF-CHIMERA-V2-102).
+When a formation sets `rank: true`, one cheap **scorer call** scores every
+upstream output *before* the merge, the candidates are sorted by score, and only
+the top `kappa` of them reach the aggregator prompt:
+
+```yaml
+ranked-fanout:
+  workers: 5
+  aggregator: default
+  rank: true          # default false → pre-merge behaviour is unchanged
+  kappa: 2            # default 3 — how many candidates reach the merge prompt
+  rank_model: deepseek/deepseek-v4-flash   # optional; default = the aggregator's model
+```
+
+| key | default | meaning |
+| --- | --- | --- |
+| `rank` | `false` | Rank the upstream outputs before the merge. `false` feeds every output straight to the aggregator, exactly as before. |
+| `kappa` | `3` | How many candidates reach the merge prompt (must be `>= 1`). Only applies when there are **more** candidates than `kappa` — with 3 or fewer outputs nothing is dropped and no scorer call is made. |
+| `rank_model` | `null` | Model alias for the scorer call. `null` scores with the aggregator stage's own model. Point it at a budget model to keep the extra call cheap; an unknown or disabled alias falls back to the stage model with a `rank_model_unusable` warning instead of failing the run. |
+
+The scorer is one bounded call over all candidates (each output capped at
+~6k characters), asked for a single JSON object
+`{"scores": {"<stage id>": <number>}}`. Answers in other shapes — a bare
+`{id: score}` map, numbers as strings, prose with `id: 5` — are all accepted.
+
+**Ranking is best-effort, never lossy.** If the scorer call fails (provider
+error, budget) or answers with no recoverable score, the merge falls back to
+feeding **every** upstream output, and the failure is recorded on the
+aggregator's trace span as `rank_error`. A candidate with no score of its own
+sorts after every scored candidate — an absent score is never treated as a good
+one.
+
+**What the trace records** (aggregator span):
+
+| field | meaning |
+| --- | --- |
+| `ranked_candidates` | every scored candidate, in rank order, with `stage_id`, `model`, `score`, `rank` (1-based) and `kept` (whether it reached the merge prompt). Dropped candidates are traced too, so the decision is auditable. |
+| `rank_kappa` | the `kappa` that applied (`null` when no ranking ran) |
+| `rank_model` | model that served the scorer call (`""` when no ranking ran) |
+| `rank_tokens_input` / `rank_tokens_output` / `rank_cost` | the scorer call's real spend — kept separate from the merge call's own `tokens_*`/`cost`, and included in the run's `total_tokens`/`total_cost` |
+| `rank_error` | why ranking did not take effect (`null` on success or when no ranking was attempted) |
+
+A ranked aggregator span's `prompt` is the merge prompt that was actually sent
+(the top-`kappa` outputs only, each tagged `[rank i/n, score s]`, plus a note
+naming how many candidates were omitted) — so a trace is direct evidence of
+what was fed. Un-ranked runs keep their compact prompt summary unchanged.
+
 #### The dispatcher call: skipped for explicit formations (PERF-2)
 
 A custom DAG or any named non-auto preset is **executed without a dispatcher
