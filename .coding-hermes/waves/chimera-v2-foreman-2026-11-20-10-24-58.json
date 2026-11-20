@@ -1,0 +1,74 @@
+{
+  "wave_id": "chimera-v2-foreman-2026-11-20-10-24-58",
+  "tick_id": "chimera-v2-foreman-2026-11-20-10-24-58",
+  "project": "chimera-v2",
+  "status": "in_flight",
+  "started_at": "2026-11-20T10:31:00-05:00",
+  "base_sha": "549c83e8f5261f55f7566e21fa5dce8a64460e7d",
+  "base_ref": "origin/main",
+  "slots_derivation": "nproc=16, loadavg1=10.11 -> slots=min(6, 16-11)=5; WAVE_BUDGET=5 (hard ceiling); wave_size=5",
+  "worker_model": "openai/gpt-6.1-terra",
+  "worker_provider": "xkiro",
+  "block_targets": [
+    "INT-CI-021 (resume: last tick's block, remaining row INT-CI-022)",
+    "DF-CHIMERA-V2-135 (P1 feature block, 3 independent-seam rows)",
+    "README-14 (P4, 92% block)",
+    "DOC-29 (P4, 93% block)"
+  ],
+  "wave": [
+    {
+      "row": "INT-CI-022",
+      "seam": ".github/workflows/ci.yml + tests/integration forensics",
+      "worktree": "/home/kara/worktrees/chimera-v2-INT-CI-022",
+      "branch": "wt/INT-CI-022",
+      "brief": "/tmp/brief-INT-CI-022.md",
+      "arm": "criterion 2(b): make integration leg non-blocking with recorded billing reason",
+      "independence": "only row touching ci.yml"
+    },
+    {
+      "row": "DF-CHIMERA-V2-102",
+      "seam": "src/chimera/aggregator.py rank pass + docs/CONFIG.md",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-102",
+      "branch": "wt/DF-CHIMERA-V2-102",
+      "brief": "/tmp/brief-DF-CHIMERA-V2-102.md",
+      "arm": "rank-then-fuse aggregator (LLM-Blender PairRanker class)",
+      "independence": "aggregator seam; no other row touches aggregator.py"
+    },
+    {
+      "row": "DF-CHIMERA-V2-104",
+      "seam": "scripts/ new bandit-lite job + catalog scoring tests",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-104",
+      "branch": "wt/DF-CHIMERA-V2-104",
+      "brief": "/tmp/brief-DF-CHIMERA-V2-104.md",
+      "arm": "bandit-lite category-score learning loop",
+      "independence": "new-file-dominant scripts/ seam; no shared file with other rows"
+    },
+    {
+      "row": "README-14",
+      "seam": "README.md only",
+      "worktree": "/home/kara/worktrees/chimera-v2-README-14",
+      "branch": "wt/README-14",
+      "brief": "/tmp/brief-README-14.md",
+      "arm": "document GET /metrics + link docs/operations.md",
+      "independence": "README.md only; no other row touches it"
+    },
+    {
+      "row": "DOC-29",
+      "seam": "docs/SECURITY.md only (arm (a) docs-only pinned)",
+      "worktree": "/home/kara/worktrees/chimera-v2-DOC-29",
+      "branch": "wt/DOC-29",
+      "brief": "/tmp/brief-DOC-29.md",
+      "arm": "list GET /metrics in unauthenticated section with Prometheus clause",
+      "independence": "docs/SECURITY.md only; arm (b) excluded to avoid API-auth semantic conflict with README-14"
+    }
+  ],
+  "excluded": [
+    {"row": "DF-CHIMERA-V2-105", "reason": "engine/selector + config-example seam overlaps DF-CHIMERA-V2-102; deferred to refill/next tick"},
+    {"row": "DOC-28", "reason": "same file as DOC-29 (docs/SECURITY.md); foreman-direct after DOC-29 merges"},
+    {"row": "RELEASE-PARITY-2026-11-16", "reason": "parity premise RESOLVED (origin/main == github/main == HEAD 549c83e, 0/0 both); closure gated on criterion 3 CI-green-including-integration = INT-CI-022 owner funding; board note this tick"},
+    {"row": "RELEASE-READINESS-2026-11-16", "reason": "composite gate row; criterion 1 requires integration green (owner funding); not dispatchable"},
+    {"row": "QA-CHIMERA-V2-46..50 + QA-CHIMERA-V2-DOCS-1", "reason": "work lives in host-level ~/.hermes/scripts/bunker-qa.sh + live bunker hosts - outside repo, wrong seam for worktree workers"},
+    {"row": "SKIPPED-INSTALL-CHIMERA-V2-21", "reason": "blocked on bunker host ssh reachability (infra)"},
+    {"row": "CH-MAINT-013", "reason": "fix belongs to the gitreins engine package (pipx), not this repo's tree"}
+  ]
+}
