@@ -56,5 +56,6 @@
   "status": "finished",
   "dispatched_at": "2026-11-20T14:47:12Z",
   "finished_at": "2026-11-20T16:01:30Z",
-  "closeout_sha": "PENDING"
+  "closeout_sha": "c22ad87",
+  "reconciliation_note": "closeout_sha = board closeout commit c22ad87 (this file landed inside it; own-SHA self-reference impossible by design)"
 }
