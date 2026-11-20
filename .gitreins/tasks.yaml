@@ -2528,8 +2528,9 @@ tasks:
   - rank:true flag; scorer assigns per-worker scores; trace carries rank/score for
     all candidates; aggregator prompt gets top-kappa only; hermetic 5-fixture kappa=2
     test; CONFIG.md docs
-  status: in_progress
+  status: complete
   created_at: '2026-11-20T10:41:51.670035+00:00'
+  completed_at: '2026-11-20T14:48:50.298155+00:00'
 - id: DF-CHIMERA-V2-104
   title: bandit-lite category-score learning loop
   criteria:
@@ -2554,3 +2555,15 @@ tasks:
   status: complete
   created_at: '2026-11-20T10:42:00.896497+00:00'
   completed_at: '2026-11-20T10:49:44.423000+00:00'
+- id: DF-CHIMERA-V2-135
+  title: 'docs-index gate: RED-proof the arm and make the hook bypass loud'
+  criteria:
+  - pytest tests/test_docs_index.py -q green at HEAD
+  - scripts/check_docs_index.sh proven RED on a staged run log with no index line,
+    GREEN once indexed
+  - the 194dcaf hook bypass is identified and made loud (fail closed), not left silent
+  - full suite green on a clean clone (bunker tests cell or local clean-clone proof),
+    ruff clean
+  status: complete
+  created_at: '2026-11-20T14:45:08.992425+00:00'
+  completed_at: '2026-11-20T15:39:53.620430+00:00'
