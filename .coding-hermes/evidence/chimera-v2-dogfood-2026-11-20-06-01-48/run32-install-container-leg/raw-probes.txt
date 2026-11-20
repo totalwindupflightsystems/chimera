@@ -1,0 +1,30 @@
+### date
+2026-11-20T08:07:50Z
+
+### container chimera --version
+/usr/local/lib/python3.11/site-packages/chimera/blocked_models.py:456: UserWarning: blocked-models state outside any repo checkout: falling back to the machine-scoped ~/.chimera/blocked-models.json. Runs from a repo checkout keep per-install state instead (set CHIMERA_BLOCKED_MODELS_PATH to pin a location).
+  shared_registry = ModelBlockRegistry()
+chimera 0.2.9
+
+### container /v1/health
+{"status":"degraded","unhealthy_providers":["anthropic","deepseek","google","openrouter","zai"],"discovered_not_configured":[],"slow_providers":[],"probe_skipped_providers":[],"details":{"config_loaded":true,"models_configured":36,"providers_configured":5,"providers_discovered":[],"commit":"v0.2.9","version":"0.2.9","credential_sources":{"deepseek":"missing","openrouter":"missing","openai":"missing","xai":"missing","zai":"missing","anthropic":"missing","google":"missing"},"providers":{"google":{"healthy":false,"error":"missing-credentials: no API key resolved for provider 'google'","error_class":"missing_credentials"},"openrouter":{"healthy":false,"error":"missing-credentials: no API key resolved for provider 'openrouter'","error_class":"missing_credentials"},"anthropic":{"healthy":false,"error":"missing-credentials: no API key resolved for provider 'anthropic'","error_class":"missing_credentials"},"deepseek":{"healthy":false,"error":"missing-credentials: no API key resolved for provider 'deepseek'","error_class":"missing_credentials"},"zai":{"healthy":false,"error":"missing-credentials: no API key resolved for provider 'zai'","error_class":"missing_credentials"}},"age_s":0}}
+
+### container /metrics
+http=404 t=0.003016s bytes=22
+{"detail":"Not Found"}
+
+### live 8765 /metrics
+http=200 t=0.002282s bytes=9324
+# HELP chimera_requests_total HTTP requests served, by route template and status class.
+# 
+
+### pip index versions inside image
+WARNING: pip index is currently an experimental command. It may be removed/changed in a future release without prior warning.
+chimera-deliberation (0.2.9)
+Available versions: 0.2.9, 0.2.8, 0.2.7, 0.2.6, 0.2.5, 0.2.4, 0.2.3, 0.2.1, 0.2.0, 0.1.0
+
+### git anchors
+v0.2.9-129-g3b732e2
+v0.2.9 2026-10-30
+e8cabaa 2026-11-07 feat(api): serve Prometheus /metrics on the API listener (CHIMERA-V2-OPS-001)
+312 src/chimera/metrics.py

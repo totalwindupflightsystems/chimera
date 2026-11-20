@@ -1,0 +1,104 @@
+# Install leg — container arm (documented deployment path)
+
+Tick: chimera-v2-dogfood-2026-11-20-06-01-48 (second delivery)
+Tree: 3b732e22c122546f1368b755c311ab8556d2719d  `git describe` = v0.2.9-129-g3b732e2
+Host: kara (this box), docker BuildKit, 2026-11-20 02:5x EST
+
+Why this arm: the earlier delivery skipped the ephemeral-bunker leg (no accepted SSH key;
+board row SKIPPED-INSTALL-CHIMERA-V2-21) and disclosed "does not prove a machine with no
+Python and no ~/.hermes/.env dotenv fallback". A container is exactly such a machine, so
+the arm is walkable locally without a bunker.
+
+## Build (prod Dockerfile — the one `docker compose up` uses)
+
+    docker build -t chimera-dogfood-r31b .
+
+    cold   BUILD_WALL_S=104.10     image 764MB
+    warm   WARM_REBUILD_WALL_S=1.74 (all cache)
+
+    step timings from the build log:
+      #5  [internal] load build context   0.3s   transferring context: 67.80kB
+      #6  apt-get install curl           14.2s
+      #7  pip install "chimera-deliberation[full]>=0.2.0"   58.1s
+      #11 exporting to image             28.7s
+
+    BuildKit transferred 67.8kB of context (only COPY-referenced files), so the absent
+    .dockerignore is not a build-time cost on this path — no PERF finding from it.
+
+## What the built image actually is
+
+    $ docker exec chimera-dogfood-r31b chimera --version
+    chimera 0.2.9
+
+    $ curl -s http://127.0.0.1:8791/v1/health
+    {"status":"degraded","unhealthy_providers":["anthropic","deepseek","google","openrouter","zai"],
+     ... "details":{...,"commit":"v0.2.9","version":"0.2.9","credential_sources":{"deepseek":"missing",
+     "openrouter":"missing","openai":"missing","xai":"missing","zai":"missing","anthropic":"missing",
+     "google":"missing"},...}}    (full body: raw-probes.txt)
+
+    $ docker exec chimera-dogfood-r31b pip index versions chimera-deliberation
+    chimera-deliberation (0.2.9)
+    Available versions: 0.2.9, 0.2.8, 0.2.7, 0.2.6, 0.2.5, 0.2.4, 0.2.3, 0.2.1, 0.2.0, 0.1.0
+
+    => PyPI has no 0.3.x. The checkout is 129 commits past v0.2.9; the documented
+       deployment is that release.
+
+## The documented surface that is missing on the documented deployment
+
+    $ curl -s -o /tmp/m.txt -w 'http=%{http_code} t=%{time_total}s bytes=%{size_download}\n' \
+        http://127.0.0.1:8791/metrics
+    http=404 t=0.003016s bytes=22       {"detail":"Not Found"}
+
+    live 0.3.0 service on 127.0.0.1:8765 (same box, run-31 product):
+    http=200 t=0.002282s bytes=9324     # HELP chimera_requests_total HTTP requests served, ...
+
+    $ diff -rq --exclude=__pycache__ <image 0.2.9 package> src/chimera
+    Only in REPO: metrics.py            (312 lines; added e8cabaa, 2026-11-07)
+    Files IMG/{api/server.py, cli/main.py, config.py, dispatcher.py, engine.py,
+               observability.py, web/routes.py, __init__.py} differ
+
+    $ git log -1 --format='v0.2.9 %ad' --date=short v0.2.9
+    v0.2.9 2026-10-30
+
+    => the /metrics surface landed 8 days AFTER the last release tag; no published
+       release carries it.
+
+## Provenance of the path (not an accident of this build)
+
+    Dockerfile:1-6      "End users should use Dockerfile (installs from PyPI)"
+                        "Quick start with docker compose (recommended)"
+    Dockerfile         RUN pip install --no-cache-dir "chimera-deliberation[full]>=0.2.0"
+    docker-compose.yml services.chimera.build: .
+    docs/operations.md:17  docker compose up -d --build
+    docs/operations.md:171-203  "## Metrics ... GET /metrics serves the Prometheus text
+                        exposition format (0.0.4)" + a ready-to-paste prometheus.yml
+                        scrape_configs block with metrics_path: /metrics
+    Dockerfile.dev      "Development Dockerfile (builds from local source) ... For developers"
+
+    => following operations.md:17 and operations.md:191-203 exactly produces a scrape
+       target that 404s on every scrape, with nothing in the Chimera log explaining it.
+
+## Credits (this arm is otherwise healthy)
+
+    /v1/health/live       http=200  3.5ms   (no host env, no ~/.hermes mount, HOME=/tmp)
+    /v1/health            http=200  4.2ms   status=degraded, every provider named
+                                            "missing-credentials: no API key resolved"
+    POST /v1/deliberate   http=502  7.03s   no credentials: fails honestly and fast,
+                                            naming the missing key class; does not hang,
+                                            does not fake a 200.
+    /metrics              404 — reported by Prometheus as a scrape failure, invisible
+                            from inside the app.
+
+## Not filed
+
+* No PERF row: nothing on this arm is slow enough for a user to feel. The only number
+  is a one-time 104s image build (apt 14.2s + pip [full] 58.1s + export 28.7s), and a
+  1.74s warm rebuild. A win nobody can feel is not a finding.
+* No SKIPPED row minted: SKIPPED-INSTALL-CHIMERA-V2-21 already holds the bunker leg;
+  this arm adds the container arm and does not replace that row.
+
+## Teardown
+
+    docker rm -f chimera-dogfood-r31b ; docker rmi chimera-dogfood-r31b
+    (container stopped and image removed after this file was written; nothing left
+     listening on 8791)
