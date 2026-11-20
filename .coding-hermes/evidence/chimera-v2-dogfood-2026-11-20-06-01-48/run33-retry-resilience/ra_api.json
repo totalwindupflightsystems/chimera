@@ -1,0 +1,1 @@
+{"id":"chatcmpl-72a0d9b29fac44f7","object":"chat.completion","created":1795163208,"model":"auto","choices":[{"index":0,"message":{"role":"assistant","content":"STUB-OK-m1"},"finish_reason":"stop"}],"usage":{"prompt_tokens":33,"completion_tokens":21,"total_tokens":54},"chimera_format_negotiation":{"requested":"json_schema","served":null},"chimera_degraded_reasons":[]}

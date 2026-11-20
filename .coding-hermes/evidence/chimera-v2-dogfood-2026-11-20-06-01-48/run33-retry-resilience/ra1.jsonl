@@ -1,0 +1,5 @@
+{"n": 1, "t": 0.9464, "status": 429, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+{"n": 2, "t": 1.9481, "status": 429, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+{"n": 3, "t": 2.9496, "status": 200, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+{"n": 4, "t": 2.9593, "status": 200, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+{"n": 5, "t": 3.0064, "status": 200, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}

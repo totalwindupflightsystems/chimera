@@ -1,0 +1,23 @@
+### 1. healthy upstream (budget=0): cold + warm
+  [clean_cold] http=200 wall=0.104834s bytes=369
+{"id":"chatcmpl-a902b6640c444e93","object":"chat.completion","created":1795163432,"model":"auto","choices":[{"index":0,"message":{"role":"assistant","content":"STUB-OK-m1"},"finish_reason":"stop"}],"usage":{"prompt_tokens":33,"completion_tokens":21,"total_tokens":54},"chimera_format_negotiation":{"r
+
+  [clean_warm] http=200 wall=0.111721s bytes=369
+{"id":"chatcmpl-d8fbac242a794af4","object":"chat.completion","created":1795163432,"model":"auto","choices":[{"index":0,"message":{"role":"assistant","content":"STUB-OK-m1"},"finish_reason":"stop"}],"usage":{"prompt_tokens":33,"completion_tokens":21,"total_tokens":54},"chimera_format_negotiation":{"r
+
+  upstream arrivals: 6
+### 2. one transient blip (budget=2, warm process): the 429-then-200 case
+  [blip_warm] http=200 wall=2.107657s bytes=369
+{"id":"chatcmpl-eb0ded83fc8543b4","object":"chat.completion","created":1795163436,"model":"auto","choices":[{"index":0,"message":{"role":"assistant","content":"STUB-OK-m1"},"finish_reason":"stop"}],"usage":{"prompt_tokens":33,"completion_tokens":21,"total_tokens":54},"chimera_format_negotiation":{"r
+
+  upstream arrivals: 5
+{"n": 1, "t": 0.9615, "status": 429, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+{"n": 2, "t": 1.9636, "status": 429, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+{"n": 3, "t": 2.9662, "status": 200, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+{"n": 4, "t": 2.972, "status": 200, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+{"n": 5, "t": 3.019, "status": 200, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+### 3. provider hard-down (budget=99): what the user sees after retries exhaust
+  [down_warm] http=502 wall=30.084067s bytes=261
+{"error":{"message":"Deliberation failed: no usable answer produced. Upstream error: mock/m1 call failed after 3 attempts: litellm.RateLimitError: RateLimitError: OpenAIException - stub rate limit (429)","type":"upstream_error","request_id":"5c56539f37aa4d47"}}
+
+  upstream arrivals: 36

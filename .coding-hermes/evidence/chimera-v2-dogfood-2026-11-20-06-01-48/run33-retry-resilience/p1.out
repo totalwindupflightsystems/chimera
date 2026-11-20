@@ -1,0 +1,2 @@
+{"model": "mock/m1", "litellm_model": "openai/m1", "response_format_type": "none", "event": "gateway_call", "level": "debug", "timestamp": "2026-11-20T08:17:09.949852Z"}
+{'i': 0, 't0': 8303.9719, 'ok': True, 'dt': 5.332, 'text': 'STUB-OK-m1'}

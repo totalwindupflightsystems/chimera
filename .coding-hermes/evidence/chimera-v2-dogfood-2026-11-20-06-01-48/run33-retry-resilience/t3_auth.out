@@ -1,0 +1,3 @@
+{"model": "mock/m1", "litellm_model": "openai/m1", "response_format_type": "none", "event": "gateway_call", "level": "debug", "timestamp": "2026-11-20T08:23:17.449704Z"}
+{"model": "mock/m1", "error": "litellm.AuthenticationError: AuthenticationError: OpenAIException - Incorrect API key provided", "attempt": 1, "event": "gateway_non_retryable", "level": "debug", "timestamp": "2026-11-20T08:23:19.994994Z"}
+{'i': 0, 't0': 8671.4717, 'ok': False, 'dt': 2.545, 'err': "GatewayError: mock/m1 call failed: provider 'mock' rejected the credentials or none were found: set CHIMERA_LOCAL_FIXTURE_KEY (or the variable named by providers.mock.api_key_env). upstream error: litellm.AuthenticationError: Authenti"}

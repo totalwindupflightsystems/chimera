@@ -1,0 +1,12 @@
+retry-after=5 budget=2 http=200 wall=10.113688s arrivals=5
+--- upstream arrivals (stub clock, seconds since stub start) ---
+{"n": 1, "t": 0.9581, "status": 429, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+{"n": 2, "t": 5.9613, "status": 429, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+{"n": 3, "t": 10.9668, "status": 200, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+{"n": 4, "t": 10.9749, "status": 200, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+{"n": 5, "t": 11.0216, "status": 200, "model": "m1", "path": "/v1/chat/completions", "key": "e-only"}
+--- gaps ---
+  n=2 gap=5.0032s
+  n=3 gap=5.0055s
+  n=4 gap=0.0081s
+  n=5 gap=0.0467s

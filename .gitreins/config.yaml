@@ -24,6 +24,10 @@ guards:
   # 180.25s) and the hook still blocked it twice with "Tests timed out after
   # 180s". 600s is a ceiling, not a target: a hung suite still fails.
   test_timeout: 600
+  # INT-CI-021: hook_timeout must exceed test_timeout, or the guard cuts itself
+  # off mid-suite and reports a fail-open PASS (it warns and raises the budget
+  # for the single run, but the source has to be fixed). 900 > 600.
+  hook_timeout: 900
   dead_code: false
   skylos: false
   lsp: true
@@ -77,15 +81,16 @@ evaluator:
 
 defaults:
   model: deepseek-v4-flash
-  provider: deepseek-foreman
-  api_key_env: GITREINS_LLM_API_KEY
+  # INT-CI-021: `provider` and `api_key_env` are not GitReins config keys (the
+  # schema ignores them with a WARN that degrades every guard run). The judge
+  # lane is resolved from GITREINS_LLM_PROVIDER / GITREINS_LLM_BASE_URL /
+  # GITREINS_LLM_API_KEY in the environment — set those, not this block.
+  security_scan:
+    enabled: true
+    cve_source: nvd
+    min_confidence: 0.5
 
 history:
   enabled: true
   storage: git
   max_verdicts: 1000
-
-security_scan:
-  enabled: true
-  cve_source: nvd
-  min_confidence: 0.5
