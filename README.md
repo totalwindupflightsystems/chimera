@@ -243,6 +243,7 @@ Detailed guides live in `docs/`:
 | [docs/EDGE_CASES.md](docs/EDGE_CASES.md) | Edge cases and behavior notes |
 | [docs/FAILURE_RESILIENCE.md](docs/FAILURE_RESILIENCE.md) | Failure handling and resilience design |
 | [docs/RESILIENCE.md](docs/RESILIENCE.md) | Resilience guarantees and degradation semantics |
+| [docs/operations.md](docs/operations.md) | **Operations guide** — deploy, health probes, Prometheus `/metrics`, logs, backup, incident path |
 | [docs/LOCAL_CI.md](docs/LOCAL_CI.md) | Run the CI suite locally with `act` (ruff + tests, same workflow as CI) |
 
 *Full docs index, including historical artifacts and dogfood logs: [docs/README.md](docs/README.md).*
@@ -353,6 +354,35 @@ Health probes (all return JSON):
 - http://localhost:8765/v1/health — health check (`healthy` / `degraded`); see below
 - http://localhost:8765/v1/health/ready — readiness probe (200 when ≥1 provider reachable, 503 otherwise)
 - http://localhost:8765/v1/health/live — liveness probe (always 200 when alive)
+
+**Prometheus metrics: `GET /metrics` on the API listener.** The API serves a
+scrape surface on the listener it already runs — no extra port, no sidecar
+exporter:
+
+- http://localhost:8765/metrics — request/error/latency metrics in the
+  Prometheus text exposition format (0.0.4), served as `text/plain`; registered
+  with `include_in_schema=False`, so it appears in neither `/docs` nor
+  `/openapi.json`.
+
+Auth contract: **keyless**, by the same mechanism as the health probes and the
+agent card — the handler carries no `require_api_key` dependency
+(`src/chimera/api/server.py`, the `@app.get("/metrics", include_in_schema=False)`
+route; auth is attached per route, so a route without the dependency is never
+gated). A scrape therefore works with `auth.enabled: true` and no credential;
+sending the bearer key is harmless, and every `/v1/*` data route still answers
+`401` without it. The keyless paths are described in
+[docs/SECURITY.md → Unauthenticated Endpoints](docs/SECURITY.md#unauthenticated-endpoints)
+(that list does not yet name `/metrics`; the route is ungated, which is what the
+scrape relies on). Verify on your own deployment:
+`curl -o /dev/null -w '%{http_code}' localhost:8765/metrics` → `200`.
+
+Families: `chimera_requests_total` (counter, labels `method`/`route`/`status`
+class), `chimera_request_errors_total` (counter, `reason` =
+`client_error`/`server_error`/`exception`), `chimera_request_duration_seconds`
+(histogram, 0.005–60 s buckets). `route` is the route template, not the raw
+path, so cardinality stays bounded, and scraping does not count itself. The full
+families table, a `prometheus.yml` scrape snippet, and the three signals worth
+alerting on live in [docs/operations.md](docs/operations.md#metrics).
 
 Agent discovery (A2A-style, keyless like the health probes):
 [http://localhost:8765/.well-known/agent-card.json](http://localhost:8765/.well-known/agent-card.json)
