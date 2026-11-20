@@ -1,0 +1,60 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-20-14-39-27",
+  "block": "DF-CHIMERA-V2-135 (resume: named in tick chimera-v2-foreman-2026-11-20-10-24-58 block event, still pending)",
+  "wave_budget": 1,
+  "slots": 1,
+  "slots_calc": "max(1, min(6, 16 - ceil(20.67))) = 1 (loaded box) AND scheduler WAVE_BUDGET=1",
+  "wave_size": 1,
+  "path": "serial",
+  "why_serial": "WAVE_BUDGET=1 ceiling plus load 20.67 on 16 cores gives one slot; a loaded box means one worker, not idle",
+  "base_sha": "a0a8a270db9937ef3c1feea2667bcf6554b5f37d",
+  "rows": [
+    {
+      "task_id": "DF-CHIMERA-V2-135",
+      "disposition": "closed - worker openai/gpt-6.1-terra@xkiro (authoritative worker_model), one attempt, commit 3a745ac, merged a47cc71",
+      "premise_verified": "criterion 1 already green at HEAD: docs/README.md:66-67 carry run33+run34 index lines (landed via 6928e58), tests/test_docs_index.py 67 passed locally; remaining scope = criteria 2-4 (RED-proof arm, identify+louden 194dcaf bypass, clean-clone suite)",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-135",
+      "branch": "wt/DF-CHIMERA-V2-135"
+    },
+    {
+      "task_id": "DF-CHIMERA-V2-102",
+      "disposition": "closed - verdict backfill (no new dispatch): work commit ee707b9 landed in tick 492 wave; first judge INCOMPLETE on evaluator LLM DNS failure; re-judge tier2 PASS",
+      "premise_verified": "judge job-0e66776ffb45437b85fa30949b1824ae finished 08:12 INCOMPLETE (evaluator LLM DNS failure to api.fireworks.ai - infra, not a code verdict); DNS resolved as of this tick, gitreins task complete re-run succeeded",
+      "worktree": null,
+      "branch": null
+    }
+  ],
+  "workers": [
+    {
+      "task_id": "DF-CHIMERA-V2-135",
+      "model": "openai/gpt-6.1-terra",
+      "provider": "xkiro",
+      "pid": 905569,
+      "commit": "3a745ac",
+      "exit_code": 0,
+      "wall_minutes": 52
+    }
+  ],
+  "local_gate": "PASS - merged tree a47cc71: ruff check clean, ruff format clean, full suite 2302 passed / 62 skipped / 0 failed (162.91s); commit-time gitreins guard 5/5 in the worktree; foreman RED probe independently re-run (checker exit 1, hook exit 1, probe never committed)",
+  "remote_ci_before_closeout": "green - last 3 github runs on main success (12:37 tick-492 closeout run included); fresh runs triggered by this tick's pushes",
+  "judge": {
+    "DF-CHIMERA-V2-135": "tier2 PASS (all 4 criteria verified with fresh command output); verdict dir .gitreins/history/2026-11-20/254a489b (printed b7d950b0)",
+    "DF-CHIMERA-V2-102": "tier2 PASS COMPLETE (per-criterion code citations); verdict dir .gitreins/history/2026-11-20/56d0ba99 (printed 7662b91a)"
+  },
+  "judge_note": "top-level passed=false on both verdicts = tier1 diff-mode index artifact (no source files staged for the judge's diff lane), same shape as all four tick-492 sibling verdicts; tier1 authority = commit-time guard PASS on the real diffs",
+  "merge": {
+    "merge_commit": "a47cc71",
+    "strategy": "--no-ff serial (single worker)",
+    "deletions_vs_main": 0,
+    "gates_rerun_on_merged_tree": true
+  },
+  "backfill": {
+    "task_id": "DF-CHIMERA-V2-102",
+    "verdict_dir": ".gitreins/history/2026-11-20/56d0ba99",
+    "tier2": true
+  },
+  "status": "finished",
+  "dispatched_at": "2026-11-20T14:47:12Z",
+  "finished_at": "2026-11-20T16:01:30Z",
+  "closeout_sha": "PENDING"
+}
