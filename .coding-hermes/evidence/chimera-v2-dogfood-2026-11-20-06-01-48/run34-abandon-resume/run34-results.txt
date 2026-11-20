@@ -1,0 +1,44 @@
+== run34 abandon/resume  2026-11-20T04:15:12-05:00
+stub pid=1202517 srv pid=1202518 port=18791 delay=4s max_concurrent=1
+{"status":"alive","uptime_models":1,"commit":"20e7598","version":"0.3.0"}
+A1 control wall=8.54s http=200 queue=1
+A1 answer=STUB-OK-## Original user request
+A2 abandoned client: curl rc=28 (28 = client gave up) after 2.02s, body=000
+A3 retry-during-orphan wall=14.18s queue=2
+A3 answer=STUB-OK-## Original user request
+A4 metrics POST /v1/deliberate rows:
+    chimera_requests_total{method="POST",route="/v1/deliberate",status="2xx"} 3
+A5 CLI Ctrl-C at 2s: exit=124 wall=4.11s stderr_bytes=666 out_bytes=0
+A5 stderr: {"source": "preset", "stages": ["worker_1", "aggregator"], "event": "engine_dispatched", "request_id": "86a57679cb1d49c6", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:41.169024Z"}|[92m04:15:44 - LiteLLM:INFO[0m: utils.py:4023 - |LiteLLM completion() model= m1; provider =
+A6 metrics POST /v1/deliberate rows (final):
+    chimera_requests_total{method="POST",route="/v1/deliberate",status="2xx"} 3
+A6 duration histogram for POST /v1/deliberate (final):
+    chimera_request_duration_seconds_sum{method="POST",route="/v1/deliberate"} 30.746895807002147
+    chimera_request_duration_seconds_count{method="POST",route="/v1/deliberate"} 3
+A7 upstream arrivals per marker (3 stages = dispatcher+worker+aggregator):
+          3 ## Original user request
+          1 ## User request ABORT1-n
+          1 ## User request AFTER1-n
+          1 ## User request CTRL1-na
+A7 last upstream service times:
+    served=1 t_out=7.5402 marker=## User request CTRL1-na
+    served=2 t_out=11.564 marker=## Original user request
+    served=3 t_out=15.671 marker=## User request ABORT1-n
+    served=4 t_out=19.6908 marker=## Original user request
+    served=5 t_out=23.7401 marker=## User request AFTER1-n
+    served=6 t_out=27.7923 marker=## Original user request
+A8 still-alive upstream calls at exit: 6 arrivals, 6 served
+A9 server log tail:
+    
+    LiteLLM completion() model= m1; provider = openai
+    {"stage": "worker_1", "kind": "worker", "model": "mock/m1", "latency_ms": 4045, "tokens": 18, "started_at": 11806.465996177, "ended_at": 11810.511855725, "event": "engine_stage_done", "request_id": "d40fbe5580504592", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:36.490198Z"}
+    {"stage": "aggregator", "kind": "aggregator", "model": "mock/m1", "n_inputs": 1, "structured": false, "max_prompt_tokens": null, "event": "aggregator_execute", "request_id": "d40fbe5580504592", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:36.490413Z"}
+    [92m04:15:36 - LiteLLM:INFO[0m: utils.py:4023 - 
+    LiteLLM completion() model= m1; provider = openai
+    
+    LiteLLM completion() model= m1; provider = openai
+    {"stage": "aggregator", "kind": "aggregator", "model": "mock/m1", "latency_ms": 4057, "tokens": 18, "started_at": 11810.512439446, "ended_at": 11814.569905074, "event": "engine_stage_done", "request_id": "d40fbe5580504592", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:40.548470Z"}
+    INFO:     127.0.0.1:46792 - "POST /v1/deliberate HTTP/1.1" 200 OK
+    INFO:     127.0.0.1:55310 - "GET /metrics HTTP/1.1" 200 OK
+    INFO:     127.0.0.1:52366 - "GET /metrics HTTP/1.1" 200 OK
+== done

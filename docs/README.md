@@ -63,4 +63,6 @@ against the live deployment, **not** a description of current behavior.
 - [dogfood/2026-11-16-run29-library-integration.md](dogfood/2026-11-16-run29-library-integration.md) — run 29, in-process Python API: Engine + LiteLLMGateway as a library (2026-11-16)
 - [dogfood/2026-11-16-run30-budget-perf-integration.md](dogfood/2026-11-16-run30-budget-perf-integration.md) — run 30, per-stage budget surface + the cost of an explicit formation (2026-11-16)
 - [dogfood/2026-11-20-run31-provider-resilience-integration.md](dogfood/2026-11-20-run31-provider-resilience-integration.md) — run 31, provider resilience: one dead aggregator discards the whole run (2026-11-20)
+- [dogfood/2026-11-20-run33-retry-resilience-integration.md](dogfood/2026-11-20-run33-retry-resilience-integration.md) — run 33, retry layer: one call is three upstream requests, a recovered 429 is invisible (2026-11-20)
+- [dogfood/2026-11-20-run34-abandon-resume-integration.md](dogfood/2026-11-20-run34-abandon-resume-integration.md) — run 34, walking away: the abandoned run keeps the slot, keeps spending, and is counted as a success (2026-11-20)
 - [dogfood/diagnostics.md](dogfood/diagnostics.md) — build/diagnostic trail behind the 2026-08-03 run

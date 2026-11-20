@@ -1,0 +1,55 @@
+warning: the CHIMERA_API_KEY env var is set but auth is disabled — all endpoints are unauthenticated. The env var only takes effect with auth.enabled=true in chimera.yaml (or the CHIMERA_AUTH_ENABLED toggle); exporting it alone does not enable authentication.
+INFO:     Started server process [1202518]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:18791 (Press CTRL+C to quit)
+[92m04:15:15 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= gpt-3.5-turbo; provider = openai
+
+LiteLLM completion() model= gpt-3.5-turbo; provider = openai
+INFO:     127.0.0.1:45854 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45856 - "GET /health HTTP/1.1" 200 OK
+{"source": "preset", "stages": ["worker_1", "aggregator"], "event": "engine_dispatched", "request_id": "8f9dfe5477414493", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:15.948211Z"}
+[92m04:15:15 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"stage": "worker_1", "kind": "worker", "model": "mock/m1", "latency_ms": 4318, "tokens": 18, "started_at": 11789.970428363, "ended_at": 11794.288525228, "event": "engine_stage_done", "request_id": "8f9dfe5477414493", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:20.267084Z"}
+{"stage": "aggregator", "kind": "aggregator", "model": "mock/m1", "n_inputs": 1, "structured": false, "max_prompt_tokens": null, "event": "aggregator_execute", "request_id": "8f9dfe5477414493", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:20.267339Z"}
+[92m04:15:20 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"stage": "aggregator", "kind": "aggregator", "model": "mock/m1", "latency_ms": 4046, "tokens": 18, "started_at": 11794.289330258, "ended_at": 11798.335777094, "event": "engine_stage_done", "request_id": "8f9dfe5477414493", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:24.314271Z"}
+INFO:     127.0.0.1:45870 - "POST /v1/deliberate HTTP/1.1" 200 OK
+{"source": "preset", "stages": ["worker_1", "aggregator"], "event": "engine_dispatched", "request_id": "f3347bbf60114181", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:24.365970Z"}
+[92m04:15:24 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"stage": "worker_1", "kind": "worker", "model": "mock/m1", "latency_ms": 4017, "tokens": 18, "started_at": 11798.388194762, "ended_at": 11802.405733209, "event": "engine_stage_done", "request_id": "f3347bbf60114181", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:28.384204Z"}
+{"stage": "aggregator", "kind": "aggregator", "model": "mock/m1", "n_inputs": 1, "structured": false, "max_prompt_tokens": null, "event": "aggregator_execute", "request_id": "f3347bbf60114181", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:28.384435Z"}
+[92m04:15:28 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"stage": "aggregator", "kind": "aggregator", "model": "mock/m1", "latency_ms": 4058, "tokens": 18, "started_at": 11802.406448784, "ended_at": 11806.464705687, "event": "engine_stage_done", "request_id": "f3347bbf60114181", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:32.443047Z"}
+{"source": "preset", "stages": ["worker_1", "aggregator"], "event": "engine_dispatched", "request_id": "d40fbe5580504592", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:32.443790Z"}
+[92m04:15:32 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"stage": "worker_1", "kind": "worker", "model": "mock/m1", "latency_ms": 4045, "tokens": 18, "started_at": 11806.465996177, "ended_at": 11810.511855725, "event": "engine_stage_done", "request_id": "d40fbe5580504592", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:36.490198Z"}
+{"stage": "aggregator", "kind": "aggregator", "model": "mock/m1", "n_inputs": 1, "structured": false, "max_prompt_tokens": null, "event": "aggregator_execute", "request_id": "d40fbe5580504592", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:36.490413Z"}
+[92m04:15:36 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"stage": "aggregator", "kind": "aggregator", "model": "mock/m1", "latency_ms": 4057, "tokens": 18, "started_at": 11810.512439446, "ended_at": 11814.569905074, "event": "engine_stage_done", "request_id": "d40fbe5580504592", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:40.548470Z"}
+INFO:     127.0.0.1:46792 - "POST /v1/deliberate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55310 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52366 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1202518]

@@ -1271,3 +1271,50 @@ compensated locally in a real fresh environment — wheel from HEAD, clean CPyth
 `chimera --version` rc=0, `config init`, and one live run that failed on provider billing in
 10.7 s. That compensation is also the P1's second reproduction: the config-init default
 aggregator is a dead key, so a brand-new user's first command exits 2.
+
+## 2026-11-20 — run 34 (abandon / resume, live + scratch + fresh machine)
+
+**Question:** what does the deployment pay when a caller gives up?
+
+**Arm A — live service (`:8765`, build 20e7598, PID 2584)**, same minute:
+`for f in speed simple auto; do curl -s -o /tmp/b.$f -w "%{http_code} %{time_total}" ... /v1/deliberate; done`
+→ `speed 502 2.68s`, `simple 502 2.27s`, `auto 502 3.36s`; body: `no usable answer produced. Upstream
+error: deepseek/deepseek-v4-flash call failed: ... Insufficient Balance`.
+Same-minute `/v1/health`: `status=degraded`, `unhealthy_providers=[cliproxy,deepseek]`,
+`providers_configured=8`, `models_configured=48`, `details.providers.deepseek.error_class=quota`.
+Override arms (`dispatcher_model`/`aggregator_model` = `z-ai/glm-5`) → still 502 in 2.29s / 2.34s
+(vs 2.34s un-overridden): the override does not reach the failing stage (`lock_aggregator: true`).
+
+**Arm B — scratch instance on a slow stub**, `fixture.yaml` (`queue.max_concurrent: 1`,
+`queue.max_queue_depth: 4`, `providers.mock.base_url: http://127.0.0.1:18091/v1`,
+`api_key_env: CHIMERA_LOCAL_FIXTURE_KEY`, `provider_discovery: false`) + `stub_slow.py`
+(4 s per call, arrival/serve timestamps on the stub's clock). Probe: `bash probe_abandon.sh`.
+- control: 1 worker + aggregator, wall **8.54 s**, HTTP 200, `X-Chimera-Queue-Position: 1`;
+  stub arrivals `t_in 3.5379 → t_out 7.5402`, `t_in 7.5639 → t_out 11.564` = 2 calls × 4.0 s.
+- abandon: client gone at **t+2.02 s** (`curl rc=28`), yet arrival 1 served at t_out 7.5402 and
+  arrival 2 at t_out 11.564 — the **first upstream call started 2.0 s after the client left, the
+  second 6.0 s after**.
+- retry (new request after abandoning): wall **14.18 s**, `X-Chimera-Queue-Position: 2`, first
+  arrival at t_in 19.74 → **6.06 s** waiting for the slot the dead request still held.
+- CLI arm: Ctrl-C at 2 s did **not** end the run; `timeout` killed it at 4.11 s (exit 124) with
+  `engine_dispatched` logged 0.2 s earlier — upstream arrival **UNRESOLVED**.
+- `/metrics` after the arm: `chimera_requests_total{status="2xx"} 3`, duration sum **30.7469**
+  over count 3 — the discarded run is booked as a delivered success.
+
+**Arm C — perf read (no PERF row).** The stub floor is 2 × 4.0 s = 8.00 s, control wall 8.54 s,
+so Chimera's own overhead on this path is **≤0.55 s (≈6 % of wall)**. Nothing here is slow enough
+that a user would feel it: the wall is the model, not the product. The one user-felt time cost in
+this arm is the **+5.64 s (+66 %)** the next caller waits behind an abandoned run — filed as
+`DF-CHIMERA-V2-132` (a resource/correctness defect), not as a PERF row.
+
+**Arm D — fresh machine (install leg, `bunker-qa.sh`)** `launch /home/kara/chimera-v2 --keep` →
+agent 1434cbce, clean clone; `collect --evidence /tmp/bunker-qa-evidence-20261120T092905Z-1812609.jsonl`
+→ cells: `launch OK`, `repo-head OK`, `toolchain-bootstrap OK`, `fresh-install OK`, `lint OK`,
+`docker_build OK`, `compose_config OK`, **`tests FAIL (rc=1)`**. First failure on the clean box is
+`test_tracked_docs_file_is_reachable[docs/dogfood/2026-11-20-run33-retry-resilience-integration.md]`
+— the same red as a local `pytest tests/test_docs_index.py -x -q` (1 failed, 49 passed). The install
+works; the tree is red. Filed as `DF-CHIMERA-V2-135` (P1).
+
+**Docs index repair (this lane, docs only):** added run 33 and run 34 lines to `docs/README.md`
+after the detector proved run 33's report was referenced nowhere (`git log -S 'run33-retry-resilience'
+-- docs/README.md` → empty). No `src/` file touched.

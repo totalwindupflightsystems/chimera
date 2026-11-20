@@ -76,7 +76,12 @@ description: >-
   correlated across concurrent callers, a recovered 429 leaves no log line
   and no metric, and a provider's Retry-After overrides retry.base_delay_ms
   with no cap — with the arrival-count method that produced the numbers.
-version: 1.18.0
+  v1.19.0 adds the 2026-11-20 run-34 WALK-AWAY section: an abandoned
+  request keeps the only concurrency slot and keeps buying upstream calls,
+  your retry waits behind it (+66% wall), /metrics books it as a delivered
+  2xx, and Ctrl-C on the CLI does not end the run — plus the
+  queue-position/timing method that produced those numbers.
+version: 1.19.0
 category: software-development
 ---
 

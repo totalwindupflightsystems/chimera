@@ -1,0 +1,25 @@
+provider_discovery: false
+queue:
+  max_concurrent: 1
+  max_queue_depth: 4
+providers:
+  mock:
+    base_url: http://127.0.0.1:18091/v1
+    api_key_env: CHIMERA_LOCAL_FIXTURE_KEY
+models:
+  mock/m1:
+    provider: mock
+    cost_tier: budget
+    categories:
+      code: 90
+defaults:
+  dispatcher: mock/m1
+  default_worker: mock/m1
+  default_aggregator: mock/m1
+formations:
+  simple:
+    workers: 1
+    aggregator: default
+observability:
+  log_level: info
+  use_stdout: false

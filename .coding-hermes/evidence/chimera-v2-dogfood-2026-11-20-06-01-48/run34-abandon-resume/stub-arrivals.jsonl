@@ -1,0 +1,13 @@
+{"stub_start": 18091, "delay_s": 4.0}
+{"arrival": 1, "t_in": 3.5379, "model": "m1", "marker": "## User request CTRL1-na", "delay_s": 4.0}
+{"served": 1, "t_out": 7.5402, "marker": "## User request CTRL1-na"}
+{"arrival": 2, "t_in": 7.5639, "model": "m1", "marker": "## Original user request", "delay_s": 4.0}
+{"served": 2, "t_out": 11.564, "marker": "## Original user request"}
+{"arrival": 3, "t_in": 11.6622, "model": "m1", "marker": "## User request ABORT1-n", "delay_s": 4.0}
+{"served": 3, "t_out": 15.671, "marker": "## User request ABORT1-n"}
+{"arrival": 4, "t_in": 15.6907, "model": "m1", "marker": "## Original user request", "delay_s": 4.0}
+{"served": 4, "t_out": 19.6908, "marker": "## Original user request"}
+{"arrival": 5, "t_in": 19.7399, "model": "m1", "marker": "## User request AFTER1-n", "delay_s": 4.0}
+{"served": 5, "t_out": 23.7401, "marker": "## User request AFTER1-n"}
+{"arrival": 6, "t_in": 23.7922, "model": "m1", "marker": "## Original user request", "delay_s": 4.0}
+{"served": 6, "t_out": 27.7923, "marker": "## Original user request"}

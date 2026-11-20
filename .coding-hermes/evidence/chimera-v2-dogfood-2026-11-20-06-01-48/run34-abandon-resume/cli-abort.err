@@ -1,0 +1,10 @@
+{"source": "preset", "stages": ["worker_1", "aggregator"], "event": "engine_dispatched", "request_id": "86a57679cb1d49c6", "formation": "simple", "level": "info", "timestamp": "2026-11-20T09:15:41.169024Z"}
+[92m04:15:44 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+/home/kara/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py:1921: RuntimeWarning: coroutine 'OpenAIChatCompletion.acompletion' was never awaited
+  handle = self._ready.popleft()
+RuntimeWarning: Enable tracemalloc to get the object allocation traceback
+
+Aborted!

@@ -1,0 +1,8 @@
+QA-HEAD=20e7598f32eedcc75b0eb4d3f26f07b628f94449 pull=clone dirty — pull skipped, testing recorded sha
+→ QA HEAD: 20e7598f32eedcc75b0eb4d3f26f07b628f94449 (clone dirty — pull skipped, testing recorded sha)
+→ QA LAUNCH project: chimera-v2 — detached battery on bunker-mvp (ttl 4h)
+→ agent=1434cbce @ bunker-mvp (tailscale)
+→ CELL fresh-install: sync repo → ~/qa-chimera-v2
+→ QA launch complete — no cells waited on locally (phase B: collect --evidence /tmp/bunker-qa-evidence-20261120T092905Z-1812609.jsonl)
+Total time: ? | Passed: 1 | Failed: 0 | Audited: 1 | Findings: 0 | NotVerified: 0
+LAUNCHED agent=1434cbce evidence=/tmp/bunker-qa-evidence-20261120T092905Z-1812609.jsonl

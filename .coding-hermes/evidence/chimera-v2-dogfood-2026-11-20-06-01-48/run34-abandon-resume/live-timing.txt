@@ -1,0 +1,8 @@
+arm=speed http=502arm=speed wall=2.68s
+ body={"error":{"message":"Deliberation failed: no usable answer produced. Upstream error: deepseek/deepseek-v4-flash call failed: litellm.BadRequestError: 
+arm=simple http=502arm=simple wall=2.27s
+ body={"error":{"message":"Deliberation failed: no usable answer produced. Upstream error: deepseek/deepseek-v4-flash call failed: litellm.BadRequestError: 
+arm=auto http=502arm=auto wall=3.36s
+ body={"error":{"message":"Deliberation failed: no usable answer produced. Upstream error: deepseek/deepseek-v4-flash call failed: litellm.BadRequestError: 
+arm=default http=502arm=default wall=2.34s
+arm=locked_override http=502arm=locked_override wall=2.29s
