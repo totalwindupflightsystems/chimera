@@ -60,6 +60,8 @@ against your own deployment, and see `GET /openapi.json` for the routed surface)
 - `GET /docs` and `GET /docs/oauth2-redirect` — Swagger UI
 - `GET /redoc` — ReDoc UI
 - `GET /openapi.json` — machine-readable spec
+- `GET /metrics` — Prometheus text exposition, served from the API listener for
+  Prometheus scrapes; excluded from the OpenAPI schema
 
 Everything else requires the key: `POST /v1/deliberate`,
 `POST /v1/chat/completions`, and the **entire** `/web/*` surface —
