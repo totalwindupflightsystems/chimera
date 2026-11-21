@@ -8,8 +8,14 @@
   "slots_used": 2,
   "reason": "resumed block DF-CHIMERA-V2-135 named by tick chimera-v2-foreman-2026-11-21-11-59-37 (24 ready rows left). slots=2 from the box arithmetic; took the 2 highest-value mutually independent P2 rows on disjoint files.",
   "base_sha": "fb04a60",
-  "independence_evidence": "DF-116 touches src/chimera/api/server.py (chat_completions + shared timeout-header parser, the deliberate-side parser at 1047-1103), tests/test_server_coverage.py, docs/CONFIG.md. DF-127 touches src/chimera/gateway.py:986-993 (retry backoff/jitter), tests/test_gateway*.py, docs/RESILIENCE.md. Zero file overlap, zero depends_on edges (neither row carries depends_on). Formatting/formation rows (DF-101/103/105/106/107/109) were deliberately excluded: they share the chimera.yaml.example + CONFIG.md seam one-per-wave.",
+  "independence_evidence": "DF-116 touches src/chimera/api/server.py (chat_completions + shared timeout-header parser), tests/test_server_coverage.py. DF-127 touches src/chimera/gateway.py:986-993 (retry backoff/jitter), tests/test_gateway_retry_jitter.py, docs/RESILIENCE.md. Zero file overlap, zero depends_on edges. Formation rows (DF-101/103/105/106/107/109) excluded: they share the chimera.yaml.example + CONFIG.md seam one-per-wave.",
   "seat_requested": "openai/gpt-6.1-terra @ xkiro (configured worker model, authoritative)",
+  "seat_incident": {
+    "requested": "openai/gpt-6.1-terra @ xkiro",
+    "observed": "two dispatches (one per row, first pair) exited after ~75-97s with 'Hermes couldn't start the model connection: Gateway did not answer session.create'; a bare probe 'hermes -z PROBE_OK -m openai/gpt-6.1-terra --provider xkiro' hung past 180s",
+    "actual": "cx/gpt-6.1-terra @ 9router (probe answered PROBE_OK in seconds; the same model family through the router in front of xkiro)",
+    "note": "DF-116's first 9router dispatch ALSO died with the same session.create error while DF-127's concurrent dispatch succeeded; the plain retry of the identical command succeeded, so the handshake is transient under load, not a seat refusal"
+  },
   "workers": [
     {
       "row": "DF-CHIMERA-V2-116",
@@ -18,8 +24,11 @@
       "branch": "wt/DF-CHIMERA-V2-116",
       "base_sha": "fb04a60",
       "brief": "/tmp/brief-DF-CHIMERA-V2-116-t1321.txt",
-      "gitreins_task": "DF-CHIMERA-V2-116 (created + started)",
-      "status": "dispatching"
+      "worker_commit": "767fe92",
+      "rebased_commit": "026e167",
+      "merge": "ff-only into main, pushed origin+github",
+      "judge": "1479f1a6 PASS (task complete verdict cfe27910)",
+      "status": "complete"
     },
     {
       "row": "DF-CHIMERA-V2-127",
@@ -28,14 +37,22 @@
       "branch": "wt/DF-CHIMERA-V2-127",
       "base_sha": "fb04a60",
       "brief": "/tmp/brief-DF-CHIMERA-V2-127-t1321.txt",
-      "gitreins_task": "DF-CHIMERA-V2-127 (created + started)",
-      "status": "dispatching"
+      "worker_commit": "8cfd2bc",
+      "rebased_commit": "2bed55f",
+      "merge": "ff-only into main, pushed origin+github",
+      "judge": "30e27b64 PASS; task complete verdict 66c395b5 PASS",
+      "status": "complete"
     }
   ],
+  "foreman_direct": {
+    "1cc5d78": "docs(skills): chimera-usage/SKILL.md no longer claims the jitter is hash(str(attempt)) — the judge flagged the stale claim as an uncovered failure path of DF-127"
+  },
+  "sibling_interference": "a releng lane pushed 57e298c (changelog/v0.3.0 notes) and then committed 2a12747 (board) in the SAME checkout mid-tick; both worker branches were rebased onto the new main before merging, and the board commit d5e998f was made before either merge so main never carried a stale tree",
   "carried_debt": [
-    "DF-CHIMERA-V2-126 landed (c13f079) with no tier-2 verdict yet",
+    "DF-CHIMERA-V2-126 landed (c13f079) with no tier-2 verdict yet — gitreins task still in_progress",
     "DF-CHIMERA-V2-131 landed (bbf8dce) with no tier-2 verdict yet",
-    "board duplicate row for DF-CHIMERA-V2-117 (3 copies) deduped to last-wins this tick before any board write"
+    "block DF-CHIMERA-V2-135 remains open: 22 ready rows after this tick"
   ],
-  "created_at": "2026-11-21T13:25:00-05:00"
+  "created_at": "2026-11-21T13:25:00-05:00",
+  "closed_at": "2026-11-21T15:05:00-05:00"
 }
