@@ -43,6 +43,7 @@ def test_metrics_endpoint_serves_prometheus_text(client) -> None:  # type: ignor
         "chimera_requests_total",
         "chimera_request_errors_total",
         "chimera_request_duration_seconds",
+        "chimera_retries_total",
     ):
         assert f"# TYPE {family}" in body
 

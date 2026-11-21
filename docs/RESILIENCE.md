@@ -49,7 +49,56 @@ retry:
 Each retry draws independent ±25% jitter to spread calls within a process and
 across processes, reducing thundering herds (without guaranteeing unique delays).
 The exponential delay is capped before jitter, so the actual delay can reach
-125% of `max_delay_ms`. Each retry is logged with attempt number, delay, and error.
+125% of `max_delay_ms`.
+
+### What a retry looks like to the operator
+
+A retry is visible **whether or not it rescues the call** — the ladder emits one
+event before the backoff sleep, so a call that recovered and a call that
+exhausted its budget both show the same per-attempt evidence.
+
+**Log line** — structlog event `gateway_retry`, at `warning`: the shipped
+`chimera.yaml.example` sets `observability.log_level: warning`, and an `info`
+line there would be invisible on a stock deployment (only `error`/`critical`
+silence it). One line is emitted per retried attempt, before the backoff sleep.
+
+| field | meaning |
+|---|---|
+| `model` | the model id that was attempted (`provider/model`) |
+| `provider` | the configured provider key |
+| `attempt` | 1-based index of the attempt that just failed |
+| `next_attempt` | the attempt the delay is paying for (`attempt + 1`) |
+| `delay_ms` | delay actually slept, **after** jitter (integer ms) |
+| `upstream_status` | HTTP status the provider answered with; `null` when it never answered (transport failure) |
+| `reason` | bounded cause, see the counter below |
+| `error` | truncated provider error text (≤200 chars) |
+
+A ladder that gives up emits one `gateway_retry_exhausted` **warning** after the
+last attempt, carrying `model`, `attempts` (the budget that was spent) and
+`error`.
+
+**Metric** — one counter family on `GET /metrics`, incremented once per
+*scheduled* retry (i.e. per `gateway_retry` line, never for a call that failed
+without retrying):
+
+```
+chimera_retries_total{reason="rate_limit"} 2
+```
+
+`reason` is a closed set — `rate_limit` (429), `server_error` (5xx), `timeout`,
+`network` (connection/DNS/TLS: the provider was never reached) and `other` — so
+a dashboard rule keeps working across provider dialects instead of minting a
+series per error string. The two-429-then-200 case the retry tests drive
+therefore leaves exactly two `gateway_retry` lines and
+`chimera_retries_total{reason="rate_limit"} 2`; an exhausted `max_attempts: 3`
+ladder over the same 429s also counts **2**, since the third attempt is the one
+that was retried *to*, not a retry itself.
+
+Alerting shape:
+
+```promql
+rate(chimera_retries_total{reason="rate_limit"}[5m]) > 0
+```
 
 ### How many provider requests a logical call can cost
 

@@ -379,10 +379,13 @@ scrape relies on). Verify on your own deployment:
 Families: `chimera_requests_total` (counter, labels `method`/`route`/`status`
 class), `chimera_request_errors_total` (counter, `reason` =
 `client_error`/`server_error`/`exception`), `chimera_request_duration_seconds`
-(histogram, 0.005–60 s buckets). `route` is the route template, not the raw
-path, so cardinality stays bounded, and scraping does not count itself. The full
-families table, a `prometheus.yml` scrape snippet, and the three signals worth
-alerting on live in [docs/operations.md](docs/operations.md#metrics).
+(histogram, 0.005–60 s buckets), and `chimera_retries_total` (counter, `reason`
+= `rate_limit`/`server_error`/`timeout`/`network`/`other`: one increment per
+upstream retry, so a transient 429 is visible instead of only slow). `route` is
+the route template, not the raw path, so cardinality stays bounded, and scraping
+does not count itself. The full families table, a `prometheus.yml` scrape
+snippet, and the signals worth alerting on live in
+[docs/operations.md](docs/operations.md#metrics).
 
 Agent discovery (A2A-style, keyless like the health probes):
 [http://localhost:8765/.well-known/agent-card.json](http://localhost:8765/.well-known/agent-card.json)

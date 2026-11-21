@@ -26,6 +26,11 @@ Design notes worth keeping:
 * **Streaming-safe.** The middleware is a bare ASGI wrapper, not
   ``BaseHTTPMiddleware``: it passes ``send`` straight through, so SSE bodies
   (``/web/.../stream``) are not buffered or re-framed by instrumentation.
+* **A retry is counted where it is scheduled.** ``chimera_retries_total{reason=...}``
+  is incremented by the gateway's retry ladder (``docs/RESILIENCE.md`` F7), once
+  per retried attempt — so an upstream 429 that the ladder rescues shows up as a
+  number instead of only as unexplained latency. It lives here (not in the
+  middleware) because a retry happens inside the gateway, below the HTTP layer.
 * **Thread-safe.** Handlers may run in a threadpool, so every mutation takes the
   registry lock. A ``reset`` exists only for tests.
 """
@@ -40,9 +45,12 @@ from typing import Any
 __all__ = [
     "DEFAULT_BUCKETS",
     "METRIC_PREFIX",
+    "RETRY_REASONS",
     "MetricsMiddleware",
     "classify_error",
+    "classify_retry",
     "observe_request",
+    "observe_retry",
     "render_metrics",
     "reset_metrics",
 ]
@@ -193,6 +201,25 @@ DURATION = _Histogram(
     "HTTP request duration in seconds, by route template.",
     ("method", "route"),
 )
+RETRIES = _Counter(
+    f"{METRIC_PREFIX}_retries_total",
+    "Upstream retry attempts (F7), by cause.",
+    ("reason",),
+)
+
+#: The bounded retry-cause vocabulary for ``chimera_retries_total{reason=...}``.
+#:
+#: Kept a closed set on purpose: the label describes WHY the ladder retried, so a
+#: dashboard rule (``rate(chimera_retries_total{reason="rate_limit"}[5m])``) keeps
+#: working across provider dialects. A free-form label would let one provider's
+#: exception prose mint a new time series per error.
+RETRY_REASONS: tuple[str, ...] = (
+    "rate_limit",  # HTTP 429
+    "server_error",  # HTTP 5xx
+    "timeout",  # the provider did not answer inside the configured read budget
+    "network",  # connection refused/reset, DNS, TLS — never reached the provider
+    "other",  # retryable but unclassified
+)
 
 
 def classify_error(status: int, reason: str | None = None) -> str | None:
@@ -209,6 +236,47 @@ def classify_error(status: int, reason: str | None = None) -> str | None:
     if status >= 400:
         return "client_error"
     return None
+
+
+def classify_retry(
+    status: int | None,
+    *,
+    timed_out: bool = False,
+    network_error: bool = False,
+) -> str:
+    """Return the bounded ``reason`` label for one retried upstream attempt (F7).
+
+    Callers pass what the exception itself exposes — the HTTP status the
+    provider answered with (``None`` when it never answered) plus the transport
+    class — so the label comes from data instead of from exception prose. That
+    matters because a provider's error body is free text: matching words like
+    "limit" would label a 500 as a quota event.
+
+    Precedence is worst-evidence-first: a status beats a transport guess (a 429
+    is a rate limit even if the client also timed out reading the body), and
+    ``other`` is the honest fallback for a retryable shape this function does
+    not recognise — never a fabricated cause.
+    """
+    if status == 429:
+        return "rate_limit"
+    if status is not None and status >= 500:
+        return "server_error"
+    if timed_out:
+        return "timeout"
+    if network_error:
+        return "network"
+    return "other"
+
+
+def observe_retry(reason: str) -> None:
+    """Count one upstream retry attempt under ``chimera_retries_total{reason=...}``.
+
+    Called by the gateway's retry ladder immediately before the backoff sleep,
+    i.e. once per *scheduled* retry: a call that never retried leaves no series,
+    and a retry whose follow-up attempt also fails is counted too — an operator
+    needs to see an exhausted ladder, not only a recovered one.
+    """
+    RETRIES.inc((reason,))
 
 
 def _status_label(status: int) -> str:
@@ -254,12 +322,12 @@ def observe_request(
 
 def render_metrics() -> str:
     """Render the whole registry in Prometheus text exposition format 0.0.4."""
-    return REQUESTS.render() + ERRORS.render() + DURATION.render()
+    return REQUESTS.render() + ERRORS.render() + DURATION.render() + RETRIES.render()
 
 
 def reset_metrics() -> None:
     """Drop every recorded series. Tests only — a live server never calls this."""
-    for metric in (REQUESTS, ERRORS):
+    for metric in (REQUESTS, ERRORS, RETRIES):
         with metric._lock:  # noqa: SLF001 - the registry owns these objects
             metric._values.clear()
     with DURATION._lock:  # noqa: SLF001
