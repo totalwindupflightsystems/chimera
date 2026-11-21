@@ -179,6 +179,7 @@ credential your monitor already uses for `/v1/health` works here.
 | `chimera_requests_total` | counter | `method`, `route`, `status` | every HTTP request served, `status` is the class (`2xx`/`3xx`/`4xx`/`5xx`) |
 | `chimera_request_errors_total` | counter | `method`, `route`, `reason` | failed requests by cause: `client_error`, `server_error`, `exception` (an unhandled crash, counted separately from a deliberate 5xx) |
 | `chimera_request_duration_seconds` | histogram | `method`, `route` | request latency; buckets `0.005 … 60`s |
+| `chimera_retries_total` | counter | `reason` | upstream retry attempts: `rate_limit` (429), `server_error` (5xx), `timeout`, `network`, `other` — one increment per retry the ladder scheduled (see `docs/RESILIENCE.md` F7) |
 
 Two properties worth knowing when you read them:
 
@@ -202,7 +203,7 @@ scrape_configs:
 If the API key requirement is enabled (`auth.enabled`), front the scrape with the
 same bearer credential the health probe uses.
 
-### The three signals that matter
+### The signals that matter
 
 1. `rate(chimera_requests_total{status="5xx"}[5m])` — a rising 5xx rate is the
    only early warning that upstream providers are failing.
@@ -211,6 +212,10 @@ same bearer credential the health probe uses.
    slowness, not an outage.
 3. `rate(chimera_request_errors_total{reason="exception"}[5m])` — anything above
    zero is a code defect: an exception escaped a handler.
+4. `rate(chimera_retries_total{reason="rate_limit"}[5m])` — retries are healthy
+   in isolation, but a sustained rate means the provider quota (not Chimera) is
+   the constraint; a rising `reason="server_error"` is the earliest signal that
+   an upstream is degrading, since the retry hides it from the 5xx rate above.
 
 ## Logs
 

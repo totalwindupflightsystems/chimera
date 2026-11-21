@@ -30,6 +30,7 @@ from chimera.blocked_models import is_credential_error
 from chimera.circuit_breaker import ProviderCircuitBreaker, fast_fail_response
 from chimera.config import ChimeraConfig, ModelEntry, provider_api_key_env
 from chimera.exceptions import BudgetExhaustedError
+from chimera.metrics import classify_retry, observe_retry
 
 log = structlog.get_logger("chimera.gateway")
 
@@ -651,6 +652,51 @@ async def _sleep_ms(ms: float) -> None:
     await asyncio.sleep(ms / 1000.0)
 
 
+def _is_timeout_error(exc: BaseException) -> bool:
+    """True when *exc* is a read/connect timeout rather than an answer (F7)."""
+    import httpx
+
+    if isinstance(exc, httpx.TimeoutException):
+        return True
+    # litellm/openai wrap httpx, so fall back to the class name the SDK used
+    # (``APITimeoutError`` / ``Timeout``) rather than the message prose.
+    return "timeout" in type(exc).__name__.lower()
+
+
+def _is_network_error(exc: BaseException) -> bool:
+    """True when *exc* never reached the provider (connection/DNS/TLS) (F7)."""
+    import httpx
+
+    if isinstance(
+        exc,
+        (
+            httpx.NetworkError,
+            httpx.ConnectError,
+            httpx.ReadError,
+            httpx.WriteError,
+            httpx.PoolTimeout,
+            httpx.ProxyError,
+        ),
+    ):
+        return True
+    return "connection" in type(exc).__name__.lower()
+
+
+def _retry_reason(exc: BaseException) -> str:
+    """Bounded retry-cause label (``chimera_retries_total{reason=...}``) for *exc*.
+
+    Thin seam over :func:`chimera.metrics.classify_retry`: this side knows how a
+    provider exception exposes its status and transport class, the metrics side
+    owns the closed vocabulary. Keeping the two apart is what lets the label be
+    unit-tested without a provider and asserted in ``/metrics`` without a stub.
+    """
+    return classify_retry(
+        _status_code_of(exc),
+        timed_out=_is_timeout_error(exc),
+        network_error=_is_network_error(exc),
+    )
+
+
 def credential_remedy(
     error: object,
     *,
@@ -992,12 +1038,32 @@ class LiteLLMGateway:
                 # Draw independently for each retry; preserve the pre-jitter cap.
                 delay *= random.uniform(0.75, 1.25)
 
-                log.info(
+                # DF-CHIMERA-V2-128: a retry is a first-class event, whether or
+                # not it turns out to rescue the call. One bounded-label counter
+                # increment (scrapeable) plus one log line carrying everything
+                # an operator needs to reconstruct the ladder AFTER the fact:
+                # which attempt retried, how long it waited, and what the
+                # provider actually answered (``None`` = it never answered).
+                #
+                # WARNING, not INFO, on purpose: the retry is an upstream-fault
+                # event AND the shipped ``chimera.yaml.example`` sets
+                # ``observability.log_level: warning`` — an INFO line here is
+                # invisible on a stock deployment, which is the defect this row
+                # was filed for. A recovered call still cost the caller the
+                # delay, so it belongs in the default log.
+                retry_status = _status_code_of(exc)
+                retry_reason = _retry_reason(exc)
+                observe_retry(retry_reason)
+
+                log.warning(
                     "gateway_retry",
                     model=model,
+                    provider=provider,
                     attempt=attempt,
                     next_attempt=attempt + 1,
                     delay_ms=int(delay),
+                    upstream_status=retry_status,
+                    reason=retry_reason,
                     error=str(exc)[:200],
                 )
                 await _sleep_ms(delay)
