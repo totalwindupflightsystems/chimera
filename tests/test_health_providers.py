@@ -35,6 +35,7 @@ import pytest
 
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
+from structlog.testing import capture_logs  # noqa: E402
 
 from chimera.api.server import _check_providers, create_app  # noqa: E402
 from chimera.config import ChimeraConfig, ServerConfig  # noqa: E402
@@ -218,26 +219,38 @@ def test_probe_call_carries_probe_flag() -> None:
     assert gw.kwargs_seen[0]["probe"] is True
 
 
-def test_successful_ping_logs_no_token_limit_warning(capsys) -> None:
+def test_successful_ping_logs_no_token_limit_warning() -> None:
     """INT-ZAI-002: a healthy probe must not look like a token-limit event.
 
     The stub answers through the real ``_build_response`` with the ping's
     actual shape (``finish_reason="length"``), so this fails if the probe flag
     stops flowing from ``_check_providers`` into the gateway.
+
+    The assertion reads the events ``structlog`` emits through
+    ``structlog.testing.capture_logs`` — an explicit, self-restoring capture —
+    instead of the rendered stdout sink. The sink is process-global state
+    (``observability.configure_logging`` re-pins it and the import-time default
+    is STDERR), so scraping ``capsys`` made this node pass only when an earlier
+    test had happened to leave a stdout pin behind: it failed in isolation and
+    passed in the full suite after ``test_concurrency`` configured stdout
+    (CH-MAINT-014). Capturing the emissions is both order-independent and a
+    stronger check, since it does not depend on how the event is rendered.
     """
     cfg = _config(
         models={"deepseek/deepseek-v4-flash": "deepseek"},
         api_keys={"deepseek": "sk-test"},
     )
     gw = _TruncatingProbeGateway()
-    status = asyncio.run(_check_providers(cfg, gw))
+    with capture_logs() as probe_events:
+        status = asyncio.run(_check_providers(cfg, gw))
 
     assert status["deepseek"]["healthy"] is True
     assert gw.responses[0].finish_reason == "length"
-    captured = capsys.readouterr().out
-    assert "token_limit_reached" not in captured, f"false warning emitted: {captured}"
+    false_warnings = [e for e in probe_events if e.get("event") == "token_limit_reached"]
+    assert false_warnings == [], f"false warning emitted: {false_warnings}"
 
-    # Negative control: drop the flag and the same builder warns again.
+    # Negative control: drop the flag and the same builder warns again, so the
+    # assertion above is about the probe flag and not about a silent logger.
     result = SimpleNamespace(
         choices=[
             SimpleNamespace(
@@ -247,8 +260,10 @@ def test_successful_ping_logs_no_token_limit_warning(capsys) -> None:
         ],
         usage=SimpleNamespace(prompt_tokens=7, completion_tokens=1),
     )
-    _build_response(result, "deepseek/deepseek-v4-flash")
-    assert "token_limit_reached" in capsys.readouterr().out
+    with capture_logs() as control_events:
+        _build_response(result, "deepseek/deepseek-v4-flash")
+    control = [e for e in control_events if e.get("event") == "token_limit_reached"]
+    assert len(control) == 1, f"negative control must warn exactly once: {control_events}"
 
 
 def test_multiple_providers_checked_concurrently() -> None:

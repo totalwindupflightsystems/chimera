@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from structlog.testing import capture_logs
 
 from chimera.config import ModelEntry
 from chimera.gateway import GatewayResponse, LiteLLMGateway, resolve_litellm_model
@@ -71,9 +72,15 @@ def test_extract_text_handles_missing_content() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_token_limit_detection_logs_warning(capsys) -> None:
-    """C3: finish_reason='length' should log a WARNING with model and tokens."""
+def test_token_limit_detection_logs_warning() -> None:
+    """C3: finish_reason='length' should log a WARNING with model and tokens.
 
+    The assertion reads the emitted events via ``structlog.testing.capture_logs``
+    rather than scraping the stdout sink: the sink is process-global state that
+    ``observability.configure_logging`` re-pins (the import-time default is
+    STDERR), so reading ``capsys`` made this node pass only when an earlier test
+    had left a stdout pin behind (CH-MAINT-014).
+    """
     from chimera.gateway import _build_response
 
     # Simulate a LiteLLM result with finish_reason="length"
@@ -86,12 +93,18 @@ def test_token_limit_detection_logs_warning(capsys) -> None:
         ],
         usage=SimpleNamespace(prompt_tokens=500, completion_tokens=4096),
     )
-    response = _build_response(result, "deepseek/deepseek-chat")
+    with capture_logs() as events:
+        response = _build_response(result, "deepseek/deepseek-chat")
+
     assert response.finish_reason == "length"
     assert not response.is_empty
-    # structlog writes to stdout — check captured output
-    captured = capsys.readouterr().out
-    assert "token_limit_reached" in captured, f"Expected token_limit_reached in stdout, got: {captured}"
+    warnings_logged = [e for e in events if e.get("event") == "token_limit_reached"]
+    assert len(warnings_logged) == 1, f"expected one token_limit_reached: {events}"
+    entry = warnings_logged[0]
+    assert entry.get("model") == "deepseek/deepseek-chat"
+    assert entry.get("tokens_input") == 500
+    assert entry.get("tokens_output") == 4096
+    assert entry.get("log_level") == "warning"
 
 
 def _length_result() -> SimpleNamespace:
@@ -107,7 +120,7 @@ def _length_result() -> SimpleNamespace:
     )
 
 
-def test_probe_token_cap_does_not_warn(capsys, caplog) -> None:
+def test_probe_token_cap_does_not_warn() -> None:
     """INT-ZAI-002: the health probe's 1-token ping must NOT look like a
     token-limit event.
 
@@ -115,26 +128,30 @@ def test_probe_token_cap_does_not_warn(capsys, caplog) -> None:
     caller still sees the truth) but drops the WARNING that made every
     ``/v1/health`` call write one false ``token_limit_reached`` line per
     provider into the journal.
-    """
-    import logging
 
+    Like its sibling above, this asserts on the emitted events through
+    ``capture_logs`` instead of the process-global stdout sink, so it does not
+    depend on which sink an earlier test left pinned (CH-MAINT-014). The probe
+    branch's own DEBUG line (``probe_token_cap_reached``) is deliberately not
+    asserted: it is filtered by the session's configured level, so checking it
+    would reintroduce the same order dependence.
+    """
     from chimera.gateway import _build_response
 
-    caplog.set_level(logging.DEBUG)
-    response = _build_response(_length_result(), "deepseek/deepseek-chat", probe=True)
+    with capture_logs() as probe_events:
+        response = _build_response(_length_result(), "deepseek/deepseek-chat", probe=True)
 
     # The response contract is unchanged by the flag.
     assert response.finish_reason == "length"
     assert response.text == "p"
 
-    captured = capsys.readouterr().out
-    assert "token_limit_reached" not in captured, f"unexpected warning: {captured}"
-    assert not any("token_limit_reached" in str(r.message) for r in caplog.records)
+    assert [e for e in probe_events if e.get("event") == "token_limit_reached"] == []
 
     # Negative control: the identical result without the flag still warns, so
     # the assertion above is about the flag and not about a silent logger.
-    _build_response(_length_result(), "deepseek/deepseek-chat")
-    assert "token_limit_reached" in capsys.readouterr().out
+    with capture_logs() as control_events:
+        _build_response(_length_result(), "deepseek/deepseek-chat")
+    assert len([e for e in control_events if e.get("event") == "token_limit_reached"]) == 1
 
 
 async def test_probe_flag_is_not_forwarded_to_litellm(config, capsys) -> None:  # type: ignore[no-untyped-def]
