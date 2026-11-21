@@ -546,6 +546,27 @@ _RETRYABLE_STATUS_CODES: frozenset[int] = frozenset(
     }
 )
 
+#: The inner LiteLLM retry budget for every production provider call (F7).
+#:
+#: Chimera's own ladder (``retry.max_attempts``, below) is the ONLY retry
+#: budget: the LiteLLM client keeps its own ladder on top of ours, and its
+#: default (unset ``num_retries`` => 2 retries) is invisible to that config —
+#: so one *Chimera* attempt fanned out to 3 upstream requests and a configured
+#: ``max_attempts`` of 1/3/5 cost 3/9/15 provider requests (measured against a
+#: 429-forever stub, DF-CHIMERA-V2-126).  An operator could neither see that
+#: budget nor compute the worst-case provider bill from ``chimera.yaml``.
+#:
+#: ``num_retries`` is the authoritative directive, not merely one of two:
+#: LiteLLM resolves ``max_retries = num_retries`` whenever ``num_retries`` is
+#: not ``None`` (litellm/main.py, chat-completion path), so this value also
+#: overrides a caller-supplied ``max_retries`` — verified by measurement
+#: (``num_retries=0`` + ``max_retries=5`` still issues exactly one request).
+#: Applied in :meth:`LiteLLMGateway.complete` where the production call kwargs
+#: are built, so a raw :func:`_litellm_acomplete` caller cannot reintroduce the
+#: ladder and every consumer of those kwargs (async call, sync fallback, and
+#: the health probe) inherits it.
+_LITELLM_INNER_RETRIES = 0
+
 
 def _is_retryable(exc: BaseException) -> bool:
     """Check whether an exception indicates a transient failure worth retrying.
@@ -775,6 +796,21 @@ class LiteLLMGateway:
             **extra,
             **kwargs,
         }
+        # F7 / DF-CHIMERA-V2-126: Chimera's ``retry.max_attempts`` is the ONLY
+        # retry budget.  Declared AFTER ``**kwargs`` so a caller cannot
+        # override it back into an invisible LiteLLM ladder, and it reaches
+        # every consumer of these kwargs (async path, sync fallback, probe).
+        # A caller that asked for something else is told, not silently obeyed.
+        caller_retries = call_kwargs.get("num_retries")
+        if caller_retries is not None and caller_retries != _LITELLM_INNER_RETRIES:
+            log.warning(
+                "gateway_caller_retry_ignored",
+                model=model,
+                num_retries=caller_retries,
+                applied=_LITELLM_INNER_RETRIES,
+                reason="retry.max_attempts is Chimera's only retry budget",
+            )
+        call_kwargs["num_retries"] = _LITELLM_INNER_RETRIES
         if negotiated_format is not None:
             call_kwargs["response_format"] = negotiated_format
 
