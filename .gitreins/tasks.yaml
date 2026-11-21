@@ -2629,5 +2629,6 @@ tasks:
     JSON missing or >= 60000 ms, or an arm silently skipped. PROOF: read README.md:556-680,
     chimera.yaml.example, chimera.yaml.fleet, the evidence JSON; do NOT re-run the
     full suite.'
-  status: in_progress
+  status: complete
   created_at: '2026-11-21T09:04:35.433919+00:00'
+  completed_at: '2026-11-21T09:13:00.507272+00:00'
