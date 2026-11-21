@@ -1,0 +1,20 @@
+Usage: chimera run [OPTIONS] [PROMPT]...
+
+  Run a full deliberation for PROMPT (default when no subcommand given).
+
+  DF-CHIMERA-V2-81: these options mirror the group-level flags because
+  ``ChimeraGroup.resolve_command`` redirects an unknown first token (the
+  implicit-prompt form) to THIS command with the remaining args — including
+  any flags the user placed AFTER the prompt (``chimera "hello" -f debate``).
+  Without them, click rejected such flags with "No such option" (exit 2).
+  Flags given BEFORE the prompt still parse on the group (the documented
+  convention); a flag explicitly passed to ``run`` overrides the group value,
+  detected via click's parameter source so the plain default never clobbers
+  what the group already resolved.
+
+Options:
+  -f, --formation TEXT  Formation preset name.
+  -v, --verbose         Print the full trace.
+  --quiet               Print only the raw answer to stdout.
+  --json                Print one JSON object (answer + full trace) to stdout.
+  --help                Show this message and exit.

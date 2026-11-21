@@ -1,0 +1,6 @@
+{"cell": "install", "status": "OK", "detail": "Python 3.12.3; sdist installed in fresh venv", "rc": 0, "ts": "2026-11-21T15:58:00.711740+00:00"}
+{"cell": "version", "status": "OK", "detail": "chimera 0.3.0", "rc": 0, "ts": "2026-11-21T15:58:00.711740+00:00"}
+{"cell": "config", "status": "OK", "detail": "config init rc 0 and chimera.yaml existence checked", "rc": 0, "ts": "2026-11-21T15:58:00.711740+00:00"}
+{"cell": "formations", "status": "OK", "detail": "all six presets rendered", "rc": 0, "ts": "2026-11-21T15:58:00.711740+00:00"}
+{"cell": "deliberation", "status": "FAIL", "detail": "DeepSeek: Insufficient Balance; XKIRO: model temporarily unavailable for scheduled maintenance; no usable answer", "rc": 2, "ts": "2026-11-21T15:58:00.711740+00:00"}
+{"cell": "teardown", "status": "OK", "detail": "destroy rc 0, subsequent list rc 0; agent absent", "rc": 0, "ts": "2026-11-21T15:58:00.711740+00:00"}

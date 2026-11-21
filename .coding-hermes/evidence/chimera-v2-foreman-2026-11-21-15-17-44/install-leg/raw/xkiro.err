@@ -1,0 +1,73 @@
+/tmp/iskip-venv/lib/python3.12/site-packages/chimera/blocked_models.py:640: UserWarning: blocked-models state outside any repo checkout: falling back to the machine-scoped ~/.chimera/blocked-models.json. Runs from a repo checkout keep per-install state instead (set CHIMERA_BLOCKED_MODELS_PATH to pin a location).
+  shared_registry = ModelBlockRegistry()
+{"preferred": "task-router", "fallback": "models.dev", "reason": "task-router table not found (tried: /home/bunker-iskip-chimera-v2-21/task-router/data/tables/models.jsonl, /tmp/iskip-venv/lib/task-router/data/tables/models.jsonl)", "event": "registry_source_fallback", "level": "info", "timestamp": "2026-11-21T15:56:14.466105Z"}
+{"age_s": 234, "providers": 324, "stale": false, "event": "provider_cache_hit", "level": "info", "timestamp": "2026-11-21T15:56:14.585650Z"}
+{"providers": 0, "models": 9550, "unattributed": 9157, "event": "provider_discovery_done", "level": "info", "timestamp": "2026-11-21T15:56:14.701683Z"}
+[92m15:56:18 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+[92m15:56:18 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+[92m15:56:19 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+[92m15:56:19 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+[92m15:56:20 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+{"model": "xkiro/openai/gpt-6.1-terra", "attempts": 3, "error": "litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - Model \"openai/gpt-6.1-terra\" is temporarily unavailable for scheduled maintenance. Service is expected to resume by 2026-11-24T08:34:38Z (UTC). Please use another model in the meantime, or retry after that time.", "event": "gateway_retry_exhausted", "request_id": "ba5cf65bd225414f", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T15:56:20.828735Z"}
+{"stage": "worker_2", "model": "xkiro/openai/gpt-6.1-terra", "error": "xkiro/openai/gpt-6.1-terra call failed after 3 attempts: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - Model \"openai/gpt-6.1-terra\" is temporarily unavailable for scheduled maintenance. Service is expected to resume by 2026-11-24T08:34:38Z (UTC). Please use another model in the meantime, or retry after that time.", "event": "engine_stage_failed", "request_id": "ba5cf65bd225414f", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T15:56:20.828952Z"}
+[92m15:56:20 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+{"model": "xkiro/openai/gpt-6.1-terra", "attempts": 3, "error": "litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - Model \"openai/gpt-6.1-terra\" is temporarily unavailable for scheduled maintenance. Service is expected to resume by 2026-11-24T08:34:38Z (UTC). Please use another model in the meantime, or retry after that time.", "event": "gateway_retry_exhausted", "request_id": "ba5cf65bd225414f", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T15:56:21.028068Z"}
+{"stage": "worker_1", "model": "xkiro/openai/gpt-6.1-terra", "error": "xkiro/openai/gpt-6.1-terra call failed after 3 attempts: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - Model \"openai/gpt-6.1-terra\" is temporarily unavailable for scheduled maintenance. Service is expected to resume by 2026-11-24T08:34:38Z (UTC). Please use another model in the meantime, or retry after that time.", "event": "engine_stage_failed", "request_id": "ba5cf65bd225414f", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T15:56:21.028324Z"}
+{"stage": "aggregator", "total_deps": 2, "degraded": 2, "healthy": 0, "event": "aggregator_partial_inputs", "request_id": "ba5cf65bd225414f", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T15:56:21.028720Z"}
+[92m15:56:21 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+[92m15:56:21 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+[92m15:56:22 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+{"model": "xkiro/openai/gpt-6.1-terra", "attempts": 3, "error": "litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - Model \"openai/gpt-6.1-terra\" is temporarily unavailable for scheduled maintenance. Service is expected to resume by 2026-11-24T08:34:38Z (UTC). Please use another model in the meantime, or retry after that time.", "event": "gateway_retry_exhausted", "request_id": "ba5cf65bd225414f", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T15:56:23.140491Z"}
+{"stage": "aggregator", "model": "xkiro/openai/gpt-6.1-terra", "error": "xkiro/openai/gpt-6.1-terra call failed after 3 attempts: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - Model \"openai/gpt-6.1-terra\" is temporarily unavailable for scheduled maintenance. Service is expected to resume by 2026-11-24T08:34:38Z (UTC). Please use another model in the meantime, or retry after that time.", "event": "engine_stage_failed", "request_id": "ba5cf65bd225414f", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T15:56:23.140687Z"}
+{"stage": "aggregator", "model": "xkiro/openai/gpt-6.1-terra", "reason": "the configured aggregator itself (its call just failed)", "event": "engine_aggregator_fallback_skipped", "request_id": "ba5cf65bd225414f", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T15:56:23.140897Z"}
+{"stage": "aggregator", "total_deps": 2, "degraded": 2, "healthy": 0, "event": "aggregator_partial_inputs", "request_id": "ba5cf65bd225414f", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T15:56:23.140990Z"}
+[92m15:56:23 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+[92m15:56:23 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+[92m15:56:25 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= openai/gpt-6.1-terra; provider = openai
+{"model": "xkiro/openai/gpt-6.1-terra", "attempts": 3, "error": "litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - Model \"openai/gpt-6.1-terra\" is temporarily unavailable for scheduled maintenance. Service is expected to resume by 2026-11-24T08:34:38Z (UTC). Please use another model in the meantime, or retry after that time.", "event": "gateway_retry_exhausted", "request_id": "ba5cf65bd225414f", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T15:56:25.313157Z"}
+warning: worker 'worker_1' (xkiro/openai/gpt-6.1-terra) failed: xkiro/openai/gpt-6.1-terra call failed after 3 attempts: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - 
+Model "openai/gpt-6.1-terra" is temporarily unavailable for... [truncated 152 chars]
+  full error: the complete upstream message (344 chars) is in the trace — re-run with --json (or --verbose) to read it
+warning: worker 'worker_2' (xkiro/openai/gpt-6.1-terra) failed: xkiro/openai/gpt-6.1-terra call failed after 3 attempts: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - 
+Model "openai/gpt-6.1-terra" is temporarily unavailable for... [truncated 152 chars]
+  full error: the complete upstream message (344 chars) is in the trace — re-run with --json (or --verbose) to read it
+warning: worker 'aggregator' (xkiro/openai/gpt-6.1-terra) failed: xkiro/openai/gpt-6.1-terra call failed after 3 attempts: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - 
+Model "openai/gpt-6.1-terra" is temporarily unavailable for... [truncated 152 chars]
+  full error: the complete upstream message (344 chars) is in the trace — re-run with --json (or --verbose) to read it
+error: deliberation produced no usable answer (answer stage 'aggregator' degraded, no merge fallback could serve): xkiro/openai/gpt-6.1-terra call failed after 3 attempts: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - Model "openai/gpt-6.1-terra" is temporarily unavailable for scheduled maintenance. Service is expected to resume by 2026-11-24T08:34:38Z (UTC). Please use another model in the meantime, or retry after that time.

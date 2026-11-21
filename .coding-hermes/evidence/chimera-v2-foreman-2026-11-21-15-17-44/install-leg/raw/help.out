@@ -1,0 +1,28 @@
+Usage: chimera [OPTIONS] [COMMAND] [ARGS]...
+
+  Chimera — dynamic multi-model deliberation gateway.
+
+Options:
+  --version             Show the version and exit.
+  -f, --formation TEXT  Formation preset name.
+  -v, --verbose         Print the full trace.
+  --quiet               Print only the raw answer to stdout (warnings go to
+                        stderr).
+  --json                Print one JSON object (answer + full trace) to stdout.
+  -c, --config TEXT     Path to chimera.yaml (overrides the CHIMERA_CONFIG env
+                        var and the cwd search).
+  --allow-custom-dag    Accept a client-defined DAG (requires --dag).
+  --dag TEXT            Client-defined DAG as a JSON string ({stages:[...],
+                        edges:[[a,b]]}).
+  --stage-models TEXT   Per-stage model overrides as JSON (e.g.
+                        '{"worker_1":"zai-coding-plan/glm-5.2"}'); unknown
+                        stage ids are rejected.
+  --help                Show this message and exit.
+
+Commands:
+  config      Configuration helpers.
+  formations  List available formation presets.
+  mcp         Run the MCP server over stdio.
+  models      List available models with category weights.
+  run         Run a full deliberation for PROMPT (default when no...
+  serve       Run the REST API server.
