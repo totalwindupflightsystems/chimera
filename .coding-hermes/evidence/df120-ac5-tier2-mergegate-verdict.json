@@ -1,0 +1,534 @@
+{
+  "branch": "main",
+  "commit": "49e3805c377313124edde741e99d85039568eb54",
+  "items": [
+    {
+      "criterion": "On the current main tree: (1) engine appends models that already served a stage successfully in the same run to the merge fallback chain tail after configured+implicit candidates, bounded by one reserved survivor call (code: src/chimera/engine.py, introduced in 997782c); (2) trace.aggregator_fallbacks marks the survivor entry source=this_run_survivor and trace.aggregator_model names it when it serves; (3) explicit configured fallbacks still outrank the survivor; (4) with no survivor the rc=2 workers_preserved shape is unchanged; (5) tests/test_aggregator_survivor.py pins the fake-transport path INCLUDING the mid-run survivor quota-death arm (bounded failed entry, workers_preserved fallthrough); (6) full suite green \u2014 foreman run 2341 passed / 62 skipped on this tree; (7) the live gate is RECORDED IN-REPO: .coding-hermes/evidence/df120-live-gate-red-shipped-config.json (pre-fix rc=2, workers_preserved) and .coding-hermes/evidence/df120-live-gate-green-ac5.json (post-fix rc=0 47s, aggregator_model=hermes/glm-5.3-flash, trace this_run_survivor) \u2014 same shipped-config quick-panel command, both captured 2026-11-21. Failure condition: any arm missing, survivor unbounded, missing trace marking, or suite red. Proof: read the diff 997782c vs parent, tests/test_aggregator_survivor.py, and the two evidence JSONs.",
+      "detail": "All 7 arms verified. (1) src/chimera/engine.py:2024-2031 builds survivors from run_results (non-degraded worker/dispatcher models, excluding the failed aggregator), appended AFTER the configured+implicit chain at 2036-2038 (chain from _merge_fallback_chain, 2195-2245); bounded by survivor_called flag (2034, 2063-2077, 2080-2082) reserving exactly one call beyond MAX_AGGREGATOR_FALLBACK_ATTEMPTS=4 (813); introduced in 997782c (git show confirms). (2) AggregatorFallbackAttempt.source field (engine.py:108); source=\"this_run_survivor\" recorded on skipped/failed/served entries (2056, 2070, 2099, 2115); trace.aggregator_model names the serving non-degraded model (2900-2904) and aggregator_fallbacks is exposed on the trace (2932-2934). (3) Chain entries iterate before survivors (2036-2038); pinned by test_explicit_fallback_precedes_survivor (tests/test_aggregator_survivor.py:44-58) \u2014 passed. (4) No-survivor rc=2 workers_preserved shape pinned by test_cli_json_preserves_worker_outputs_when_no_fallback_can_serve (tests/test_aggregator_fallback_chain.py:350-388: exit_code==2, answer_degraded_reason==workers_preserved, aggregator_model None) \u2014 passed. (5) tests/test_aggregator_survivor.py:67-96 test_survivor_quota_death_mid_run_is_bounded_and_preserves_workers pins the mid-run quota-death arm: calls.count(SURVIVOR)==2 (worker + exactly one bounded failed merge attempt), answer_usable False, failed entry asserted \u2014 passed. Targeted run: `.venv/bin/pytest tests/test_aggregator_survivor.py tests/test_aggregator_fallback_chain.py -q` \u2192 exit 0, '18 passed in 0.69s'. (6) Fresh full-suite run on this tree: `.venv/bin/python -m pytest -q -p no:cacheprovider` \u2192 '2341 passed, 62 skipped in 175.20s', exit 0 \u2014 exactly the claimed foreman numbers. (7) Both evidence JSONs exist in-repo (committed e0975bd, 2026-11-21): red artifact has answer_degraded_reason=workers_preserved, aggregator_model=null, worker_outputs={worker_3:'ok'} (rc=2 shape); green artifact has aggregator_model=hermes/glm-5.3-flash, total_duration_ms=45501 (~47s), fallback entry {model: hermes/glm-5.3-flash, status: served, source: this_run_survivor}, answer_degraded_reason=aggregator_substituted, same quick-panel formation. LSP diagnostics: 0.",
+      "status": "PASS"
+    },
+    {
+      "criterion": "Survivor collection only includes models that actually SERVED a worker/dispatcher stage in this run (not degraded placeholders, not the failed aggregator itself)",
+      "derived": true,
+      "detail": "src/chimera/engine.py:2024-2031 filters `not result.degraded`, kind in {worker, dispatcher} via the formation kinds map, and `result.model != stage.model`; StageResult.degraded field confirmed at src/chimera/aggregator.py:43-50.",
+      "status": "PASS"
+    },
+    {
+      "criterion": "The survivor path is reachable from the real entrypoint (deliberate \u2192 _execute_stage \u2192 _handle_stage_failure run_results wiring)",
+      "derived": true,
+      "detail": "engine.py:1742-1767 wave loop passes `results` into _execute_stage; on GatewayError/BudgetExhaustedError it calls _handle_stage_failure(..., run_results=results) (1946-1954); signature at 1978 consumes it at 2024-2031. End-to-end reachability proven by passing CLI test test_cli_survivor_serves_after_quota_failures (real CLI invocation via _invoke, exit 0, trace asserts).",
+      "status": "PASS"
+    },
+    {
+      "criterion": "A survivor already called as a configured/implicit candidate is not retried (no double-spend)",
+      "derived": true,
+      "detail": "engine.py:2035 called_models set; 2039-2040 skips a survivor already in called_models; 2083 adds every called candidate. Corroborated by the mid-run quota-death test asserting calls.count(SURVIVOR)==2 total.",
+      "status": "PASS"
+    },
+    {
+      "criterion": "The reserved survivor call is bounded at exactly one merge call even when the survivor attempt fails",
+      "derived": true,
+      "detail": "engine.py:2080-2082 sets survivor_called=True before the call; the 2063 budget check rejects any further survivor entry with 'survivor attempt budget exhausted (one merge call already spent)' (2072). Pinned by test_survivor_quota_death_mid_run_is_bounded_and_preserves_workers (exactly one failed merge attempt after the worker call) and test_survivor_has_reserved_call_after_budget_is_exhausted (MAX_AGGREGATOR_FALLBACK_ATTEMPTS=0 still permits the single reserved survivor call) \u2014 both passed in the targeted run (18 passed in 0.69s).",
+      "status": "PASS"
+    }
+  ],
+  "merge_recommendation": "no_concerns_found",
+  "pass_class": "judged",
+  "passed": true,
+  "review": {
+    "commit_author_email": "totalwindupflightsystems@gmail.com",
+    "commit_author_name": "totalwindupflightsystems",
+    "findings": [
+      {
+        "category": "unknown",
+        "detail": "line 18 (`gitreins_task`) vs the new block at lines 22-34 which has `trigger` but no `gitreins_task`, so any consumer reading either key uniformly will miss data on one element",
+        "detection": "objects in the same `lanes` array use inconsistent schemas: first entry has `gitreins_task`, the added entry omits it and introduces a new `trigger` key not present on the sibling",
+        "file": ".coding-hermes/waves/chimera-v2-foreman-2026-11-21-03-00-06.json",
+        "line": 22,
+        "severity": "low"
+      },
+      {
+        "category": "unknown",
+        "detail": "if `dispatched_at` is meant to reflect the latest dispatch it is stale by ~75 minutes relative to the brief name; if it is first-dispatch-only this is a non-issue, hence observation",
+        "detection": "top-level `dispatched_at` (2026-11-21T03:05Z) was not updated even though the newly added entry is marked `\"status\": \"dispatched\"` with a brief file timestamped 0420 (`/tmp/brief-df120r2-20261121-0420.txt`)",
+        "file": ".coding-hermes/waves/chimera-v2-foreman-2026-11-21-03-00-06.json",
+        "line": 36,
+        "severity": "observation"
+      }
+    ],
+    "reviewer_email": "totalwindupflightsystems@gmail.com",
+    "reviewer_name": "totalwindupflightsystems",
+    "self_review": true,
+    "summary": "State-file-only change adding a rework dispatch entry; findings are a per-lane schema inconsistency and a possibly stale dispatched_at timestamp, both low-impact."
+  },
+  "stages": {
+    "tier1": {
+      "any_failed": false,
+      "degradation_reason": "skipped at runtime \u2014 guard: guard reported DEGRADED PASS",
+      "degraded": true,
+      "id": "tier1",
+      "passed": true,
+      "skipped_steps": [
+        "guard"
+      ],
+      "steps": [
+        {
+          "data": {
+            "degraded": true,
+            "exit_code": 2,
+            "skip_reason": "guard reported DEGRADED PASS"
+          },
+          "degraded": true,
+          "error": "",
+          "id": "guard",
+          "output": "Tier 1: DEGRADED PASS (skips: lint=no staged files, tests=no staged files)  (test mode: diff)\n  \u2713 secrets \u2014 clean (gitleaks + builtin cross-check); scanners: nice=nice -n 10\n  ~ lint \u2014 skipped (no staged files)\n  ~ tests \u2014 skipped (no staged files)\n  \u2713 static_analysis\n  \u2713 lsp; scanners: nice=nice -n 10\n  guard log: /home/kara/chimera-v2/.gitreins/logs/guard-20261121T062023.728759Z.log\n\n\u26a0 DEGRADED PASS: lint=no staged files, tests=no staged files \u2014 these gates did not run, so this run is not \n  evidence the tree passes. Stage the files you want graded (git add), or \n  set guards.allow_skips: true in .gitreins/config.yaml to accept skips \n  on zero-work runs (gitreins init writes it for fresh repos).\n",
+          "passed": true,
+          "type": "script"
+        }
+      ],
+      "summary": "  \u2713 guard: Tier 1: DEGRADED PASS (skips: lint=no staged files, tests=no staged files)  (test mode: diff)"
+    },
+    "tier2": {
+      "any_failed": false,
+      "api_key_source": "GITREINS_LLM_API_KEY",
+      "base_url_source": "GITREINS_LLM_BASE_URL",
+      "id": "tier2",
+      "model": "accounts/fireworks/models/kimi-k3",
+      "passed": true,
+      "steps": [
+        {
+          "data": {
+            "items": [
+              {
+                "criterion": "On the current main tree: (1) engine appends models that already served a stage successfully in the same run to the merge fallback chain tail after configured+implicit candidates, bounded by one reserved survivor call (code: src/chimera/engine.py, introduced in 997782c); (2) trace.aggregator_fallbacks marks the survivor entry source=this_run_survivor and trace.aggregator_model names it when it serves; (3) explicit configured fallbacks still outrank the survivor; (4) with no survivor the rc=2 workers_preserved shape is unchanged; (5) tests/test_aggregator_survivor.py pins the fake-transport path INCLUDING the mid-run survivor quota-death arm (bounded failed entry, workers_preserved fallthrough); (6) full suite green \u2014 foreman run 2341 passed / 62 skipped on this tree; (7) the live gate is RECORDED IN-REPO: .coding-hermes/evidence/df120-live-gate-red-shipped-config.json (pre-fix rc=2, workers_preserved) and .coding-hermes/evidence/df120-live-gate-green-ac5.json (post-fix rc=0 47s, aggregator_model=hermes/glm-5.3-flash, trace this_run_survivor) \u2014 same shipped-config quick-panel command, both captured 2026-11-21. Failure condition: any arm missing, survivor unbounded, missing trace marking, or suite red. Proof: read the diff 997782c vs parent, tests/test_aggregator_survivor.py, and the two evidence JSONs.",
+                "detail": "All 7 arms verified. (1) src/chimera/engine.py:2024-2031 builds survivors from run_results (non-degraded worker/dispatcher models, excluding the failed aggregator), appended AFTER the configured+implicit chain at 2036-2038 (chain from _merge_fallback_chain, 2195-2245); bounded by survivor_called flag (2034, 2063-2077, 2080-2082) reserving exactly one call beyond MAX_AGGREGATOR_FALLBACK_ATTEMPTS=4 (813); introduced in 997782c (git show confirms). (2) AggregatorFallbackAttempt.source field (engine.py:108); source=\"this_run_survivor\" recorded on skipped/failed/served entries (2056, 2070, 2099, 2115); trace.aggregator_model names the serving non-degraded model (2900-2904) and aggregator_fallbacks is exposed on the trace (2932-2934). (3) Chain entries iterate before survivors (2036-2038); pinned by test_explicit_fallback_precedes_survivor (tests/test_aggregator_survivor.py:44-58) \u2014 passed. (4) No-survivor rc=2 workers_preserved shape pinned by test_cli_json_preserves_worker_outputs_when_no_fallback_can_serve (tests/test_aggregator_fallback_chain.py:350-388: exit_code==2, answer_degraded_reason==workers_preserved, aggregator_model None) \u2014 passed. (5) tests/test_aggregator_survivor.py:67-96 test_survivor_quota_death_mid_run_is_bounded_and_preserves_workers pins the mid-run quota-death arm: calls.count(SURVIVOR)==2 (worker + exactly one bounded failed merge attempt), answer_usable False, failed entry asserted \u2014 passed. Targeted run: `.venv/bin/pytest tests/test_aggregator_survivor.py tests/test_aggregator_fallback_chain.py -q` \u2192 exit 0, '18 passed in 0.69s'. (6) Fresh full-suite run on this tree: `.venv/bin/python -m pytest -q -p no:cacheprovider` \u2192 '2341 passed, 62 skipped in 175.20s', exit 0 \u2014 exactly the claimed foreman numbers. (7) Both evidence JSONs exist in-repo (committed e0975bd, 2026-11-21): red artifact has answer_degraded_reason=workers_preserved, aggregator_model=null, worker_outputs={worker_3:'ok'} (rc=2 shape); green artifact has aggregator_model=hermes/glm-5.3-flash, total_duration_ms=45501 (~47s), fallback entry {model: hermes/glm-5.3-flash, status: served, source: this_run_survivor}, answer_degraded_reason=aggregator_substituted, same quick-panel formation. LSP diagnostics: 0.",
+                "status": "PASS"
+              },
+              {
+                "criterion": "Survivor collection only includes models that actually SERVED a worker/dispatcher stage in this run (not degraded placeholders, not the failed aggregator itself)",
+                "derived": true,
+                "detail": "src/chimera/engine.py:2024-2031 filters `not result.degraded`, kind in {worker, dispatcher} via the formation kinds map, and `result.model != stage.model`; StageResult.degraded field confirmed at src/chimera/aggregator.py:43-50.",
+                "status": "PASS"
+              },
+              {
+                "criterion": "The survivor path is reachable from the real entrypoint (deliberate \u2192 _execute_stage \u2192 _handle_stage_failure run_results wiring)",
+                "derived": true,
+                "detail": "engine.py:1742-1767 wave loop passes `results` into _execute_stage; on GatewayError/BudgetExhaustedError it calls _handle_stage_failure(..., run_results=results) (1946-1954); signature at 1978 consumes it at 2024-2031. End-to-end reachability proven by passing CLI test test_cli_survivor_serves_after_quota_failures (real CLI invocation via _invoke, exit 0, trace asserts).",
+                "status": "PASS"
+              },
+              {
+                "criterion": "A survivor already called as a configured/implicit candidate is not retried (no double-spend)",
+                "derived": true,
+                "detail": "engine.py:2035 called_models set; 2039-2040 skips a survivor already in called_models; 2083 adds every called candidate. Corroborated by the mid-run quota-death test asserting calls.count(SURVIVOR)==2 total.",
+                "status": "PASS"
+              },
+              {
+                "criterion": "The reserved survivor call is bounded at exactly one merge call even when the survivor attempt fails",
+                "derived": true,
+                "detail": "engine.py:2080-2082 sets survivor_called=True before the call; the 2063 budget check rejects any further survivor entry with 'survivor attempt budget exhausted (one merge call already spent)' (2072). Pinned by test_survivor_quota_death_mid_run_is_bounded_and_preserves_workers (exactly one failed merge attempt after the worker call) and test_survivor_has_reserved_call_after_budget_is_exhausted (MAX_AGGREGATOR_FALLBACK_ATTEMPTS=0 still permits the single reserved survivor call) \u2014 both passed in the targeted run (18 passed in 0.69s).",
+                "status": "PASS"
+              }
+            ],
+            "provenance": {
+              "api_key_source": "GITREINS_LLM_API_KEY",
+              "base_url_source": "GITREINS_LLM_BASE_URL",
+              "model": "accounts/fireworks/models/kimi-k3"
+            },
+            "summary": "All seven arms of the DF-120 AC5 rework verified on the current tree: the bounded this-run survivor tail (engine.py:2024-2115, from 997782c) with correct trace marking, priority, unchanged no-survivor rc=2 shape, the pinned mid-run quota-death test, a fresh full-suite run matching the claimed 2341 passed / 62 skipped, and both live-gate evidence JSONs committed in-repo.",
+            "verdict": "COMPLETE"
+          },
+          "error": "",
+          "id": "tier2",
+          "output": "COMPLETE\n\n\u2026 [4458 chars omitted \u2014 3 line(s)] \u2026\n  \u2713 A survivor already called as a configured/implicit candidate is not retried (no double-spend): engine.py:2035 called_models set; 2039-2040 skips a survivor already in called_models; 2083 adds every called candidate. Corroborated by the mid-run quota-death test asserting calls.count(SURVIVOR)==2 total.\n  \u2713 The reserved survivor call is bounded at exactly one merge call even when the survivor attempt fails: engine.py:2080-2082 sets survivor_called=True before the call; the 2063 budget check rejects any further survivor entry with 'survivor attempt budget exhausted (one merge call already spent)' (2072). Pinned by test_survivor_quota_death_mid_run_is_bounded_and_preserves_workers (exactly one failed merge attempt after the worker call) and test_survivor_has_reserved_call_after_budget_is_exhausted (MAX_AGGREGATOR_FALLBACK_ATTEMPTS=0 still permits the single reserved survivor call) \u2014 both passed in the targeted run (18 passed in 0.69s).\nAll seven arms of the DF-120 AC5 rework verified on the current tree: the bounded this-run survivor tail (engine.py:2024-2115, from 997782c) with correct trace marking, priority, unchanged no-survivor rc=2 shape, the pinned mid-run quota-death test, a fresh full-suite run matching the claimed 2341 passed / 62 skipped, and both live-gate evidence JSONs committed in-repo.",
+          "passed": true,
+          "type": "ai_eval"
+        }
+      ],
+      "summary": "COMPLETE\n  \u2713 On the current main tree: (1) engine appends models that already served a stage successfully in the same run to the merge fallback chain tail after configured+implicit candidates, bounded by one reserved survivor call (code: src/chimera/engine.py, introduced in 997782c); (2) trace.aggregator_fallbacks marks the survivor entry source=this_run_survivor and trace.aggregator_model names it when it serves; (3) explicit configured fallbacks still outrank the survivor; (4) with no survivor the rc=2 workers_preserved shape is unchanged; (5) tests/test_aggregator_survivor.py pins the fake-transport path INCLUDING the mid-run survivor quota-death arm (bounded failed entry, workers_preserved fallthrough); (6) full suite green \u2014 foreman run 2341 passed / 62 skipped on this tree; (7) the live gate is RECORDED IN-REPO: .coding-hermes/evidence/df120-live-gate-red-shipped-config.json (pre-fix rc=2, workers_preserved) and .coding-hermes/evidence/df120-live-gate-green-ac5.json (post-fix rc=0 47s, aggregator_model=hermes/glm-5.3-flash, trace this_run_survivor) \u2014 same shipped-config quick-panel command, both captured 2026-11-21. Failure condition: any arm missing, survivor unbounded, missing trace marking, or suite red. Proof: read the diff 997782c vs parent, tests/test_aggregator_survivor.py, and the two evidence JSONs.: All 7 arms verified. (1) src/chimera/engine.py:2024-2031 builds survivors from run_results (non-degraded worker/dispatcher models, excluding the failed aggregator), appended AFTER the configured+implicit chain at 2036-2038 (chain from _merge_fallback_chain, 2195-2245); bounded by survivor_called flag (2034, 2063-2077, 2080-2082) reserving exactly one call beyond MAX_AGGREGATOR_FALLBACK_ATTEMPTS=4 (813); introduced in 997782c (git show confirms). (2) AggregatorFallbackAttempt.source field (engine.py:108); source=\"this_run_survivor\" recorded on skipped/failed/served entries (2056, 2070, 2099, 2115); trace.aggregator_model names the serving non-degraded model (2900-2904) and aggregator_fallbacks is exposed on the trace (2932-2934). (3) Chain entries iterate before survivors (2036-2038); pinned by test_explicit_fallback_precedes_survivor (tests/test_aggregator_survivor.py:44-58) \u2014 passed. (4) No-survivor rc=2 workers_preserved shape pinned by test_cli_json_preserves_worker_outputs_when_no_fallback_can_serve (tests/test_aggregator_fallback_chain.py:350-388: exit_code==2, answer_degraded_reason==workers_preserved, aggregator_model None) \u2014 passed. (5) tests/test_aggregator_survivor.py:67-96 test_survivor_quota_death_mid_run_is_bounded_and_preserves_workers pins the mid-run quota-death arm: calls.count(SURVIVOR)==2 (worker + exactly one bounded failed merge attempt), answer_usable False, failed entry asserted \u2014 passed. Targeted run: `.venv/bin/pytest tests/test_aggregator_survivor.py tests/test_aggregator_fallback_chain.py -q` \u2192 exit 0, '18 passed in 0.69s'. (6) Fresh full-suite run on this tree: `.venv/bin/python -m pytest -q -p no:cacheprovider` \u2192 '2341 passed, 62 skipped in 175.20s', exit 0 \u2014 exactly the claimed foreman numbers. (7) Both evidence JSONs exist in-repo (committed e0975bd, 2026-11-21): red artifact has answer_degraded_reason=workers_preserved, aggregator_model=null, worker_outputs={worker_3:'ok'} (rc=2 shape); green artifact has aggregator_model=hermes/glm-5.3-flash, total_duration_ms=45501 (~47s), fallback entry {model: hermes/glm-5.3-flash, status: served, source: this_run_survivor}, answer_degraded_reason=aggregator_substituted, same quick-panel formation. LSP diagnostics: 0.\n  \u2713 Survivor collection only includes models that actually SERVED a worker/dispatcher stage in this run (not degraded placeholders, not the failed aggregator itself): src/chimera/engine.py:2024-2031 filters `not result.degraded`, kind in {worker, dispatcher} via the formation kinds map, and `result.model != stage.model`; StageResult.degraded field confirmed at src/chimera/aggregator.py:43-50.\n  \u2713 The survivor path is reachable from the real entrypoint (deliberate \u2192 _execute_stage \u2192 _handle_stage_failure run_results wiring): engine.py:1742-1767 wave loop passes `results` into _execute_stage; on GatewayError/BudgetExhaustedError it calls _handle_stage_failure(..., run_results=results) (1946-1954); signature at 1978 consumes it at 2024-2031. End-to-end reachability proven by passing CLI test test_cli_survivor_serves_after_quota_failures (real CLI invocation via _invoke, exit 0, trace asserts).\n  \u2713 A survivor already called as a configured/implicit candidate is not retried (no double-spend): engine.py:2035 called_models set; 2039-2040 skips a survivor already in called_models; 2083 adds every called candidate. Corroborated by the mid-run quota-death test asserting calls.count(SURVIVOR)==2 total.\n  \u2713 The reserved survivor call is bounded at exactly one merge call even when the survivor attempt fails: engine.py:2080-2082 sets survivor_called=True before the call; the 2063 budget check rejects any further survivor entry with 'survivor attempt budget exhausted (one merge call already spent)' (2072). Pinned by test_survivor_quota_death_mid_run_is_bounded_and_preserves_workers (exactly one failed merge attempt after the worker call) and test_survivor_has_reserved_call_after_budget_is_exhausted (MAX_AGGREGATOR_FALLBACK_ATTEMPTS=0 still permits the single reserved survivor call) \u2014 both passed in the targeted run (18 passed in 0.69s).\nAll seven arms of the DF-120 AC5 rework verified on the current tree: the bounded this-run survivor tail (engine.py:2024-2115, from 997782c) with correct trace marking, priority, unchanged no-survivor rc=2 shape, the pinned mid-run quota-death test, a fresh full-suite run matching the claimed 2341 passed / 62 skipped, and both live-gate evidence JSONs committed in-repo.",
+      "tool_calls": [
+        {
+          "command": "get_task_item {\"id\": \"ephemeral:df-chimera-v2-120-ac5-rework-this-run-survivor-m\"}",
+          "exit_code": 0,
+          "output_sha": "74a389d3d05b5ce3668629613f20871f2808f957bda66d14abfba5679996b80b",
+          "tool": "get_task_item"
+        },
+        {
+          "command": "git log --oneline -15 && git status --short | head -20",
+          "exit_code": 0,
+          "output_sha": "ec6928fa7190d2edee87aeb3cd50e50314ea2fd14834dd0e152b82037f13539c",
+          "tool": "run_command"
+        },
+        {
+          "command": "git show 997782c --stat && echo '=====' && git show 997782c | head -300",
+          "exit_code": 0,
+          "output_sha": "cebf74182854f11466dfab65c0424200da793e2dd628258ef5f0e003744dd73c",
+          "tool": "run_command"
+        },
+        {
+          "command": "ls .coding-hermes/evidence/ 2>/dev/null; ls tests/test_aggregator_survivor.py 2>/dev/null; wc -l src/chimera/engine.py",
+          "exit_code": 0,
+          "output_sha": "9e50c6739c4001809bf79944c1e221013a693b715235421128a278702801331f",
+          "tool": "run_command"
+        },
+        {
+          "command": "git show 997782c -- src/chimera/engine.py",
+          "exit_code": 0,
+          "output_sha": "0bb201fd6c679a35629755f493a24f30c27bed1ee67f9c2b5871b77ac8b56572",
+          "tool": "run_command"
+        },
+        {
+          "command": "read_file {\"path\": \"tests/test_aggregator_survivor.py\"}",
+          "exit_code": 0,
+          "output_sha": "7426e4533a7814455fea8cde0d3b854cb9adae1c48399d92f670ccc7ec67ece6",
+          "tool": "read_file"
+        },
+        {
+          "command": "search_pattern {\"file_glob\": \"src/chimera/engine.py\", \"regex\": \"survivor|this_run_survivor|proven_live|run_results\"}",
+          "exit_code": 0,
+          "output_sha": "a864ec923a0703a6393a2f430a1ab9aa1bae9b7afe02ec6f95335acc2dd33624",
+          "tool": "search_pattern"
+        },
+        {
+          "command": "read_file {\"limit\": 220, \"offset\": 1975, \"path\": \"src/chimera/engine.py\"}",
+          "exit_code": 0,
+          "output_sha": "62249ac8287e3cfae3e16856c6b65756fd507c66abe0476a4324c27a7c1cc4cf",
+          "tool": "read_file"
+        },
+        {
+          "command": "read_file {\"limit\": 80, \"offset\": 1880, \"path\": \"src/chimera/engine.py\"}",
+          "exit_code": 0,
+          "output_sha": "610b7604690caaabdf22b244619c609eb96fff0035e94728343f3286fb9bf01e",
+          "tool": "read_file"
+        },
+        {
+          "command": "search_pattern {\"file_glob\": \"src/chimera/engine.py\", \"regex\": \"aggregator_model|workers_preserved|answer_usable\"}",
+          "exit_code": 0,
+          "output_sha": "1dab5443859af6e1534bfb4c8845270859941d515a2053e5dfdfda4e3647acd4",
+          "tool": "search_pattern"
+        },
+        {
+          "command": "read_file {\"limit\": 60, \"offset\": 2885, \"path\": \"src/chimera/engine.py\"}",
+          "exit_code": 0,
+          "output_sha": "1dd849f57e01b3d525f405605da68a7a9f2ab8196a58d3df2284b0d9686e03f9",
+          "tool": "read_file"
+        },
+        {
+          "command": "read_file {\"limit\": 50, \"offset\": 1590, \"path\": \"src/chimera/engine.py\"}",
+          "exit_code": 0,
+          "output_sha": "aa3bd6aca9ccd1bcc27bdcf0643186ec45e0711ea05f29233d6556955dc3c843",
+          "tool": "read_file"
+        },
+        {
+          "command": "read_file {\"limit\": 70, \"offset\": 2195, \"path\": \"src/chimera/engine.py\"}",
+          "exit_code": 0,
+          "output_sha": "ebe894c8ceeeff1cc38139569e1a58be106d8dfc5aef151685f77b7bf37d1f2f",
+          "tool": "read_file"
+        },
+        {
+          "command": "read_file {\"path\": \".coding-hermes/evidence/df120-live-gate-red-shipped-config.json\"}",
+          "exit_code": 0,
+          "output_sha": "6a8ec74035874db0e29937b1f2313f53a2b8e5de6e02434fd1fe2770bbf58c41",
+          "tool": "read_file"
+        },
+        {
+          "command": "read_file {\"path\": \".coding-hermes/evidence/df120-live-gate-green-ac5.json\"}",
+          "exit_code": 0,
+          "output_sha": "c7c0134218b04b9132ad7e26a40c985c76899d46138bf5872181110cebb06a90",
+          "tool": "read_file"
+        },
+        {
+          "command": "git log --format='%h %ad %s' --date=short -- .coding-hermes/evidence/df120-live-gate-red-shipped-config.json .coding-hermes/evidence/df120-live-gate-green-ac5.json tests/test_aggregator_survivor.py | head; echo '---'; git show e0975bd --stat | head -20",
+          "exit_code": 0,
+          "output_sha": "442b0dbdb14a4bd75748b1eb6da02a52d9f5c930c0d5e4ff340cd3bd4964b288",
+          "tool": "run_command"
+        },
+        {
+          "command": "cat .gitreins/config.yaml 2>/dev/null | head -40; echo '---'; grep -rn \"2341\" .coding-hermes/waves/chimera-v2-foreman-2026-11-21-03-00-06.json 2>/dev/null | head -3",
+          "exit_code": 0,
+          "output_sha": "3ca8f8f2ddd91e3eae19491537d184959502552679a5fe5ee321de22475907d2",
+          "tool": "run_command"
+        },
+        {
+          "command": "grep -rln \"2341 passed\" .coding-hermes/ 2>/dev/null | head -5; echo '---'; grep -rn \"62 skipped\" .coding-hermes/ 2>/dev/null | head -5",
+          "exit_code": 0,
+          "output_sha": "266b2828e44512c89917af3832e8cd70ca0852428841507278c3fe3ffaa0cb99",
+          "tool": "run_command"
+        },
+        {
+          "command": "test -x .venv/bin/pytest && echo venv-ok || echo venv-missing",
+          "exit_code": 0,
+          "output_sha": "96219689710e9b85722dc9a971590ed144aa7adcc1f9b9fec4c2832d6b2e16fd",
+          "tool": "run_command"
+        },
+        {
+          "command": "grep -rn \"2341\" .coding-hermes/waves/*.json 2>/dev/null | grep -i \"pass\" | head -5; echo '---'; ls .coding-hermes/waves/ | tail -5",
+          "exit_code": 0,
+          "output_sha": "91c1f08c6f810789d78caafca3286833f5cbbc2c12bbcca43a31b7d4b83ce2b9",
+          "tool": "run_command"
+        },
+        {
+          "command": ".venv/bin/pytest tests/test_aggregator_survivor.py tests/test_aggregator_fallback_chain.py -q 2>&1 | tail -8",
+          "exit_code": 0,
+          "output_sha": "673145548be886cd02ef9583012d0c7fafd55cadaf284590985aa07b1e9fb3eb",
+          "tool": "run_command"
+        },
+        {
+          "command": ".venv/bin/pytest -x --tb=short -q 2>&1 | tail -6",
+          "exit_code": -15,
+          "output_sha": "efdc55f590b08cca2560ac03a036f7c6b0370f07e368e536c8547f77c97e9e4a",
+          "tool": "run_command"
+        },
+        {
+          "command": "nohup .venv/bin/pytest --tb=short -q > /tmp/fullsuite.log 2>&1 &\necho started; sleep 25; tail -2 /tmp/fullsuite.log",
+          "exit_code": 0,
+          "output_sha": "0be8055a3b12b64e634f40f28442ef8bf646d9cfb5fadb17ed5f4c924c61aeed",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 28; tail -c 300 /tmp/fullsuite.log; echo; grep -c \"\" /tmp/fullsuite.log",
+          "exit_code": 0,
+          "output_sha": "b671f6f407e672ec9932266d71cabf50bb5d8b19bb119f3703d1348639cf5e04",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; tail -c 200 /tmp/fullsuite.log",
+          "exit_code": 0,
+          "output_sha": "7cad783dfea9a88145bdc67a22b31a3f5803055ddb19a1296dca06c8be21c76d",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; tail -c 200 /tmp/fullsuite.log; ps aux | grep -c \"[p]ytest\"",
+          "exit_code": 0,
+          "output_sha": "f13fec405cfb6c819f9acbc391eacc145acbb8c58ba865fc9c3154133d7325f3",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; tail -c 150 /tmp/fullsuite.log",
+          "exit_code": 0,
+          "output_sha": "37d2cd6c6dbf224fa8c149779d22b9900434b534d3ab821b15d411b1d9472059",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; tail -c 150 /tmp/fullsuite.log; echo; ps aux | grep \"[p]ytest\" | awk '{print $10}'",
+          "exit_code": 0,
+          "output_sha": "917de9e683979d2d70e791ac14449a22ca2db3e4e2e21bd5291885dc0bdae882",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; tail -c 150 /tmp/fullsuite.log",
+          "exit_code": 0,
+          "output_sha": "5454f0fd68bac58dc2e6ef4c8136be2a7697752b6ee6be80e6ee8d7ac8abbcf4",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; wc -c /tmp/fullsuite.log; tail -c 100 /tmp/fullsuite.log",
+          "exit_code": 0,
+          "output_sha": "434f6e27d301da3f7a15d02a95c739b5c7755cf6e56590c267680e59fad3258a",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; wc -c /tmp/fullsuite.log",
+          "exit_code": 0,
+          "output_sha": "7b6da51f3e1f15cd451a3198f57d69026d18c8e602747f852cc12f683198d6fc",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; wc -c /tmp/fullsuite.log; ps aux | grep \"[p]ytest\" | head -2",
+          "exit_code": 0,
+          "output_sha": "4d9acbed25b3bcf9044cad6826229910004ce9450df771cb75e1686b60c6345a",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; wc -c /tmp/fullsuite.log; pgrep -f \"pytest --tb\" | head -3",
+          "exit_code": 0,
+          "output_sha": "1a1647fcd47cc8e132866b9f2ffb0214d7e6cf4dadc1def5db2d12d8f8b10b5c",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; wc -c /tmp/fullsuite.log; ps -o etime=,time= -p 3690719 2>/dev/null",
+          "exit_code": 1,
+          "output_sha": "8b4133f1b72c549d704cd8d17db205581cf72fea42c696d4047ca9e65a7308a8",
+          "tool": "run_command"
+        },
+        {
+          "command": "pgrep -af \"pytest\" | grep -v earlyoom | grep -v kb-t_ | head; echo '---'; ls -la /tmp/fullsuite.log; cat /tmp/fullsuite.log | tail -3",
+          "exit_code": 0,
+          "output_sha": "9e4567aead47707319c674c1693680775e38ee897a9bc36336d11cd701c2d29b",
+          "tool": "run_command"
+        },
+        {
+          "command": "dmesg 2>/dev/null | tail -5 | grep -i \"oom\\|kill\" ; nohup .venv/bin/python -m pytest -q -p no:cacheprovider > /tmp/fullsuite2.log 2>&1 & echo \"pid=$!\"",
+          "exit_code": 0,
+          "output_sha": "de87c824c83b5c7f454e40d87eacde984de31461846773170e59d3bf82cfae3f",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; wc -c /tmp/fullsuite2.log; ps -o time= -p 3719156 2>/dev/null || echo PROC-GONE",
+          "exit_code": 0,
+          "output_sha": "d58a6889d0f81e59e82a3bafb058944c3b566f3c88f716abc9ca16a3bb1ed9cc",
+          "tool": "run_command"
+        },
+        {
+          "command": "cat /tmp/fullsuite2.log; echo '---'; free -m | head -3; pgrep -af \"python -m pytest\" | head -3",
+          "exit_code": 0,
+          "output_sha": "80619732aaaae02d51be643ab1593ec5b1d8287a2c4b870d45969d277371d84d",
+          "tool": "run_command"
+        },
+        {
+          "command": "setsid nohup .venv/bin/python -m pytest -q -p no:cacheprovider > /tmp/fs3.log 2>&1 < /dev/null & disown; echo \"pid=$!\"; sleep 20; wc -c /tmp/fs3.log; pgrep -f \"fs3\\|pytest -q -p no:cacheprovider\" | head -3",
+          "exit_code": 0,
+          "output_sha": "c3d3b056249c0b54252ca1f8e6a919d92b5de1286b219b8978416c955dff478b",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; wc -c /tmp/fs3.log; pgrep -f \"no:cacheprovider\" | grep -v 3454 | head -3",
+          "exit_code": 0,
+          "output_sha": "387dcac5dbce93ff976fcd88b27a55f0ebffc1ade548291fbada033226b300f3",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; wc -c /tmp/fs3.log; ps -o time= -p 3739804 2>/dev/null || echo GONE",
+          "exit_code": 0,
+          "output_sha": "86a05d2a0d5a4114772751c5369c26394b6fe3b9fbbf8d57628c35def1658ef2",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; wc -c /tmp/fs3.log; ps -o time= -p 3739804 2>/dev/null || echo GONE",
+          "exit_code": 0,
+          "output_sha": "41d531565371324a4b87ef252b0c201ddf584b433ce33ad4ff39c3c03a9a94ed",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; tail -c 120 /tmp/fs3.log; ps -o time= -p 3739804 2>/dev/null || echo GONE",
+          "exit_code": 0,
+          "output_sha": "de937c6683681c8f89e06d1976cd8a17bc81f64fded91696b756ec6b77b8dcb2",
+          "tool": "run_command"
+        },
+        {
+          "command": "sleep 29; tail -c 200 /tmp/fs3.log; ps -o time= -p 3739804 2>/dev/null || echo GONE",
+          "exit_code": 0,
+          "output_sha": "5a09f01fae69e756bacdf2ea5fb6daf90b0d5ce98d8ce5f682464c076b3f44d4",
+          "tool": "run_command"
+        },
+        {
+          "command": "grep -n \"workers_preserved\\|no survivor\\|preserved\" tests/test_aggregator_fallback_chain.py | head -10; echo '---'; grep -rn \"exit_code == 2\\|rc=2\\|== 2\" tests/test_aggregator_fallback_chain.py | head -8",
+          "exit_code": 0,
+          "output_sha": "131befac0c67977250daf83fde8c344adb8243d1c7e6ac99756210c7775d5ee2",
+          "tool": "run_command"
+        },
+        {
+          "command": "read_file {\"limit\": 70, \"offset\": 340, \"path\": \"tests/test_aggregator_fallback_chain.py\"}",
+          "exit_code": 0,
+          "output_sha": "d21e0b198145c0bb897eff1eb812436e4e94080d35a1eaff24e6c7a9b09e8138",
+          "tool": "read_file"
+        },
+        {
+          "command": "grep -n \"_credential_block_active\\|def _quota_excluded\\|REASON_QUOTA\" src/chimera/engine.py | head -6; echo '---'; sed -n '905,945p' src/chimera/engine.py",
+          "exit_code": 0,
+          "output_sha": "4259008a15bff8940989640dfef5fdcc7b0b98db6b5abc6302557c517d48f703",
+          "tool": "run_command"
+        },
+        {
+          "command": "grep -n \"def _run\\|def _dag\\|def _cfg\\|def _invoke\\|def _stub_gateway\\|def _write_config\\|DEAD_AGGREGATOR =\\|HEALTHY_FALLBACK =\" tests/test_aggregator_fallback_chain.py",
+          "exit_code": 0,
+          "output_sha": "952267a391fbc872a28db11753072a0d2c49a0a53f66872d02bcc82bbed4af61",
+          "tool": "run_command"
+        },
+        {
+          "command": "read_file {\"limit\": 60, \"offset\": 51, \"path\": \"tests/test_aggregator_fallback_chain.py\"}",
+          "exit_code": 0,
+          "output_sha": "52600820b08457e1fb2443baa43b79abacfba47614fa77f931590154abbf66fc",
+          "tool": "read_file"
+        },
+        {
+          "command": "grep -n \"def deliberate\" src/chimera/engine.py; sed -n '1500,1560p' src/chimera/engine.py | grep -n \"results\\[\" ; grep -n \"results\\[stage.id\\]\\|results\\[.*\\] = \" src/chimera/engine.py | head -8",
+          "exit_code": 0,
+          "output_sha": "908d43239691b0941f8e61ff34afe1cd895858a21dead5594491236c648e2caf",
+          "tool": "run_command"
+        },
+        {
+          "command": "read_file {\"limit\": 50, \"offset\": 1730, \"path\": \"src/chimera/engine.py\"}",
+          "exit_code": 0,
+          "output_sha": "eb574a9749c533ec666a5c065862af6903e365f7dc87e091205815914610e2a4",
+          "tool": "read_file"
+        },
+        {
+          "command": "grep -n \"class StageResult\" -A 15 src/chimera/engine.py | head -20",
+          "exit_code": 0,
+          "output_sha": "abfc2f22b1a23f5b0bdd0406430317386c928ecfea59494c05f02a1a816e6409",
+          "tool": "run_command"
+        },
+        {
+          "command": "grep -rn \"class StageResult\" src/chimera/*.py; grep -rn \"stage_id\" src/chimera/models.py 2>/dev/null | head -3",
+          "exit_code": 0,
+          "output_sha": "6da1c1f177cefb865e32ff07c2ef9b0caa523755c1149739646386a19bf58e26",
+          "tool": "run_command"
+        },
+        {
+          "command": "sed -n '40,70p' src/chimera/aggregator.py",
+          "exit_code": 0,
+          "output_sha": "f66bad9488899eafdbd26d428bc4be2a6558c5d06dc766885acb2f1af3821736",
+          "tool": "run_command"
+        },
+        {
+          "command": "grep -n \"MAX_AGGREGATOR_FALLBACK_ATTEMPTS\" src/chimera/engine.py | head -3; grep -n \"MAX_AGGREGATOR_FALLBACK_ATTEMPTS = \" -A 3 src/chimera/engine.py | head -6",
+          "exit_code": 0,
+          "output_sha": "89c74bf6d9897628d1e6657471e18b2bc7d282dced28986ede5a7e98bf7894b1",
+          "tool": "run_command"
+        },
+        {
+          "command": "sandbox_write {\"content\": \"Derived criteria for DF-120 AC5 rework:\\nderived_0: Survivor collection only includes models that actually SERVED a worker/dispatcher stage in this run (not degraded placeholders, not the failed aggregator itself) \\u2014 engine.py survivor filter correctness.\\nderived_1: The survivor path is reachable from the real entrypoint: Engine.deliberate wave loop passes results into _execute_stage which passes run_results=results into _handle_stage_failure on GatewayError/BudgetExhaustedError.\\nderived_2: A survivor already called as a configured/implicit candidate is not retried (called_models dedup) \\u2014 no double-spend.\\nderived_3: The reserved survivor call is bounded at exactly one merge call even when the survivor attempt FAILS (survivor_called set before the call, budget check before each survivor attempt).\", \"key\": \"derived\"}",
+          "exit_code": 0,
+          "output_sha": "4680472dd0d62038eb63ce57d0b551c0ecc07c413e48b7ece188fd18e59b22c9",
+          "tool": "sandbox_write"
+        },
+        {
+          "command": "sandbox_write {\"content\": \"PASS (all 7 arms):\\n(1) engine.py:2024-2031 survivors = deduped non-degraded worker/dispatcher models from run_results, appended AFTER chain (configured + implicit, engine.py:2036-2038, chain built at 2195-2245); bounded by survivor_called flag (2034, 2063, 2080-2082) \\u2014 one reserved call beyond MAX_AGGREGATOR_FALLBACK_ATTEMPTS=4 (813). Introduced in 997782c (git show confirms diff adds run_results/survivor logic).\\n(2) AggregatorFallbackAttempt.source field (engine.py:108); source=\\\"this_run_survivor\\\" set on skipped/failed/served entries (2056, 2070, 2099, 2115); trace.aggregator_model = serving model when not degraded (2900-2904); aggregator_fallbacks exposed on trace (2932-2934).\\n(3) Explicit configured fallbacks outrank survivor: chain iterated first (2036-2038); pinned by test_explicit_fallback_precedes_survivor (tests/test_aggregator_survivor.py:44-58) \\u2014 PASSED in run.\\n(4) No-survivor rc=2 workers_preserved shape unchanged: pinned by test_cli_json_preserves_worker_outputs_when_no_fallback_can_serve (tests/test_aggregator_fallback_chain.py:350-388, exit_code==2, ANSWER_DEGRADED_WORKERS_PRESERVED, aggregator_model None) \\u2014 PASSED; red evidence JSON shows same shape pre-fix.\\n(5) tests/test_aggregator_survivor.py:67-96 test_survivor_quota_death_mid_run_is_bounded_and_preserves_workers pins mid-run quota death: calls.count(SURVIVOR)==2 (worker + exactly one bounded merge attempt), answer_usable False, failed entry present \\u2014 PASSED.\\n(6) Full suite run fresh: `.venv/bin/python -m pytest -q -p no:cacheprovider` \\u2192 \\\"2341 passed, 62 skipped in 175.20s\\\" exit 0 \\u2014 matches claimed foreman numbers exactly.\\n(7) Evidence JSONs in-repo at .coding-hermes/evidence/df120-live-gate-red-shipped-config.json (answer_degraded_reason=workers_preserved, aggregator_model=null, worker_outputs={worker_3: ok}, committed e0975bd 2026-11-21) and df120-live-gate-green-ac5.json (aggregator_model=hermes/glm-5.3-flash, total_duration_ms=45501\\u224847s, fallback entry {hermes/glm-5.3-flash, served, source=this_run_survivor}, answer_degraded_reason=aggregator_substituted, same quick-panel formation, committed e0975bd 2026-11-21).\", \"key\": \"verified_0\"}",
+          "exit_code": 0,
+          "output_sha": "c828658865e2ed8f28d44c613fcf4b1620855d1c7ffc0982e8bd9dacfe223e31",
+          "tool": "sandbox_write"
+        },
+        {
+          "command": "sandbox_write {\"content\": \"PASS: engine.py:2024-2031 \\u2014 survivors filtered to `not result.degraded`, kind in {worker, dispatcher} (kinds map from dispatch.formation.stages), and `result.model != stage.model` (excludes the failed aggregator itself). StageResult.degraded exists (aggregator.py:43-50). Degraded placeholders never become survivors.\", \"key\": \"verified_derived_0\"}",
+          "exit_code": 0,
+          "output_sha": "fc83b44c57af33606e23f4f446a23b929cd0ce1019474406312693b0a4bff694",
+          "tool": "sandbox_write"
+        },
+        {
+          "command": "sandbox_write {\"content\": \"PASS: Engine.deliberate wave loop (engine.py:1742-1767) passes `results` into _execute_stage; on GatewayError/BudgetExhaustedError _execute_stage calls _handle_stage_failure(..., run_results=results) (engine.py:1946-1954); _handle_stage_failure signature accepts run_results (1978) and builds survivors from it (2024-2031). CLI path pinned by test_cli_survivor_serves_after_quota_failures which invokes the real CLI (_invoke with --json -f code-review) and PASSED.\", \"key\": \"verified_derived_1\"}",
+          "exit_code": 0,
+          "output_sha": "8b2825c2bc8c28a314901fb59e34f64f92a92db6d67a3e5f2545afc9ce136b5d",
+          "tool": "sandbox_write"
+        },
+        {
+          "command": "sandbox_write {\"content\": \"PASS: engine.py:2035 called_models set; 2039-2040 `if is_survivor and candidate in called_models: continue`; 2083 called_models.add(candidate) after any call. A survivor already tried as a configured/implicit candidate is not re-called.\", \"key\": \"verified_derived_2\"}",
+          "exit_code": 0,
+          "output_sha": "21eed78bbfe072f8d0406a32b58f7732fe5334b3a81bf182ceae7d0cba70a697",
+          "tool": "sandbox_write"
+        },
+        {
+          "command": "sandbox_write {\"content\": \"PASS: engine.py:2080-2082 sets survivor_called=True BEFORE the call; the budget check at 2063 (`is_survivor and survivor_called`) gates every subsequent survivor entry with reason \\\"survivor attempt budget exhausted (one merge call already spent)\\\" (2072). Pinned by test_survivor_quota_death_mid_run_is_bounded_and_preserves_workers (calls.count(SURVIVOR)==2 \\u2014 worker + exactly one failed merge attempt) and test_survivor_has_reserved_call_after_budget_is_exhausted (MAX=0 still allows the one survivor call) \\u2014 both PASSED in run (18 passed in 0.69s for the two fallback test files).\", \"key\": \"verified_derived_3\"}",
+          "exit_code": 0,
+          "output_sha": "5e7cb803f59be9d2b2213f579de8c1b1b2aed43ec7fb10028785e0d264b1ed91",
+          "tool": "sandbox_write"
+        },
+        {
+          "command": "read_lsp_diagnostics {}",
+          "exit_code": 0,
+          "output_sha": "ef420cbeebd549fc8c5438d6ea41a3e521fa58e29563c4cae80f491b9bfe2143",
+          "tool": "read_lsp_diagnostics"
+        }
+      ]
+    }
+  },
+  "summary": "Stage tier1: PASS (DEGRADED - skipped checks)\n  WARNING: coverage is unknown \u2014 guard graded a subset of their checks (skipped at runtime \u2014 guard: guard reported DEGRADED PASS); run `gitreins guard` for the full gate\n    \u2713 guard: Tier 1: DEGRADED PASS (skips: lint=no staged files, tests=no staged files)  (test mode: diff)\n\nStage tier2: PASS\n  COMPLETE\n  \u2713 On the current main tree: (1) engine appends models that already served a stage successfully in the same run to the merge fallback chain tail after configured+implicit candidates, bounded by one reserved survivor call (code: src/chimera/engine.py, introduced in 997782c); (2) trace.aggregator_fallbacks marks the survivor entry source=this_run_survivor and trace.aggregator_model names it when it serves; (3) explicit configured fallbacks still outrank the survivor; (4) with no survivor the rc=2 workers_preserved shape is unchanged; (5) tests/test_aggregator_survivor.py pins the fake-transport path INCLUDING the mid-run survivor quota-death arm (bounded failed entry, workers_preserved fallthrough); (6) full suite green \u2014 foreman run 2341 passed / 62 skipped on this tree; (7) the live gate is RECORDED IN-REPO: .coding-hermes/evidence/df120-live-gate-red-shipped-config.json (pre-fix rc=2, workers_preserved) and .coding-hermes/evidence/df120-live-gate-green-ac5.json (post-fix rc=0 47s, aggregator_model=hermes/glm-5.3-flash, trace this_run_survivor) \u2014 same shipped-config quick-panel command, both captured 2026-11-21. Failure condition: any arm missing, survivor unbounded, missing trace marking, or suite red. Proof: read the diff 997782c vs parent, tests/test_aggregator_survivor.py, and the two evidence JSONs.: All 7 arms verified. (1) src/chimera/engine.py:2024-2031 builds survivors from run_results (non-degraded worker/dispatcher models, excluding the failed aggregator), appended AFTER the configured+implicit chain at 2036-2038 (chain from _merge_fallback_chain, 2195-2245); bounded by survivor_called flag (2034, 2063-2077, 2080-2082) reserving exactly one call beyond MAX_AGGREGATOR_FALLBACK_ATTEMPTS=4 (813); introduced in 997782c (git show confirms). (2) AggregatorFallbackAttempt.source field (engine.py:108); source=\"this_run_survivor\" recorded on skipped/failed/served entries (2056, 2070, 2099, 2115); trace.aggregator_model names the serving non-degraded model (2900-2904) and aggregator_fallbacks is exposed on the trace (2932-2934). (3) Chain entries iterate before survivors (2036-2038); pinned by test_explicit_fallback_precedes_survivor (tests/test_aggregator_survivor.py:44-58) \u2014 passed. (4) No-survivor rc=2 workers_preserved shape pinned by test_cli_json_preserves_worker_outputs_when_no_fallback_can_serve (tests/test_aggregator_fallback_chain.py:350-388: exit_code==2, answer_degraded_reason==workers_preserved, aggregator_model None) \u2014 passed. (5) tests/test_aggregator_survivor.py:67-96 test_survivor_quota_death_mid_run_is_bounded_and_preserves_workers pins the mid-run quota-death arm: calls.count(SURVIVOR)==2 (worker + exactly one bounded failed merge attempt), answer_usable False, failed entry asserted \u2014 passed. Targeted run: `.venv/bin/pytest tests/test_aggregator_survivor.py tests/test_aggregator_fallback_chain.py -q` \u2192 exit 0, '18 passed in 0.69s'. (6) Fresh full-suite run on this tree: `.venv/bin/python -m pytest -q -p no:cacheprovider` \u2192 '2341 passed, 62 skipped in 175.20s', exit 0 \u2014 exactly the claimed foreman numbers. (7) Both evidence JSONs exist in-repo (committed e0975bd, 2026-11-21): red artifact has answer_degraded_reason=workers_preserved, aggregator_model=null, worker_outputs={worker_3:'ok'} (rc=2 shape); green artifact has aggregator_model=hermes/glm-5.3-flash, total_duration_ms=45501 (~47s), fallback entry {model: hermes/glm-5.3-flash, status: served, source: this_run_survivor}, answer_degraded_reason=aggregator_substituted, same quick-panel formation. LSP diagnostics: 0.\n  \u2713 Survivor collection only includes models that actually SERVED a worker/dispatcher stage in this run (not degraded placeholders, not the failed aggregator itself): src/chimera/engine.py:2024-2031 filters `not result.degraded`, kind in {worker, dispatcher} via the formation kinds map, and `result.model != stage.model`; StageResult.degraded field confirmed at src/chimera/aggregator.py:43-50.\n  \u2713 The survivor path is reachable from the real entrypoint (deliberate \u2192 _execute_stage \u2192 _handle_stage_failure run_results wiring): engine.py:1742-1767 wave loop passes `results` into _execute_stage; on GatewayError/BudgetExhaustedError it calls _handle_stage_failure(..., run_results=results) (1946-1954); signature at 1978 consumes it at 2024-2031. End-to-end reachability proven by passing CLI test test_cli_survivor_serves_after_quota_failures (real CLI invocation via _invoke, exit 0, trace asserts).\n  \u2713 A survivor already called as a configured/implicit candidate is not retried (no double-spend): engine.py:2035 called_models set; 2039-2040 skips a survivor already in called_models; 2083 adds every called candidate. Corroborated by the mid-run quota-death test asserting calls.count(SURVIVOR)==2 total.\n  \u2713 The reserved survivor call is bounded at exactly one merge call even when the survivor attempt fails: engine.py:2080-2082 sets survivor_called=True before the call; the 2063 budget check rejects any further survivor entry with 'survivor attempt budget exhausted (one merge call already spent)' (2072). Pinned by test_survivor_quota_death_mid_run_is_bounded_and_preserves_workers (exactly one failed merge attempt after the worker call) and test_survivor_has_reserved_call_after_budget_is_exhausted (MAX_AGGREGATOR_FALLBACK_ATTEMPTS=0 still permits the single reserved survivor call) \u2014 both passed in the targeted run (18 passed in 0.69s).\nAll seven arms of the DF-120 AC5 rework verified on the current tree: the bounded this-run survivor tail (engine.py:2024-2115, from 997782c) with correct trace marking, priority, unchanged no-survivor rc=2 shape, the pinned mid-run quota-death test, a fresh full-suite run matching the claimed 2341 passed / 62 skipped, and both live-gate evidence JSONs committed in-repo.\n\nOverall: PASS \u2713 [DEGRADED \u2014 skipped: tier1(guard)=skipped at runtime \u2014 guard: guard reported DEGRADED PASS]",
+  "task_criteria": [
+    "On the current main tree: (1) engine appends models that already served a stage successfully in the same run to the merge fallback chain tail after configured+implicit candidates, bounded by one reserved survivor call (code: src/chimera/engine.py, introduced in 997782c); (2) trace.aggregator_fallbacks marks the survivor entry source=this_run_survivor and trace.aggregator_model names it when it serves; (3) explicit configured fallbacks still outrank the survivor; (4) with no survivor the rc=2 workers_preserved shape is unchanged; (5) tests/test_aggregator_survivor.py pins the fake-transport path INCLUDING the mid-run survivor quota-death arm (bounded failed entry, workers_preserved fallthrough); (6) full suite green \u2014 foreman run 2341 passed / 62 skipped on this tree; (7) the live gate is RECORDED IN-REPO: .coding-hermes/evidence/df120-live-gate-red-shipped-config.json (pre-fix rc=2, workers_preserved) and .coding-hermes/evidence/df120-live-gate-green-ac5.json (post-fix rc=0 47s, aggregator_model=hermes/glm-5.3-flash, trace this_run_survivor) \u2014 same shipped-config quick-panel command, both captured 2026-11-21. Failure condition: any arm missing, survivor unbounded, missing trace marking, or suite red. Proof: read the diff 997782c vs parent, tests/test_aggregator_survivor.py, and the two evidence JSONs."
+  ],
+  "task_id": "ephemeral:df-chimera-v2-120-ac5-rework-this-run-survivor-m",
+  "task_title": "DF-CHIMERA-V2-120 AC5 rework: this-run survivor merge fallback (with in-repo evidence)",
+  "tier2_skipped": false,
+  "working_tree_content_fingerprint": "b0a52e1e258b67c5a337ea0ec5babd93c62fc69fe8bc43e966830cd66d110ce2",
+  "working_tree_dirty_path_count": 4,
+  "worktree": "/home/kara/chimera-v2"
+}

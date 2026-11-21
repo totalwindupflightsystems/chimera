@@ -1,0 +1,30 @@
+{
+  "wave_id": "chimera-v2-foreman-2026-11-21-08-02-40",
+  "tick_id": "chimera-v2-foreman-2026-11-21-08-02-40",
+  "tick_number": 496,
+  "block": "DF-CHIMERA-V2-135",
+  "mode": "serial",
+  "slots_computed": "max(1, min(6, 16 - ceil(20.23))) = 1",
+  "wave_budget": 4,
+  "reason": "host loadavg 20.23 on 16 cores -> 1 slot; serial path per lane prompt section 2 (loaded box = 1 worker, not idle). WAVE_BUDGET 4 treated as ceiling, not floor.",
+  "resume": "block DF-CHIMERA-V2-135 named by tick 495; first closing the carried DF-CHIMERA-V2-120 judge binding (AC1-5 landed on main, tier2 mergegate PASS at 49e3805), then dispatching the block's next ready row.",
+  "carried_closeout": {
+    "row": "DF-CHIMERA-V2-120",
+    "state": "AC1-4 landed c3eb72c+e25cc2d, AC5 landed 997782c+e0975bd, tier2 mergegate verdict PASS (5/5 items) on tree 49e3805 (untracked evidence file), gitreins task complete fired this tick to bind the scoped criterion to live HEAD"
+  },
+  "workers": [
+    {
+      "row": "DF-CHIMERA-V2-108",
+      "title": "internal zero-shot answer service: HEAD-build live proof + docs arm (+ best-effort tailnet bind, chim lane)",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-108",
+      "branch": "wt/DF-CHIMERA-V2-108",
+      "base_sha": "90319a7",
+      "brief": "/tmp/brief-df108-20261121-0802.txt",
+      "model": "openai/gpt-6.1-terra",
+      "provider": "xkiro",
+      "gitreins_task": "DF-CHIMERA-V2-108 (created + started this tick)",
+      "status": "dispatched"
+    }
+  ],
+  "dispatched_at": "2026-11-21T08:05-05:00"
+}
