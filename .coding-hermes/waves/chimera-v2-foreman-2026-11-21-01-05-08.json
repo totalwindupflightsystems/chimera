@@ -1,0 +1,23 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-21-01-05-08",
+  "tick_number": 494,
+  "block": "DF-CHIMERA-V2-135",
+  "path": "serial",
+  "path_reason": "loadavg 21.62 on 16 cores -> slots = max(1, min(6, 16 - ceil(21.62))) = 1; WAVE_BUDGET 4 is a ceiling, not a floor. Serial per project prompt section 2.",
+  "slots": 1,
+  "worker_model": "openai/gpt-6.1-terra",
+  "worker_provider": "xkiro",
+  "rows": [
+    {
+      "task_id": "DF-CHIMERA-V2-130",
+      "priority": "P1",
+      "title": "quota-dead provider must not sink a deliberation",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-130",
+      "branch": "wt/DF-CHIMERA-V2-130",
+      "base": "origin/main",
+      "base_sha": "616aaf0",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-DF-CHIMERA-V2-130-tick494.md",
+      "depends_on": []
+    }
+  ]
+}

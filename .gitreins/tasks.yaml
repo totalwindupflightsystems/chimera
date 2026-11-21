@@ -2567,3 +2567,25 @@ tasks:
   status: complete
   created_at: '2026-11-20T14:45:08.992425+00:00'
   completed_at: '2026-11-20T15:39:53.620430+00:00'
+- id: DF-CHIMERA-V2-130
+  title: 'quota-dead provider must not sink a deliberation: selection consults provider
+    health, answer still served by a healthy model'
+  criteria:
+  - 'AC1 selection path consults provider health/failure state (not only credential
+    resolution) so a quota-dead provider is skipped. PROOF: git diff of the changed
+    selection code + the new test asserting the unhealthy provider is not chosen.
+    FAILIF: with deepseek marked quota-dead in the health snapshot, the formation
+    still dispatches or aggregates on deepseek/*'
+  - 'AC2 a test reproduces the live failure shape: provider A quota-dead, provider
+    B healthy, formation defaults name A -> HTTP 200 with stages served by B. PROOF:
+    pytest node id + its output. FAILIF: no test exercises the A-dead/B-healthy selection
+    or the run still 502s'
+  - 'AC3 /v1/health keeps reporting the quota condition after failover works (no masking).
+    PROOF: test asserting detail.providers.deepseek.error_class=quota while the deliberation
+    succeeds. FAILIF: health reports healthy, or fails once failover lands'
+  - 'AC4 full suite green and ruff clean at HEAD. PROOF: .venv/bin/pytest -q summary
+    line + ruff check/format output. FAILIF: any failing test or ruff finding in the
+    changed files'
+  status: complete
+  created_at: '2026-11-21T01:12:32.093499+00:00'
+  completed_at: '2026-11-21T02:24:00.645059+00:00'
