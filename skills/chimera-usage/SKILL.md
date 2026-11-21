@@ -1248,15 +1248,17 @@ Recipes:
   linearly and uncapped: `Retry-After: 1` → 2.113 s, `Retry-After: 5` → 10.114 s for one blip,
   while the config asked for a 500 ms first delay. A provider can set your p95; cap it at your edge
   or expect the header's value (`DF-CHIMERA-V2-129`).
-- **Do not rely on the jitter to spread a herd.** It is `hash(str(attempt))` — a process-wide
-  constant per attempt — so concurrent callers share one delay: 4 in-flight calls landed within
-  0.2–0.9 ms of each other with identical `delay_ms` (385, 385, 385, 385). Across processes
-  `PYTHONHASHSEED` hides it, which is why single-shot CLI runs look fine (`DF-CHIMERA-V2-127`).
+- **The jitter now spreads per call, not per attempt.** It used to be `hash(str(attempt))` — a
+  process-wide constant per attempt — so concurrent callers shared one delay: 4 in-flight calls
+  landed within 0.2–0.9 ms of each other with identical `delay_ms` (385, 385, 385, 385), and
+  `PYTHONHASHSEED` hid it across processes. `DF-CHIMERA-V2-127` replaced it with an independent
+  `random.uniform(0.75, 1.25)` draw per retry, so in-process callers decorrelate. The exponential
+  delay is still capped BEFORE jitter, so one actual delay can reach 125% of `max_delay_ms`.
 - **Credit where it is due:** recovery always produced a real answer (or an honest 502 — never a
   fabricated one), and the served process has a working prewarm, so a clean call is 0.1048 s cold /
   0.1117 s warm. The retry layer is survivable; it is only unbounded and invisible.
 
-Open rows from this run: `DF-CHIMERA-V2-126`/`-127`/`-128`/`-129`. Install leg this time was
+Open rows from this run: `DF-CHIMERA-V2-126`/`-128`/`-129` (`-127` closed by the per-call jitter fix). Install leg this time was
 **proven on a clean machine** (bunker battery: fresh-install OK, 2234 tests passed, lint OK,
 docker_build OK; `ci-pass` FAIL is `act` dying in `setup/index.js`, not a red repo). Evidence and
 re-runnable probes:
