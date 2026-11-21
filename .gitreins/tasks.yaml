@@ -2590,12 +2590,18 @@ tasks:
   created_at: '2026-11-21T01:12:32.093499+00:00'
   completed_at: '2026-11-21T02:24:00.645059+00:00'
 - id: DF-CHIMERA-V2-120
-  title: 'Aggregator fallback chain: one dead provider must not destroy a paid deliberation'
+  title: Aggregator fallback chain + this-run survivor tail (DF-120, recreated with
+    scoped criteria after judge context-cap deaths)
   criteria:
-  - When the aggregator model fails, engine attempts merge on ordered fallback list
-    (defaults.aggregator_fallbacks / per-formation), trace records serving model +
-    skip reason; >=1 worker success => usable answer or explicit degraded exit; lock_aggregator
-    must not block the list; unreachable-all-providers fails <15s with remedy hint;
-    pytest suite green on merged tree
+  - 'On the current main tree: (1) ordered aggregator_fallbacks chain (defaults +
+    per-formation) with trace.aggregator_model + skip reasons; (2) models that served
+    a stage successfully in the same run are appended as a bounded this_run_survivor
+    tail; (3) explicit fallbacks outrank the survivor; (4) no-survivor case keeps
+    rc=2 workers_preserved with worker_outputs in --json; (5) lock_aggregator does
+    not block the chain; (6) LaneUnreachable fails <15s with remedy hint; (7) tests/test_aggregator_fallback_chain.py
+    + tests/test_aggregator_survivor.py pin all arms; (8) full suite green; (9) live
+    gate recorded in .coding-hermes/evidence/df120-live-gate-*.json. FAILIF: any arm
+    missing, survivor unbounded, or suite red. PROOF: diff of commits c3eb72c/e25cc2d/997782c,
+    the two test files, evidence JSONs, foreman suite run 2341 passed / 62 skipped'
   status: in_progress
-  created_at: '2026-11-21T03:01:59.629516+00:00'
+  created_at: '2026-11-21T06:34:55.114082+00:00'

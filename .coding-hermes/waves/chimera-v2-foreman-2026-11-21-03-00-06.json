@@ -2,7 +2,7 @@
   "wave_id": "chimera-v2-foreman-2026-11-21-03-00-06",
   "tick_id": "chimera-v2-foreman-2026-11-21-03-00-06",
   "block": "DF-CHIMERA-V2-135",
-  "mode": "serial-fallback",
+  "mode": "serial-rework",
   "slots_computed": "max(1, min(6, 16 - ceil(14.24))) = 1",
   "wave_budget": 3,
   "reason": "host loadavg 14.24 on 16 cores -> 1 slot; serial path per lane prompt section 2 (loaded box = 1 worker, not idle)",
@@ -17,6 +17,19 @@
       "model": "openai/gpt-6.1-terra",
       "provider": "xkiro",
       "gitreins_task": "DF-CHIMERA-V2-120 (created + started this tick)",
+      "status": "dispatched"
+    },
+    {
+      "row": "DF-CHIMERA-V2-120",
+      "attempt": 2,
+      "scope": "AC5 this-run survivor tail",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-120-R2",
+      "branch": "wt/DF-CHIMERA-V2-120-R2",
+      "base_sha": "d821a41",
+      "brief": "/tmp/brief-df120r2-20261121-0420.txt",
+      "model": "cx/gpt-6.1-terra",
+      "provider": "9router",
+      "trigger": "stand-in-pm reopened row: shipped-config gate arm rc=2 despite in-run worker survivor (AC5); foreman red-proven live rc=2 11s workers_preserved",
       "status": "dispatched"
     }
   ],
