@@ -2589,30 +2589,6 @@ tasks:
   status: complete
   created_at: '2026-11-21T01:12:32.093499+00:00'
   completed_at: '2026-11-21T02:24:00.645059+00:00'
-- id: DF-CHIMERA-V2-108
-  title: 'Internal zero-shot answer service: HEAD-build live proof + docs arm (+ best-effort
-    tailnet bind, chim lane)'
-  criteria:
-  - 'On the merged main tree: (1) AC#4 docs arm: tracked chimera.yaml.example keeps
-    quick-panel + quick (verify present, do NOT re-ship) and README gains an ops section
-    documenting internal-service usage (base URL, auth header, formation selection
-    incl. quick/quick-panel, where cost and request_id live in the response, how a
-    fleet agent points an OpenAI-SDK client at it); (2) AC#1 measurement arm: an instance
-    built at current HEAD started on a FREE PORT (not 8765) serves POST /v1/deliberate
-    with prompt ''Reply with the word ok.'' formation quick-panel, returns a merged
-    answer with trace.total_duration_ms < 60000; the full command + timing block saved
-    verbatim to .coding-hermes/evidence/df108-quick-panel-trace.json and the row names
-    the build commit that produced it (the deployed 8765 process may stay stale -
-    do not chase DF-CHIMERA-V2-134); (3) best-effort ops arms recorded honestly: AC#2
-    tailnet bind attempt (chimera.service --host change + restart + second-host SDK
-    probe) and AC#3 master001 chim/quick + chim/panel lane registration attempt -
-    each either DONE with pasted evidence or BLOCKED with the exact blocker (consent
-    gate, credential, owner-level risk) written on the row; no arm silently skipped.
-    FAILIF: docs arm missing, HEAD-build trace missing or >= 60000ms, or an ops arm
-    silently skipped without a written blocker. PROOF: git diff on README/chimera.yaml.example,
-    evidence JSON, row notes, suite green on touched docs'
-  status: in_progress
-  created_at: '2026-11-21T08:08:38.313974+00:00'
 - id: DF-CHIMERA-V2-120
   title: Aggregator fallback chain + bounded this-run survivor tail (DF-120, compact
     binding criterion)
@@ -2630,3 +2606,28 @@ tasks:
   status: complete
   created_at: '2026-11-21T08:26:08.770007+00:00'
   completed_at: '2026-11-21T08:29:57.701998+00:00'
+- id: DF-CHIMERA-V2-108
+  title: 'Internal zero-shot answer service: HEAD-build live proof + docs arm (criteria
+    v2: quick alias location corrected per CH-MAINT-012)'
+  criteria:
+  - 'On the merged main tree (HEAD b115f87): (1) AC#4 docs arm: README carries the
+    ''Run chimera as an internal answer service'' ops section (base URL, auth via
+    CHIMERA_API_KEY, formation selection incl. quick-panel AND quick, where cost +
+    request_id live, OpenAI-SDK client recipe); tracked chimera.yaml.example keeps
+    quick-panel; the quick alias must exist in chimera.yaml.example OR chimera.yaml.fleet
+    (CH-MAINT-012 commit 4a94fdb moved it to the fleet example to hold the 120-line
+    budget) AND README must document the alias either way - re-adding the alias to
+    the budget-capped example is NOT required; (2) AC#1 measurement arm: an instance
+    built at the worker''s HEAD (a4d0bd4) served POST /v1/deliberate quick-panel on
+    free port 18799 with 200 in 15290 ms < 60000, evidence committed at .coding-hermes/evidence/df108-quick-panel-trace.json
+    naming the build commit; (3) AC#2 tailnet: tailscale serve 8443 -> 127.0.0.1:8765
+    published with loopback kept + revocation documented, second-host proof from master001
+    recorded (HEAD build 200 in 10796 ms, keyless 401 auth gate); (4) AC#3 9router
+    lane: BLOCKED with written blocker + census + exact commands in the evidence JSON
+    - a written blocker satisfies this arm. FAILIF: README section missing, quick-panel
+    absent from the example AND fleet example, quick alias documented nowhere, evidence
+    JSON missing or >= 60000 ms, or an arm silently skipped. PROOF: read README.md:556-680,
+    chimera.yaml.example, chimera.yaml.fleet, the evidence JSON; do NOT re-run the
+    full suite.'
+  status: in_progress
+  created_at: '2026-11-21T09:04:35.433919+00:00'
