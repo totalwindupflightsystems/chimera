@@ -454,13 +454,18 @@ def _health_quota_providers(
         return {}
     if not isinstance(snapshot, Mapping):
         return {}
-    dead: dict[str, str] = {}
+    # The same set ``/v1/health`` publishes as ``unhealthy_providers``; named
+    # identically here so the selection path and the health surface never read
+    # as two different concepts (DF-CHIMERA-V2-130).
+    unhealthy_providers: dict[str, str] = {}
     for provider, info in snapshot.items():
         if not isinstance(info, Mapping):
             continue
         if info.get("healthy") is False and info.get("error_class") == _QUOTA_ERROR_CLASS:
-            dead[str(provider)] = str(info.get("error") or info.get("note") or _QUOTA_ERROR_CLASS)
-    return dead
+            unhealthy_providers[str(provider)] = str(
+                info.get("error") or info.get("note") or _QUOTA_ERROR_CLASS
+            )
+    return unhealthy_providers
 
 
 def _quota_excluded_models(
@@ -490,7 +495,7 @@ def _quota_excluded_models(
     Returns ``{model: {"provider", "error_class", "retry_after_s", "detail"}}``
     — the machine-readable attempts list the no-healthy-candidate error needs.
     """
-    dead_providers = _health_quota_providers(provider_health)
+    unhealthy_providers = _health_quota_providers(provider_health)
     details = registry.blocked_detail()
     quota_blocked: dict[str, dict[str, Any]] = {
         model: entry for model, entry in details.items() if entry.get("reason") == _QUOTA_ERROR_CLASS
@@ -505,8 +510,8 @@ def _quota_excluded_models(
             continue
         retry_after_s: float | None = None
         detail = ""
-        if entry.provider in dead_providers:
-            detail = dead_providers[entry.provider]
+        if entry.provider in unhealthy_providers:
+            detail = unhealthy_providers[entry.provider]
         elif name in quota_blocked:
             detail = f"quota block recorded for {name}"
             retry_after_s = quota_blocked[name].get("expires_in_s")
