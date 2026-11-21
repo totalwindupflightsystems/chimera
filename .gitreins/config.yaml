@@ -73,7 +73,30 @@ pipeline:
     - detect_dead_code
 evaluator:
   max_iterations: 300
-  max_time: 90m
+  # CH-MAINT-013: 90m was a 22x overshoot of the real workload, and it is
+  # exactly what the "tier2 produced no verdict" task completes were sitting
+  # in. Measured on the 30 verdicts under .gitreins/history for 2026-11-20/21:
+  # median ~3.5 min, slowest HEALTHY verdict 859s (14.3 min), and four runs
+  # that burned the entire ceiling grading zero criteria — time cap at 1h30m
+  # for 5575623c/DF-CHIMERA-V2-126 (5412s), 1d60afb1/DF-CHIMERA-V2-120 (5469s,
+  # 9.2M input tokens) and fbfe7248/DF-CHIMERA-V2-130 (5496s, 0 of 4 criteria
+  # graded), plus 61051b39/DF-CHIMERA-V2-120 which hit the iteration cap
+  # (300.9 used) at 3181s. 20m keeps 1.4x headroom over the slowest healthy
+  # run and fails 4.5x sooner than 90m.
+  #
+  # Expiry is loud and non-zero: the loop's per-iteration check
+  # (engine/evaluator.py:1580 `self.eval_cap.check()`) calls
+  # EvalCap._check_hard_caps (engine/eval_cap.py:196), which returns
+  # "Time cap (20m) exceeded (20m elapsed). Increase max_time or simplify
+  # criteria." — that string lands in the verdict summary, the partial verdict
+  # is persisted to .gitreins/history/<date>/<hash>/verdict.json by
+  # _persist_result, and cmd_task_complete exits 1 (gitreins/cli.py:2608).
+  # RESIDUAL: the cap is sampled only at iteration boundaries (top of loop and
+  # after each LLM call), so the worst-case overrun is one in-flight request
+  # chain — GITREINS_LLM_TIMEOUT=120s x 3 attempts + backoff ~= 363s — plus one
+  # bounded tool command (engine/command_hygiene.run_bounded). There is no
+  # in-call timer, so the real bound is ~20m + ~6m, not exactly 20m.
+  max_time: 20m
   max_input_tokens: 16M
   max_output_tokens: 4M
   tool_call_weight: 0.1
