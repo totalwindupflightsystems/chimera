@@ -1,0 +1,37 @@
+{
+  "wave_id": "chimera-v2-foreman-2026-11-21-11-59-37",
+  "tick_id": "chimera-v2-foreman-2026-11-21-11-59-37",
+  "block": "DF-CHIMERA-V2-135",
+  "mode": "serial",
+  "slots_computed": "max(1, min(6, 16 - ceil(72.75))) = 1",
+  "wave_budget": 2,
+  "reason": "resumed block DF-CHIMERA-V2-135 named by tick chimera-v2-foreman-2026-11-21-09-23-22 (25 ready rows left). slots=1 because load1 was 72.75 on 16 cores (4.5x oversubscribed) - SERIAL PATH, one worker, not an idle tick.",
+  "base_sha": "b69efb2",
+  "seat_incident": {
+    "requested": "openai/gpt-6.1-terra @ xkiro (configured worker model)",
+    "probe": "live probe timed out with HTTP 503 model_maintenance, resume 2026-11-24T08:34:38Z; agent.log line 59851-59855 shows the same 503 for this model plus two unrelated stale workers (code-factory CF-247, INT-CI-024) still retrying it",
+    "actual": "accounts/fireworks/models/deepseek-v4p1-flash-1017-spot @ fireworks - proven seat on the previous tick; switched under the 'actual unavailable failure' clause, not on preference"
+  },
+  "independence_evidence": "single-row serial tick; DF-117 touches src/chimera/api/server.py header-parsing region + tests/test_server_coverage.py class TestDeliberateTimeoutHeader + docs/CONFIG.md timeout passage. DF-116 (same header, chat/completions side) is deliberately NOT in this tick - same seam.",
+  "workers": [
+    {
+      "row": "DF-CHIMERA-V2-117",
+      "title": "Malformed X-Chimera-Timeout value is silently swallowed on /v1/deliberate",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-117",
+      "branch": "wt/DF-CHIMERA-V2-117",
+      "base_sha": "b69efb2",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-DF-CHIMERA-V2-117-20261121-1205.md",
+      "model_requested": "openai/gpt-6.1-terra",
+      "provider_requested": "xkiro",
+      "model_actual": "accounts/fireworks/models/deepseek-v4p1-flash-1017-spot",
+      "provider_actual": "fireworks",
+      "gitreins_task": "DF-CHIMERA-V2-117 (created + started)",
+      "status": "dispatching"
+    }
+  ],
+  "carried_debt": [
+    "DF-CHIMERA-V2-126 landed + pushed (c13f079) with the tier-2 verdict still pending: judge wedged on host load 58 last tick",
+    "DF-CHIMERA-V2-131 landed + pushed (bbf8dce) with no verdict bought"
+  ],
+  "created_at": "2026-11-21T12:05:00-05:00"
+}
