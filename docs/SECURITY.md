@@ -50,10 +50,13 @@ These are the only paths served without credentials when `auth.enabled: true`
 (measured against a live server — re-verify with `curl -o /dev/null -w '%{http_code}'`
 against your own deployment, and see `GET /openapi.json` for the routed surface):
 
-- `GET /health` — alias of `/v1/health`
-- `GET /v1/health`
-- `GET /v1/health/ready`
-- `GET /v1/health/live`
+- `GET /health` — alias of `/v1/health/live` (liveness body: status,
+  uptime_models, commit, version)
+- `GET /v1/health` — provider-degradation probe (status plus per-provider
+  unhealthy/slow/skipped detail); this is the one to alert on
+- `GET /v1/health/ready` — readiness probe (answers 503 until a provider is
+  proven reachable)
+- `GET /v1/health/live` — liveness probe (always 200 while the process is alive)
 - `GET /v1/models`
 - `GET /v1/formations`
 - `GET /.well-known/agent-card.json` — keyless AgentCard/A2A discovery document
