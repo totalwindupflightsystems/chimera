@@ -887,19 +887,27 @@ class TestReadinessExceptionPath:
 
 
 class TestDeliberateTimeoutHeader:
-    def test_invalid_timeout_header_value_is_skipped(
+    @pytest.mark.parametrize("header", ["total=notanumber", "per_stage=abc", "total=nan"])
+    def test_unparsable_timeout_value_rejected_with_400(
         self,
         config: ChimeraConfig,
+        header: str,
     ) -> None:
-        """Unparseable timeout values in X-Chimera-Timeout are skipped (lines 374-377)."""
+        """An unparsable value is rejected, naming the offending pair verbatim.
+
+        DF-CHIMERA-V2-117: this used to be `continue` — the header was silently
+        dropped and the caller paid the full unbounded wall time it was trying
+        to bound. ``nan`` is included because it *parses* but is not a budget
+        (it used to sail past the ceiling check and disable the override).
+        """
         client = _client(config)
-        # "total=notanumber" → float() raises ValueError → continue
         r = client.post(
             "/v1/deliberate",
             json={"prompt": "hi"},
-            headers={"X-Chimera-Timeout": "total=notanumber"},
+            headers={"X-Chimera-Timeout": header},
         )
-        assert r.status_code == 200
+        assert r.status_code == 400
+        assert header in r.json()["detail"]
 
     def test_timeout_exceeds_ceiling_returns_400(
         self,
@@ -942,18 +950,71 @@ class TestDeliberateTimeoutHeader:
         )
         assert r.status_code == 200
 
-    def test_timeout_header_garbage_part_skipped(
+    def test_timeout_header_bare_token_rejected_with_400(
         self,
         config: ChimeraConfig,
     ) -> None:
-        """Header parts without '=' are ignored — line 370-372."""
+        """A part without '=' is rejected and named; the valid pair is not applied.
+
+        DF-CHIMERA-V2-117: "garbage, total=120" used to answer 200 with the
+        trailing `total=120` applied, hiding the typo entirely.
+        """
         client = _client(config)
         r = client.post(
             "/v1/deliberate",
             json={"prompt": "hi"},
             headers={"X-Chimera-Timeout": "garbage, total=120"},
         )
-        assert r.status_code == 200
+        assert r.status_code == 400
+        detail = r.json()["detail"]
+        assert "garbage" in detail
+        # The valid partner of the malformed part was NOT applied.
+        assert "answer" not in r.json()
+
+    def test_unknown_timeout_key_rejected_with_400(
+        self,
+        config: ChimeraConfig,
+    ) -> None:
+        """An unknown key (e.g. a typo'd `perstage`) is rejected, not ignored."""
+        client = _client(config)
+        r = client.post(
+            "/v1/deliberate",
+            json={"prompt": "hi"},
+            headers={"X-Chimera-Timeout": "perstage=2"},
+        )
+        assert r.status_code == 400
+        assert "perstage=2" in r.json()["detail"]
+
+    def test_mixed_timeout_header_rejected_and_applies_nothing(
+        self,
+        config: ChimeraConfig,
+    ) -> None:
+        """`total=5,per_stage=abc` → 400 with no partial budget applied.
+
+        The whole header is validated before anything reaches the overrides, so
+        the well-formed `total=5` must not take effect: the engine is never
+        reached and the response carries no answer or trace.
+        """
+        engine = Engine(config, FakeGateway(lambda *a, **kw: _resp("ok", "x")))
+        seen: list[Any] = []
+
+        async def recording_deliberate(*a: Any, **kw: Any):
+            seen.append(kw.get("overrides"))
+            raise AssertionError("deliberate must not run for a rejected header")
+
+        engine.deliberate = recording_deliberate  # type: ignore[assignment]
+        client = _client_with_engine(config, engine)
+        r = client.post(
+            "/v1/deliberate",
+            json={"prompt": "hi"},
+            headers={"X-Chimera-Timeout": "total=5,per_stage=abc"},
+        )
+        assert r.status_code == 400
+        assert "per_stage=abc" in r.json()["detail"]
+        assert seen == []
+        body = r.json()
+        assert "answer" not in body
+        assert "trace" not in body
 
 
 class TestChatCompletionUnknownModel:

@@ -21,6 +21,7 @@ import asyncio
 import functools
 import hashlib
 import json
+import math
 import os
 import subprocess
 import threading
@@ -1036,32 +1037,67 @@ async def _execute_deliberation(request: Request, body: DeliberateRequest) -> De
             overrides.allowed_models = list(body.models)
     # Per-request timeout overrides via X-Chimera-Timeout header.
     # Format: "total=300,per_stage=180". Values cannot exceed admin ceiling.
+    # DF-CHIMERA-V2-117: the header is validated into ``pending`` FIRST and only
+    # assigned onto ``overrides`` once every part is well-formed. A header that
+    # mixes a valid pair with a typo must not half-apply the valid one, and a
+    # shape we cannot understand (bare token, unknown key, unparsable value)
+    # must 400 naming the offending pair instead of being silently dropped —
+    # otherwise a typo'd budget silently costs the caller the full wall time it
+    # was asking to bound.
     timeout_header = request.headers.get("X-Chimera-Timeout", "")
     if timeout_header:
         timeout_cfg = request.app.state.config.timeout
+        pending: dict[str, float | None] = {}
         for part in timeout_header.split(","):
-            part = part.strip()
-            if "=" not in part:
+            pair = part.strip()
+            if not pair:
+                # A trailing comma leaves an empty segment that requests
+                # nothing, so skipping it cannot hide a budget.
                 continue
-            key, _, val = part.partition("=")
+            key, sep, val = pair.partition("=")
+            if not sep:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"missing = in X-Chimera-Timeout: {pair}",
+                )
             try:
                 parsed = float(val.strip())
             except ValueError:
-                continue
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"unparsable value in X-Chimera-Timeout: {pair}",
+                ) from None
+            if not math.isfinite(parsed):
+                # ``nan``/``inf`` parse but are not budgets: ``nan`` would sail
+                # past the ceiling check and land as "disable the override".
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"unparsable value in X-Chimera-Timeout: {pair}",
+                )
             if key == "total":
                 if timeout_cfg.total_s > 0 and parsed > timeout_cfg.total_s:
                     raise HTTPException(
                         status_code=400,
                         detail=f"total={parsed} exceeds admin ceiling {timeout_cfg.total_s}s",
                     )
-                overrides.timeout_total_s = parsed if parsed > 0 else None
+                pending["total"] = parsed if parsed > 0 else None
             elif key == "per_stage":
                 if timeout_cfg.per_stage_s > 0 and parsed > timeout_cfg.per_stage_s:
                     raise HTTPException(
                         status_code=400,
                         detail=f"per_stage={parsed} exceeds admin ceiling {timeout_cfg.per_stage_s}s",
                     )
-                overrides.timeout_per_stage_s = parsed if parsed > 0 else None
+                pending["per_stage"] = parsed if parsed > 0 else None
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"unknown key in X-Chimera-Timeout: {pair}",
+                )
+        # Every part validated — only now does anything reach the overrides.
+        if "total" in pending:
+            overrides.timeout_total_s = pending["total"]
+        if "per_stage" in pending:
+            overrides.timeout_per_stage_s = pending["per_stage"]
     try:
         result = await engine.deliberate(
             body.prompt,

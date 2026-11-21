@@ -543,6 +543,11 @@ timeout:
   to it.
 - The same budget is available per request on the REST surface
   (`X-Chimera-Timeout`), and a request can only *lower* the configured ceiling.
+  The header's grammar is `total=<seconds>,per_stage=<seconds>` — either pair
+  may be omitted, and `0` disables that override for the request. A part that
+  cannot be parsed, is missing its `=`, or names a key other than `total` /
+  `per_stage` is rejected with HTTP 400 naming the offending pair rather than
+  being ignored, and no part of such a header is applied.
 
 ---
 
