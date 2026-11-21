@@ -279,7 +279,11 @@ the failure instead of presenting the failure text as an answer.
 A successful run is unchanged (`isError: false` with the merged answer), and
 partial degradation — one dropped worker beside a real merged answer — is
 **not** an error: it answers normally and still reports the dropped stage in
-`worker_failures`.
+`worker_failures`. A merge served by the fallback chain
+(`defaults.aggregator_fallbacks`) is also a success: the payload carries
+`answer_degraded: true`, `answer_degraded_reason: "aggregator_substituted"` and
+`aggregator_model` naming the model that answered, but no `isError` (see
+"Self-Serve Trace" above).
 
 ### Advanced `chimera_deliberate` arguments
 
@@ -678,7 +682,36 @@ Every API response includes a trace object with:
 - `dispatch` — dispatcher model call details
 - `workers[]` — per-worker prompts, responses, tokens, latency, cost
 - `aggregator` — merge stage details
+- `aggregator_model` — the model that ACTUALLY served the merge (`null` when no
+  model did, i.e. the merge stage degraded). When the configured aggregator's
+  call fails and a fallback answers, this names the fallback (DF-CHIMERA-V2-120)
+- `aggregator_fallbacks[]` — the ordered merge fallback chain the run walked,
+  with a per-entry `status` (`served` / `failed` / `skipped`) and, for a skip,
+  the `reason` (unknown/disabled model, uncredentialed provider, quota-dead
+  account, the failed model itself, attempt budget)
 - `total_tokens`, `total_cost`, `total_duration_ms`
+
+### When the merge cannot be served
+
+The merge is no longer a single point of failure. `chimera.yaml` can declare an
+ordered `defaults.aggregator_fallbacks` chain (per-formation overrides allowed —
+see `docs/CONFIG.md`). Two outcomes matter:
+
+* **A fallback served the merge** — exit 0 / HTTP 200 / MCP success with a real
+  answer. The result is marked `answer_degraded: true` with
+  `answer_degraded_reason: "aggregator_substituted"` and
+  `trace.aggregator_model` naming the model that answered; the CLI prints a
+  `warning:` line on stderr.
+* **Nothing could serve it, but a worker succeeded** — exit 2 / HTTP 502 / MCP
+  error, and the paid worker output is preserved:
+  `worker_outputs: {stage_id: text}` plus
+  `answer_degraded_reason: "workers_preserved"` on the `--json` payload and (for
+  REST) inside the error body. That is what the pre-fix shape discarded.
+* **No stage could reach its provider at all** — the run fails immediately
+  (well under a second) instead of retrying: the message names each provider and
+  the env var to set. That is HTTP 503 with `type: "lane_unreachable"` and
+  `attempts[].error_class: "credential"` on REST, exit 2 on the CLI, and an MCP
+  error — nothing was billed.
 
 ## Tips
 

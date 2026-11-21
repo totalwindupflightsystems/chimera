@@ -36,9 +36,6 @@ class ConfigError(ValueError):
         super().__init__(message)
 
 
-__all__ = ["BudgetExhaustedError", "ConfigError", "NoHealthyCandidateError"]
-
-
 class NoHealthyCandidateError(Exception):
     """Raised when EVERY candidate model is quota-blocked, so a run cannot serve.
 
@@ -72,6 +69,47 @@ class NoHealthyCandidateError(Exception):
         super().__init__(self.message)
 
 
+class LaneUnreachableError(NoHealthyCandidateError):
+    """Raised when no provider this run needs can serve it (DF-CHIMERA-V2-120).
+
+    The credential-side twin of the quota arm above, and the fast-fail half of
+    acceptance criterion 4: when EVERY stage's provider is provably unusable
+    (no credential in a deployment that resolves credentials elsewhere, or a
+    credential the provider already rejected), the run fails BEFORE the first
+    provider call — milliseconds instead of the measured 83-187 s of retries
+    that ended rc=2 anyway.
+
+    It deliberately subclasses :class:`NoHealthyCandidateError` so every
+    existing surface (CLI exit 2, REST 502, MCP) keeps treating it as "nothing
+    could serve this run"; only the MESSAGE differs, naming each provider and
+    the remedy (the env var to set) instead of talking about quota.  The
+    ``attempts`` entries carry ``error_class: "credential"`` plus a ``remedy``
+    key so a caller can render its own instruction.
+
+    It is never raised on absence of credentials alone: a deployment with no
+    resolvable credential anywhere keeps its documented auth-error behaviour
+    (DF-CHIMERA-V2-71 — the engine fabricates one degraded placeholder per
+    stage so the CLI/REST failure surfaces stay exercised).  Only a deployment
+    that DOES resolve credentials somewhere, yet cannot reach any of the
+    providers this run needs, is unreachable in this sense.
+    """
+
+    def __init__(self, attempts: list[dict[str, object]]) -> None:
+        self.attempts = attempts
+        providers = sorted({str(a.get("provider") or "?") for a in attempts})
+        details = "; ".join(
+            f"{a.get('model')} ({a.get('remedy') or a.get('detail') or 'unreachable'})" for a in attempts
+        )
+        self.message = (
+            f"No reachable provider: this run needs {', '.join(providers)}, but no credential "
+            f"is configured for {'them' if len(providers) > 1 else 'it'} — {details}. "
+            "Set the listed environment variable (or add the provider to api_keys in "
+            "chimera.yaml), or point the formation at a provider you can reach; nothing "
+            "was billed."
+        )
+        Exception.__init__(self, self.message)
+
+
 class DagShapeError(ValueError):
     """A client-defined DAG is structurally invalid (not a catalog miss).
 
@@ -82,3 +120,12 @@ class DagShapeError(ValueError):
     distinguish "fix your DAG shape" from "fix your model catalog" and
     must NOT append the catalog hint to these messages.
     """
+
+
+__all__ = [
+    "BudgetExhaustedError",
+    "ConfigError",
+    "DagShapeError",
+    "LaneUnreachableError",
+    "NoHealthyCandidateError",
+]

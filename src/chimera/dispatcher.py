@@ -105,6 +105,16 @@ class Stage(BaseModel):
     used when ``iterate_on`` is non-empty.  A limit of 1 means the loop body
     runs at most twice (first attempt + one re-iteration)."""
 
+    aggregator_fallbacks: list[str] = Field(default_factory=list)
+    """Ordered merge-fallback chain for THIS stage (DF-CHIMERA-V2-120).
+
+    Populated by the engine just before the DAG runs, from
+    ``defaults.aggregator_fallbacks`` or the named formation's own
+    ``aggregator_fallbacks`` override; only aggregator/merge/audit stages ever
+    carry one.  Empty means "no configured chain" — the engine then keeps its
+    pre-existing single-replacement retry, so a stage built by a test or a
+    client DAG behaves exactly as before."""
+
 
 class FormationDAG(BaseModel):
     """The dispatcher-designed execution graph."""

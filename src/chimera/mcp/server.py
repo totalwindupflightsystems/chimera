@@ -17,7 +17,7 @@ from mcp.types import CallToolResult, TextContent
 
 from chimera import __version__
 from chimera.config import ChimeraConfig, Defaults, Observability, load_config
-from chimera.engine import Engine
+from chimera.engine import ANSWER_DEGRADED_SUBSTITUTED, Engine
 from chimera.gateway import LiteLLMGateway
 from chimera.observability import configure_logging
 
@@ -70,6 +70,13 @@ def _no_usable_answer_reason(result: Any) -> str | None:
     """
     upstream = getattr(result, "answer_error", None)
     if bool(getattr(result, "answer_degraded", False)):
+        # DF-CHIMERA-V2-120: a merge served by the fallback chain is DEGRADED
+        # but USABLE — the REST surface answers 200 and the CLI exits 0 for it,
+        # so MCP must not report it as an error either. The payload still
+        # carries the substitution markers below (this function's caller), so
+        # the client can see the configured aggregation lane did not serve.
+        if getattr(result, "answer_degraded_reason", None) == ANSWER_DEGRADED_SUBSTITUTED:
+            return None
         return str(upstream) if upstream else "the answer stage degraded"
     if _is_degraded_placeholder_only(getattr(result, "answer", "")):
         return str(upstream) if upstream else "the answer is the engine's degraded placeholder"
@@ -221,6 +228,13 @@ def build_server(
             "answer": result.answer,
             "trace": result.trace.model_dump(mode="json"),
         }
+        # DF-CHIMERA-V2-120: a fallback-served merge is a SUCCESS here, but the
+        # substitution must stay visible (it is what the REST trace and the CLI
+        # stderr report). Additive keys, only on a degraded-but-usable run.
+        if bool(getattr(result, "answer_degraded", False)):
+            payload["answer_degraded"] = True
+            payload["answer_degraded_reason"] = getattr(result, "answer_degraded_reason", None)
+            payload["aggregator_model"] = getattr(getattr(result, "trace", None), "aggregator_model", None)
         reason = _no_usable_answer_reason(result)
         if reason is None:
             return json.dumps(payload, indent=2)

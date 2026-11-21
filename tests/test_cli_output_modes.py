@@ -291,10 +291,26 @@ def test_json_implicit_prompt_writes_one_object(config_file, monkeypatch) -> Non
     assert result.stdout.endswith("\n")
 
     payload = json.loads(result.stdout)
-    assert set(payload) == {"answer", "trace", "answer_degraded", "answer_error"}
+    # DF-CHIMERA-V2-120 added the fallback-chain keys: ``answer_degraded_reason``
+    # (a USABLE fallback-served answer vs no answer at all), ``worker_outputs``
+    # (paid worker text preserved when the merge cannot be served) and
+    # ``aggregator_model`` (the model that actually served the merge). They are
+    # empty/None on a healthy run, so the shape is additive — never a changed
+    # value for an existing key.
+    assert set(payload) == {
+        "answer",
+        "trace",
+        "answer_degraded",
+        "answer_error",
+        "answer_degraded_reason",
+        "worker_outputs",
+        "aggregator_model",
+    }
     assert payload["answer"] == "42"
     assert payload["answer_degraded"] is False  # DF-CHIMERA-V2-71 markers on healthy runs
     assert payload["answer_error"] is None
+    assert payload["answer_degraded_reason"] is None
+    assert payload["worker_outputs"] == {}
     assert payload["trace"] == result_obj.trace.model_dump(mode="json")
     # The trace is COMPLETE, not a subset: every declared field is present.
     assert set(payload["trace"]) == set(DeliberationTrace.model_fields)

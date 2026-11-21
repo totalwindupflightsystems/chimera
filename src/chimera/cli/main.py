@@ -47,7 +47,7 @@ from chimera.config import (
     load_config,
     provider_api_key_env,
 )
-from chimera.engine import Engine
+from chimera.engine import ANSWER_DEGRADED_SUBSTITUTED, Engine
 from chimera.exceptions import ConfigError, NoHealthyCandidateError
 from chimera.gateway import LiteLLMGateway
 from chimera.observability import configure_logging
@@ -372,6 +372,15 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
     # defaults), while test doubles may be bare namespaces.
     answer_degraded = bool(getattr(result, "answer_degraded", False))
     answer_error = getattr(result, "answer_error", None)
+    # DF-CHIMERA-V2-120: ``answer_degraded`` is no longer synonymous with "no
+    # answer". A merge served by the fallback chain is DEGRADED (it did not come
+    # from the configured lane) but perfectly USABLE, and it must exit 0 —
+    # before this row the same situation discarded three paid worker outputs and
+    # exited 2. The distinction is carried by ``answer_degraded_reason``.
+    degraded_reason = getattr(result, "answer_degraded_reason", None)
+    worker_outputs = getattr(result, "worker_outputs", None) or {}
+    answer_substituted = answer_degraded and degraded_reason == ANSWER_DEGRADED_SUBSTITUTED
+    answer_usable = not answer_degraded or answer_substituted
     # Operational truth is never suppressed (DF-CHIMERA-0906-5): in human mode
     # the dropped-worker / degraded-dispatch warnings stay on stdout beside the
     # panel, but in --quiet/--json they move to stderr so stdout carries ONLY
@@ -385,10 +394,11 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
 
     if json_mode:
         # One parseable payload either way; on a degraded answer the payload's
-        # top-level ``answer_degraded`` / ``answer_error`` markers (added by
+        # top-level ``answer_degraded`` / ``answer_error`` /
+        # ``answer_degraded_reason`` / ``worker_outputs`` markers (added by
         # ``_print_json``) carry the failure machine-readably.
         _print_json(result)
-    elif answer_degraded:
+    elif not answer_usable:
         # DF-CHIMERA-V2-71: a degraded answer stage means the "answer" is the
         # engine-fabricated upstream-failure placeholder (``[stage <id>
         # (<model>) unavailable: ... set DEEPSEEK_API_KEY ...]``), never a real
@@ -409,15 +419,52 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
         if opts.get("verbose"):
             _print_trace(result.trace)
 
-    if answer_degraded:
+    if answer_substituted:
+        # A fallback model served the merge: the answer is real, so the exit
+        # code is 0 — but the substitution must not be silent, or the operator
+        # believes the configured aggregator answered (DF-CHIMERA-V2-120).
+        err_console.print(
+            "[yellow]warning:[/yellow] the configured aggregator failed; "
+            f"the merge was served by fallback '{getattr(result.trace, 'aggregator_model', None)}' "
+            f"({_fallback_summary(result.trace)}). "
+            f"Original failure: {answer_error or 'unknown upstream error'}",
+            soft_wrap=True,
+        )
+    elif answer_degraded:
         # The honest summary completes the report on stderr (after the
         # dropped-worker / degraded-dispatch warnings printed above).
+        preserved = (
+            f"; {len(worker_outputs)} worker output(s) preserved in the --json "
+            f"payload ({', '.join(sorted(worker_outputs))})"
+            if worker_outputs
+            else ""
+        )
         err_console.print(
             "[red]error:[/red] deliberation produced no usable answer "
-            f"(answer stage '{result.trace.answer_stage_id}' degraded): "
-            f"{answer_error or 'unknown upstream error'}"
+            f"(answer stage '{result.trace.answer_stage_id}' degraded, no merge "
+            f"fallback could serve): {answer_error or 'unknown upstream error'}"
+            f"{preserved}",
+            soft_wrap=True,
         )
         sys.exit(2)
+
+
+def _fallback_summary(trace: Any) -> str:
+    """One-line account of the merge fallback chain, for stderr (DF-CHIMERA-V2-120).
+
+    Says what was SKIPPED and why, which is the only place an operator learns
+    that (say) every openrouter entry was passed over for a missing key instead
+    of being tried and failing.
+    """
+    attempts = list(getattr(trace, "aggregator_fallbacks", None) or [])
+    skipped = [f"{a.model} ({a.reason})" for a in attempts if a.status == "skipped" and a.reason]
+    failed = [a.model for a in attempts if a.status == "failed"]
+    parts: list[str] = []
+    if failed:
+        parts.append(f"failed: {', '.join(failed)}")
+    if skipped:
+        parts.append(f"skipped: {'; '.join(skipped)}")
+    return "; ".join(parts) if parts else "no earlier chain entries"
 
 
 def _print_json(result: Any) -> None:
@@ -442,6 +489,15 @@ def _print_json(result: Any) -> None:
         # namespaces.
         "answer_degraded": bool(getattr(result, "answer_degraded", False)),
         "answer_error": getattr(result, "answer_error", None),
+        # DF-CHIMERA-V2-120: additive keys. ``answer_degraded_reason`` tells a
+        # USABLE fallback-served answer ("aggregator_substituted") from a run
+        # with no answer at all; ``worker_outputs`` carries the paid worker
+        # text of a run whose merge could not be served — the exact payload the
+        # pre-fix CLI threw away when it exited 2. Both are empty/None on a
+        # healthy run, so existing consumers see the same values as before.
+        "answer_degraded_reason": getattr(result, "answer_degraded_reason", None),
+        "worker_outputs": dict(getattr(result, "worker_outputs", None) or {}),
+        "aggregator_model": getattr(getattr(result, "trace", None), "aggregator_model", None),
     }
     click.echo(json.dumps(payload, ensure_ascii=False))
 

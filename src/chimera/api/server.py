@@ -41,8 +41,8 @@ from chimera import __version__, blocked_models
 from chimera.api.dependencies import require_api_key
 from chimera.api.rate_limit import RateLimiter
 from chimera.config import ChimeraConfig, load_config, provider_credential_resolved
-from chimera.engine import DeliberationTrace, Engine, WorkerFailure
-from chimera.exceptions import NoHealthyCandidateError
+from chimera.engine import ANSWER_DEGRADED_SUBSTITUTED, DeliberationTrace, Engine, WorkerFailure
+from chimera.exceptions import LaneUnreachableError, NoHealthyCandidateError
 from chimera.gateway import LiteLLMGateway, prewarm_litellm_background
 from chimera.metrics import MetricsMiddleware, render_metrics
 from chimera.observability import configure_logging
@@ -105,11 +105,32 @@ class _NoUsableAnswerError(Exception):
         message: str,
         request_id: str,
         attempts: list[dict[str, Any]] | None = None,
+        worker_outputs: dict[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
         self.request_id = request_id
         self.attempts = attempts or []
+        # DF-CHIMERA-V2-120: the paid worker outputs of a run whose merge could
+        # not be served. The pre-fix shape threw them away with the 502; a
+        # caller that paid for three answers gets them back and can assemble
+        # its own result.
+        self.worker_outputs = worker_outputs or {}
+
+
+def _answer_usable(result: Any) -> bool:
+    """True when a degraded-looking result still carries a REAL answer.
+
+    DF-CHIMERA-V2-120: the merge fallback chain makes ``answer_degraded`` mean
+    "not from the configured lane" as well as "no answer at all". A
+    fallback-served merge is usable and must NOT be a 502. Reads
+    ``answer_degraded_reason`` rather than the ``answer_usable`` property so a
+    test double without the newer fields keeps its fail-closed behaviour
+    (degraded ⇒ 502).
+    """
+    if not getattr(result, "answer_degraded", False):
+        return True
+    return getattr(result, "answer_degraded_reason", None) == ANSWER_DEGRADED_SUBSTITUTED
 
 
 # --------------------------------------------------------------------------- #
@@ -288,6 +309,11 @@ def create_app(
         # branch on `error_class` instead of parsing prose.
         if exc.attempts:
             body["attempts"] = exc.attempts
+        # Additive (DF-CHIMERA-V2-120): paid worker output preserved from a run
+        # whose merge could not be served.
+        if exc.worker_outputs:
+            body["worker_outputs"] = exc.worker_outputs
+            body["answer_degraded_reason"] = "workers_preserved"
         return JSONResponse(status_code=502, content={"error": body})
 
     @app.exception_handler(NoHealthyCandidateError)
@@ -309,13 +335,17 @@ def create_app(
         headers: dict[str, str] = {}
         if retry_candidates:
             headers["Retry-After"] = str(int(min(retry_candidates)) + 1)
+        # DF-CHIMERA-V2-120: a lane with no reachable provider (credentials,
+        # not balance) is the same 503 failure class but a different fix, so the
+        # machine-readable type names it instead of blaming quota.
+        error_type = "lane_unreachable" if isinstance(exc, LaneUnreachableError) else "no_healthy_candidate"
         return JSONResponse(
             status_code=503,
             headers=headers,
             content={
                 "error": {
                     "message": exc.message,
-                    "type": "no_healthy_candidate",
+                    "type": error_type,
                     "attempts": exc.attempts,
                 }
             },
@@ -979,7 +1009,7 @@ async def _execute_deliberation(request: Request, body: DeliberateRequest) -> De
                 detail=_dag_shape_error_detail(f"Invalid custom DAG: {exc}"),
             ) from exc
         raise HTTPException(status_code=400, detail=_catalog_error_detail(str(exc))) from exc
-    if result.answer_degraded:
+    if not _answer_usable(result):
         raise _NoUsableAnswerError(
             message=(
                 "Deliberation failed: no usable answer produced. "
@@ -987,6 +1017,7 @@ async def _execute_deliberation(request: Request, body: DeliberateRequest) -> De
             ),
             request_id=result.trace.request_id,
             attempts=_failure_attempts(cfg, result),
+            worker_outputs=dict(getattr(result, "worker_outputs", None) or {}),
         )
     return DeliberateResponse(
         answer=result.answer,
@@ -1271,7 +1302,7 @@ async def _run_chat_deliberation(
             status_code=400,
             detail=_catalog_error_detail(f"Unknown model/formation: {exc}"),
         ) from exc
-    if result.answer_degraded:
+    if not _answer_usable(result):
         raise _NoUsableAnswerError(
             message=(
                 "Deliberation failed: no usable answer produced. "
@@ -1279,6 +1310,7 @@ async def _run_chat_deliberation(
             ),
             request_id=result.trace.request_id,
             attempts=_failure_attempts(request.app.state.config, result),
+            worker_outputs=dict(getattr(result, "worker_outputs", None) or {}),
         )
     trace = result.trace
     # Deliberation-wide aggregate (dispatch + every stage), not the

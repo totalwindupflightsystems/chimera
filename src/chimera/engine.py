@@ -27,7 +27,9 @@ from chimera.config import (
     DeliberationOverrides,
     credentialed_enabled_models,
     model_credential_fingerprint,
+    provider_api_key_env,
     provider_credential_resolved,
+    resolve_aggregator_fallbacks,
 )
 from chimera.dispatcher import (
     Dispatcher,
@@ -40,7 +42,7 @@ from chimera.dispatcher import (
     blocked_catalog_models,
     build_dag_from_dict,
 )
-from chimera.exceptions import BudgetExhaustedError, NoHealthyCandidateError
+from chimera.exceptions import BudgetExhaustedError, LaneUnreachableError, NoHealthyCandidateError
 from chimera.gateway import Gateway, GatewayError, GatewayResponse
 from chimera.observability import apply_config_observability, get_langfuse
 
@@ -73,6 +75,36 @@ class RankedCandidateSpan(BaseModel):
     score: float | None = None
     rank: int
     kept: bool
+
+
+class AggregatorFallbackAttempt(BaseModel):
+    """One entry of the merge fallback chain and what happened to it.
+
+    DF-CHIMERA-V2-120 (measured): the merge was a single point of failure — one
+    dead aggregator model (``Insufficient Balance``) discarded three already
+    paid worker outputs and the run exited rc=2 with no answer.  The engine now
+    walks an ordered fallback chain and records every entry here, so a run's
+    substitution is auditable after the fact instead of being inferred from the
+    answer text.
+
+    ``status`` is one of:
+
+    * ``served`` — this model produced the merge (exactly one entry per run
+      normally carries it). No ``error``/``reason``.
+    * ``failed`` — the call was attempted and raised; ``error`` is the upstream
+      text and ``error_class`` its shared classification
+      (``quota`` / ``credential`` / ``timeout`` ...).
+    * ``skipped`` — the entry was NOT called because it provably could not
+      help; ``reason`` says why (unknown/disabled model, uncredentialed
+      provider, quota-dead account, the failed model itself, or the attempt
+      budget).
+    """
+
+    model: str
+    status: str
+    reason: str | None = None
+    error: str | None = None
+    error_class: str | None = None
 
 
 class StageSpan(BaseModel):
@@ -153,6 +185,18 @@ class StageSpan(BaseModel):
     successful pass and for a stage that never ranked. On a failed pass every
     upstream output still reached the merge prompt — the run degrades to the
     un-ranked behaviour rather than dropping a worker's work."""
+
+    degraded: bool = False
+    """True when this span is the engine's failure placeholder rather than a
+    real provider call (``_degraded_stage``). No model served a degraded
+    stage, which is why ``trace.aggregator_model`` stays ``null`` for one
+    (DF-CHIMERA-V2-120)."""
+    fallback_attempts: list[AggregatorFallbackAttempt] = Field(default_factory=list)
+    """The merge fallback chain this stage walked, in order, with a per-entry
+    outcome (``served`` / ``failed`` / ``skipped`` + the reason) — empty for a
+    stage that answered on its first model and for worker stages
+    (DF-CHIMERA-V2-120). Mirrored at trace level as
+    ``trace.aggregator_fallbacks`` for the span that produced the answer."""
 
 
 #: Constant for the metadata key carrying a lossy format-negotiation outcome.
@@ -280,6 +324,22 @@ class DeliberationTrace(BaseModel):
     good one (DF-CHIMERA-V2-55). The dispatch span never contributes: its
     small structured design call is uncapped and produces no answer text."""
 
+    aggregator_model: str | None = None
+    """The model that ACTUALLY served the merge (DF-CHIMERA-V2-120).
+
+    ``None`` when no model served it — the answer stage degraded, or the
+    formation has no aggregator/merge/audit stage at all.  When the configured
+    aggregator failed and a chain entry answered, this names the fallback, so
+    a consumer never has to infer the substitution from the answer text or
+    from the stage span's model (which reports the CONFIGURED model on a
+    degraded stage).  Healthy runs report their configured aggregator here.
+    """
+    aggregator_fallbacks: list[AggregatorFallbackAttempt] = Field(default_factory=list)
+    """Every entry of the merge fallback chain, in the order the engine walked
+    it — including the ones SKIPPED without a call, each with its reason
+    (DF-CHIMERA-V2-120). Empty when the configured aggregator answered on the
+    first call (nothing to skip) and for a formation with no merge stage."""
+
 
 class DeliberationResult(BaseModel):
     """The user-facing result of a deliberation."""
@@ -287,10 +347,65 @@ class DeliberationResult(BaseModel):
     answer: str
     trace: DeliberationTrace
     answer_degraded: bool = False
-    """True when the selected answer stage failed and the answer is a
-    degraded placeholder — the API layer translates this into HTTP 502."""
+    """True when the answer did NOT come from the configured lane cleanly.
+
+    Two distinct situations share the flag (DF-CHIMERA-V2-120):
+
+    * the answer stage FAILED and the answer is the engine's failure
+      placeholder — the historical meaning; the REST layer answers HTTP 502
+      and the CLI exits 2 because there is no usable answer;
+    * a fallback model served the merge because the configured aggregator
+      failed — the answer IS usable, and
+      :attr:`answer_degraded_reason` says so. Consumers must use
+      :attr:`answer_usable` (which distinguishes the two) rather than the raw
+      flag.
+    """
     answer_error: str | None = None
     """Upstream failure reason for a degraded answer, when known."""
+    answer_degraded_reason: str | None = None
+    """Machine-readable reason for :attr:`answer_degraded` (DF-CHIMERA-V2-120).
+
+    ``"aggregator_substituted"`` — a fallback model produced the merge; the
+    answer is usable and :attr:`trace.aggregator_model` names the model that
+    served it.
+
+    ``"workers_preserved"`` — no model could serve the merge, but at least one
+    worker succeeded; the worker outputs are carried in
+    :attr:`worker_outputs` so paid work is never silently discarded, and the
+    run still FAILS (no usable answer).
+
+    ``None`` — degraded with no more specific reason available (a bare test
+    double, or an answer stage that failed with nothing to preserve).
+    """
+    worker_outputs: dict[str, str] = Field(default_factory=dict)
+    """Worker stage outputs preserved on a run whose merge could not be served
+    (DF-CHIMERA-V2-120): ``{stage_id: response_text}`` for every worker that
+    SUCCEEDED. Populated only for the ``"workers_preserved"`` case — empty on
+    healthy runs and on runs where the merge produced an answer, so existing
+    payloads are unchanged. The CLI's ``--json`` payload carries this map at
+    top level; it is what the pre-DF-CHIMERA-V2-120 shape threw away."""
+
+    @property
+    def answer_usable(self) -> bool:
+        """True when ``answer`` is a real product, not a failure placeholder.
+
+        A fallback-served merge is usable (degraded, but the answer is real);
+        every other degraded outcome is not. Kept as a computed property so a
+        result built without this field (a test double, an older serialized
+        payload) can never be mistaken for a usable one: an unknown degraded
+        state defaults to NOT usable, which is the fail-closed direction.
+        """
+        if not self.answer_degraded:
+            return True
+        return self.answer_degraded_reason == ANSWER_DEGRADED_SUBSTITUTED
+
+
+#: ``DeliberationResult.answer_degraded_reason`` values (DF-CHIMERA-V2-120).
+#: ``"aggregator_substituted"`` marks a USABLE answer produced by the merge
+#: fallback chain; ``"workers_preserved"`` marks an unusable merge whose worker
+#: outputs are carried in ``worker_outputs``.
+ANSWER_DEGRADED_SUBSTITUTED = "aggregator_substituted"
+ANSWER_DEGRADED_WORKERS_PRESERVED = "workers_preserved"
 
 
 def _stage_cost(model: str, config: ChimeraConfig, tokens_input: int, tokens_output: int) -> float:
@@ -663,6 +778,166 @@ def _apply_quota_blocked_models(
         wp = dispatch.worker_prompt_for(stage.id)
         if wp is not None:
             wp.model = replacement
+
+
+def _apply_aggregator_fallbacks(dispatch: DispatchResult, chain: list[str]) -> None:
+    """Carry the merge-fallback chain onto every aggregator/merge/audit stage.
+
+    DF-CHIMERA-V2-120: the chain is a DAG-level fact (``defaults`` or the
+    formation's override) but it is walked per stage when that stage's own call
+    fails, so it travels on the stage objects — same place
+    ``_apply_quota_blocked_models`` puts its remapped models, which keeps
+    ``_handle_stage_failure`` free of a config lookup and lets a plain
+    :class:`~chimera.dispatcher.FormationDAG` behave identically.
+
+    An EMPTY chain is written as an empty list, i.e. "this formation has no
+    fallback" is expressed by leaving it empty rather than by omitting the
+    attribute — the difference between inheriting the defaults and disabling
+    them is resolved earlier, in
+    :func:`chimera.config.resolve_aggregator_fallbacks`.
+    """
+    if not chain:
+        return
+    for stage in dispatch.formation.stages:
+        if stage.kind in {"aggregator", "merge", "audit"} and not stage.aggregator_fallbacks:
+            stage.aggregator_fallbacks = list(chain)
+
+
+#: How many merge-fallback candidates one failed aggregator call may actually
+#: CALL (criterion 4 of DF-CHIMERA-V2-120).  Bounded on purpose: candidates that
+#: are provably unusable (unknown/disabled model, uncredentialed provider,
+#: quota-dead account, the failed model itself) are skipped WITHOUT a call, so
+#: this only caps the genuinely-unknown ones and keeps a dead chain to a
+#: handful of calls instead of the measured 83-187 s retry tail.
+MAX_AGGREGATOR_FALLBACK_ATTEMPTS: int = 4
+
+#: ``AggregatorFallbackAttempt.status`` values.
+FALLBACK_SERVED = "served"
+FALLBACK_FAILED = "failed"
+FALLBACK_SKIPPED = "skipped"
+
+
+def _credential_remedy(config: ChimeraConfig, provider: str) -> str:
+    """The operator-facing hint for a provider with no resolved credential."""
+    env = provider_api_key_env(config, provider)
+    return f"set {env}" if env else "configure provider credentials"
+
+
+def _provider_of(config: ChimeraConfig, model: str) -> str | None:
+    """The catalog provider behind *model*, or ``None`` for an unknown id."""
+    entry = config.models.get(model)
+    return entry.provider if entry is not None else None
+
+
+def _stage_unreachable_blocker(
+    config: ChimeraConfig,
+    registry: blocked_models.ModelBlockRegistry,
+    model: str,
+    *,
+    credentials_configured: bool,
+) -> dict[str, object] | None:
+    """The blocker entry for a stage model whose provider provably cannot serve.
+
+    ``None`` means "reachable enough to try" — the caller must never use this to
+    refuse a call on a guess.  The credential branch fires only in a deployment
+    that resolves SOME credential (``credentials_configured``): with no keys
+    anywhere the documented behaviour is one auth error per stage
+    (DF-CHIMERA-V2-71), not a pre-emptive refusal.
+    """
+    entry = config.models.get(model)
+    if entry is None:
+        # An id outside the catalog is NOT refused here: provider/model strings
+        # resolve at the gateway (litellm), so "not in models:" is not proof the
+        # call cannot work. Only credentials are provable.
+        return None
+    if not entry.enabled:
+        return None
+    if not credentials_configured:
+        return None
+    env = provider_api_key_env(config, entry.provider)
+    if env is None:
+        return None  # keyless/local provider — nothing to resolve
+    if _credential_block_active(registry, config, model):
+        return {
+            "provider": entry.provider,
+            "model": model,
+            "error_class": blocked_models.REASON_CREDENTIAL,
+            "remedy": f"the provider rejected its credential in a recent call; set {env}",
+        }
+    if not provider_credential_resolved(config, entry.provider):
+        return {
+            "provider": entry.provider,
+            "model": model,
+            "error_class": blocked_models.REASON_CREDENTIAL,
+            "remedy": f"set {env}",
+        }
+    return None
+
+
+def _lane_unreachable_blockers(
+    config: ChimeraConfig,
+    registry: blocked_models.ModelBlockRegistry,
+    dispatch: DispatchResult,
+    *,
+    credentials_configured: bool,
+) -> list[dict[str, object]]:
+    """Blockers for EVERY stage model in this run's DAG, or ``[]`` if any is fine.
+
+    All-or-nothing on purpose (DF-CHIMERA-V2-120 criterion 4): one reachable
+    stage means the run must still be attempted — the workers may well answer
+    even if the merge cannot — so the fast-fail only fires when there is
+    provably nothing to call.
+    """
+    blockers: list[dict[str, object]] = []
+    for model in dict.fromkeys(stage.model for stage in dispatch.formation.stages):
+        blocker = _stage_unreachable_blocker(
+            config, registry, model, credentials_configured=credentials_configured
+        )
+        if blocker is None:
+            return []
+        blockers.append(blocker)
+    return blockers
+
+
+def _merge_fallback_skip_reason(
+    config: ChimeraConfig,
+    model: str,
+    *,
+    registry: blocked_models.ModelBlockRegistry,
+    excluded: Mapping[str, Any],
+    failed_model: str,
+    credentials_configured: bool,
+) -> str | None:
+    """Why *model* cannot serve the merge, or ``None`` when it can be tried.
+
+    Every branch here is a NO-CALL decision, which is what makes a dead chain
+    cheap: the alternative (call the candidate, read a second identical 402)
+    is exactly the 83-187 s retry tail the board row measured.  Returning a
+    string is not an error path — the caller records it as a ``skipped``
+    fallback entry so the operator sees WHY an entry was passed over, which is
+    the trace-side half of acceptance criterion 1.
+    """
+    if model == failed_model:
+        return "the configured aggregator itself (its call just failed)"
+    entry = config.models.get(model)
+    if entry is None:
+        return "unknown model (not in the models: catalog)"
+    if not entry.enabled:
+        return "model disabled in the models: catalog (enabled: false)"
+    quota_dead_providers = {str(details.get("provider", "")) for details in excluded.values()}
+    if model in excluded or entry.provider in quota_dead_providers:
+        return (
+            f"provider {entry.provider!r} is out of quota/budget "
+            "(insufficient_quota / 402; the block clears when the account is topped up)"
+        )
+    if _credential_block_active(registry, config, model):
+        return (
+            f"provider {entry.provider!r} rejected its credential in a recent call "
+            f"(authentication error; {_credential_remedy(config, entry.provider)})"
+        )
+    if credentials_configured and not provider_credential_resolved(config, entry.provider):
+        return f"no credential for provider {entry.provider!r} ({_credential_remedy(config, entry.provider)})"
+    return None
 
 
 def _apply_credentialed_worker_models(
@@ -1222,6 +1497,41 @@ class Engine:
             self._provider_health,
         )
 
+        # DF-CHIMERA-V2-120: the ordered merge-fallback chain, carried on the
+        # merge stage(s) so a failed aggregator call can walk it.  Resolved
+        # AFTER every model choice, so the chain reflects the models this run
+        # can actually reach (an entry a pass above already abandoned is
+        # recorded as skipped, never silently re-tried).  A named formation's
+        # own list REPLACES the defaults; an explicit empty list switches the
+        # chain off for that formation; unset inherits the defaults.
+        _apply_aggregator_fallbacks(
+            outcome.result,
+            resolve_aggregator_fallbacks(self.config, formation),
+        )
+
+        # DF-CHIMERA-V2-120 criterion 4: if NO stage in this run can reach its
+        # provider (no credential in a deployment that resolves credentials
+        # elsewhere, a provider that already rejected its key, or an
+        # unknown/disabled model), say so NOW. The measured failure spent
+        # 83-187 s of provider retries to learn exactly this and then exited
+        # rc=2 with nothing; there is nothing to bill or to wait for, so the
+        # actionable line (provider + the env var to set) is the whole answer.
+        # One reachable stage means the run proceeds — the workers may answer
+        # even if the merge cannot.
+        credentials_configured = any(
+            provider_credential_resolved(self.config, entry.provider)
+            for entry in self.config.enabled_models.values()
+        )
+        blockers = _lane_unreachable_blockers(
+            self.config,
+            blocked_models.shared_registry,
+            outcome.result,
+            credentials_configured=credentials_configured,
+        )
+        if blockers:
+            log.error("engine_lane_unreachable", attempts=blockers)
+            raise LaneUnreachableError(blockers)
+
         log.info(
             "engine_dispatched",
             source=outcome.result.source,
@@ -1285,12 +1595,61 @@ class Engine:
             if answer_stage is not None and answer_degraded
             else None
         )
+        # DF-CHIMERA-V2-120: two different situations must not be conflated.
+        # (a) A fallback SERVED the merge — the answer is real and usable, and
+        #     the substitution is described in ``answer_degraded_reason`` /
+        #     ``trace.aggregator_model``; the run exits 0.
+        # (b) No model served it — the answer is the failure placeholder. When
+        #     workers succeeded, their paid output is preserved on the result
+        #     instead of being thrown away with the error.
+        answer_degraded_reason: str | None = None
+        worker_outputs: dict[str, str] = {}
+        answer_span = stage_spans.get(answer_stage_id) if answer_stage_id is not None else None
+        fallback_served_the_answer = answer_span is not None and any(
+            entry.status == FALLBACK_SERVED for entry in answer_span.fallback_attempts
+        )
+        if fallback_served_the_answer:
+            answer_degraded = True
+            answer_degraded_reason = ANSWER_DEGRADED_SUBSTITUTED
+        elif answer_degraded:
+            worker_outputs = self._preserved_worker_outputs(stage_spans, stage_results)
+            if worker_outputs:
+                answer_degraded_reason = ANSWER_DEGRADED_WORKERS_PRESERVED
         return DeliberationResult(
             answer=answer,
             trace=trace,
             answer_degraded=answer_degraded,
             answer_error=answer_error,
+            answer_degraded_reason=answer_degraded_reason,
+            worker_outputs=worker_outputs,
         )
+
+    @staticmethod
+    def _preserved_worker_outputs(
+        stage_spans: Mapping[str, StageSpan],
+        stage_results: Mapping[str, StageResult],
+    ) -> dict[str, str]:
+        """The worker outputs a failed merge must not discard (DF-CHIMERA-V2-120).
+
+        Measured defect: three workers had answered (and been paid for) while
+        the single aggregator model died, and rc=2 returned nothing at all.  A
+        run whose merge cannot be served now carries every SUCCEEDED worker's
+        text on the ``--json`` payload, so the work is recoverable even though
+        the run still fails (there is no merged answer, and pretending
+        otherwise would be worse).
+
+        Only real worker output qualifies: a degraded worker produced no text
+        of its own, and the dispatch/aggregator stages are not worker work.
+        """
+        preserved: dict[str, str] = {}
+        for stage_id, span in stage_spans.items():
+            if span.kind != "worker" or span.degraded:
+                continue
+            result = stage_results.get(stage_id)
+            text = result.response.text.strip() if result is not None else span.response.strip()
+            if text:
+                preserved[stage_id] = text
+        return preserved
 
     def _resolve_custom_dag(
         self,
@@ -1614,47 +1973,80 @@ class Engine:
         *,
         rank: RankPolicy | None = None,
     ) -> tuple[StageResult, StageSpan]:
-        """Retry aggregator/merge/audit stages: model fallback → plain-text fallback."""
+        """Retry aggregator/merge/audit stages: fallback chain → plain-text → degraded.
+
+        DF-CHIMERA-V2-120 (measured: 3 of 4 live runs exited rc=2 after 83-187 s
+        with no answer while all three workers had already succeeded and been
+        paid for): the merge used to have exactly one replacement candidate.
+        When that candidate was the same dead account — or when the chain had
+        no healthy entry at all — the workers' output was thrown away.
+
+        The retry now walks an ORDERED fallback chain carried on the stage
+        (``defaults.aggregator_fallbacks``, or the formation's own list).  Every
+        entry that provably cannot serve is SKIPPED WITHOUT A CALL and recorded
+        with its reason, so a dead chain costs zero extra provider latency
+        instead of the measured retry tail.  A served fallback returns a real
+        stage result; only an exhausted chain falls through to the schema-free
+        retry and finally to the degraded placeholder (whose worker outputs the
+        result object preserves).
+        """
         latency_ms = int((time.monotonic() - start) * 1000)
         log.warning("engine_stage_failed", stage=stage.id, model=stage.model, error=str(exc))
 
         if stage.kind not in {"aggregator", "merge", "audit"}:
             return self._degraded_stage(stage, exc, [], latency_ms, started_at=start)
 
-        # DF-CHIMERA-V2-130: the fallback must be a model that can actually
-        # serve.  ``defaults.default_aggregator`` used to be the single point of
-        # failure — when it was the same quota-dead provider that killed the
-        # workers, the retry died too and the run answered 502.  One bounded
-        # step: the configured default when it is healthy, else the first
-        # healthy candidate; ``None`` means nothing is left, so skip straight to
-        # the plain-text retry instead of burning a call on a dead provider.
+        # A quota-class failure condemns the whole ACCOUNT, so the whole chain
+        # must abandon that provider (sibling models share the empty balance).
         excluded = _quota_excluded_models(self.config, blocked_models.shared_registry, self._provider_health)
-        # A quota-class failure condemns the whole ACCOUNT, so the retry must
-        # prefer a different provider (sibling models share the empty balance).
+        failed_entry = self.config.models.get(stage.model)
+        failed_provider = failed_entry.provider if failed_entry is not None else None
         avoid_providers: frozenset[str] = frozenset()
-        if blocked_models.classify_error(exc) == blocked_models.REASON_QUOTA:
-            failed_entry = self.config.models.get(stage.model)
-            if failed_entry is not None:
-                avoid_providers = frozenset({failed_entry.provider})
-        fallback_model = _quota_fallback_model(
-            self.config,
-            excluded,
-            preferred=self.config.defaults.default_aggregator,
-            avoid=stage.model,
-            avoid_providers=avoid_providers,
+        if blocked_models.classify_error(exc) == blocked_models.REASON_QUOTA and failed_provider is not None:
+            avoid_providers = frozenset({failed_provider})
+        # Credential gating is only meaningful in a deployment that resolves
+        # SOME credential: a fixture/deployment with no keys at all must keep
+        # the pre-existing "retry something" behaviour rather than skip every
+        # candidate for lacking a key it never had.
+        credentials_configured = any(
+            provider_credential_resolved(self.config, entry.provider)
+            for entry in self.config.enabled_models.values()
         )
-        if fallback_model is not None:
-            log.info(
-                "engine_stage_fallback_selected",
-                stage=stage.id,
-                default=self.config.defaults.default_aggregator,
-                fallback=fallback_model,
-                quota_excluded=sorted(excluded),
-            )
 
-        # Retry 1: different model, same output_schema (if model differs)
-        if fallback_model is not None and stage.model != fallback_model:
-            retry_stage = stage.model_copy(update={"model": fallback_model})
+        attempts: list[AggregatorFallbackAttempt] = []
+        called = 0
+        chain = self._merge_fallback_chain(stage, excluded=excluded, avoid_providers=avoid_providers)
+        for candidate in chain:
+            reason = _merge_fallback_skip_reason(
+                self.config,
+                candidate,
+                registry=blocked_models.shared_registry,
+                excluded=excluded,
+                failed_model=stage.model,
+                credentials_configured=credentials_configured,
+            )
+            if reason is not None:
+                attempts.append(
+                    AggregatorFallbackAttempt(model=candidate, status=FALLBACK_SKIPPED, reason=reason)
+                )
+                log.warning(
+                    "engine_aggregator_fallback_skipped", stage=stage.id, model=candidate, reason=reason
+                )
+                continue
+            if called >= MAX_AGGREGATOR_FALLBACK_ATTEMPTS:
+                attempts.append(
+                    AggregatorFallbackAttempt(
+                        model=candidate,
+                        status=FALLBACK_SKIPPED,
+                        reason=(
+                            "attempt budget exhausted "
+                            f"({MAX_AGGREGATOR_FALLBACK_ATTEMPTS} merge calls already spent)"
+                        ),
+                    )
+                )
+                continue
+            called += 1
+            retry_stage = stage.model_copy(update={"model": candidate})
             try:
                 messages, response, rank_pass = await self._call_stage(
                     retry_stage,
@@ -1663,48 +2055,32 @@ class Engine:
                     user_prompt,
                     output_schema,
                 )
-                log.info(
-                    "engine_stage_retry_ok",
+            except (GatewayError, BudgetExhaustedError) as fallback_exc:
+                attempts.append(
+                    AggregatorFallbackAttempt(
+                        model=candidate,
+                        status=FALLBACK_FAILED,
+                        error=str(fallback_exc),
+                        error_class=blocked_models.classify_error(fallback_exc),
+                    )
+                )
+                log.warning(
+                    "engine_aggregator_fallback_failed",
                     stage=stage.id,
-                    original=stage.model,
-                    fallback=fallback_model,
+                    model=candidate,
+                    error=str(fallback_exc),
                 )
-                return self._build_stage_result(
-                    stage,
-                    response,
-                    messages,
-                    start,
-                    user_prompt,
-                    dispatch,
-                    dep_results,
-                    rank_pass=rank_pass,
-                )
-            except (GatewayError, BudgetExhaustedError):
-                pass  # fall through to plain-text retry
-
-        # Retry 2: plain text (no output_schema) — catches json_schema/json_object
-        # provider incompatibilities (e.g. DeepSeek requires "json" in prompt).
-        # DF-CHIMERA-V2-130: when the original model is quota-excluded, this
-        # schema-free attempt runs on the healthy fallback instead — dropping
-        # the schema does not make a dead account answer.
-        plain_stage = stage
-        if fallback_model is not None and stage.model in excluded:
-            plain_stage = stage.model_copy(update={"model": fallback_model})
-        try:
-            messages, response, rank_pass = await self._call_stage(
-                plain_stage,
-                dispatch,
-                dep_results,
-                user_prompt,
-                output_schema=None,
-            )
+                continue
+            attempts.append(AggregatorFallbackAttempt(model=candidate, status=FALLBACK_SERVED))
             log.info(
-                "engine_stage_retry_plaintext",
+                "engine_aggregator_fallback_served",
                 stage=stage.id,
-                model=plain_stage.model,
+                original=stage.model,
+                fallback=candidate,
+                skipped=[entry.model for entry in attempts if entry.status == FALLBACK_SKIPPED],
             )
-            return self._build_stage_result(
-                stage,
+            result, span = self._build_stage_result(
+                retry_stage,
                 response,
                 messages,
                 start,
@@ -1713,8 +2089,115 @@ class Engine:
                 dep_results,
                 rank_pass=rank_pass,
             )
-        except (GatewayError, BudgetExhaustedError) as exc2:
-            return self._degraded_stage(stage, exc2, [], latency_ms, started_at=start)
+            span.fallback_attempts = attempts
+            return result, span
+
+        # Retry 2: plain text (no output_schema) — catches json_schema/json_object
+        # provider incompatibilities (e.g. DeepSeek requires "json" in prompt).
+        # DF-CHIMERA-V2-130: when the original model is quota-excluded, this
+        # schema-free attempt runs on a healthy candidate instead — dropping the
+        # schema does not make a dead account answer.
+        plain_target: str | None = None
+        if failed_provider not in avoid_providers and stage.model not in excluded:
+            plain_target = stage.model
+        else:
+            plain_target = next(
+                (entry.model for entry in attempts if entry.status == FALLBACK_FAILED),
+                None,
+            )
+        if plain_target is not None:
+            plain_stage = stage.model_copy(update={"model": plain_target})
+            try:
+                messages, response, rank_pass = await self._call_stage(
+                    plain_stage,
+                    dispatch,
+                    dep_results,
+                    user_prompt,
+                    output_schema=None,
+                )
+            except (GatewayError, BudgetExhaustedError) as exc2:
+                attempts.append(
+                    AggregatorFallbackAttempt(
+                        model=plain_target,
+                        status=FALLBACK_FAILED,
+                        error=str(exc2),
+                        error_class=blocked_models.classify_error(exc2),
+                    )
+                )
+                result, span = self._degraded_stage(stage, exc2, [], latency_ms, started_at=start)
+                span.fallback_attempts = attempts
+                return result, span
+            log.info("engine_stage_retry_plaintext", stage=stage.id, model=plain_target)
+            result, span = self._build_stage_result(
+                plain_stage,
+                response,
+                messages,
+                start,
+                user_prompt,
+                dispatch,
+                dep_results,
+                rank_pass=rank_pass,
+            )
+            span.fallback_attempts = attempts
+            return result, span
+
+        result, span = self._degraded_stage(stage, exc, [], latency_ms, started_at=start)
+        span.fallback_attempts = attempts
+        return result, span
+
+    def _merge_fallback_chain(
+        self,
+        stage: Stage,
+        *,
+        excluded: Mapping[str, Any],
+        avoid_providers: frozenset[str] = frozenset(),
+    ) -> list[str]:
+        """The ordered merge-fallback candidates for *stage*, deduplicated.
+
+        The configured chain first (the formation's own list, else
+        ``defaults.aggregator_fallbacks``), then the two implicit candidates
+        the engine had before this row: the configured default aggregator and
+        the single healthy replacement chosen by
+        :func:`_quota_fallback_model`.  Keeping the implicit tail means an
+        EMPTY chain can never be WORSE than the pre-DF-CHIMERA-V2-120
+        behaviour — the fallback chain only ever adds resilience.
+
+        *avoid_providers* (the provider of a model that just failed with a
+        quota error) does NOT disqualify a candidate, it only DEMOTES it:
+        quota exhaustion is account-level, so a sibling model is a wasted call
+        while any other provider remains — but a sibling model still beats no
+        attempt at all, which is the documented DF-CHIMERA-V2-130 behaviour
+        this must not regress.  Stable partition keeps the declared order
+        inside each group.
+
+        Every entry is still screened by
+        :func:`_merge_fallback_skip_reason`; a candidate listed twice, or one
+        that is the failed model itself, is recorded as ``skipped`` with its
+        reason rather than silently dropped.
+        """
+        chain: list[str] = []
+        for model in stage.aggregator_fallbacks:
+            if model and model not in chain:
+                chain.append(model)
+        implicit = [
+            self.config.defaults.default_aggregator,
+            _quota_fallback_model(
+                self.config,
+                excluded,
+                preferred=self.config.defaults.default_aggregator,
+                avoid=stage.model,
+                # Pre-DF-CHIMERA-V2-120 candidate choice, preserved: a
+                # quota-class failure steers the implicit replacement off the
+                # dead ACCOUNT (its siblings share the empty balance).
+                avoid_providers=avoid_providers,
+            ),
+        ]
+        for implicit_model in implicit:
+            if implicit_model and implicit_model not in chain:
+                chain.append(implicit_model)
+        if avoid_providers and len(chain) > 1:
+            chain.sort(key=lambda name: _provider_of(self.config, name) in avoid_providers)
+        return chain
 
     def _build_stage_result(
         self,
@@ -1926,6 +2409,10 @@ class Engine:
             ended_at=ended,
             finish_reason=degraded_response.finish_reason,
             negotiated_format=_format_negotiation(degraded_response),
+            # DF-CHIMERA-V2-120: no model served this stage, which is how the
+            # trace tells a substituted-but-real merge (``degraded=False``,
+            # ``trace.aggregator_model`` set) from a placeholder one.
+            degraded=True,
         )
         result = StageResult(
             stage_id=stage.id,
@@ -2362,6 +2849,16 @@ class Engine:
         degraded_reasons = [
             f"{span.stage_id}: token_limit" for span in stage_spans.values() if span.finish_reason == "length"
         ]
+        # DF-CHIMERA-V2-120: name the model that ACTUALLY served the merge, and
+        # the whole fallback chain it walked. A degraded aggregator span is a
+        # placeholder — no model served it — so ``aggregator_model`` stays None
+        # instead of echoing a model that never answered (the span's own
+        # ``model`` field keeps the CONFIGURED model for diagnostics).
+        aggregator_model = (
+            primary_aggregator.model
+            if primary_aggregator is not None and not primary_aggregator.degraded
+            else None
+        )
         return DeliberationTrace(
             request_id=request_id,
             formation=formation,
@@ -2388,6 +2885,10 @@ class Engine:
             # properly-configured one everywhere else.
             credential_sources=dict(self.config.credential_sources),
             degraded_reasons=degraded_reasons,
+            aggregator_model=aggregator_model,
+            aggregator_fallbacks=(
+                list(primary_aggregator.fallback_attempts) if primary_aggregator is not None else []
+            ),
         )
 
     @staticmethod
