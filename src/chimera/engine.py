@@ -32,6 +32,7 @@ from chimera.config import (
     resolve_aggregator_fallbacks,
 )
 from chimera.dispatcher import (
+    DiscardedOverride,
     Dispatcher,
     DispatchOutcome,
     DispatchRepair,
@@ -299,6 +300,18 @@ class DeliberationTrace(BaseModel):
     dispatcher applied (kind, action, stage ids, reason). Empty for a clean
     dispatch and for a fallback — a fallback discards the design rather than
     repairing it (DF-CHIMERA-V2-5)."""
+    discarded_overrides: list[DiscardedOverride] = Field(default_factory=list)
+    """Request-level model overrides a CONFIG LOCK discarded on this run: one
+    :class:`~chimera.dispatcher.DiscardedOverride` per drop, naming the request
+    field, the model the caller asked for, and the flag that ignored it.
+    Empty when no override met a lock (or none was sent) — DF-CHIMERA-V2-131.
+
+    This is the AUTHORITATIVE carrier, not ``dispatch_note``: the note is one
+    prose string, and a run that ALSO fell back to the generic formation
+    replaces it with ``dispatch.fallback_reason``, which would silently drop
+    the discard from the prose. The structured list is never overwritten, and
+    the REST layer mirrors it top-level on the success body and on every 5xx
+    envelope, so a caller always learns its override was ignored."""
     worker_failures: list[WorkerFailure] = Field(default_factory=list)
     """Worker (and other) stages that degraded with an upstream error — the
     machine-readable form of the CLI's dropped-worker warning. Empty when
@@ -782,7 +795,13 @@ def _apply_quota_blocked_models(
             for model, entry in sorted(excluded.items())
         ]
         log.error("engine_no_healthy_candidate", attempts=attempts)
-        raise NoHealthyCandidateError(attempts=attempts)
+        # DF-CHIMERA-V2-131: carry the lock discards onto the refusal, so the
+        # 503 names the caller's ignored override instead of only the locked
+        # model the caller was trying to escape.
+        raise NoHealthyCandidateError(
+            attempts=attempts,
+            discarded_overrides=_discard_dumps(dispatch),
+        )
 
     for stage in dispatch.formation.stages:
         if stage.model not in excluded:
@@ -1202,22 +1221,28 @@ def _apply_global_model_overrides(
     if overrides is None:
         return
 
-    discards: list[str] = []
+    discards: list[DiscardedOverride] = []
 
     apply_worker = overrides.worker_model
     apply_aggregator: str | None = None
     if overrides.aggregator_model:
         if config.defaults.lock_aggregator:
             discards.append(
-                f"override discarded: aggregator_model={overrides.aggregator_model!r} "
-                f"ignored (lock_aggregator=true)"
+                _discarded_override(
+                    field="aggregator_model",
+                    requested=overrides.aggregator_model,
+                    locked_by="lock_aggregator",
+                )
             )
         else:
             apply_aggregator = overrides.aggregator_model
     if overrides.dispatcher_model and config.defaults.lock_dispatcher:
         discards.append(
-            f"override discarded: dispatcher_model={overrides.dispatcher_model!r} "
-            f"ignored (lock_dispatcher=true)"
+            _discarded_override(
+                field="dispatcher_model",
+                requested=overrides.dispatcher_model,
+                locked_by="lock_dispatcher",
+            )
         )
 
     # Validate everything that will be applied BEFORE mutating the DAG.
@@ -1249,8 +1274,35 @@ def _apply_global_model_overrides(
                 stage.model = apply_aggregator
 
     if discards:
-        note = "; ".join(discards)
+        note = "; ".join(record.reason for record in discards)
         dispatch.dispatch_note = f"{dispatch.dispatch_note}; {note}" if dispatch.dispatch_note else note
+        # DF-CHIMERA-V2-131: the note is prose; keep the same discards in
+        # structured form so the API can serve them as a first-class field on
+        # both the success body and the failure envelope.
+        dispatch.discarded_overrides.extend(discards)
+
+
+def _discarded_override(*, field: str, requested: str, locked_by: str) -> DiscardedOverride:
+    """Build one discard record (and the exact ``dispatch_note`` fragment for it).
+
+    Kept as a single constructor so the prose in ``dispatch_note`` and the
+    structured ``reason`` can never drift apart (DF-CHIMERA-V2-131).
+    """
+    return DiscardedOverride(
+        field=field,
+        requested=requested,
+        locked_by=locked_by,
+        reason=f"override discarded: {field}={requested!r} ignored ({locked_by}=true)",
+    )
+
+
+def _discard_dumps(dispatch: DispatchResult) -> list[dict[str, Any]]:
+    """JSON-safe form of ``dispatch.discarded_overrides`` for error envelopes.
+
+    The failure paths raise exceptions from library code that must not import
+    the API layer, so they carry plain dicts rather than pydantic models.
+    """
+    return [record.model_dump(mode="json") for record in dispatch.discarded_overrides]
 
 
 class Engine:
@@ -1574,7 +1626,11 @@ class Engine:
         )
         if blockers:
             log.error("engine_lane_unreachable", attempts=blockers)
-            raise LaneUnreachableError(blockers)
+            # DF-CHIMERA-V2-131: same seam — a 503 must never hide the discard.
+            raise LaneUnreachableError(
+                blockers,
+                discarded_overrides=_discard_dumps(outcome.result),
+            )
 
         log.info(
             "engine_dispatched",
@@ -2963,6 +3019,11 @@ class Engine:
             # outcome, so the collapse needs its own field to stay visible.
             dispatch_fallback_reason=dispatch.fallback_reason,
             dispatch_repairs=list(dispatch.dispatch_repairs),
+            # DF-CHIMERA-V2-131: the discard is served as a first-class field,
+            # not only as a fragment of dispatch_note — a run that ALSO fell
+            # back to the generic formation replaces the note with the fallback
+            # reason, which used to hide the discard entirely.
+            discarded_overrides=list(dispatch.discarded_overrides),
             worker_failures=list(worker_failures or []),
             # DF-CHIMERA-V2-90: make the credential SOURCE visible on every
             # deliberation — a run that succeeded only because a host-level

@@ -3,6 +3,29 @@
 from __future__ import annotations
 
 
+def override_discard_clause(discarded: list[dict[str, object]] | None) -> str:
+    """One sentence naming every request override a CONFIG LOCK discarded.
+
+    DF-CHIMERA-V2-131: a failure that names only the LOCKED model leaves the
+    caller believing its override was honoured — the exact complaint that
+    produced this fix.  Both failure surfaces (the 502 no-usable-answer
+    envelope and the 503 no-healthy-candidate envelope) append this clause, so
+    even a client that reads nothing but ``error.message`` learns that its
+    override was dropped and which config flag dropped it.
+
+    *discarded* is the JSON-safe form of ``trace.discarded_overrides`` (dicts
+    with ``field`` / ``requested`` / ``locked_by``); an empty or missing list
+    yields ``""`` so the happy path's message is byte-identical to before.
+    """
+    if not discarded:
+        return ""
+    parts = [
+        f"{entry.get('field')}={entry.get('requested')!r} ignored ({entry.get('locked_by')}=true)"
+        for entry in discarded
+    ]
+    return " Request override(s) discarded by config locks: " + "; ".join(parts) + "."
+
+
 class BudgetExhaustedError(Exception):
     """Raised when a provider returns a quota/budget exhaustion error.
 
@@ -56,8 +79,17 @@ class NoHealthyCandidateError(Exception):
          "error_class": "quota", "retry_after_s": 742.0, "detail": "..."}
     """
 
-    def __init__(self, attempts: list[dict[str, object]]) -> None:
+    def __init__(
+        self,
+        attempts: list[dict[str, object]],
+        *,
+        discarded_overrides: list[dict[str, object]] | None = None,
+    ) -> None:
         self.attempts = attempts
+        #: Request overrides a config lock discarded on this run (DF-CHIMERA-V2-131).
+        #: Carried on the exception so the API/MCP layers can serve the same
+        #: field the success body carries, instead of naming only the locked model.
+        self.discarded_overrides = list(discarded_overrides or [])
         providers = sorted({str(a.get("provider") or "?") for a in attempts})
         names = ", ".join(f"{a.get('model')} ({a.get('provider')}/{a.get('error_class')})" for a in attempts)
         self.message = (
@@ -65,7 +97,7 @@ class NoHealthyCandidateError(Exception):
             f"exhaustion on provider(s) {', '.join(providers)} — attempted: {names}. "
             "Top up the provider account (the block clears automatically) or configure "
             "another credentialed provider."
-        )
+        ) + override_discard_clause(self.discarded_overrides)
         super().__init__(self.message)
 
 
@@ -94,8 +126,15 @@ class LaneUnreachableError(NoHealthyCandidateError):
     providers this run needs, is unreachable in this sense.
     """
 
-    def __init__(self, attempts: list[dict[str, object]]) -> None:
+    def __init__(
+        self,
+        attempts: list[dict[str, object]],
+        *,
+        discarded_overrides: list[dict[str, object]] | None = None,
+    ) -> None:
         self.attempts = attempts
+        #: Request overrides a config lock discarded on this run (DF-CHIMERA-V2-131).
+        self.discarded_overrides = list(discarded_overrides or [])
         providers = sorted({str(a.get("provider") or "?") for a in attempts})
         details = "; ".join(
             f"{a.get('model')} ({a.get('remedy') or a.get('detail') or 'unreachable'})" for a in attempts
@@ -106,7 +145,7 @@ class LaneUnreachableError(NoHealthyCandidateError):
             "Set the listed environment variable (or add the provider to api_keys in "
             "chimera.yaml), or point the formation at a provider you can reach; nothing "
             "was billed."
-        )
+        ) + override_discard_clause(self.discarded_overrides)
         Exception.__init__(self, self.message)
 
 
@@ -128,4 +167,5 @@ __all__ = [
     "DagShapeError",
     "LaneUnreachableError",
     "NoHealthyCandidateError",
+    "override_discard_clause",
 ]

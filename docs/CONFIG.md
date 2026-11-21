@@ -140,13 +140,57 @@ Notes:
 | `dispatcher` | `string` | — | Model that designs the formation DAG |
 | `default_worker` | `string` | — | Fallback model for worker stages |
 | `default_aggregator` | `string` | — | Fallback model for aggregator/merge/audit stages |
-| `lock_dispatcher` | `bool` | `false` | If `true`, dispatcher cannot override the dispatcher model |
-| `lock_aggregator` | `bool` | `false` | If `true`, dispatcher cannot override the aggregator model |
+| `lock_dispatcher` | `bool` | `false` | If `true`, the dispatcher role keeps its configured model: a request's `dispatcher_model` is discarded (and reported — see [`lock_dispatcher` / `lock_aggregator`](#lock_dispatcher--lock_aggregator-what-a-locked-config-absorbs)) |
+| `lock_aggregator` | `bool` | `false` | If `true`, aggregator/merge/audit stages keep their configured model: a request's `aggregator_model` is discarded (and reported — see below) |
 | `aggregator_fallbacks` | `list[string]` | `[]` | Ordered merge fallback chain, tried when the aggregator model's own call fails |
 
 **Why lock?** The dispatcher picks the "best" model for each role based on category
 weights. If you want to force budget models for aggregator (e.g. DeepSeek V4 Flash
 instead of GLM-5.2), set `lock_aggregator: true`.
+
+### `lock_dispatcher` / `lock_aggregator` — what a locked config absorbs
+
+Both locks guard the same seam: a **global, role-level request override** is
+ignored and the configured model keeps the role (DF-CHIMERA-V2-131).
+
+| Lock | Absorbs this request field | Role that keeps its configured model |
+|---|---|---|
+| `lock_aggregator: true` | `aggregator_model` | every `aggregator` / `merge` / `audit` stage |
+| `lock_dispatcher: true` | `dispatcher_model` | the dispatcher call that designs the DAG |
+
+What a lock does **not** absorb:
+
+* `worker_model` — neither lock covers worker stages.
+* `stage_models` — per-stage overrides are applied *after* the lock decision, so
+  `stage_models: {aggregator: <model>}` still selects that model under
+  `lock_aggregator: true`. This is the per-request escape hatch that survives a
+  lock.
+* `allowed_models` / `models` — pool restrictions, not role assignments.
+* `defaults.aggregator_fallbacks` — the merge fallback chain stays armed under the
+  lock (see below).
+
+**A discard is never silent.** Before DF-CHIMERA-V2-131 the locked model simply
+won: the request validated, returned `200`, and nothing in the body said the
+override had been thrown away — so a caller whose configured aggregator was dead
+(quota-exhausted, bad key) could not escape it through the API and never learned
+why. Every surface now carries a first-class `discarded_overrides` field — one
+`{field, requested, locked_by, reason}` record per discarded override:
+
+| Surface | Where the discard appears |
+|---|---|
+| `POST /v1/deliberate` success | top-level `discarded_overrides` (absent when nothing was discarded) **and** `trace.discarded_overrides` |
+| `POST /v1/chat/completions` success | `chimera_discarded_overrides` (absent when nothing was discarded) **and** `trace.discarded_overrides` |
+| `502` no-usable-answer | `error.discarded_overrides` + the same clause appended to `error.message`, plus `error.dispatch_note` |
+| `503` no-healthy-candidate / `lane_unreachable` | `error.discarded_overrides` + the same clause in `error.message` |
+
+`trace.discarded_overrides` is the authoritative carrier: `dispatch_note` is a
+single prose string, and a run that also collapsed to the generic formation has
+its note replaced by the fallback reason, which would hide the discard in prose.
+The structured list is never overwritten.
+
+To *honour* the override, turn the lock off (`lock_aggregator: false`) or name the
+stage explicitly with `stage_models`. To route around a dead aggregator while
+keeping the lock, use `defaults.aggregator_fallbacks`.
 
 ### `aggregator_fallbacks` — the merge must not be a single point of failure
 

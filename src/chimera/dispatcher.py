@@ -195,6 +195,33 @@ class DispatchRepair(BaseModel):
     """Human-readable detail — the same wording as ``dispatch_note``."""
 
 
+class DiscardedOverride(BaseModel):
+    """Structured provenance for one request-level override a CONFIG LOCK absorbed.
+
+    ``dispatch_note`` stays the human-readable summary (the CLI renders it
+    unchanged); this record is its machine-readable counterpart — what was
+    ignored, what it asked for, and which setting ignored it — so API/SDK
+    consumers never have to parse prose to learn their override was dropped
+    (DF-CHIMERA-V2-131).  A discard is never silent: when one happens the record
+    is on ``trace.discarded_overrides``, the top-level success body, and every
+    5xx error envelope.
+    """
+
+    field: str
+    """The request field that was ignored: ``aggregator_model`` or
+    ``dispatcher_model``."""
+    requested: str
+    """The model id the request asked for, verbatim (never normalised, so a
+    caller can match it against the value it sent)."""
+    locked_by: str
+    """The config flag that owns the lock: ``lock_aggregator`` or
+    ``lock_dispatcher`` (the ``defaults.*`` keys in ``chimera.yaml``)."""
+    reason: str
+    """Human-readable detail — the same wording as the ``dispatch_note``
+    fragment, e.g. ``override discarded: aggregator_model='X' ignored
+    (lock_aggregator=true)``."""
+
+
 class DispatchResult(BaseModel):
     """What the dispatcher produces in one call."""
 
@@ -213,6 +240,15 @@ class DispatchResult(BaseModel):
     dispatch_repairs: list[DispatchRepair] = Field(default_factory=list)
     """Structured form of the repairs summarised by ``dispatch_note`` — empty
     for a clean dispatch and for a fallback (no repair runs on either)."""
+
+    discarded_overrides: list[DiscardedOverride] = Field(default_factory=list)
+    """Request-level model overrides a CONFIG LOCK discarded on this run —
+    one record per drop, appended by the engine's
+    ``_apply_global_model_overrides``. Empty when no override met a lock.
+
+    The engine mirrors this list onto ``trace.discarded_overrides``, which the
+    REST layer serves top-level on the success body and on every 5xx envelope.
+    """
 
     def worker_prompt_for(self, stage_id: str) -> WorkerPrompt | None:
         for wp in self.worker_prompts:
@@ -1145,6 +1181,7 @@ class Dispatcher:
 __all__ = [
     "DispatchOutcome",
     "DispatchResult",
+    "DiscardedOverride",
     "Dispatcher",
     "FormationDAG",
     "Stage",

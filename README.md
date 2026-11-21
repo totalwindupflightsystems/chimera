@@ -819,7 +819,15 @@ task domains to model strengths. You can override any model choice per request:
 * Config locks (`defaults.lock_aggregator: true` / `defaults.lock_dispatcher: true`)
   force the configured default for that role and discard the request override. A
   discarded override is never silent: it is recorded in the trace's `dispatch_note`
-  (e.g. `override discarded: aggregator_model='X' ignored (lock_aggregator=true)`).
+  (e.g. `override discarded: aggregator_model='X' ignored (lock_aggregator=true)`)
+  **and** as a first-class field — `discarded_overrides` on the `POST /v1/deliberate`
+  body / `chimera_discarded_overrides` on the `POST /v1/chat/completions` body, plus
+  `trace.discarded_overrides` on both, one
+  `{field, requested, locked_by, reason}` record per ignored override. The same
+  field rides the 502 and 503 error envelopes, so a failure never names only the
+  locked model. A per-stage `stage_models` entry still wins under a lock — it is
+  applied after the lock decision. See docs/CONFIG.md §
+  `lock_dispatcher` / `lock_aggregator`.
 
 ## Custom DAGs
 

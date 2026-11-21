@@ -42,8 +42,13 @@ from chimera import __version__, blocked_models
 from chimera.api.dependencies import require_api_key
 from chimera.api.rate_limit import RateLimiter
 from chimera.config import ChimeraConfig, load_config, provider_credential_resolved
+from chimera.dispatcher import DiscardedOverride
 from chimera.engine import ANSWER_DEGRADED_SUBSTITUTED, DeliberationTrace, Engine, WorkerFailure
-from chimera.exceptions import LaneUnreachableError, NoHealthyCandidateError
+from chimera.exceptions import (
+    LaneUnreachableError,
+    NoHealthyCandidateError,
+    override_discard_clause,
+)
 from chimera.gateway import LiteLLMGateway, prewarm_litellm_background
 from chimera.metrics import MetricsMiddleware, render_metrics
 from chimera.observability import configure_logging
@@ -107,6 +112,8 @@ class _NoUsableAnswerError(Exception):
         request_id: str,
         attempts: list[dict[str, Any]] | None = None,
         worker_outputs: dict[str, str] | None = None,
+        discarded_overrides: list[dict[str, Any]] | None = None,
+        dispatch_note: str | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
@@ -117,6 +124,13 @@ class _NoUsableAnswerError(Exception):
         # caller that paid for three answers gets them back and can assemble
         # its own result.
         self.worker_outputs = worker_outputs or {}
+        # DF-CHIMERA-V2-131: overrides a config lock discarded, carried onto
+        # the 502 so the failure names the caller's ignored override instead
+        # of only the locked model it was trying to escape.
+        self.discarded_overrides = discarded_overrides or []
+        #: The run's own dispatch note (fallback reason / repair summary).
+        #: Additive context on the failure body; empty notes are omitted.
+        self.dispatch_note = dispatch_note
 
 
 def _answer_usable(result: Any) -> bool:
@@ -315,6 +329,13 @@ def create_app(
         if exc.worker_outputs:
             body["worker_outputs"] = exc.worker_outputs
             body["answer_degraded_reason"] = "workers_preserved"
+        # Additive (DF-CHIMERA-V2-131): the SAME first-class field the success
+        # body carries. A 502 that named only the locked model left the caller
+        # believing its override had been honoured.
+        if exc.discarded_overrides:
+            body["discarded_overrides"] = exc.discarded_overrides
+        if exc.dispatch_note:
+            body["dispatch_note"] = exc.dispatch_note
         return JSONResponse(status_code=502, content={"error": body})
 
     @app.exception_handler(NoHealthyCandidateError)
@@ -340,17 +361,18 @@ def create_app(
         # not balance) is the same 503 failure class but a different fix, so the
         # machine-readable type names it instead of blaming quota.
         error_type = "lane_unreachable" if isinstance(exc, LaneUnreachableError) else "no_healthy_candidate"
-        return JSONResponse(
-            status_code=503,
-            headers=headers,
-            content={
-                "error": {
-                    "message": exc.message,
-                    "type": error_type,
-                    "attempts": exc.attempts,
-                }
-            },
-        )
+        body: dict[str, Any] = {
+            "message": exc.message,
+            "type": error_type,
+            "attempts": exc.attempts,
+        }
+        # Additive (DF-CHIMERA-V2-131): a refusal must not hide the fact that
+        # the caller's override was discarded — that override may be exactly
+        # the escape route the caller wanted out of the locked, dead lane.
+        discarded = getattr(exc, "discarded_overrides", None)
+        if discarded:
+            body["discarded_overrides"] = discarded
+        return JSONResponse(status_code=503, headers=headers, content={"error": body})
 
     @app.exception_handler(Exception)
     async def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -542,6 +564,19 @@ class DeliberateResponse(BaseModel):
     one (the chat surface's ``chimera_worker_failures``, DF-CHIMERA-V2-75,
     is the same mirror). Absent (not null) when every stage succeeded, so
     clean responses stay byte-identical (``response_model_exclude_none``)."""
+    discarded_overrides: list[DiscardedOverride] | None = None
+    """Request-level model overrides this run's config locks DISCARDED —
+    one ``{field, requested, locked_by, reason}`` entry per ignored override,
+    mirroring ``trace.discarded_overrides`` (DF-CHIMERA-V2-131).
+
+    A locked role silently kept its configured model: the request validated,
+    returned 200, and nothing in the body said the ``aggregator_model`` the
+    caller sent had been thrown away — so a caller could not escape a dead
+    aggregator through the API and never learned why. Absent (not null) when
+    no override met a lock, so clean responses stay byte-identical; the SAME
+    field rides the 502/503 error envelopes, so the failure path can never
+    name only the locked model.
+    """
 
 
 #: Response model held by an :class:`_IdempotencyCache` entry — a Pydantic
@@ -743,6 +778,12 @@ class ChatCompletionResponse(BaseModel):
     DISJOINT from ``chimera_degraded_reasons`` (DF-CHIMERA-V2-55), which stays
     token-limit truncation only. Chimera-specific; OpenAI-strict clients
     ignore unknown response fields."""
+    chimera_discarded_overrides: list[DiscardedOverride] | None = None
+    """Request-level model overrides a config lock DISCARDED on this run,
+    mirroring ``trace.discarded_overrides`` (DF-CHIMERA-V2-131) — the chat
+    surface's twin of ``POST /v1/deliberate``'s ``discarded_overrides``.
+    Absent (not null) when no override met a lock. Chimera-specific;
+    OpenAI-strict clients ignore unknown response fields."""
 
 
 def _compat_format_negotiation(trace: DeliberationTrace) -> dict[str, Any] | None:
@@ -1043,14 +1084,24 @@ async def _execute_deliberation(request: Request, body: DeliberateRequest) -> De
             ) from exc
         raise HTTPException(status_code=400, detail=_catalog_error_detail(str(exc))) from exc
     if not _answer_usable(result):
+        # DF-CHIMERA-V2-131: name the discarded overrides in the MESSAGE too —
+        # a caller that only reads ``error.message`` must still learn that the
+        # aggregator_model it sent was ignored by lock_aggregator.
+        discarded = [entry.model_dump(mode="json") for entry in result.trace.discarded_overrides]
         raise _NoUsableAnswerError(
             message=(
                 "Deliberation failed: no usable answer produced. "
                 f"Upstream error: {result.answer_error or 'unknown'}"
+                f"{override_discard_clause(discarded)}"
             ),
             request_id=result.trace.request_id,
             attempts=_failure_attempts(cfg, result),
             worker_outputs=dict(getattr(result, "worker_outputs", None) or {}),
+            discarded_overrides=discarded,
+            # The trace's note collapses to the fallback reason when the
+            # dispatcher collapsed; the structured list above is authoritative,
+            # the note is extra context.
+            dispatch_note=result.trace.dispatch_note,
         )
     return DeliberateResponse(
         answer=result.answer,
@@ -1060,6 +1111,8 @@ async def _execute_deliberation(request: Request, body: DeliberateRequest) -> De
         # entries as ``trace.worker_failures``). ``or None`` keeps the field
         # absent on clean runs (``response_model_exclude_none`` on the route).
         worker_failures=list(result.trace.worker_failures) or None,
+        # DF-CHIMERA-V2-131: same mirror for lock-discarded request overrides.
+        discarded_overrides=list(result.trace.discarded_overrides) or None,
     )
 
 
@@ -1336,14 +1389,20 @@ async def _run_chat_deliberation(
             detail=_catalog_error_detail(f"Unknown model/formation: {exc}"),
         ) from exc
     if not _answer_usable(result):
+        # DF-CHIMERA-V2-131: same seam as POST /v1/deliberate — the failure
+        # message and the error body both name the lock-discarded overrides.
+        discarded = [entry.model_dump(mode="json") for entry in result.trace.discarded_overrides]
         raise _NoUsableAnswerError(
             message=(
                 "Deliberation failed: no usable answer produced. "
                 f"Upstream error: {result.answer_error or 'unknown'}"
+                f"{override_discard_clause(discarded)}"
             ),
             request_id=result.trace.request_id,
             attempts=_failure_attempts(request.app.state.config, result),
             worker_outputs=dict(getattr(result, "worker_outputs", None) or {}),
+            discarded_overrides=discarded,
+            dispatch_note=result.trace.dispatch_note,
         )
     trace = result.trace
     # Deliberation-wide aggregate (dispatch + every stage), not the
@@ -1390,6 +1449,10 @@ async def _run_chat_deliberation(
         # ``or None`` keeps the field absent on clean runs, and the
         # entry shape mirrors ``trace.worker_failures`` exactly.
         chimera_worker_failures=list(trace.worker_failures) or None,
+        # DF-CHIMERA-V2-131: lock-discarded request overrides, so a chat client
+        # learns its aggregator_model was ignored instead of silently getting
+        # the configured (possibly dead) model back.
+        chimera_discarded_overrides=list(trace.discarded_overrides) or None,
     )
 
 
