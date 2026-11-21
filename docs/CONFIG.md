@@ -179,7 +179,7 @@ why. Every surface now carries a first-class `discarded_overrides` field — one
 | Surface | Where the discard appears |
 |---|---|
 | `POST /v1/deliberate` success | top-level `discarded_overrides` (absent when nothing was discarded) **and** `trace.discarded_overrides` |
-| `POST /v1/chat/completions` success | `chimera_discarded_overrides` (absent when nothing was discarded) **and** `trace.discarded_overrides` |
+| `POST /v1/chat/completions` success | `chimera_discarded_overrides` (absent when nothing was discarded); the chat surface serves no `trace` body |
 | `502` no-usable-answer | `error.discarded_overrides` + the same clause appended to `error.message`, plus `error.dispatch_note` |
 | `503` no-healthy-candidate / `lane_unreachable` | `error.discarded_overrides` + the same clause in `error.message` |
 
