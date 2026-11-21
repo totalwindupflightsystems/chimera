@@ -46,7 +46,10 @@ retry:
 - Bad request (400)
 - Budget exhausted (detected via error message keywords)
 
-Retries include ±25% jitter to avoid thundering herd. Each attempt logged with attempt number, delay, and error.
+Each retry draws independent ±25% jitter to spread calls within a process and
+across processes, reducing thundering herds (without guaranteeing unique delays).
+The exponential delay is capped before jitter, so the actual delay can reach
+125% of `max_delay_ms`. Each retry is logged with attempt number, delay, and error.
 
 ### How many provider requests a logical call can cost
 

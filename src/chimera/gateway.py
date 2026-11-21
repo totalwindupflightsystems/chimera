@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import random
 import re
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
@@ -988,9 +989,8 @@ class LiteLLMGateway:
                     retry_cfg.base_delay_ms * (retry_cfg.backoff_multiplier ** (attempt - 1)),
                     retry_cfg.max_delay_ms,
                 )
-                # Add ±25% jitter
-                jitter = delay * 0.25 * (2 * (hash(str(attempt)) % 100) / 100.0 - 1)
-                delay = delay + jitter
+                # Draw independently for each retry; preserve the pre-jitter cap.
+                delay *= random.uniform(0.75, 1.25)
 
                 log.info(
                     "gateway_retry",
