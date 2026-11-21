@@ -63,6 +63,43 @@ async def test_explicit_fallback_precedes_survivor():
 
 
 @pytest.mark.asyncio
+async def test_survivor_quota_death_mid_run_is_bounded_and_preserves_workers(monkeypatch, tmp_path):
+    """A survivor whose provider dies BETWEEN its worker stage and the merge is
+    still attempted (credential check is skipped, quota is not), records one
+    bounded failed entry, and the run falls through to workers_preserved."""
+    import chimera.blocked_models as blocked_models
+
+    # Isolate BOTH layers: the session-shared registry object AND the persisted
+    # default state file (which carries real quota blocks from live runs on
+    # this deployment). Fresh registry + tmp state file => dispatch sees a
+    # clean slate; monkeypatch restores the session registry afterwards.
+    monkeypatch.setattr(
+        blocked_models,
+        "shared_registry",
+        blocked_models.ModelBlockRegistry(state_path=tmp_path / "blocked-state.json"),
+    )
+    calls = []
+
+    def respond(model, messages, **kwargs):
+        calls.append(model)
+        if model == SURVIVOR and calls.count(SURVIVOR) == 1:
+            return resp("OK", model)  # served its worker stage...
+        raise GatewayError("Insufficient Balance")  # ...then quota died mid-run
+
+    from tests.test_aggregator_fallback_chain import _dag
+
+    dag = _dag()
+    dag["stages"][0]["model"] = SURVIVOR
+    result = await _run(Engine(_cfg(fallbacks=[]), FakeGateway(respond)), dag)
+
+    assert calls.count(SURVIVOR) == 2  # worker stage + exactly one bounded merge attempt
+    assert result.answer_usable is False
+    survivor_entries = [x for x in result.trace.aggregator_fallbacks if x.model == SURVIVOR]
+    assert survivor_entries and all(x.status != "served" for x in survivor_entries)
+    assert any(x.status == "failed" for x in survivor_entries)
+
+
+@pytest.mark.asyncio
 async def test_survivor_has_reserved_call_after_budget_is_exhausted(monkeypatch):
     monkeypatch.setattr("chimera.engine.MAX_AGGREGATOR_FALLBACK_ATTEMPTS", 0)
 
