@@ -2661,3 +2661,40 @@ tasks:
     states which overrides a locked config absorbs. Suite green.
   status: in_progress
   created_at: '2026-11-21T09:45:00.765255+00:00'
+- id: DF-CHIMERA-V2-117
+  title: Malformed X-Chimera-Timeout value is silently swallowed on /v1/deliberate
+  criteria:
+  - '1. Unparsable value (per_stage=abc), bare token (per_stage) and unknown key (perstage=2)
+    each return HTTP 400 with a detail naming the offending pair instead of being
+    ignored. 2. A valid pair in the same header still applies; a malformed pair anywhere
+    makes the whole header 400 with no partial apply. 3. Tests cover each malformed
+    shape asserting 400, replacing the test that currently asserts the silent skip.
+    GATE: .venv/bin/python -m pytest -x -q exits 0.'
+  status: complete
+  created_at: '2026-11-21T12:21:24.225540+00:00'
+  completed_at: '2026-11-21T12:55:46.248192+00:00'
+- id: DF-CHIMERA-V2-116
+  title: X-Chimera-Timeout honoured and validated on /v1/chat/completions (parity
+    with /v1/deliberate)
+  criteria:
+  - 'AC1: per_stage=N below ceiling drops the over-budget stage at ~N s on /v1/chat/completions
+    with trace worker_failures naming ''timed out after Ns''. AC2: a value above the
+    admin ceiling returns HTTP 400 with the same ''exceeds admin ceiling'' detail
+    as /v1/deliberate, and malformed shapes (missing =, unparsable, unknown key) 400
+    naming the pair. AC3: a regression test drives both endpoints with the same header
+    and asserts equal behaviour, and fails on a tree where the chat path ignores the
+    header. AC4 fallback: if deliberate-only is intended, docs/CONFIG.md names /v1/deliberate
+    and states the chat surface ignores the header, with a test pinning that.'
+  status: in_progress
+  created_at: '2026-11-21T13:44:54.820583+00:00'
+- id: DF-CHIMERA-V2-127
+  title: Retry jitter decorrelated per call (not per attempt number)
+  criteria:
+  - 'AC1: N>=4 concurrent calls in one process produce arrivals spread over a measurable
+    fraction of the jitter band (p95 spread >= 50%) instead of landing in the same
+    millisecond. AC2: the jitter source is a real randomness source and a same-process
+    test asserts two calls produce different delays for the same attempt number, proven
+    RED against hash(str(attempt)). AC3: docs/RESILIENCE.md F7 states what the jitter
+    actually decorrelates.'
+  status: in_progress
+  created_at: '2026-11-21T13:44:59.915174+00:00'
