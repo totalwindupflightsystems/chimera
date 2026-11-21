@@ -1,6 +1,6 @@
-{"cell": "install", "status": "OK", "detail": "Python 3.12.3; sdist installed in fresh venv", "rc": 0, "ts": "2026-11-21T15:58:00.711740+00:00"}
-{"cell": "version", "status": "OK", "detail": "chimera 0.3.0", "rc": 0, "ts": "2026-11-21T15:58:00.711740+00:00"}
-{"cell": "config", "status": "OK", "detail": "config init rc 0 and chimera.yaml existence checked", "rc": 0, "ts": "2026-11-21T15:58:00.711740+00:00"}
-{"cell": "formations", "status": "OK", "detail": "all six presets rendered", "rc": 0, "ts": "2026-11-21T15:58:00.711740+00:00"}
-{"cell": "deliberation", "status": "FAIL", "detail": "DeepSeek: Insufficient Balance; XKIRO: model temporarily unavailable for scheduled maintenance; no usable answer", "rc": 2, "ts": "2026-11-21T15:58:00.711740+00:00"}
-{"cell": "teardown", "status": "OK", "detail": "destroy rc 0, subsequent list rc 0; agent absent", "rc": 0, "ts": "2026-11-21T15:58:00.711740+00:00"}
+{"cell": "install", "status": "OK", "detail": "Python 3.12; sdist installed into fresh venv", "rc": 0, "ts": "2026-11-21T16:18:23.219853+00:00", "provider": null, "model": null, "request_id": null}
+{"cell": "version", "status": "OK", "detail": "chimera 0.3.0", "rc": 0, "ts": "2026-11-21T16:18:23.219853+00:00", "provider": null, "model": null, "request_id": null}
+{"cell": "config", "status": "OK", "detail": "config init succeeded; file existence asserted", "rc": 0, "ts": "2026-11-21T16:18:23.219853+00:00", "provider": null, "model": null, "request_id": null}
+{"cell": "formations", "status": "OK", "detail": "six presets printed", "rc": 0, "ts": "2026-11-21T16:18:23.219853+00:00", "provider": null, "model": null, "request_id": null}
+{"cell": "deliberation", "status": "OK", "detail": "Fireworks live answer; earlier provider failures preserved", "rc": 0, "ts": "2026-11-21T16:18:23.219853+00:00", "provider": "fireworks", "model": "fireworks/accounts/fireworks/models/glm-5p3-flash", "request_id": "9614d2b2732d438d"}
+{"cell": "teardown", "status": "OK", "detail": "destroy succeeded; subsequent bunker-mvp list confirms agent absent", "rc": 0, "ts": "2026-11-21T16:18:23.219853+00:00", "provider": null, "model": null, "request_id": null}

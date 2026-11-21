@@ -1,0 +1,29 @@
+/home/bunker-iskipchimera21r2/venv/lib/python3.12/site-packages/chimera/blocked_models.py:640: UserWarning: blocked-models state outside any repo checkout: falling back to the machine-scoped ~/.chimera/blocked-models.json. Runs from a repo checkout keep per-install state instead (set CHIMERA_BLOCKED_MODELS_PATH to pin a location).
+  shared_registry = ModelBlockRegistry()
+{"preferred": "task-router", "fallback": "models.dev", "reason": "task-router table not found (tried: /home/bunker-iskipchimera21r2/task-router/data/tables/models.jsonl, /home/bunker-iskipchimera21r2/venv/lib/task-router/data/tables/models.jsonl)", "event": "registry_source_fallback", "level": "info", "timestamp": "2026-11-21T16:13:19.834636Z"}
+{"age_s": 148, "providers": 324, "stale": false, "event": "provider_cache_hit", "level": "info", "timestamp": "2026-11-21T16:13:19.940334Z"}
+{"providers": 0, "models": 9550, "unattributed": 9157, "event": "provider_discovery_done", "level": "info", "timestamp": "2026-11-21T16:13:20.048754Z"}
+[92m16:13:22 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= cx/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= cx/gpt-6.1-terra; provider = openai
+{"stage": "worker_1", "model": "router9/cx/gpt-6.1-terra", "error": "router9/cx/gpt-6.1-terra call failed: litellm.UnsupportedParamsError: gpt-5 models (including gpt-5-codex) don't support temperature=0.3. Only temperature=1 is supported. For gpt-5.1, temperature is supported when reasoning_effort='none' (or not specified, as it defaults to 'none'). To drop unsupported params set `litellm.drop_params = True`", "event": "engine_stage_failed", "formation": "simple", "request_id": "f710a030a9f04281", "level": "warning", "timestamp": "2026-11-21T16:13:22.686831Z"}
+{"stage": "aggregator", "total_deps": 1, "degraded": 1, "healthy": 0, "event": "aggregator_partial_inputs", "formation": "simple", "request_id": "f710a030a9f04281", "level": "warning", "timestamp": "2026-11-21T16:13:22.687241Z"}
+[92m16:13:22 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= cx/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= cx/gpt-6.1-terra; provider = openai
+{"stage": "aggregator", "model": "router9/cx/gpt-6.1-terra", "error": "router9/cx/gpt-6.1-terra call failed: litellm.UnsupportedParamsError: gpt-5 models (including gpt-5-codex) don't support temperature=0.2. Only temperature=1 is supported. For gpt-5.1, temperature is supported when reasoning_effort='none' (or not specified, as it defaults to 'none'). To drop unsupported params set `litellm.drop_params = True`", "event": "engine_stage_failed", "formation": "simple", "request_id": "f710a030a9f04281", "level": "warning", "timestamp": "2026-11-21T16:13:22.702431Z"}
+{"stage": "aggregator", "model": "router9/cx/gpt-6.1-terra", "reason": "the configured aggregator itself (its call just failed)", "event": "engine_aggregator_fallback_skipped", "formation": "simple", "request_id": "f710a030a9f04281", "level": "warning", "timestamp": "2026-11-21T16:13:22.702754Z"}
+{"stage": "aggregator", "total_deps": 1, "degraded": 1, "healthy": 0, "event": "aggregator_partial_inputs", "formation": "simple", "request_id": "f710a030a9f04281", "level": "warning", "timestamp": "2026-11-21T16:13:22.702849Z"}
+[92m16:13:22 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= cx/gpt-6.1-terra; provider = openai
+
+LiteLLM completion() model= cx/gpt-6.1-terra; provider = openai
+warning: worker 'worker_1' (router9/cx/gpt-6.1-terra) failed: router9/cx/gpt-6.1-terra call failed: litellm.UnsupportedParamsError: gpt-5 models (including gpt-5-codex) don't support temperature=0.3. 
+Only temperature=1 is supported. For gpt-5.1, temperature is... [truncated 145 chars]
+  full error: the complete upstream message (343 chars) is in the trace — re-run with --json (or --verbose) to read it
+warning: worker 'aggregator' (router9/cx/gpt-6.1-terra) failed: router9/cx/gpt-6.1-terra call failed: litellm.UnsupportedParamsError: gpt-5 models (including gpt-5-codex) don't support 
+temperature=0.2. Only temperature=1 is supported. For gpt-5.1, temperature is... [truncated 145 chars]
+  full error: the complete upstream message (343 chars) is in the trace — re-run with --json (or --verbose) to read it
+error: deliberation produced no usable answer (answer stage 'aggregator' degraded, no merge fallback could serve): router9/cx/gpt-6.1-terra call failed: litellm.UnsupportedParamsError: gpt-5 models (including gpt-5-codex) don't support temperature=0.2. Only temperature=1 is supported. For gpt-5.1, temperature is supported when reasoning_effort='none' (or not specified, as it defaults to 'none'). To drop unsupported params set `litellm.drop_params = True`

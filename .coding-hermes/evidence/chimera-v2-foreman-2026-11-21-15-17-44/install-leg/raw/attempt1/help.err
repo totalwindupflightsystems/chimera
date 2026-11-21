@@ -1,0 +1,2 @@
+/tmp/iskip-venv/lib/python3.12/site-packages/chimera/blocked_models.py:640: UserWarning: blocked-models state outside any repo checkout: falling back to the machine-scoped ~/.chimera/blocked-models.json. Runs from a repo checkout keep per-install state instead (set CHIMERA_BLOCKED_MODELS_PATH to pin a location).
+  shared_registry = ModelBlockRegistry()

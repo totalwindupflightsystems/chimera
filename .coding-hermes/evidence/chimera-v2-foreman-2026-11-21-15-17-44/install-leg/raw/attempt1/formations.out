@@ -1,0 +1,11 @@
+                                                                            Formations                                                                            
+┏━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ name        ┃ definition                                                                                                                                       ┃
+┡━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ auto        │ mode=auto                                                                                                                                        │
+│ simple      │ workers=2; aggregator=default                                                                                                                    │
+│ speed       │ workers=2; aggregator=deepseek/deepseek-v4-flash; worker_models=deepseek/deepseek-v4-flash, openrouter/qwen/qwen3-coder                          │
+│ debate      │ workers=2; merge=best_of_n; aggregators=default, default                                                                                         │
+│ quick-panel │ workers=3; aggregator=deepseek/deepseek-v4-flash; worker_models=deepseek/deepseek-v4-flash, openrouter/qwen/qwen3-coder, zai-coding-plan/glm-5.2 │
+│ audit       │ workers=2; aggregator=default; audit=default                                                                                                     │
+└─────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

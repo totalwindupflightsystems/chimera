@@ -1,49 +1,29 @@
-/tmp/iskip-venv/lib/python3.12/site-packages/chimera/blocked_models.py:640: UserWarning: blocked-models state outside any repo checkout: falling back to the machine-scoped ~/.chimera/blocked-models.json. Runs from a repo checkout keep per-install state instead (set CHIMERA_BLOCKED_MODELS_PATH to pin a location).
+/home/bunker-iskipchimera21r2/venv/lib/python3.12/site-packages/chimera/blocked_models.py:640: UserWarning: blocked-models state outside any repo checkout: falling back to the machine-scoped ~/.chimera/blocked-models.json. Runs from a repo checkout keep per-install state instead (set CHIMERA_BLOCKED_MODELS_PATH to pin a location).
   shared_registry = ModelBlockRegistry()
-{"preferred": "task-router", "fallback": "models.dev", "reason": "task-router table not found (tried: /home/bunker-iskip-chimera-v2-21/task-router/data/tables/models.jsonl, /tmp/iskip-venv/lib/task-router/data/tables/models.jsonl)", "event": "registry_source_fallback", "level": "info", "timestamp": "2026-11-21T15:53:42.256969Z"}
-{"age_s": 82, "providers": 324, "stale": false, "event": "provider_cache_hit", "level": "info", "timestamp": "2026-11-21T15:53:42.347045Z"}
-{"providers": 1, "models": 9550, "unattributed": 9157, "event": "provider_discovery_done", "level": "info", "timestamp": "2026-11-21T15:53:42.441694Z"}
-[92m15:53:45 - LiteLLM:INFO[0m: utils.py:4023 - 
-LiteLLM completion() model= deepseek-v4-pro; provider = openai
+{"preferred": "task-router", "fallback": "models.dev", "reason": "task-router table not found (tried: /home/bunker-iskipchimera21r2/task-router/data/tables/models.jsonl, /home/bunker-iskipchimera21r2/venv/lib/task-router/data/tables/models.jsonl)", "event": "registry_source_fallback", "level": "info", "timestamp": "2026-11-21T16:11:31.123581Z"}
+{"age_s": 39, "providers": 324, "stale": false, "event": "provider_cache_hit", "level": "info", "timestamp": "2026-11-21T16:11:31.226173Z"}
+{"providers": 1, "models": 9550, "unattributed": 9157, "event": "provider_discovery_done", "level": "info", "timestamp": "2026-11-21T16:11:31.336609Z"}
+[92m16:11:34 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= mistralai/mistral-nemo; provider = openrouter
 
-LiteLLM completion() model= deepseek-v4-pro; provider = openai
-[92m15:53:45 - LiteLLM:INFO[0m: utils.py:4023 - 
-LiteLLM completion() model= deepseek-v4-pro; provider = openai
+LiteLLM completion() model= mistralai/mistral-nemo; provider = openrouter
+{"stage": "worker_1", "model": "openrouter/mistralai/mistral-nemo", "error": "openrouter/mistralai/mistral-nemo call failed: litellm.APIError: APIError: OpenrouterException - {\"error\":{\"message\":\"Key limit exceeded (total limit). Manage it using https://openrouter.ai/workspaces/default/keys/[REDACTED-KEY-ID] $50.19 of $50.00 used; does not reset.\",\"code\":403,\"metadata\":{\"limit_source\":\"openrouter_key_limit\",\"remedy_hint\":\"Raise or remove this API key's usage limit at https://openrouter.ai/settings/keys, or use a key without a limit.\",\"scope\":\"key_limit\",\"limit_usd\":50,\"spend_usd\":50.191105535,\"resets_at\":null}}}", "event": "engine_stage_failed", "formation": "simple", "request_id": "40d3a6d2ba7541e0", "level": "warning", "timestamp": "2026-11-21T16:11:34.528877Z"}
+{"stage": "aggregator", "total_deps": 1, "degraded": 1, "healthy": 0, "event": "aggregator_partial_inputs", "formation": "simple", "request_id": "40d3a6d2ba7541e0", "level": "warning", "timestamp": "2026-11-21T16:11:34.529406Z"}
+[92m16:11:34 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= mistralai/mistral-nemo; provider = openrouter
 
-LiteLLM completion() model= deepseek-v4-pro; provider = openai
-{"model": "deepseek/deepseek-v4-pro", "provider": "deepseek", "error": "litellm.BadRequestError: OpenAIException - Insufficient Balance (request_id: 951cd9b4-525a-47be-a486-dcc1aea6478f)", "event": "budget_exhausted", "formation": "simple", "request_id": "bb546f301b094116", "level": "critical", "timestamp": "2026-11-21T15:53:46.269637Z"}
-{"stage": "worker_2", "model": "deepseek/deepseek-v4-pro", "error": "Budget exhausted for model 'deepseek/deepseek-v4-pro' (provider: deepseek): litellm.BadRequestError: OpenAIException - Insufficient Balance (request_id: 951cd9b4-525a-47be-a486-dcc1aea6478f)", "event": "engine_stage_failed", "formation": "simple", "request_id": "bb546f301b094116", "level": "warning", "timestamp": "2026-11-21T15:53:46.269784Z"}
-{"model": "deepseek/deepseek-v4-pro", "provider": "deepseek", "error": "litellm.BadRequestError: OpenAIException - Insufficient Balance (request_id: 7b94cff8-6773-4cb1-ae11-0d552123abf0)", "event": "budget_exhausted", "formation": "simple", "request_id": "bb546f301b094116", "level": "critical", "timestamp": "2026-11-21T15:53:46.334878Z"}
-{"stage": "worker_1", "model": "deepseek/deepseek-v4-pro", "error": "Budget exhausted for model 'deepseek/deepseek-v4-pro' (provider: deepseek): litellm.BadRequestError: OpenAIException - Insufficient Balance (request_id: 7b94cff8-6773-4cb1-ae11-0d552123abf0)", "event": "engine_stage_failed", "formation": "simple", "request_id": "bb546f301b094116", "level": "warning", "timestamp": "2026-11-21T15:53:46.335041Z"}
-{"stage": "aggregator", "total_deps": 2, "degraded": 2, "healthy": 0, "event": "aggregator_partial_inputs", "formation": "simple", "request_id": "bb546f301b094116", "level": "warning", "timestamp": "2026-11-21T15:53:46.335487Z"}
-[92m15:53:46 - LiteLLM:INFO[0m: utils.py:4023 - 
-LiteLLM completion() model= deepseek-v4-flash; provider = openai
+LiteLLM completion() model= mistralai/mistral-nemo; provider = openrouter
+{"stage": "aggregator", "model": "openrouter/mistralai/mistral-nemo", "error": "openrouter/mistralai/mistral-nemo call failed: litellm.APIError: APIError: OpenrouterException - {\"error\":{\"message\":\"Key limit exceeded (total limit). Manage it using https://openrouter.ai/workspaces/default/keys/[REDACTED-KEY-ID] $50.19 of $50.00 used; does not reset.\",\"code\":403,\"metadata\":{\"limit_source\":\"openrouter_key_limit\",\"remedy_hint\":\"Raise or remove this API key's usage limit at https://openrouter.ai/settings/keys, or use a key without a limit.\",\"scope\":\"key_limit\",\"limit_usd\":50,\"spend_usd\":50.191105535,\"resets_at\":null}}}", "event": "engine_stage_failed", "formation": "simple", "request_id": "40d3a6d2ba7541e0", "level": "warning", "timestamp": "2026-11-21T16:11:34.624368Z"}
+{"stage": "aggregator", "model": "openrouter/mistralai/mistral-nemo", "reason": "the configured aggregator itself (its call just failed)", "event": "engine_aggregator_fallback_skipped", "formation": "simple", "request_id": "40d3a6d2ba7541e0", "level": "warning", "timestamp": "2026-11-21T16:11:34.624834Z"}
+{"stage": "aggregator", "total_deps": 1, "degraded": 1, "healthy": 0, "event": "aggregator_partial_inputs", "formation": "simple", "request_id": "40d3a6d2ba7541e0", "level": "warning", "timestamp": "2026-11-21T16:11:34.624954Z"}
+[92m16:11:34 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= mistralai/mistral-nemo; provider = openrouter
 
-LiteLLM completion() model= deepseek-v4-flash; provider = openai
-{"model": "deepseek/deepseek-v4-flash", "provider": "deepseek", "error": "litellm.BadRequestError: OpenAIException - Insufficient Balance (request_id: a55ec068-68b8-483a-9263-ab2606d82074)", "event": "budget_exhausted", "formation": "simple", "request_id": "bb546f301b094116", "level": "critical", "timestamp": "2026-11-21T15:53:46.930643Z"}
-{"stage": "aggregator", "model": "deepseek/deepseek-v4-flash", "error": "Budget exhausted for model 'deepseek/deepseek-v4-flash' (provider: deepseek): litellm.BadRequestError: OpenAIException - Insufficient Balance (request_id: a55ec068-68b8-483a-9263-ab2606d82074)", "event": "engine_stage_failed", "formation": "simple", "request_id": "bb546f301b094116", "level": "warning", "timestamp": "2026-11-21T15:53:46.930822Z"}
-{"stage": "aggregator", "model": "zai-coding-plan/glm-5.2", "reason": "no credential for provider 'zai' (set ZAI_API_KEY)", "event": "engine_aggregator_fallback_skipped", "formation": "simple", "request_id": "bb546f301b094116", "level": "warning", "timestamp": "2026-11-21T15:53:46.931130Z"}
-{"stage": "aggregator", "total_deps": 2, "degraded": 2, "healthy": 0, "event": "aggregator_partial_inputs", "formation": "simple", "request_id": "bb546f301b094116", "level": "warning", "timestamp": "2026-11-21T15:53:46.931278Z"}
-[92m15:53:46 - LiteLLM:INFO[0m: utils.py:4023 - 
-LiteLLM completion() model= deepseek-v4-pro; provider = openai
-
-LiteLLM completion() model= deepseek-v4-pro; provider = openai
-{"model": "deepseek/deepseek-v4-pro", "provider": "deepseek", "error": "litellm.BadRequestError: OpenAIException - Insufficient Balance (request_id: 99b9dbc5-0d53-4a80-8da3-85a36497eddf)", "event": "budget_exhausted", "formation": "simple", "request_id": "bb546f301b094116", "level": "critical", "timestamp": "2026-11-21T15:53:47.533426Z"}
-{"stage": "aggregator", "model": "deepseek/deepseek-v4-pro", "error": "Budget exhausted for model 'deepseek/deepseek-v4-pro' (provider: deepseek): litellm.BadRequestError: OpenAIException - Insufficient Balance (request_id: 99b9dbc5-0d53-4a80-8da3-85a36497eddf)", "event": "engine_aggregator_fallback_failed", "formation": "simple", "request_id": "bb546f301b094116", "level": "warning", "timestamp": "2026-11-21T15:53:47.533627Z"}
-{"stage": "aggregator", "model": "deepseek/deepseek-v4-flash", "reason": "the configured aggregator itself (its call just failed)", "event": "engine_aggregator_fallback_skipped", "formation": "simple", "request_id": "bb546f301b094116", "level": "warning", "timestamp": "2026-11-21T15:53:47.533693Z"}
-{"stage": "aggregator", "total_deps": 2, "degraded": 2, "healthy": 0, "event": "aggregator_partial_inputs", "formation": "simple", "request_id": "bb546f301b094116", "level": "warning", "timestamp": "2026-11-21T15:53:47.533784Z"}
-[92m15:53:47 - LiteLLM:INFO[0m: utils.py:4023 - 
-LiteLLM completion() model= deepseek-v4-pro; provider = openai
-
-LiteLLM completion() model= deepseek-v4-pro; provider = openai
-{"model": "deepseek/deepseek-v4-pro", "provider": "deepseek", "error": "litellm.BadRequestError: OpenAIException - Insufficient Balance (request_id: 86faadcc-b7f9-41ba-8bd8-f6666ebf0619)", "event": "budget_exhausted", "formation": "simple", "request_id": "bb546f301b094116", "level": "critical", "timestamp": "2026-11-21T15:53:48.111594Z"}
-{"model": "deepseek/deepseek-v4-pro", "reason": "quota", "cooldown_s": 900.0, "error": "Budget exhausted for model 'deepseek/deepseek-v4-pro' (provider: deepseek): litellm.BadRequestError: OpenAIException - Insufficient Balance (request_id: 7b94cff8-6773-4cb1-ae11-0d552123abf0)", "event": "model_blocked_quota", "formation": "simple", "request_id": "bb546f301b094116", "level": "warning", "timestamp": "2026-11-21T15:53:48.112200Z"}
-{"model": "deepseek/deepseek-v4-pro", "reason": "quota", "cooldown_s": 900.0, "error": "Budget exhausted for model 'deepseek/deepseek-v4-pro' (provider: deepseek): litellm.BadRequestError: OpenAIException - Insufficient Balance (request_id: 951cd9b4-525a-47be-a486-dcc1aea6478f)", "event": "model_blocked_quota", "formation": "simple", "request_id": "bb546f301b094116", "level": "warning", "timestamp": "2026-11-21T15:53:48.112752Z"}
-{"model": "deepseek/deepseek-v4-flash", "reason": "quota", "cooldown_s": 900.0, "error": "Budget exhausted for model 'deepseek/deepseek-v4-pro' (provider: deepseek): litellm.BadRequestError: OpenAIException - Insufficient Balance (request_id: 86faadcc-b7f9-41ba-8bd8-f6666ebf0619)", "event": "model_blocked_quota", "formation": "simple", "request_id": "bb546f301b094116", "level": "warning", "timestamp": "2026-11-21T15:53:48.113135Z"}
-warning: worker 'worker_1' (deepseek/deepseek-v4-pro) failed: Budget exhausted for model 'deepseek/deepseek-v4-pro' (provider: deepseek): litellm.BadRequestError: OpenAIException - Insufficient 
-Balance (request_id: 7b94cff8-6773-4cb1-ae11-0d552123abf0)
-warning: worker 'worker_2' (deepseek/deepseek-v4-pro) failed: Budget exhausted for model 'deepseek/deepseek-v4-pro' (provider: deepseek): litellm.BadRequestError: OpenAIException - Insufficient 
-Balance (request_id: 951cd9b4-525a-47be-a486-dcc1aea6478f)
-warning: worker 'aggregator' (deepseek/deepseek-v4-flash) failed: Budget exhausted for model 'deepseek/deepseek-v4-pro' (provider: deepseek): litellm.BadRequestError: OpenAIException - Insufficient 
-Balance (request_id: 86faadcc-b7f9-41ba-8bd8-f6666ebf0619)
-error: deliberation produced no usable answer (answer stage 'aggregator' degraded, no merge fallback could serve): Budget exhausted for model 'deepseek/deepseek-v4-pro' (provider: deepseek): litellm.BadRequestError: OpenAIException - Insufficient Balance (request_id: 86faadcc-b7f9-41ba-8bd8-f6666ebf0619)
+LiteLLM completion() model= mistralai/mistral-nemo; provider = openrouter
+warning: worker 'worker_1' (openrouter/mistralai/mistral-nemo) failed: openrouter/mistralai/mistral-nemo call failed: litellm.APIError: APIError: OpenrouterException - {"error":{"message":"Key limit 
+exceeded (total limit). Manage it using... [truncated 421 chars]
+  full error: the complete upstream message (588 chars) is in the trace — re-run with --json (or --verbose) to read it
+warning: worker 'aggregator' (openrouter/mistralai/mistral-nemo) failed: openrouter/mistralai/mistral-nemo call failed: litellm.APIError: APIError: OpenrouterException - {"error":{"message":"Key limit
+exceeded (total limit). Manage it using... [truncated 421 chars]
+  full error: the complete upstream message (588 chars) is in the trace — re-run with --json (or --verbose) to read it
+error: deliberation produced no usable answer (answer stage 'aggregator' degraded, no merge fallback could serve): openrouter/mistralai/mistral-nemo call failed: litellm.APIError: APIError: OpenrouterException - {"error":{"message":"Key limit exceeded (total limit). Manage it using https://openrouter.ai/workspaces/default/keys/[REDACTED-KEY-ID] $50.19 of $50.00 used; does not reset.","code":403,"metadata":{"limit_source":"openrouter_key_limit","remedy_hint":"Raise or remove this API key's usage limit at https://openrouter.ai/settings/keys, or use a key without a limit.","scope":"key_limit","limit_usd":50,"spend_usd":50.191105535,"resets_at":null}}}

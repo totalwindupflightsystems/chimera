@@ -7,8 +7,6 @@
     └ net: shared — host network namespace (no network isolation: shared loopback, global port space) — NOT tenant isolation
   ci-e2e-01      running    14.9 GB        20.0 GB        2026-11-07T20:45:08Z      (no URL)
     └ net: shared — host network namespace (no network isolation: shared loopback, global port space) — NOT tenant isolation
-  f2df07db       running    10.1 GB        20.0 GB        2026-11-21T12:05:26Z      (no URL)
-    └ net: shared — host network namespace (no network isolation: shared loopback, global port space) — NOT tenant isolation
 
-Total: 3 agents (server: bunker-mvp)
+Total: 2 agents (server: bunker-mvp)
 Disk Used is the agent's measured usage; Max File Size (per-file cap — not a total-disk quota)

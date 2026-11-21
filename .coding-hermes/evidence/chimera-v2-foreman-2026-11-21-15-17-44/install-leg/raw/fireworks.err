@@ -1,0 +1,27 @@
+/home/bunker-iskipchimera21r2/venv/lib/python3.12/site-packages/chimera/blocked_models.py:640: UserWarning: blocked-models state outside any repo checkout: falling back to the machine-scoped ~/.chimera/blocked-models.json. Runs from a repo checkout keep per-install state instead (set CHIMERA_BLOCKED_MODELS_PATH to pin a location).
+  shared_registry = ModelBlockRegistry()
+{"preferred": "task-router", "fallback": "models.dev", "reason": "task-router table not found (tried: /home/bunker-iskipchimera21r2/task-router/data/tables/models.jsonl, /home/bunker-iskipchimera21r2/venv/lib/task-router/data/tables/models.jsonl)", "event": "registry_source_fallback", "level": "info", "timestamp": "2026-11-21T16:14:29.801830Z"}
+{"age_s": 218, "providers": 324, "stale": false, "event": "provider_cache_hit", "level": "info", "timestamp": "2026-11-21T16:14:29.904542Z"}
+{"providers": 1, "models": 9550, "unattributed": 9157, "event": "provider_discovery_done", "level": "info", "timestamp": "2026-11-21T16:14:29.998807Z"}
+[92m16:14:32 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= accounts/fireworks/models/llama-v3p1-8b-instruct; provider = openai
+
+LiteLLM completion() model= accounts/fireworks/models/llama-v3p1-8b-instruct; provider = openai
+{"stage": "worker_1", "model": "fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct", "error": "fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct call failed: litellm.NotFoundError: NotFoundError: OpenAIException - Model not found, inaccessible, and/or not deployed", "event": "engine_stage_failed", "request_id": "b1d1ae68f9c64923", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T16:14:33.028260Z"}
+{"stage": "aggregator", "total_deps": 1, "degraded": 1, "healthy": 0, "event": "aggregator_partial_inputs", "request_id": "b1d1ae68f9c64923", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T16:14:33.028730Z"}
+[92m16:14:33 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= accounts/fireworks/models/llama-v3p1-8b-instruct; provider = openai
+
+LiteLLM completion() model= accounts/fireworks/models/llama-v3p1-8b-instruct; provider = openai
+{"stage": "aggregator", "model": "fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct", "error": "fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct call failed: litellm.NotFoundError: NotFoundError: OpenAIException - Model not found, inaccessible, and/or not deployed", "event": "engine_stage_failed", "request_id": "b1d1ae68f9c64923", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T16:14:33.067536Z"}
+{"stage": "aggregator", "model": "fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct", "reason": "the configured aggregator itself (its call just failed)", "event": "engine_aggregator_fallback_skipped", "request_id": "b1d1ae68f9c64923", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T16:14:33.067783Z"}
+{"stage": "aggregator", "total_deps": 1, "degraded": 1, "healthy": 0, "event": "aggregator_partial_inputs", "request_id": "b1d1ae68f9c64923", "formation": "simple", "level": "warning", "timestamp": "2026-11-21T16:14:33.067915Z"}
+[92m16:14:33 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= accounts/fireworks/models/llama-v3p1-8b-instruct; provider = openai
+
+LiteLLM completion() model= accounts/fireworks/models/llama-v3p1-8b-instruct; provider = openai
+warning: worker 'worker_1' (fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct) failed: fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct call failed: litellm.NotFoundError: 
+NotFoundError: OpenAIException - Model not found, inaccessible, and/or not deployed
+warning: worker 'aggregator' (fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct) failed: fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct call failed: litellm.NotFoundError: 
+NotFoundError: OpenAIException - Model not found, inaccessible, and/or not deployed
+error: deliberation produced no usable answer (answer stage 'aggregator' degraded, no merge fallback could serve): fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct call failed: litellm.NotFoundError: NotFoundError: OpenAIException - Model not found, inaccessible, and/or not deployed

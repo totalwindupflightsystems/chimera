@@ -1,0 +1,5 @@
+/tmp/iskip-venv/lib/python3.12/site-packages/chimera/blocked_models.py:640: UserWarning: blocked-models state outside any repo checkout: falling back to the machine-scoped ~/.chimera/blocked-models.json. Runs from a repo checkout keep per-install state instead (set CHIMERA_BLOCKED_MODELS_PATH to pin a location).
+  shared_registry = ModelBlockRegistry()
+{"preferred": "task-router", "fallback": "models.dev", "reason": "task-router table not found (tried: /home/bunker-iskip-chimera-v2-21/task-router/data/tables/models.jsonl, /tmp/iskip-venv/lib/task-router/data/tables/models.jsonl)", "event": "registry_source_fallback", "level": "info", "timestamp": "2026-11-21T15:52:19.906790Z"}
+{"providers": 325, "event": "provider_fetch_ok", "level": "info", "timestamp": "2026-11-21T15:52:20.507347Z"}
+{"providers": 0, "models": 9550, "unattributed": 9157, "event": "provider_discovery_done", "level": "info", "timestamp": "2026-11-21T15:52:20.626680Z"}

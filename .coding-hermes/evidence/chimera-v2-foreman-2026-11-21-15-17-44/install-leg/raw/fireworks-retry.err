@@ -1,0 +1,13 @@
+/home/bunker-iskipchimera21r2/venv/lib/python3.12/site-packages/chimera/blocked_models.py:640: UserWarning: blocked-models state outside any repo checkout: falling back to the machine-scoped ~/.chimera/blocked-models.json. Runs from a repo checkout keep per-install state instead (set CHIMERA_BLOCKED_MODELS_PATH to pin a location).
+  shared_registry = ModelBlockRegistry()
+{"preferred": "task-router", "fallback": "models.dev", "reason": "task-router table not found (tried: /home/bunker-iskipchimera21r2/task-router/data/tables/models.jsonl, /home/bunker-iskipchimera21r2/venv/lib/task-router/data/tables/models.jsonl)", "event": "registry_source_fallback", "level": "info", "timestamp": "2026-11-21T16:16:07.779700Z"}
+{"age_s": 316, "providers": 324, "stale": false, "event": "provider_cache_hit", "level": "info", "timestamp": "2026-11-21T16:16:07.876326Z"}
+{"providers": 1, "models": 9550, "unattributed": 9157, "event": "provider_discovery_done", "level": "info", "timestamp": "2026-11-21T16:16:07.970771Z"}
+[92m16:16:10 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= accounts/fireworks/models/glm-5p3-flash; provider = openai
+
+LiteLLM completion() model= accounts/fireworks/models/glm-5p3-flash; provider = openai
+[92m16:16:11 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= accounts/fireworks/models/glm-5p3-flash; provider = openai
+
+LiteLLM completion() model= accounts/fireworks/models/glm-5p3-flash; provider = openai

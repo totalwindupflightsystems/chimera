@@ -1,48 +1,30 @@
-# Install leg — SKIPPED-INSTALL-CHIMERA-V2-21
+# Install leg — SKIPPED-INSTALL-CHIMERA-V2-21, rework attempt 2
 
-Base 129246e2ddd138550b743a6409c1025d33346a49; agent iskip-chimera-v2-21, server bunker-mvp. Cell timestamps are evidence-recording times, not individual command start times. stdout and stderr are captured separately under raw/. Provider-returned masked key fragments are redacted.
+Built from HEAD 06dc8d6; fresh agent iskipchimera21r2 on bunker-mvp. Cell timestamps are evidence-recording time, not command start time. Raw attempt 1 files are retained in raw/attempt1; current run stdout, stderr and exit codes are in raw/. The OpenRouter error contains a key management URL: its key identifier is redacted, with the error otherwise preserved.
 
 | Cell | Status | Evidence | rc |
 |---|---|---|---|
-| install | OK | Python 3.12.3; sdist installed in fresh venv | 0 |
+| install | OK | OS Python; sdist installed in fresh venv (raw/install.*) | 0 |
 | version | OK | chimera 0.3.0 | 0 |
-| config | OK | config init rc 0 and chimera.yaml existence checked | 0 |
-| formations | OK | all six presets rendered | 0 |
-| deliberation | FAIL | DeepSeek: Insufficient Balance; XKIRO: model temporarily unavailable for scheduled maintenance; no usable answer | 2 |
-| teardown | OK | destroy rc 0, subsequent list rc 0; agent absent | 0 |
+| config | OK | config init and file existence assertion | 0 |
+| formations | OK | six shipped presets displayed | 0 |
+| deliberation | OK | Fireworks glm-5p3-flash returned a real answer; request 9614d2b2732d438d | 0 |
+| teardown | OK | destroy 0; subsequent bunker-mvp list 0, agent absent | 0 |
 
 ## Distribution
 
-- chimera_deliberation-0.3.0.tar.gz SHA256 e0ac6ce3b57f12d86ef57c3cea4bd3e2024e8e0478a28e076bb4142e74e133cc
-- chimera_deliberation-0.3.0-py3-none-any.whl SHA256 a20c69aa0112252901b2db476ca0dfc99ec2f387267ac63e1c1a25cb94b14069
+- sdist SHA256 af7cc0b3d602abd687ce8f7c2c9f3a50a0a1f3fda4434ad20cde84fa04277857
+- wheel SHA256 a20c69aa0112252901b2db476ca0dfc99ec2f387267ac63e1c1a25cb94b14069
 
-## Commands
+## Provider attempts
 
-    uv build --out-dir /home/kara/.hermes/cache/scratch/iskip-21/dist /home/kara/chimera-v2
-    sha256sum /home/kara/.hermes/cache/scratch/iskip-21/dist/*
-    bunker spawn iskip-chimera-v2-21 --server bunker-mvp --ttl 1h
-    bunker cp <each distribution> iskip-chimera-v2-21:/home/bunker-iskip-chimera-v2-21/ --server bunker-mvp
-    bunker cp <battery.sh> iskip-chimera-v2-21:/home/bunker-iskip-chimera-v2-21/battery.sh --server bunker-mvp
-    bunker exec iskip-chimera-v2-21 --server bunker-mvp --timeout 480 --raw -- /bin/sh /home/bunker-iskip-chimera-v2-21/battery.sh
+1. OpenRouter mistralai/mistral-nemo: rc 2, HTTP 403, key spending limit exceeded. See raw/deliberation.*.
+2. Router9 cx/gpt-6.1-terra: rc 2, LiteLLM rejected temperature parameters before provider completion. See raw/router9.*.
+3. Fireworks llama-v3p1-8b-instruct: rc 2, model not found/inaccessible/not deployed. See raw/fireworks.*. The authenticated models listing is in raw/fireworks-models.*.
+4. Fireworks accounts/fireworks/models/glm-5p3-flash: rc 0, actual answer returned. See raw/fireworks-retry.*. Request ID 9614d2b2732d438d; trace total cost 0.000124 USD (Chimera estimate); worker input/output 57/75 tokens. Full answer, complete trace, stage tokens and costs are captured in the raw output.
 
-Inside battery.sh, each stdout, stderr and exit code was saved separately:
+The successful answer: Testing a fresh install matters because it verifies that all dependencies, configurations, and setup steps work correctly from scratch, catching issues that would only appear for new users or on clean systems rather than being masked by an already-configured environment.
 
-    /usr/bin/python3 -V
-    /usr/bin/python3 -m venv /tmp/iskip-venv
-    /tmp/iskip-venv/bin/pip install "$HOME/chimera_deliberation-0.3.0.tar.gz"
-    cd "$HOME/iskip-empty"
-    /tmp/iskip-venv/bin/chimera --version
-    /tmp/iskip-venv/bin/chimera config init
-    test -f chimera.yaml
-    /tmp/iskip-venv/bin/chimera -c chimera.yaml formations
-    /tmp/iskip-venv/bin/chimera --help
-    /tmp/iskip-venv/bin/chimera deliberate --help
-    /tmp/iskip-venv/bin/chimera -c chimera.yaml -f simple run --json 'Explain in one sentence why testing a fresh install matters.'
+## Procedure
 
-The actual version invocation ran from the agent home; it is otherwise identical. Provider credentials were sent over the agent SSH connection through stdin into a private, temporary agent-home file and deleted before the deliberation ended. The XKIRO retry used an agent-only config based on the initialized example with provider xkiro, base URL https://api.xkiro.com/v1 and model xkiro/openai/gpt-6.1-terra; the same CLI command ran with -c xkiro.yaml. The initial attempt accidentally used the native DeepSeek routing and was discarded as a setup error. XKIRO returned scheduled maintenance, so this leg remains failed despite a reachable provider.
-
-    bunker pull iskip-chimera-v2-21 /home/bunker-iskip-chimera-v2-21/iskip-results <scratch>/pulled3 --recursive --server bunker-mvp
-    bunker destroy iskip-chimera-v2-21 --server bunker-mvp --purge
-    bunker list --server bunker-mvp
-
-Initial `bunker exec --script` produced an unterminated quoted-string error; the same script was transferred using `bunker cp` and executed with `--raw` successfully. Raw captures cover the successful battery and both provider calls, with sensitive masked key fragments redacted.
+Artifacts built using `uv build --out-dir /home/kara/.hermes/cache/scratch/iskip-r2/dist /home/kara/chimera-v2`; copied both distributions with `bunker cp`. The agent-side scripts are retained in raw/ (they contain no credentials). The provider keys were transferred via stdin to a private temporary agent file, read by the script and removed before running the CLI. Battery used the shipped sdist, `python3 -m venv`, `chimera --version`, `chimera config init`, `chimera -c chimera.yaml formations`, and `chimera -c <provider config> -f simple run --json` with the prompt shown in the scripts. Logs were harvested before `bunker destroy iskipchimera21r2 --server bunker-mvp --purge`; raw/list.out is the post-destroy listing.
