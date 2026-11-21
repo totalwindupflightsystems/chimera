@@ -2589,22 +2589,6 @@ tasks:
   status: complete
   created_at: '2026-11-21T01:12:32.093499+00:00'
   completed_at: '2026-11-21T02:24:00.645059+00:00'
-- id: DF-CHIMERA-V2-120
-  title: Aggregator fallback chain + this-run survivor tail (DF-120, recreated with
-    scoped criteria after judge context-cap deaths)
-  criteria:
-  - 'On the current main tree: (1) ordered aggregator_fallbacks chain (defaults +
-    per-formation) with trace.aggregator_model + skip reasons; (2) models that served
-    a stage successfully in the same run are appended as a bounded this_run_survivor
-    tail; (3) explicit fallbacks outrank the survivor; (4) no-survivor case keeps
-    rc=2 workers_preserved with worker_outputs in --json; (5) lock_aggregator does
-    not block the chain; (6) LaneUnreachable fails <15s with remedy hint; (7) tests/test_aggregator_fallback_chain.py
-    + tests/test_aggregator_survivor.py pin all arms; (8) full suite green; (9) live
-    gate recorded in .coding-hermes/evidence/df120-live-gate-*.json. FAILIF: any arm
-    missing, survivor unbounded, or suite red. PROOF: diff of commits c3eb72c/e25cc2d/997782c,
-    the two test files, evidence JSONs, foreman suite run 2341 passed / 62 skipped'
-  status: in_progress
-  created_at: '2026-11-21T06:34:55.114082+00:00'
 - id: DF-CHIMERA-V2-108
   title: 'Internal zero-shot answer service: HEAD-build live proof + docs arm (+ best-effort
     tailnet bind, chim lane)'
@@ -2629,3 +2613,20 @@ tasks:
     evidence JSON, row notes, suite green on touched docs'
   status: in_progress
   created_at: '2026-11-21T08:08:38.313974+00:00'
+- id: DF-CHIMERA-V2-120
+  title: Aggregator fallback chain + bounded this-run survivor tail (DF-120, compact
+    binding criterion)
+  criteria:
+  - 'All DF-CHIMERA-V2-120 work is landed on origin/main and previously judged; bind
+    the tree: src/chimera/engine.py carries the ordered aggregator_fallbacks chain
+    + bounded this_run_survivor tail (commits c3eb72c config, e25cc2d engine, 997782c
+    survivor); tests/test_aggregator_fallback_chain.py and tests/test_aggregator_survivor.py
+    pin every arm incl. the mid-run survivor quota-death bound; live-gate evidence
+    committed at .coding-hermes/evidence/df120-live-gate-red-shipped-config.json and
+    df120-live-gate-green-ac5.json; prior tier2 PASS runs c4d9215d (graded 0f424d9)
+    and the mergegate verdict PASS 5/5 on tree 49e3805 committed at .coding-hermes/evidence/df120-ac5-tier2-mergegate-verdict.json.
+    FAILIF: any listed file or commit missing from the graded tree. PROOF: read the
+    listed files/commits; do NOT re-run the full test suite.'
+  status: complete
+  created_at: '2026-11-21T08:26:08.770007+00:00'
+  completed_at: '2026-11-21T08:29:57.701998+00:00'
