@@ -20,6 +20,7 @@
 - [model-catalog.yaml](model-catalog.yaml) — generated model catalog: category weights + cost tiers
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — dev setup, tests, PR process
 - [CHANGELOG.md](../CHANGELOG.md) — release history
+- [releases/v0.3.0-notes.md](releases/v0.3.0-notes.md) — v0.3.0 release notes: what shipped, upgrade notes, verification evidence
 
 ## Historical / archived
 
