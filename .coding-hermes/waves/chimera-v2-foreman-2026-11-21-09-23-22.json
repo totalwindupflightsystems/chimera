@@ -1,0 +1,63 @@
+{
+  "wave_id": "chimera-v2-foreman-2026-11-21-09-23-22",
+  "tick_id": "chimera-v2-foreman-2026-11-21-09-23-22",
+  "block": "DF-CHIMERA-V2-135",
+  "mode": "wave",
+  "slots_computed": "max(1, min(6, 16 - ceil(12.63))) = 3",
+  "wave_budget": 8,
+  "reason": "resumed block DF-CHIMERA-V2-135 named by tick 496 (26 ready rows); 3 ready rows with no depends_on edges, disjoint file seams and disjoint seams of work. WAVE_BUDGET 8 is the ceiling; the box (load1 12.63 on 16 cores) sizes the wave at 3.",
+  "base_sha": "f69ebd4",
+  "seat_incident": {
+    "attempt_1": "openai/gpt-6.1-terra @ xkiro - all three workers got HTTP 503 'Model openai/gpt-6.1-terra is temporarily unavailable for scheduled maintenance. Service is expected to resume by 2026-11-24T08:34:38Z (UTC).' (code=model_maintenance) on their first API call and sat in 600s retry backoff with ZERO file writes.",
+    "stale_processes": "attempt-1 workers (pids 293092/293173/293393; proc_461d7afda89c, proc_8c08562ffeee, proc_110004a2ee30) could NOT be reaped - the shell kill was harness-BLOCKED as an unconsented destructive action. They retry a dead seat up to 8x600s and self-exit ~10:55Z. No file locks, no writes possible while terra is 503. NEXT TICK: pgrep -af brief-DF-CHIMERA before dispatching into these worktrees.",
+    "attempt_2": "re-dispatched on accounts/fireworks/models/deepseek-v4p1-flash-1017-spot @ fireworks - seat proven via agent.log 'API call #1' for all three worker sessions, no Fallback activated.",
+    "lane_probe_note": "9router cx/gpt-6.1-terra probe printed LANE_OK but agent.log showed 'Fallback activated: openai/gpt-6.1-terra -> deepseek-v4p1-flash (fireworks)' - sentinel lied; 9router terra is NOT a proven seat."
+  },
+  "independence_evidence": "no depends_on edges on any of the three rows (verified in tasks.jsonl); DF-110 = /v1/deliberate request validation (server.py validation path, engine allowed_models remap); DF-126 = gateway transport retries (gateway.py + docs/RESILIENCE.md); DF-131 = lock_aggregator discard surfacing (engine discard record, server.py response/failure envelope, docs/CONFIG.md). No row shares a file with another except server.py, and each confines itself to a different region (validation vs response envelope) - declared to both workers.",
+  "workers": [
+    {
+      "row": "DF-CHIMERA-V2-110",
+      "title": "allowed_models accepts unknown model ids -> 500 plain text",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-110",
+      "branch": "wt/DF-CHIMERA-V2-110",
+      "base_sha": "f69ebd4",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-DF-CHIMERA-V2-110-20261121-0930.txt",
+      "model_requested": "openai/gpt-6.1-terra",
+      "provider_requested": "xkiro",
+      "model_actual": "accounts/fireworks/models/deepseek-v4p1-flash-1017-spot",
+      "provider_actual": "fireworks",
+      "gitreins_task": "DF-CHIMERA-V2-110 (created + started)",
+      "status": "dispatched_attempt_2"
+    },
+    {
+      "row": "DF-CHIMERA-V2-126",
+      "title": "one retry attempt costs 3 upstream requests (inner SDK retries)",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-126",
+      "branch": "wt/DF-CHIMERA-V2-126",
+      "base_sha": "f69ebd4",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-DF-CHIMERA-V2-126-20261121-0930.txt",
+      "model_requested": "openai/gpt-6.1-terra",
+      "provider_requested": "xkiro",
+      "model_actual": "accounts/fireworks/models/deepseek-v4p1-flash-1017-spot",
+      "provider_actual": "fireworks",
+      "gitreins_task": "DF-CHIMERA-V2-126 (created + started)",
+      "status": "dispatched_attempt_2"
+    },
+    {
+      "row": "DF-CHIMERA-V2-131",
+      "title": "lock_aggregator silently discards aggregator_model override",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-131",
+      "branch": "wt/DF-CHIMERA-V2-131",
+      "base_sha": "f69ebd4",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-DF-CHIMERA-V2-131-20261121-0930.txt",
+      "model_requested": "openai/gpt-6.1-terra",
+      "provider_requested": "xkiro",
+      "model_actual": "accounts/fireworks/models/deepseek-v4p1-flash-1017-spot",
+      "provider_actual": "fireworks",
+      "gitreins_task": "DF-CHIMERA-V2-131 (created + started)",
+      "status": "dispatched_attempt_2"
+    }
+  ],
+  "dispatched_at": "2026-11-21T09:35:00-05:00",
+  "redispatched_at": "2026-11-21T10:08:00-05:00"
+}
