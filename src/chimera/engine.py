@@ -524,7 +524,11 @@ def _apply_allowed_models(
     Runs after dispatch so it applies uniformly to ``auto``, preset, and
     custom DAGs.  Workers whose model falls outside the allowed list are
     remapped to the first entry in ``allowed_models``.
+
+    Every id is catalog-validated first (DF-CHIMERA-V2-110) — see
+    :func:`_validate_allowed_models`.
     """
+    _validate_allowed_models(allowed_models, config)
     if not allowed_models:
         return
     allowed_set = set(allowed_models)
@@ -541,6 +545,35 @@ def _apply_allowed_models(
             wp = dispatch.worker_prompt_for(stage.id)
             if wp is not None:
                 wp.model = default
+
+
+def _validate_allowed_models(allowed_models: list[str] | None, config: ChimeraConfig) -> None:
+    """Reject ``allowed_models`` ids that are not declared in ``models:``.
+
+    ``allowed_models`` is a POOL RESTRICTION, never a model declaration: every
+    worker stage outside the pool is remapped to ``allowed_models[0]``, so an id
+    with no ``models:`` catalog entry becomes a stage model that no provider
+    lookup can resolve. Before DF-CHIMERA-V2-110 it surfaced as an unhandled
+    ``KeyError`` deep in the gateway (``config.get_model``) and the REST surface
+    answered a plain-text HTTP 500 — while ``worker_model`` and ``stage_models``
+    already rejected the same class of client typo with an actionable 400.
+
+    Only catalog MEMBERSHIP is checked. A declared-but-disabled entry stays
+    accepted on purpose: the documented contract of this field is the remap, so
+    rejecting disabled ids would make a pool restriction stricter than shipped
+    behaviour (DF-CHIMERA-V2-110 AC2 — a known id keeps working as today).
+
+    Raises ``ValueError`` in the same wording family as the sibling override
+    checks (``worker_model references unknown model 'x'``); the API layer maps
+    it to HTTP 400 plus the ``models:`` catalog hint.
+    """
+    if not allowed_models:
+        return
+    unknown = [model for model in allowed_models if model not in config.models]
+    if unknown:
+        raise ValueError(
+            f"allowed_models references unknown model(s): {', '.join(repr(model) for model in unknown)}"
+        )
 
 
 #: Health-snapshot ``error_class`` meaning "the account behind this provider has
@@ -1404,6 +1437,15 @@ class Engine:
         self._check_config_mutation()
 
         custom_formation = self._resolve_custom_dag(dag, allow_custom_dag)
+
+        # DF-CHIMERA-V2-110: validate `allowed_models` BEFORE the dispatcher
+        # runs. The remap below would otherwise plant an undeclared id on a
+        # worker stage and fail as an unhandled KeyError inside the gateway
+        # (HTTP 500), and an `auto` dispatch is itself a billed provider call —
+        # a rejected request must cost zero upstream calls. Every surface
+        # (REST, OpenAI-compat, web UI, CLI, MCP) reaches this method, so the
+        # check lives here rather than in one caller.
+        _validate_allowed_models(overrides.allowed_models if overrides else None, self.config)
 
         # Request-level dispatcher_model override — honored unless the config
         # locks the dispatcher role (lock_dispatcher=true discards it; the

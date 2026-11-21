@@ -872,9 +872,10 @@ def test_deliberate_models_unknown_id_alongside_allowed_models_returns_400(confi
 def test_deliberate_allowed_models_behavior_unchanged(config) -> None:  # type: ignore[no-untyped-def]
     """Regression: canonical `allowed_models` keeps its pre-existing semantics.
 
-    `allowed_models` is deliberately NOT catalog-validated (documented in
-    docs/OPENAI_API.md — it remaps worker stages); the new `models` alias must
-    not change that. A valid `allowed_models` pool still deliberates normally.
+    What the pool DOES with catalog models is unchanged (documented in
+    docs/OPENAI_API.md — it remaps worker stages to its first entry). Only the
+    ids are now validated up front (DF-CHIMERA-V2-110): a pool made of real
+    catalog entries still deliberates exactly as before.
     """
     client = _client(config)
     r = client.post(

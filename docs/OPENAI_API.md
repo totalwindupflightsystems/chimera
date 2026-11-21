@@ -286,7 +286,7 @@ defaults to budget-friendly auto-deliberation.
 | `dispatcher_model` | `string` | config | Override the dispatcher model |
 | `aggregator_model` | `string` | config | Override the aggregator model |
 | `worker_model` | `string` | config | Override ALL worker models |
-| `allowed_models` | `string[]` | all | Restrict to these models only |
+| `allowed_models` | `string[]` | all | Restrict to these models only. Every id must be a `models:` catalog entry — an unknown id is rejected with HTTP 400 naming it (see [Unknown model name inside an override field](#unknown-model-name-inside-an-override-field--http-400)); the pool itself still remaps every worker stage to `allowed_models[0]` |
 | `disallowed_models` | `string[]` | none | Exclude these models |
 | `stage_models` | `object` | — | Per-stage model overrides: `{"worker_1": "zai-coding-plan/glm-5.2"}` |
 | `dag` | `object` | — | Client-defined DAG (requires `allow_custom_dag: true`) |
@@ -594,12 +594,12 @@ labels only, never key material; the same map is on `GET /v1/health` under
 
 **`models` alias:** `/v1/deliberate` also accepts `models` (a `string[]`) as a
 compatibility alias for `allowed_models` — some deliberation-API clients spell the
-pool restriction that way. Unlike `allowed_models` itself, the alias IS
-catalog-validated: an unknown id returns HTTP 400 naming the id (same `detail`
-shape and catalog guidance as an unknown `worker_model`). When both fields are
-sent, `allowed_models` is canonical and wins for the pool, but `models` is still
-validated — a bogus id in either field is never silently dropped
-(DF-CHIMERA-V2-80).
+pool restriction that way. It is catalog-validated: an unknown id returns HTTP 400
+naming the id (same `detail` shape and catalog guidance as an unknown
+`worker_model`). `allowed_models` is validated the same way, by the engine and
+before dispatch (DF-CHIMERA-V2-110). When both fields are sent, `allowed_models`
+is canonical and wins for the pool, but `models` is still validated — a bogus id
+in either field is never silently dropped (DF-CHIMERA-V2-80).
 
 **Idempotency:** pass an optional `idempotency_key` (string) in the request body to
 make retries safe. The first successful response is cached (bounded LRU, 512 keys,
@@ -895,27 +895,40 @@ nothing is billed. Valid formation requests are unaffected.
 
 ### Unknown model name inside an override field → HTTP 400
 
-`worker_model`, `aggregator_model`, and `stage_models` values *are* validated
-against the catalog (`GET /v1/models`). An unknown name there returns HTTP
-400 carrying FastAPI's validation body (note: `detail`, **not** the
-OpenAI-style `error` object):
+`worker_model`, `aggregator_model`, `stage_models`, and `allowed_models` values
+*are* validated against the catalog (`GET /v1/models`). An unknown name there
+returns HTTP 400 carrying FastAPI's validation body (note: `detail`, **not**
+the OpenAI-style `error` object):
 
 ```json
 {"detail": "Unknown model/formation: worker_model references unknown model 'bogus/nonexistent-model-xyz'"}
 ```
 
-Two asymmetric cases are worth knowing:
+`allowed_models` is validated by the engine, before the dispatcher runs — a
+rejected request costs zero upstream calls — and its body keeps the outer
+`detail` shape with the catalog requirement appended:
+
+```json
+{"detail": "allowed_models references unknown model(s): 'bogus/nonexistent-model-xyz' A model id must be declared in the `models:` catalog section of chimera.yaml (a `providers.<name>` entry alone is not enough) before it is dispatchable; see docs/CONFIG.md."}
+```
+
+Only catalog *membership* is checked: an id that is declared but `enabled:
+false` is still accepted as a pool entry, so a pool restriction never fails
+validation for a reason the field did not previously enforce
+(DF-CHIMERA-V2-110). Two other cases are worth knowing:
 
 - `stage_models` with an unknown **stage id** (rather than an unknown model)
   is rejected with HTTP 400 naming the stage and the valid stage ids — same
   4xx class as an unknown model (DF-CHIMERA-V2-32).
-- `allowed_models` entries and `dispatcher_model` are **not** catalog-validated
-  on this path — `allowed_models` remaps worker stages to its first entry, and
-  `dispatcher_model` is passed through to the dispatcher. A typo there is not
-  rejected up front; it surfaces as an upstream provider error (or as a
-  worker-failure trace) rather than as a 400. Exception: the `models`
-  compatibility alias on `/v1/deliberate` IS validated (DF-CHIMERA-V2-80) —
-  see [`/v1/deliberate`](#v1deliberate).
+- `dispatcher_model` is **not** catalog-validated on this path — it is passed
+  through to the dispatcher. A typo there is not rejected up front; it
+  surfaces as an upstream provider error (or as a worker-failure trace) rather
+  than as a 400.
+- an unhandled server-side failure is HTTP 500 with a **JSON** body,
+  `{"detail": "Internal Server Error", "request_id": "…"}`, and the same id in
+  the `X-Request-Id` response header — never Starlette's bare plain-text
+  `Internal Server Error` (DF-CHIMERA-V2-110). See
+  [Other status codes](#other-status-codes--the-bodies-verbatim).
 
 ### Other status codes — the bodies verbatim
 
@@ -927,6 +940,7 @@ Two asymmetric cases are worth knowing:
 | 401 | auth enabled, missing/invalid key | `{"detail": {"error": "unauthorized", "message": "…"}}` |
 | 422 | body failed schema validation | `{"detail": [ … ]}` — see [Invalid request body](#invalid-request-body--http-422-fastapi-validation-not-openai-shaped) |
 | 429 | rate limit exhausted for the key | `{"detail": {"error": "rate_limited", "message": "…"}}` + `Retry-After` |
+| 500 | unhandled server-side failure | `{"detail": "Internal Server Error", "request_id": "…"}` + `X-Request-Id` — a JSON object, never the bare plain-text `Internal Server Error` (DF-CHIMERA-V2-110) |
 | 502 | deliberation produced no usable answer | `{"error": {"message": "…", "type": "upstream_error", "request_id": "…"}}` |
 | 503 | request queue full | `{"detail": "Server busy — queue full. Retry later."}` + `Retry-After: 5` |
 

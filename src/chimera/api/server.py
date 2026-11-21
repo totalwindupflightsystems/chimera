@@ -25,6 +25,7 @@ import os
 import subprocess
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
@@ -351,6 +352,36 @@ def create_app(
             },
         )
 
+    @app.exception_handler(Exception)
+    async def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+        """HTTP 500 as a JSON envelope, never Starlette's plain-text default.
+
+        DF-CHIMERA-V2-110: an unhandled exception used to answer with the bare
+        plain-text string ``Internal Server Error`` — no JSON, no handle to
+        find the traceback — so a client mistake that slipped past validation
+        was indistinguishable from a provider outage, and the caller's typo
+        counted into ``chimera_request_errors_total{reason="exception"}``
+        (which docs/operations.md tells operators is a code defect).
+
+        The body keeps the familiar ``detail`` field and adds a
+        ``request_id`` (also echoed as the ``X-Request-Id`` header) that
+        matches the logged traceback. The exception text is deliberately NOT
+        echoed: it can carry provider configuration.
+        """
+        request_id = uuid.uuid4().hex[:16]
+        log.exception(
+            "unhandled_request_error",
+            request_id=request_id,
+            path=request.url.path,
+            error_class=type(exc).__name__,
+            error=str(exc)[:400],
+        )
+        return JSONResponse(
+            status_code=500,
+            headers={"X-Request-Id": request_id},
+            content={"detail": "Internal Server Error", "request_id": request_id},
+        )
+
     app.state.config = cfg
     # PERF-1/DF-CHIMERA-V2-130: the health cache must exist BEFORE the engine,
     # because the engine's model selection reads its snapshot.  The engine gets
@@ -476,10 +507,12 @@ class DeliberateRequest(BaseModel):
     # HTTP 400 naming it, same contract as the other override fields).
     # Precedence when both are sent: `allowed_models` (the canonical field)
     # wins, but `models` is still validated — a bogus id in the losing field
-    # is never silently dropped either. Note the asymmetry with
-    # `allowed_models` itself, whose entries are deliberately NOT validated
-    # (remap semantics, docs/OPENAI_API.md) — the alias exists to fail loud
-    # for the clients that send `models`, so it validates.
+    # is never silently dropped either. `allowed_models` itself is validated
+    # too, by the engine and BEFORE the dispatcher runs (DF-CHIMERA-V2-110): an
+    # undeclared id used to be remapped onto a worker stage and die as an
+    # unhandled KeyError inside the gateway (plain-text HTTP 500). What the
+    # field does with KNOWN ids is unchanged — every worker stage outside the
+    # pool is still remapped to `allowed_models[0]` (docs/OPENAI_API.md).
     models: list[str] | None = None  # Validated alias for allowed_models
     dispatcher_model: str | None = None  # Override dispatcher
     aggregator_model: str | None = None  # Override aggregator
