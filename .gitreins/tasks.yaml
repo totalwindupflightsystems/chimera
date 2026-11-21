@@ -2589,3 +2589,13 @@ tasks:
   status: complete
   created_at: '2026-11-21T01:12:32.093499+00:00'
   completed_at: '2026-11-21T02:24:00.645059+00:00'
+- id: DF-CHIMERA-V2-120
+  title: 'Aggregator fallback chain: one dead provider must not destroy a paid deliberation'
+  criteria:
+  - When the aggregator model fails, engine attempts merge on ordered fallback list
+    (defaults.aggregator_fallbacks / per-formation), trace records serving model +
+    skip reason; >=1 worker success => usable answer or explicit degraded exit; lock_aggregator
+    must not block the list; unreachable-all-providers fails <15s with remedy hint;
+    pytest suite green on merged tree
+  status: in_progress
+  created_at: '2026-11-21T03:01:59.629516+00:00'
