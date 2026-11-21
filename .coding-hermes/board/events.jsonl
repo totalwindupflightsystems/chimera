@@ -1301,3 +1301,6 @@
 {"id": 3064, "timestamp": "2026-11-21T13:45:31Z", "event_type": "task_updated", "task_id": "DF-CHIMERA-V2-127", "actor": "foreman", "detail": "{\"status\":\"in_progress\"}"}
 {"id": 3065, "timestamp": "2026-11-21T14:24:53Z", "event_type": "task_completed", "task_id": "DF-CHIMERA-V2-127", "actor": "foreman", "detail": "{\"status\":\"complete\"}"}
 {"id": 3066, "timestamp": "2026-11-21T14:46:13Z", "event_type": "task_completed", "task_id": "DF-CHIMERA-V2-116", "actor": "foreman", "detail": "{\"status\":\"complete\"}"}
+{"id":3067,"timestamp":"2026-11-21 09:54:43.514000","event_type":"task_created","task_id":"RELEASE-POSTCUT-2026-11-21","actor":"foreman","detail":"{\"source\": \"chimera-v2-releng-2026-11-21-13-24-56\", \"tick\": 497}","tick_number":497}
+{"id":3068,"timestamp":"2026-11-21 09:54:43.514000","event_type":"task_created","task_id":"RELEASE-FINDING-2026-11-21-006","actor":"foreman","detail":"{\"source\": \"chimera-v2-releng-2026-11-21-13-24-56\", \"tick\": 497}","tick_number":497}
+{"id":3069,"timestamp":"2026-11-21 09:54:43.514000","event_type":"task_created","task_id":"RELEASE-FINDING-2026-11-21-007","actor":"foreman","detail":"{\"source\": \"chimera-v2-releng-2026-11-21-13-24-56\", \"tick\": 497}","tick_number":497}
