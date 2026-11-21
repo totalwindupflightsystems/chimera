@@ -2605,3 +2605,27 @@ tasks:
     the two test files, evidence JSONs, foreman suite run 2341 passed / 62 skipped'
   status: in_progress
   created_at: '2026-11-21T06:34:55.114082+00:00'
+- id: DF-CHIMERA-V2-108
+  title: 'Internal zero-shot answer service: HEAD-build live proof + docs arm (+ best-effort
+    tailnet bind, chim lane)'
+  criteria:
+  - 'On the merged main tree: (1) AC#4 docs arm: tracked chimera.yaml.example keeps
+    quick-panel + quick (verify present, do NOT re-ship) and README gains an ops section
+    documenting internal-service usage (base URL, auth header, formation selection
+    incl. quick/quick-panel, where cost and request_id live in the response, how a
+    fleet agent points an OpenAI-SDK client at it); (2) AC#1 measurement arm: an instance
+    built at current HEAD started on a FREE PORT (not 8765) serves POST /v1/deliberate
+    with prompt ''Reply with the word ok.'' formation quick-panel, returns a merged
+    answer with trace.total_duration_ms < 60000; the full command + timing block saved
+    verbatim to .coding-hermes/evidence/df108-quick-panel-trace.json and the row names
+    the build commit that produced it (the deployed 8765 process may stay stale -
+    do not chase DF-CHIMERA-V2-134); (3) best-effort ops arms recorded honestly: AC#2
+    tailnet bind attempt (chimera.service --host change + restart + second-host SDK
+    probe) and AC#3 master001 chim/quick + chim/panel lane registration attempt -
+    each either DONE with pasted evidence or BLOCKED with the exact blocker (consent
+    gate, credential, owner-level risk) written on the row; no arm silently skipped.
+    FAILIF: docs arm missing, HEAD-build trace missing or >= 60000ms, or an ops arm
+    silently skipped without a written blocker. PROOF: git diff on README/chimera.yaml.example,
+    evidence JSON, row notes, suite green on touched docs'
+  status: in_progress
+  created_at: '2026-11-21T08:08:38.313974+00:00'
