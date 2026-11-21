@@ -1017,6 +1017,75 @@ class TestDeliberateTimeoutHeader:
         assert "trace" not in body
 
 
+class TestChatTimeoutParity:
+    @pytest.mark.parametrize(
+        "header",
+        [
+            "total=5,per_stage=2",
+            "total=0,per_stage=0",
+            "garbage",
+            "total=abc",
+            "per_stage=nan",
+            "total=inf",
+            "perstage=2",
+            "per_stage=99999",
+            "total=99999",
+            "total=5,per_stage=abc",
+        ],
+    )
+    def test_both_surfaces_match(self, config: ChimeraConfig, header: str) -> None:
+        client = _client(config)
+        headers = {"X-Chimera-Timeout": header}
+        deliberate = client.post("/v1/deliberate", json={"prompt": "hi"}, headers=headers)
+        chat = client.post(
+            "/v1/chat/completions",
+            json={"messages": [{"role": "user", "content": "hi"}]},
+            headers=headers,
+        )
+        assert chat.status_code == deliberate.status_code
+        if chat.status_code == 400:
+            assert chat.json()["detail"] == deliberate.json()["detail"]
+
+    def test_idempotency_budget_isolation(self, config: ChimeraConfig) -> None:
+        client = _client(config)
+        body = {"messages": [{"role": "user", "content": "hi"}], "idempotency_key": "budget"}
+
+        def call(header: str):
+            return client.post("/v1/chat/completions", json=body, headers={"X-Chimera-Timeout": header})
+
+        first = call("per_stage=2")
+        again = call("per_stage=2")
+        changed = call("per_stage=3")
+        invalid = call("per_stage=99999")
+        assert first.status_code == again.status_code == changed.status_code == 200
+        assert again.headers.get("X-Idempotent-Replay") == "true"
+        assert changed.headers.get("X-Idempotent-Replay") is None
+        assert invalid.status_code == 400
+
+    def test_chat_stage_timeout_reaches_engine(self, config: ChimeraConfig) -> None:
+        import time
+
+        async def responder(model: str, messages: list, response_format=None, **kw: Any):
+            if response_format is not None:
+                return _resp(dispatch_json(), model)
+            if model == "deepseek/deepseek-chat":
+                await asyncio.sleep(4)
+            return _resp("answer", model)
+
+        engine = Engine(config, FakeGateway(responder))
+        client = _client_with_engine(config, engine)
+        start = time.monotonic()
+        response = client.post(
+            "/v1/chat/completions",
+            json={"messages": [{"role": "user", "content": "hi"}]},
+            headers={"X-Chimera-Timeout": "per_stage=1"},
+        )
+        elapsed = time.monotonic() - start
+        assert response.status_code == 200, response.text
+        assert elapsed < 3.5
+        assert any(f["error"] == "timed out after 1s" for f in response.json()["chimera_worker_failures"])
+
+
 class TestChatCompletionUnknownModel:
     def test_chat_completion_engine_keyerror_returns_400(
         self,

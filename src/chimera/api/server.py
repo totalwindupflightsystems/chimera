@@ -42,7 +42,7 @@ from rich.console import Console
 from chimera import __version__, blocked_models
 from chimera.api.dependencies import require_api_key
 from chimera.api.rate_limit import RateLimiter
-from chimera.config import ChimeraConfig, load_config, provider_credential_resolved
+from chimera.config import ChimeraConfig, DeliberationOverrides, load_config, provider_credential_resolved
 from chimera.dispatcher import DiscardedOverride
 from chimera.engine import ANSWER_DEGRADED_SUBSTITUTED, DeliberationTrace, Engine, WorkerFailure
 from chimera.exceptions import (
@@ -983,6 +983,50 @@ def _failure_attempts(config: ChimeraConfig, result: Any) -> list[dict[str, Any]
     return attempts
 
 
+def _apply_timeout_header(request: Request, overrides: DeliberationOverrides) -> None:
+    """Validate the entire request budget before applying any part of it."""
+    timeout_header = request.headers.get("X-Chimera-Timeout", "")
+    if not timeout_header:
+        return
+    timeout_cfg = request.app.state.config.timeout
+    pending: dict[str, float | None] = {}
+    for part in timeout_header.split(","):
+        pair = part.strip()
+        if not pair:
+            continue
+        key, sep, val = pair.partition("=")
+        if not sep:
+            raise HTTPException(status_code=400, detail=f"missing = in X-Chimera-Timeout: {pair}")
+        try:
+            parsed = float(val.strip())
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail=f"unparsable value in X-Chimera-Timeout: {pair}"
+            ) from None
+        if not math.isfinite(parsed):
+            raise HTTPException(status_code=400, detail=f"unparsable value in X-Chimera-Timeout: {pair}")
+        if key == "total":
+            if timeout_cfg.total_s > 0 and parsed > timeout_cfg.total_s:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"total={parsed} exceeds admin ceiling {timeout_cfg.total_s}s",
+                )
+            pending["total"] = parsed if parsed > 0 else None
+        elif key == "per_stage":
+            if timeout_cfg.per_stage_s > 0 and parsed > timeout_cfg.per_stage_s:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"per_stage={parsed} exceeds admin ceiling {timeout_cfg.per_stage_s}s",
+                )
+            pending["per_stage"] = parsed if parsed > 0 else None
+        else:
+            raise HTTPException(status_code=400, detail=f"unknown key in X-Chimera-Timeout: {pair}")
+    if "total" in pending:
+        overrides.timeout_total_s = pending["total"]
+    if "per_stage" in pending:
+        overrides.timeout_per_stage_s = pending["per_stage"]
+
+
 async def _execute_deliberation(request: Request, body: DeliberateRequest) -> DeliberateResponse:
     """Run one deliberation for POST /v1/deliberate (validation + engine call).
 
@@ -1035,69 +1079,7 @@ async def _execute_deliberation(request: Request, body: DeliberateRequest) -> De
             )
         if body.allowed_models is None:
             overrides.allowed_models = list(body.models)
-    # Per-request timeout overrides via X-Chimera-Timeout header.
-    # Format: "total=300,per_stage=180". Values cannot exceed admin ceiling.
-    # DF-CHIMERA-V2-117: the header is validated into ``pending`` FIRST and only
-    # assigned onto ``overrides`` once every part is well-formed. A header that
-    # mixes a valid pair with a typo must not half-apply the valid one, and a
-    # shape we cannot understand (bare token, unknown key, unparsable value)
-    # must 400 naming the offending pair instead of being silently dropped —
-    # otherwise a typo'd budget silently costs the caller the full wall time it
-    # was asking to bound.
-    timeout_header = request.headers.get("X-Chimera-Timeout", "")
-    if timeout_header:
-        timeout_cfg = request.app.state.config.timeout
-        pending: dict[str, float | None] = {}
-        for part in timeout_header.split(","):
-            pair = part.strip()
-            if not pair:
-                # A trailing comma leaves an empty segment that requests
-                # nothing, so skipping it cannot hide a budget.
-                continue
-            key, sep, val = pair.partition("=")
-            if not sep:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"missing = in X-Chimera-Timeout: {pair}",
-                )
-            try:
-                parsed = float(val.strip())
-            except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"unparsable value in X-Chimera-Timeout: {pair}",
-                ) from None
-            if not math.isfinite(parsed):
-                # ``nan``/``inf`` parse but are not budgets: ``nan`` would sail
-                # past the ceiling check and land as "disable the override".
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"unparsable value in X-Chimera-Timeout: {pair}",
-                )
-            if key == "total":
-                if timeout_cfg.total_s > 0 and parsed > timeout_cfg.total_s:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"total={parsed} exceeds admin ceiling {timeout_cfg.total_s}s",
-                    )
-                pending["total"] = parsed if parsed > 0 else None
-            elif key == "per_stage":
-                if timeout_cfg.per_stage_s > 0 and parsed > timeout_cfg.per_stage_s:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"per_stage={parsed} exceeds admin ceiling {timeout_cfg.per_stage_s}s",
-                    )
-                pending["per_stage"] = parsed if parsed > 0 else None
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"unknown key in X-Chimera-Timeout: {pair}",
-                )
-        # Every part validated — only now does anything reach the overrides.
-        if "total" in pending:
-            overrides.timeout_total_s = pending["total"]
-        if "per_stage" in pending:
-            overrides.timeout_per_stage_s = pending["per_stage"]
+    _apply_timeout_header(request, overrides)
     try:
         result = await engine.deliberate(
             body.prompt,
@@ -1390,6 +1372,7 @@ async def _run_chat_deliberation(
         stage_models=body.stage_models,
         max_tokens=body.max_completion_tokens or body.max_tokens,
     )
+    _apply_timeout_header(request, overrides)
     # Extract output schema from OpenAI-style response_format
     output_schema = None
     if body.response_format:
@@ -2014,17 +1997,22 @@ def _register_routes(app: FastAPI) -> None:
             cache: _IdempotencyCache = request.app.state.idempotency_cache
             if key is None:
                 return await _run_chat_deliberation(request, body)
-            chat_cached = cache.get("chat:" + key)
+            timeout_overrides = DeliberationOverrides()
+            _apply_timeout_header(request, timeout_overrides)
+            # Encode both components unambiguously; a changed header never replays
+            # a response computed under a different request budget.
+            cache_key = "chat:" + json.dumps([key, request.headers.get("X-Chimera-Timeout", "")])
+            chat_cached = cache.get(cache_key)
             if chat_cached is not None:
                 response.headers["X-Idempotent-Replay"] = "true"
                 return chat_cached
-            async with cache.lock_for("chat:" + key):
-                chat_cached = cache.get("chat:" + key)
+            async with cache.lock_for(cache_key):
+                chat_cached = cache.get(cache_key)
                 if chat_cached is not None:
                     response.headers["X-Idempotent-Replay"] = "true"
                     return chat_cached
                 result = await _run_chat_deliberation(request, body)
-                cache.put("chat:" + key, result)
+                cache.put(cache_key, result)
                 return result
         finally:
             queue.release()
