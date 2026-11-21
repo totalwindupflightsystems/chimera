@@ -19,6 +19,9 @@ defaults:
   default_aggregator: deepseek/deepseek-v4-flash
   lock_dispatcher: false
   lock_aggregator: true
+  # Merge fallback chain (in order) when the aggregator call fails, so paid
+  # worker output is never discarded. `default` = default_aggregator.
+  aggregator_fallbacks: ["deepseek/deepseek-v4-pro", "default"]
 # REST API auth. Left OFF in the public starter so a fresh checkout answers on
 # localhost with no setup; set `enabled: true` once the service is reachable from
 # anywhere but loopback. Health, /v1/models and /v1/formations stay keyless even

@@ -142,10 +142,51 @@ Notes:
 | `default_aggregator` | `string` | — | Fallback model for aggregator/merge/audit stages |
 | `lock_dispatcher` | `bool` | `false` | If `true`, dispatcher cannot override the dispatcher model |
 | `lock_aggregator` | `bool` | `false` | If `true`, dispatcher cannot override the aggregator model |
+| `aggregator_fallbacks` | `list[string]` | `[]` | Ordered merge fallback chain, tried when the aggregator model's own call fails |
 
 **Why lock?** The dispatcher picks the "best" model for each role based on category
 weights. If you want to force budget models for aggregator (e.g. DeepSeek V4 Flash
 instead of GLM-5.2), set `lock_aggregator: true`.
+
+### `aggregator_fallbacks` — the merge must not be a single point of failure
+
+Measured (DF-CHIMERA-V2-120): 3 of 4 live deliberations exited rc=2 with no answer
+after 83-187 s while all three workers had already succeeded and been billed — the
+single configured aggregator model failed with `Insufficient Balance` and there was
+nothing else to try. The fallback chain fixes exactly that:
+
+```yaml
+defaults:
+  default_aggregator: deepseek/deepseek-v4-flash
+  aggregator_fallbacks:
+    - deepseek/deepseek-v4-pro     # tried first when the aggregator call fails
+    - openrouter/anthropic/claude-sonnet-4.6
+    - "default"                    # alias for defaults.default_aggregator
+```
+
+Semantics:
+
+* **Ordered.** The first entry that can serve produces the merge; the run exits 0
+  and `trace.aggregator_model` names the model that actually answered, while
+  `trace.aggregator_fallbacks` lists every entry in order with `served` / `failed`
+  / `skipped` **and the skip reason** (unknown or disabled model, provider without a
+  credential, quota-dead account, the failed model itself, attempt budget).
+* **Skipped, not called.** An entry that provably cannot help costs no provider
+  latency — the 83-187 s retry tail is what this avoids. At most 4 candidates are
+  actually CALLED per run; the rest are recorded as skipped.
+* **`lock_aggregator` does not disable the chain.** The lock forbids ad-hoc
+  per-request `aggregator_model` overrides, not resilience.
+* **Formations override.** A named formation may set its own
+  `aggregator_fallbacks`; that list REPLACES the defaults for that formation. An
+  explicit empty list (`aggregator_fallbacks: []`) disables the chain for that
+  formation; omitting the key inherits `defaults.aggregator_fallbacks`.
+* **Empty list = previous behaviour.** With no chain configured, the engine keeps
+  its single replacement retry (the default aggregator, else the first healthy
+  catalog model), so nothing regresses.
+* **Still no usable answer?** If no chain entry can serve the merge while at least
+  one worker succeeded, the run exits non-zero but the paid worker outputs are
+  preserved on the `--json` payload (`worker_outputs`, with
+  `answer_degraded_reason: "workers_preserved"`) instead of being discarded.
 
 ---
 
@@ -289,6 +330,28 @@ my-chain:
 
 `dispatch_prompts` only ever adds the call back for an explicit formation;
 `auto` formations always keep the dispatcher, unchanged.
+
+### Per-formation merge fallback: `aggregator_fallbacks`
+
+A formation may carry its own merge fallback chain (same semantics as
+`defaults.aggregator_fallbacks`); when present it REPLACES the defaults for that
+formation:
+
+```yaml
+review:
+  workers: 3
+  aggregator: default
+  aggregator_fallbacks:            # replaces defaults.aggregator_fallbacks here
+    - openrouter/anthropic/claude-sonnet-4.6
+
+paper-only:
+  workers: 2
+  aggregator: default
+  aggregator_fallbacks: []         # explicit: no chain for this formation
+```
+
+Omitting the key inherits `defaults.aggregator_fallbacks`. `lock_aggregator`
+never disables the chain.
 
 ---
 

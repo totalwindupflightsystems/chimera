@@ -131,6 +131,29 @@ class Defaults(BaseModel):
     # favor of the configured default. See ``dispatcher._normalize_result``.
     lock_dispatcher: bool = False
     lock_aggregator: bool = False
+    aggregator_fallbacks: list[str] = Field(default_factory=list)
+    """Ordered fallback chain for the merge (aggregator/merge/audit) stage.
+
+    DF-CHIMERA-V2-120 (measured): 3 of 4 live deliberations ended rc=2 with NO
+    answer after 83-187s while all three workers had already succeeded and been
+    billed — their outputs were discarded because the single configured
+    aggregator model failed with ``Insufficient Balance`` and there was nothing
+    to retry on.  Entries here are tried IN ORDER, by model, when the stage's
+    own model call fails; the first one that can serve produces the merged
+    answer and the trace records which model actually served it
+    (``trace.aggregator_model``) plus why every earlier entry was skipped
+    (``trace.aggregator_fallbacks``).
+
+    Entries use catalog ids (``"default"`` resolves to
+    :attr:`default_aggregator`).  An entry that is unknown, disabled,
+    uncredentialed or quota-blocked is SKIPPED with a recorded reason instead
+    of being called, so a dead account costs no latency.  A named formation's
+    own ``aggregator_fallbacks`` overrides this list entirely.
+
+    ``lock_aggregator`` does NOT disable this chain: the lock forbids ad-hoc
+    per-request ``aggregator_model`` overrides, not resilience.  An empty list
+    keeps the pre-DF-CHIMERA-V2-120 behaviour (the engine's single-replacement
+    retry on ``default_aggregator``/the first healthy catalog model)."""
 
     @classmethod
     def empty(cls) -> Defaults:
@@ -166,6 +189,16 @@ class FormationPreset(BaseModel):
     worker_models: list[str] | None = None
     aggregator: str | None = None
     aggregators: list[str] | None = None
+    aggregator_fallbacks: list[str] | None = None
+    """Per-formation override of ``defaults.aggregator_fallbacks``
+    (DF-CHIMERA-V2-120).
+
+    When set — including to an EMPTY list, which explicitly disables the
+    chain for this formation — it replaces the defaults list for this
+    formation's merge stage. ``None`` (the default) inherits
+    ``defaults.aggregator_fallbacks``.  Same semantics as the defaults list:
+    ordered, catalog ids, skipped entries carry a recorded reason, and
+    ``lock_aggregator`` never disables it."""
     merge: str | None = None
     audit: str | None = None
     dag: dict[str, Any] | None = None
@@ -829,6 +862,35 @@ def credentialed_enabled_models(config: ChimeraConfig) -> dict[str, ModelEntry]:
         for name, entry in config.enabled_models.items()
         if provider_credential_resolved(config, entry.provider)
     }
+
+
+def resolve_aggregator_fallbacks(config: ChimeraConfig, formation: str | None = None) -> list[str]:
+    """The ordered merge-fallback chain for *formation* (DF-CHIMERA-V2-120).
+
+    A named formation's own ``aggregator_fallbacks`` REPLACES
+    ``defaults.aggregator_fallbacks`` — including when the formation sets an
+    empty list, which is the explicit "this formation has no fallback chain"
+    statement.  ``None`` (unset) inherits the defaults.
+
+    Aliases resolve through :meth:`ChimeraConfig.resolve_model_alias`, so
+    ``"default"`` names ``defaults.default_aggregator``; duplicates are
+    collapsed (first position wins) so a chain never retries the same model
+    twice for no reason.  Unknown/disabled names are deliberately NOT
+    filtered here: the engine records them as a skipped fallback with its own
+    reason, which is more useful than silently dropping an operator's entry.
+    """
+    preset = config.formations.get(formation) if formation else None
+    declared = (
+        preset.aggregator_fallbacks
+        if preset is not None and preset.aggregator_fallbacks is not None
+        else config.defaults.aggregator_fallbacks
+    )
+    chain: list[str] = []
+    for name in declared:
+        resolved = config.resolve_model_alias(name)
+        if resolved and resolved not in chain:
+            chain.append(resolved)
+    return chain
 
 
 #: Cached contents of ~/.hermes/.env, loaded once as fallback for env-var
