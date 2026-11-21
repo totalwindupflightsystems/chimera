@@ -4,6 +4,10 @@ All notable changes to Chimera will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- A quota-exhausted provider no longer sinks a deliberation (DF-CHIMERA-V2-130). `/v1/health` already reported `error_class: quota` truthfully, but model selection built its candidate set from credential *presence* only, so a provider whose key exists and whose balance is empty was chosen, every stage call failed, and 3 of 4 measured runs ended in a 502 or an empty answer — while the aggregator retry pointed at the same dead `defaults.default_aggregator`. Selection now consults the health snapshot and a new short-lived `quota` block class (15 min, separate from the 7-day guardrail/credential blocks, never written on a timeout or a 5xx) at the start of every run, remaps quota-dead **worker and aggregator/merge/audit** stages onto the next healthy candidate, and answers 200 with stages served by that provider. When nothing healthy is left the run answers a machine-readable `503` (`error.type: no_healthy_candidate`) naming every skipped candidate's provider, model and failure class, instead of a bare 502. `/v1/health` keeps reporting `degraded`/`quota` while deliberations succeed elsewhere. `docs/CONFIG.md` documents the three block classes and their remedies.
+
 ## [0.3.0] — 2026-11-18
 
 ### Added

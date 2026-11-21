@@ -36,7 +36,40 @@ class ConfigError(ValueError):
         super().__init__(message)
 
 
-__all__ = ["BudgetExhaustedError", "ConfigError"]
+__all__ = ["BudgetExhaustedError", "ConfigError", "NoHealthyCandidateError"]
+
+
+class NoHealthyCandidateError(Exception):
+    """Raised when EVERY candidate model is quota-blocked, so a run cannot serve.
+
+    The all-candidates-dead arm of DF-CHIMERA-V2-130.  It is raised *before*
+    any provider call, only on positive evidence: the models were dropped by
+    the quota class (a live ``error_class: quota`` health verdict, or a block
+    recorded from a real quota failure), never because credentials are merely
+    absent — that condition keeps its own (auth-error) behaviour.
+
+    Machine-readable on purpose: ``attempts`` names every candidate that was
+    skipped, one entry per model, with the provider and the failure class that
+    dropped it, plus the seconds left on the block.  The API layer renders it
+    verbatim, so a caller can tell "wait for the top-up" from "this deployment
+    has no route to any provider" without string-matching a 502 message.
+    ``attempts`` entry shape::
+
+        {"provider": "deepseek", "model": "deepseek/deepseek-chat",
+         "error_class": "quota", "retry_after_s": 742.0, "detail": "..."}
+    """
+
+    def __init__(self, attempts: list[dict[str, object]]) -> None:
+        self.attempts = attempts
+        providers = sorted({str(a.get("provider") or "?") for a in attempts})
+        names = ", ".join(f"{a.get('model')} ({a.get('provider')}/{a.get('error_class')})" for a in attempts)
+        self.message = (
+            "No healthy candidate: every configured model is blocked by quota/budget "
+            f"exhaustion on provider(s) {', '.join(providers)} — attempted: {names}. "
+            "Top up the provider account (the block clears automatically) or configure "
+            "another credentialed provider."
+        )
+        super().__init__(self.message)
 
 
 class DagShapeError(ValueError):

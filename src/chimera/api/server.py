@@ -37,11 +37,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from rich.console import Console
 
-from chimera import __version__
+from chimera import __version__, blocked_models
 from chimera.api.dependencies import require_api_key
 from chimera.api.rate_limit import RateLimiter
 from chimera.config import ChimeraConfig, load_config, provider_credential_resolved
 from chimera.engine import DeliberationTrace, Engine, WorkerFailure
+from chimera.exceptions import NoHealthyCandidateError
 from chimera.gateway import LiteLLMGateway, prewarm_litellm_background
 from chimera.metrics import MetricsMiddleware, render_metrics
 from chimera.observability import configure_logging
@@ -91,12 +92,24 @@ def _running_identity() -> str:
 class _NoUsableAnswerError(Exception):
     """Raised when a deliberation produced no usable answer — the answer
     stage degraded and only a placeholder was returned. Translated into
-    HTTP 502 with an OpenAI-compatible structured error body."""
+    HTTP 502 with an OpenAI-compatible structured error body.
 
-    def __init__(self, message: str, request_id: str) -> None:
+    ``attempts`` (DF-CHIMERA-V2-130) is the machine-readable list of upstream
+    calls the run actually made and lost — one entry per dropped stage with
+    ``provider``, ``model``, ``error_class`` and the upstream ``error``.  A bare
+    502 message left a caller unable to tell an empty balance from a timeout.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        request_id: str,
+        attempts: list[dict[str, Any]] | None = None,
+    ) -> None:
         super().__init__(message)
         self.message = message
         self.request_id = request_id
+        self.attempts = attempts or []
 
 
 # --------------------------------------------------------------------------- #
@@ -266,23 +279,63 @@ def create_app(
             request_id=exc.request_id,
             error=exc.message,
         )
+        body: dict[str, Any] = {
+            "message": exc.message,
+            "type": "upstream_error",
+            "request_id": exc.request_id,
+        }
+        # Additive (DF-CHIMERA-V2-130): the per-stage failures, so a caller can
+        # branch on `error_class` instead of parsing prose.
+        if exc.attempts:
+            body["attempts"] = exc.attempts
+        return JSONResponse(status_code=502, content={"error": body})
+
+    @app.exception_handler(NoHealthyCandidateError)
+    async def _no_healthy_candidate_handler(request: Request, exc: NoHealthyCandidateError) -> JSONResponse:
+        """HTTP 503 when EVERY candidate is quota-exhausted (DF-CHIMERA-V2-130).
+
+        This is NOT the 502 upstream-error arm: nothing upstream failed and
+        nothing was billed — the deployment simply has no funded candidate until
+        a provider is topped up (or another credentialed provider is added).
+        503 + ``Retry-After`` is the honest answer, and ``attempts`` names every
+        candidate that was skipped, with its provider, model and failure class.
+        """
+        log.error("deliberation_no_healthy_candidate", attempts=exc.attempts)
+        retry_candidates: list[float] = []
+        for attempt in exc.attempts:
+            value = attempt.get("retry_after_s")
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                retry_candidates.append(float(value))
+        headers: dict[str, str] = {}
+        if retry_candidates:
+            headers["Retry-After"] = str(int(min(retry_candidates)) + 1)
         return JSONResponse(
-            status_code=502,
+            status_code=503,
+            headers=headers,
             content={
                 "error": {
                     "message": exc.message,
-                    "type": "upstream_error",
-                    "request_id": exc.request_id,
+                    "type": "no_healthy_candidate",
+                    "attempts": exc.attempts,
                 }
             },
         )
 
     app.state.config = cfg
-    app.state.engine = engine or Engine(cfg, LiteLLMGateway(cfg))
+    # PERF-1/DF-CHIMERA-V2-130: the health cache must exist BEFORE the engine,
+    # because the engine's model selection reads its snapshot.  The engine gets
+    # a READ-ONLY getter: on a cache miss it returns None (no verdict) and the
+    # selection path falls back to recorded quota blocks — the engine never
+    # triggers a probe, so a deliberation cannot silently spend tokens on one.
+    app.state.provider_health_cache = _ProviderHealthCache()  # /v1/health probe TTL cache
+    app.state.engine = engine or Engine(
+        cfg,
+        LiteLLMGateway(cfg),
+        provider_health=lambda: app.state.provider_health_cache.get()[0],
+    )
     app.state.request_queue = request_queue
     app.state.rate_limiter = RateLimiter(cfg.rate_limit)
     app.state.idempotency_cache = _IdempotencyCache()
-    app.state.provider_health_cache = _ProviderHealthCache()  # /v1/health probe TTL cache
     _register_routes(app)
 
     # Web UI (session-backed multi-turn with live DAG viz + SSE)
@@ -779,6 +832,52 @@ def _agent_card_skills(config: ChimeraConfig) -> list[dict[str, str]]:
     return skills
 
 
+def _failure_attempts(config: ChimeraConfig, result: Any) -> list[dict[str, Any]]:
+    """The machine-readable attempts list for a run that produced no answer.
+
+    One entry per dropped stage — ``stage_id``, ``provider``, ``model``,
+    ``error_class`` (the shared block vocabulary, so ``"quota"`` here means
+    exactly what ``/v1/health`` means by it) and the upstream ``error`` text.
+    Built from the trace the run actually produced, never from a guess; the
+    provider comes from the catalog entry, since a degraded stage has no route
+    attribution (``StageSpan.provider`` is ``""`` there — QA-CHIMERA-V2-16).
+
+    DF-CHIMERA-V2-130: a 502 that says only "Upstream error: …" left a caller
+    unable to distinguish an empty balance from a timeout.
+    """
+    trace = getattr(result, "trace", None)
+    failures = list(getattr(trace, "worker_failures", None) or [])
+    attempts: list[dict[str, Any]] = []
+    for failure in failures:
+        model = str(getattr(failure, "model", ""))
+        entry = config.models.get(model)
+        attempts.append(
+            {
+                "stage_id": getattr(failure, "stage_id", ""),
+                "provider": entry.provider if entry is not None else None,
+                "model": model,
+                "error_class": blocked_models.classify_error(getattr(failure, "error", "")),
+                "error": str(getattr(failure, "error", "")),
+            }
+        )
+    answer_stage_id = getattr(trace, "answer_stage_id", None)
+    answer_error = getattr(result, "answer_error", None)
+    if answer_error and not any(a["stage_id"] == answer_stage_id for a in attempts):
+        span = next((s for s in getattr(trace, "stages", []) if s.stage_id == answer_stage_id), None)
+        model = str(getattr(span, "model", "") or "")
+        entry = config.models.get(model)
+        attempts.append(
+            {
+                "stage_id": answer_stage_id,
+                "provider": entry.provider if entry is not None else (getattr(span, "provider", "") or None),
+                "model": model,
+                "error_class": blocked_models.classify_error(answer_error),
+                "error": str(answer_error),
+            }
+        )
+    return attempts
+
+
 async def _execute_deliberation(request: Request, body: DeliberateRequest) -> DeliberateResponse:
     """Run one deliberation for POST /v1/deliberate (validation + engine call).
 
@@ -887,6 +986,7 @@ async def _execute_deliberation(request: Request, body: DeliberateRequest) -> De
                 f"Upstream error: {result.answer_error or 'unknown'}"
             ),
             request_id=result.trace.request_id,
+            attempts=_failure_attempts(cfg, result),
         )
     return DeliberateResponse(
         answer=result.answer,
@@ -1178,6 +1278,7 @@ async def _run_chat_deliberation(
                 f"Upstream error: {result.answer_error or 'unknown'}"
             ),
             request_id=result.trace.request_id,
+            attempts=_failure_attempts(request.app.state.config, result),
         )
     trace = result.trace
     # Deliberation-wide aggregate (dispatch + every stage), not the
@@ -1850,18 +1951,18 @@ _AUTH_TOKENS: tuple[str, ...] = (
 #: Please recharge.").  Reported as ``quota`` so an operator sees "top up the
 #: account" instead of the useless catch-all ``api``.  A 429 status code is
 #: the same condition signalled structurally and is checked first.
+#:
+#: DF-CHIMERA-V2-130: the billing vocabulary now comes from
+#: :data:`chimera.blocked_models.QUOTA_ERROR_TOKENS` — ONE table shared with the
+#: engine's quota block class and the gateway's C7 detector.  This surface
+#: deliberately adds the two WIDEST tokens (``quota``, ``rate limit``): its
+#: output is operator-facing advice about a provider, not a decision to exile a
+#: model from candidacy, so an ambiguous 429 belongs in the "check the account"
+#: bucket here and in neither of the other two.
 _QUOTA_TOKENS: tuple[str, ...] = (
-    "insufficient_quota",
+    *blocked_models.QUOTA_ERROR_TOKENS,
     "quota",
-    "insufficient_credits",
-    "insufficient balance",
-    "no resource package",
-    "recharge",
-    "billing",
-    "payment required",
-    "spending limit",
     "rate limit",
-    "out of credits",
 )
 
 

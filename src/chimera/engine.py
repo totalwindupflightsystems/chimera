@@ -13,7 +13,7 @@ import json
 import re
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import jsonschema
@@ -40,7 +40,7 @@ from chimera.dispatcher import (
     blocked_catalog_models,
     build_dag_from_dict,
 )
-from chimera.exceptions import BudgetExhaustedError
+from chimera.exceptions import BudgetExhaustedError, NoHealthyCandidateError
 from chimera.gateway import Gateway, GatewayError, GatewayResponse
 from chimera.observability import apply_config_observability, get_langfuse
 
@@ -427,9 +427,244 @@ def _apply_allowed_models(
                 wp.model = default
 
 
+#: Health-snapshot ``error_class`` meaning "the account behind this provider has
+#: no budget left".  The same string the quota block class uses, so the two
+#: signals share one vocabulary instead of drifting (DF-CHIMERA-V2-130).
+_QUOTA_ERROR_CLASS = blocked_models.REASON_QUOTA
+
+
+def _health_quota_providers(
+    provider_health: Callable[[], Mapping[str, Mapping[str, Any]] | None] | None,
+) -> dict[str, str]:
+    """Providers the live ``/v1/health`` snapshot reports as quota-exhausted.
+
+    Returns ``{provider: error_text}``.  A missing snapshot (no probe has run
+    yet, or the cache entry expired) yields ``{}`` — the engine never invents a
+    verdict, and it never probes providers itself (a probe burns tokens; the
+    health endpoint owns that job).  A snapshot shaped unexpectedly is logged
+    and ignored rather than trusted, so a broken seam degrades to the
+    pre-existing behaviour instead of failing a deliberation.
+    """
+    if provider_health is None:
+        return {}
+    try:
+        snapshot = provider_health()
+    except Exception as exc:  # noqa: BLE001 — the seam must never break a run
+        log.warning("engine_provider_health_unavailable", error=str(exc)[:200])
+        return {}
+    if not isinstance(snapshot, Mapping):
+        return {}
+    dead: dict[str, str] = {}
+    for provider, info in snapshot.items():
+        if not isinstance(info, Mapping):
+            continue
+        if info.get("healthy") is False and info.get("error_class") == _QUOTA_ERROR_CLASS:
+            dead[str(provider)] = str(info.get("error") or info.get("note") or _QUOTA_ERROR_CLASS)
+    return dead
+
+
+def _quota_excluded_models(
+    config: ChimeraConfig,
+    registry: blocked_models.ModelBlockRegistry,
+    provider_health: Callable[[], Mapping[str, Mapping[str, Any]] | None] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Enabled, credentialed models unusable right now because of quota exhaustion.
+
+    Two independent signals feed one set (DF-CHIMERA-V2-130):
+
+    * the live health snapshot — ``error_class: quota`` for a provider means
+      "reachable, authenticated, refusing to serve" (this is the signal the
+      selection path used to ignore entirely), and
+    * a quota block recorded from a real failed call
+      (:data:`chimera.blocked_models.REASON_QUOTA`), which covers the window
+      between a failure and the next health probe.
+
+    Quota exhaustion is an ACCOUNT-level condition, so a block or verdict on one
+    model covers every model of that provider — otherwise a dead provider with
+    five models would be re-selected four more times before the registry caught
+    up.  Both signals are TTL-bounded (the block expires; the health cache has
+    its own TTL), and this function re-reads them on EVERY call, which is what
+    "re-evaluate at run start" means: a long-lived process never serves a stale
+    exclusion set.
+
+    Returns ``{model: {"provider", "error_class", "retry_after_s", "detail"}}``
+    — the machine-readable attempts list the no-healthy-candidate error needs.
+    """
+    dead_providers = _health_quota_providers(provider_health)
+    details = registry.blocked_detail()
+    quota_blocked: dict[str, dict[str, Any]] = {
+        model: entry for model, entry in details.items() if entry.get("reason") == _QUOTA_ERROR_CLASS
+    }
+    blocked_provider_names = {
+        config.models[model].provider for model in quota_blocked if model in config.models
+    }
+
+    excluded: dict[str, dict[str, Any]] = {}
+    for name, entry in config.enabled_models.items():
+        if not provider_credential_resolved(config, entry.provider):
+            continue
+        retry_after_s: float | None = None
+        detail = ""
+        if entry.provider in dead_providers:
+            detail = dead_providers[entry.provider]
+        elif name in quota_blocked:
+            detail = f"quota block recorded for {name}"
+            retry_after_s = quota_blocked[name].get("expires_in_s")
+        elif entry.provider in blocked_provider_names:
+            for model, blocked in quota_blocked.items():
+                if config.models[model].provider == entry.provider:
+                    retry_after_s = blocked.get("expires_in_s")
+                    break
+            detail = f"quota block recorded for provider {entry.provider}"
+        else:
+            continue
+        excluded[name] = {
+            "provider": entry.provider,
+            "error_class": _QUOTA_ERROR_CLASS,
+            "retry_after_s": retry_after_s,
+            "detail": detail,
+        }
+    return excluded
+
+
+def _healthy_models(
+    config: ChimeraConfig,
+    excluded: Mapping[str, Any],
+) -> list[str]:
+    """Enabled, credentialed models that are NOT quota-excluded, in catalog order.
+
+    Catalog order is the config's declaration order, so the "next healthy
+    candidate" is deterministic and operator-controllable instead of whichever
+    key happens to come first out of a set.
+    """
+    return [
+        name
+        for name, entry in config.enabled_models.items()
+        if name not in excluded and provider_credential_resolved(config, entry.provider)
+    ]
+
+
+def _quota_fallback_model(
+    config: ChimeraConfig,
+    excluded: Mapping[str, Any],
+    *,
+    preferred: str,
+    avoid: str | None = None,
+    avoid_providers: frozenset[str] = frozenset(),
+) -> str | None:
+    """The single replacement for a stage whose model is quota-excluded.
+
+    ONE bounded escalation step, exactly like the credential pass: the role's
+    configured default when it is healthy, else the first healthy catalog
+    model.  ``None`` when nothing healthy exists (the caller then raises the
+    machine-readable no-candidate error rather than calling a dead provider).
+
+    *avoid_providers* carries the provider of a model that JUST failed with a
+    quota error: quota exhaustion is account-level, so retrying a sibling model
+    on the same account is a guaranteed second failure.  It is honoured while
+    any other provider remains and dropped only as a last resort (a sibling
+    model still beats no attempt at all).
+    """
+
+    def _ok(name: str, *, require_credential: bool) -> bool:
+        if not name or name == avoid:
+            return False
+        entry = config.models.get(name)
+        if entry is None or not entry.enabled:
+            return False
+        if name in excluded or entry.provider in avoid_providers:
+            return False
+        return not (require_credential and not provider_credential_resolved(config, entry.provider))
+
+    # 1. The role's configured default (what the pre-DF-CHIMERA-V2-130 retry
+    #    used unconditionally — the credential gate is deliberately NOT applied
+    #    here, or a fixture/deployment with no resolvable keys would lose the
+    #    retry it had before).
+    if _ok(preferred, require_credential=False):
+        return preferred
+    # 2. Another provider's credentialed model (quota is account-level).
+    for name in config.enabled_models:
+        if _ok(name, require_credential=True):
+            return name
+    # 3. Last resort: any enabled catalog model — same provider, unknown
+    #    credentials. Preserves the legacy "retry something" behaviour.
+    for name in config.enabled_models:
+        if _ok(name, require_credential=False):
+            return name
+    return None
+
+
+def _apply_quota_blocked_models(
+    dispatch: DispatchResult,
+    config: ChimeraConfig,
+    registry: blocked_models.ModelBlockRegistry,
+    provider_health: Callable[[], Mapping[str, Mapping[str, Any]] | None] | None = None,
+) -> None:
+    """Keep a quota-exhausted provider out of EVERY stage — workers and aggregator.
+
+    The measured defect (DF-CHIMERA-V2-130): ``/v1/health`` truthfully reported
+    ``error_class: quota`` while the selection path built its candidate set from
+    credential PRESENCE only, so the dead provider was chosen again, every call
+    failed, and the run answered 502 — three of four live deliberations.
+
+    This pass runs LAST (after ``stage_models`` / ``allowed_models`` / the
+    credential pass), for the same reason the credential pass does: the call
+    cannot succeed, so a block outranks an explicit model choice.  Unlike that
+    pass it covers every stage KIND — the live failure also lost its aggregator,
+    which was a quota-dead ``defaults.default_aggregator``.
+
+    When nothing healthy is left it raises
+    :class:`~chimera.exceptions.NoHealthyCandidateError` naming every skipped
+    candidate (provider + model + failure class) instead of spending calls on a
+    known-dead provider and returning a bare 502.
+    """
+    excluded = _quota_excluded_models(config, registry, provider_health)
+    if not excluded:
+        return
+    healthy = _healthy_models(config, excluded)
+    if not healthy:
+        attempts = [
+            {"model": model, **{k: v for k, v in entry.items() if k != "detail"}, "detail": entry["detail"]}
+            for model, entry in sorted(excluded.items())
+        ]
+        log.error("engine_no_healthy_candidate", attempts=attempts)
+        raise NoHealthyCandidateError(attempts=attempts)
+
+    for stage in dispatch.formation.stages:
+        if stage.model not in excluded:
+            continue
+        preferred = (
+            config.defaults.default_worker if stage.kind == "worker" else config.defaults.default_aggregator
+        )
+        replacement = _quota_fallback_model(config, excluded, preferred=preferred)
+        if replacement is None or replacement == stage.model:  # pragma: no cover - guarded above
+            continue
+        log.warning(
+            "engine_quota_blocked_remap",
+            stage=stage.id,
+            kind=stage.kind,
+            original=stage.model,
+            remapped=replacement,
+            provider=excluded[stage.model]["provider"],
+            reason=_QUOTA_ERROR_CLASS,
+            msg=(
+                "stage model skipped: its provider is out of quota/budget "
+                "(insufficient_quota / 402). The block clears on its own after "
+                "the provider is topped up; meanwhile the run is served by a "
+                "healthy candidate."
+            ),
+        )
+        stage.model = replacement
+        wp = dispatch.worker_prompt_for(stage.id)
+        if wp is not None:
+            wp.model = replacement
+
+
 def _apply_credentialed_worker_models(
     dispatch: DispatchResult,
     config: ChimeraConfig,
+    registry: blocked_models.ModelBlockRegistry | None = None,
+    provider_health: Callable[[], Mapping[str, Mapping[str, Any]] | None] | None = None,
 ) -> None:
     """Remap auto-formation worker stages whose provider has no credentials.
 
@@ -443,10 +678,15 @@ def _apply_credentialed_worker_models(
       (``dispatch.source == "auto"``) when
       ``auto_formation.restrict_to_credentialed_providers`` is on.  Preset
       and custom DAGs are never rewritten by this pass.
+    * "Usable" means credentialed AND not quota-exhausted
+      (DF-CHIMERA-V2-130): a provider whose balance is empty satisfies the
+      credential check while refusing every call, so it must never become the
+      default worker of a freshly designed DAG.
     * Remap target: ``defaults.default_worker`` when usable, else the first
-      credentialed enabled model in catalog order.  Aggregator/merge/audit
-      stages and the dispatcher model are untouched — the engine already
-      retries a failed aggregator with ``defaults.default_aggregator``.
+      usable enabled model in catalog order.  Aggregator/merge/audit
+      stages and the dispatcher model are untouched here — the quota pass
+      (:func:`_apply_quota_blocked_models`) and the aggregator retry cover
+      them.
     * Explicit request overrides (``worker_model`` / ``stage_models`` /
       ``allowed_models``) are applied AFTER this pass in
       :meth:`Engine.deliberate`, so they remain authoritative.
@@ -459,8 +699,10 @@ def _apply_credentialed_worker_models(
         return
     if not config.auto_formation.restrict_to_credentialed_providers:
         return
-    usable = credentialed_enabled_models(config)
-    if not usable:
+    if registry is None:
+        registry = blocked_models.shared_registry
+    credentialed = credentialed_enabled_models(config)
+    if not credentialed:
         log.warning(
             "engine_auto_no_credentialed_models",
             msg=(
@@ -472,6 +714,13 @@ def _apply_credentialed_worker_models(
                 "in chimera.yaml."
             ),
         )
+        return
+    excluded = _quota_excluded_models(config, registry, provider_health)
+    usable = {name: entry for name, entry in credentialed.items() if name not in excluded}
+    if not usable:
+        # Every credentialed model is out of quota.  Leave the stages alone and
+        # let the quota pass raise the machine-readable no-candidate error —
+        # remapping here would only swap one dead provider for another.
         return
     default_worker = config.defaults.default_worker
     fallback = default_worker if default_worker in usable else next(iter(usable))
@@ -713,7 +962,25 @@ class Engine:
         "api_keys",
     )
 
-    def __init__(self, config: ChimeraConfig, gateway: Gateway) -> None:
+    def __init__(
+        self,
+        config: ChimeraConfig,
+        gateway: Gateway,
+        *,
+        provider_health: Callable[[], Mapping[str, Mapping[str, Any]] | None] | None = None,
+    ) -> None:
+        """Build an engine over *config* and *gateway*.
+
+        *provider_health* is an optional zero-arg callable returning the
+        provider-health snapshot (``{provider: {"healthy": bool,
+        "error_class": str, ...}}``) — the API layer passes the
+        ``/v1/health`` probe cache's read-through getter.  Model selection
+        consults it on EVERY deliberation to skip providers that are out of
+        quota (DF-CHIMERA-V2-130).  ``None`` (the default, used by the CLI/MCP
+        and by tests) means "no live snapshot": selection then relies only on
+        quota blocks recorded from real failed calls.  The seam never raises
+        into a run — a broken callable is logged and treated as no signal.
+        """
         # DF-CHIMERA-V2-113: apply the config's observability (level + sink)
         # so the in-process library path honours observability.log_level /
         # use_stdout — the CLI/API/MCP surfaces configure logging explicitly
@@ -725,6 +992,8 @@ class Engine:
         self._config = config.model_copy(deep=True)
         self._config_checksum = self._compute_config_checksum(self._config_original)
         self.gateway = gateway
+        #: Live provider-health snapshot seam (see the class docstring above).
+        self._provider_health = provider_health
         self.dispatcher = Dispatcher(self._config, gateway)
         self.aggregator = Aggregator(self._config, gateway)
         # Awaitable tasks spawned by the stage observer; drained at the end of
@@ -891,8 +1160,14 @@ class Engine:
         # formations. Runs BEFORE the explicit request overrides below so
         # allowed_models / worker_model / stage_models remain authoritative,
         # and only touches dispatcher-generated auto DAGs (presets and
-        # custom DAGs keep their configured structure).
-        _apply_credentialed_worker_models(outcome.result, self.config)
+        # custom DAGs keep their configured structure).  DF-CHIMERA-V2-130:
+        # "usable" here also excludes quota-exhausted providers.
+        _apply_credentialed_worker_models(
+            outcome.result,
+            self.config,
+            blocked_models.shared_registry,
+            self._provider_health,
+        )
 
         # Global request-level overrides (worker/aggregator models). Config
         # locks (defaults.lock_aggregator / lock_dispatcher) take precedence:
@@ -924,6 +1199,23 @@ class Engine:
         # stage_models override names it. Runs last so the block outranks the
         # explicit choice; self-clears when the key is replaced.
         _apply_unblocked_worker_models(outcome.result, self.config)
+
+        # DF-CHIMERA-V2-130: a provider that answered "insufficient_quota" is
+        # just as unusable as one with a bad key, but the registry is not the
+        # only signal — the live /v1/health snapshot is consulted too, on EVERY
+        # run (both are TTL-bounded, so neither can go stale inside a long-lived
+        # process).  This runs LAST, after every explicit override, for the same
+        # reason the credential pass does: the call cannot succeed, so it
+        # outranks the choice.  It covers worker AND aggregator/merge/audit
+        # stages — the measured failure lost its aggregator to the same dead
+        # provider.  Raises NoHealthyCandidateError when nothing healthy is
+        # left, naming every skipped candidate instead of answering a bare 502.
+        _apply_quota_blocked_models(
+            outcome.result,
+            self.config,
+            blocked_models.shared_registry,
+            self._provider_health,
+        )
 
         log.info(
             "engine_dispatched",
@@ -1324,10 +1616,39 @@ class Engine:
         if stage.kind not in {"aggregator", "merge", "audit"}:
             return self._degraded_stage(stage, exc, [], latency_ms, started_at=start)
 
-        fallback_model = self.config.defaults.default_aggregator
+        # DF-CHIMERA-V2-130: the fallback must be a model that can actually
+        # serve.  ``defaults.default_aggregator`` used to be the single point of
+        # failure — when it was the same quota-dead provider that killed the
+        # workers, the retry died too and the run answered 502.  One bounded
+        # step: the configured default when it is healthy, else the first
+        # healthy candidate; ``None`` means nothing is left, so skip straight to
+        # the plain-text retry instead of burning a call on a dead provider.
+        excluded = _quota_excluded_models(self.config, blocked_models.shared_registry, self._provider_health)
+        # A quota-class failure condemns the whole ACCOUNT, so the retry must
+        # prefer a different provider (sibling models share the empty balance).
+        avoid_providers: frozenset[str] = frozenset()
+        if blocked_models.classify_error(exc) == blocked_models.REASON_QUOTA:
+            failed_entry = self.config.models.get(stage.model)
+            if failed_entry is not None:
+                avoid_providers = frozenset({failed_entry.provider})
+        fallback_model = _quota_fallback_model(
+            self.config,
+            excluded,
+            preferred=self.config.defaults.default_aggregator,
+            avoid=stage.model,
+            avoid_providers=avoid_providers,
+        )
+        if fallback_model is not None:
+            log.info(
+                "engine_stage_fallback_selected",
+                stage=stage.id,
+                default=self.config.defaults.default_aggregator,
+                fallback=fallback_model,
+                quota_excluded=sorted(excluded),
+            )
 
         # Retry 1: different model, same output_schema (if model differs)
-        if stage.model != fallback_model:
+        if fallback_model is not None and stage.model != fallback_model:
             retry_stage = stage.model_copy(update={"model": fallback_model})
             try:
                 messages, response, rank_pass = await self._call_stage(
@@ -1353,14 +1674,20 @@ class Engine:
                     dep_results,
                     rank_pass=rank_pass,
                 )
-            except GatewayError:
+            except (GatewayError, BudgetExhaustedError):
                 pass  # fall through to plain-text retry
 
         # Retry 2: plain text (no output_schema) — catches json_schema/json_object
         # provider incompatibilities (e.g. DeepSeek requires "json" in prompt).
+        # DF-CHIMERA-V2-130: when the original model is quota-excluded, this
+        # schema-free attempt runs on the healthy fallback instead — dropping
+        # the schema does not make a dead account answer.
+        plain_stage = stage
+        if fallback_model is not None and stage.model in excluded:
+            plain_stage = stage.model_copy(update={"model": fallback_model})
         try:
             messages, response, rank_pass = await self._call_stage(
-                stage,
+                plain_stage,
                 dispatch,
                 dep_results,
                 user_prompt,
@@ -1369,7 +1696,7 @@ class Engine:
             log.info(
                 "engine_stage_retry_plaintext",
                 stage=stage.id,
-                model=stage.model,
+                model=plain_stage.model,
             )
             return self._build_stage_result(
                 stage,
@@ -1381,7 +1708,7 @@ class Engine:
                 dep_results,
                 rank_pass=rank_pass,
             )
-        except GatewayError as exc2:
+        except (GatewayError, BudgetExhaustedError) as exc2:
             return self._degraded_stage(stage, exc2, [], latency_ms, started_at=start)
 
     def _build_stage_result(

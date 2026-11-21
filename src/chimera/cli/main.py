@@ -48,7 +48,7 @@ from chimera.config import (
     provider_api_key_env,
 )
 from chimera.engine import Engine
-from chimera.exceptions import ConfigError
+from chimera.exceptions import ConfigError, NoHealthyCandidateError
 from chimera.gateway import LiteLLMGateway
 from chimera.observability import configure_logging
 
@@ -358,6 +358,12 @@ def _deliberate(ctx: click.Context, prompt_parts: tuple[str, ...]) -> None:
         # every other usage error in this CLI uses. soft_wrap keeps the
         # message ONE logical line at any terminal width (CH-GAP-050
         # one-liner contract), so pipes and logs never see it folded.
+        err_console.print(f"[red]error:[/red] {exc}", soft_wrap=True)
+        sys.exit(2)
+    except NoHealthyCandidateError as exc:
+        # DF-CHIMERA-V2-130: every candidate is quota-exhausted, so no call was
+        # made and nothing was billed. One actionable line (same exit code as
+        # the "no usable answer" arm), listing what was skipped and why.
         err_console.print(f"[red]error:[/red] {exc}", soft_wrap=True)
         sys.exit(2)
     # DF-CHIMERA-V2-71: defensive reads, matching _print_worker_failures —

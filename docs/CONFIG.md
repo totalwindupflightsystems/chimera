@@ -333,24 +333,51 @@ enabled catalog — the pre-restriction behavior.
   `aggregator_model` behave exactly as documented and can force any catalog
   model, credentialed or not.
 
-**Guardrail-blocked model registry.** When a worker call fails with a
-guardrail/privacy/endpoint-availability error
-(`No endpoints available matching your guardrail restrictions…`), the model
-is recorded in a blocked-model registry and excluded from the auto
-dispatcher catalog and the category selector. Blocks are **long-lived (7
-days)** and **persisted to a state file scoped to the current install**
+**Blocked-model registry (three classes).** When a call fails with a
+*permanent-for-this-key* or *funding* error, the model is recorded in a
+blocked-model registry and excluded from the auto dispatcher catalog, the
+category selector, and engine stage selection:
+
+| Class | Trigger | Block TTL |
+|---|---|---|
+| `guardrail` | guardrail/privacy/endpoint-availability rejection (`No endpoints available matching your guardrail restrictions…`) | 7 days |
+| `credential` | `401` / `AuthenticationError` / "invalid api key" — present-but-invalid key | 7 days (self-clears when the key changes) |
+| `quota` | `402` / `insufficient_quota` / "Insufficient balance … recharge" — empty account balance | 15 minutes (`DEFAULT_QUOTA_BLOCK_COOLDOWN_S`) |
+
+Blocks are **persisted to a state file scoped to the current install**
 (see [Blocked-models state file](#blocked-models-state-file)), so a fresh
-process never re-picks a known guardrail-blocked model and the block is not
-silently re-admitted after a short cooldown. Only guardrail-class failures
-are recorded — timeouts, 5xx, and auth errors never block a model. Expired
-entries are pruned automatically; to clear a block manually, delete the
-state file (or remove the entry from it).
-- `defaults.dispatcher` / `defaults.default_worker` /
-  `defaults.default_aggregator` are operator choices and are not filtered
-  (a failed aggregator stage still retries with `default_aggregator`).
+process never re-picks a known-blocked model. Timeouts, `429` rate limits and
+`5xx` are transient and **never** block a model — a `5xx` or a timeout is
+refused structurally, no matter what its message says.
+
+The `quota` class is deliberately short-lived and separate from `credential`:
+an empty balance is fixed by a top-up, not by rotating a perfectly good key.
+Quota exhaustion is an **account-level** condition, so a verdict or block on
+one model covers every model of that provider. Selection consults two
+TTL-bounded signals **at the start of every run**: the live `/v1/health`
+provider snapshot (`error_class: quota`) and the recorded blocks. Neither is
+cached across runs in the engine.
+
+- A stage whose model is quota-excluded is remapped to the next healthy
+  candidate (`defaults.default_worker` / `defaults.default_aggregator` when
+  healthy, else the first healthy catalog model) — for **workers and
+  aggregator/merge/audit alike**. This is the one exception to "operator
+  choices are not filtered": a call to an account with no budget cannot
+  succeed. A failed aggregator stage retries on a healthy model too.
+- When *nothing* healthy is left, the run fails with a machine-readable
+  `503` (`error.type: no_healthy_candidate`) listing every skipped candidate
+  with its provider, model and failure class — `POST /v1/deliberate` and
+  `POST /v1/chat/completions`. The CLI prints the same message and exits `2`.
+  No provider call is spent discovering that.
+- `/v1/health` keeps reporting `status: degraded` / `error_class: quota` for
+  the dead provider while deliberations succeed on another one — the snapshot
+  is consulted, never masked.
+- `defaults.dispatcher` is not remapped (a named preset skips the dispatcher
+  call entirely; `auto` still uses the configured dispatcher).
 - If *no* provider has resolved credentials, the restriction is skipped with
   an actionable warning so the failure surface stays the real provider auth
-  error rather than an empty catalog.
+  error rather than an empty catalog — and the no-candidate error is NOT
+  raised, because absent keys are not quota evidence.
 
 ### Blocked-models state file
 

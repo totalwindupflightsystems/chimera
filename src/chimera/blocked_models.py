@@ -7,7 +7,7 @@ the dispatcher would happily pick it again on the next run.  This module
 keeps a registry mapping such models to a ``blocked_until`` timestamp so the
 dispatcher catalog and the category selector can exclude them.
 
-Two failure classes block a model (DF-CHIMERA-V2-6):
+Three failure classes block a model (DF-CHIMERA-V2-6, DF-CHIMERA-V2-130):
 
 * **guardrail** — a policy/privacy rejection.  A property of the
   API-key × model pair, effectively permanent for that key.
@@ -17,13 +17,27 @@ Two failure classes block a model (DF-CHIMERA-V2-6):
   unusable.  ``model_blocked_credential`` marks these entries with a
   non-reversible fingerprint of the key that failed, which lets the block
   self-clear the moment the operator replaces the key.
+* **quota** — the account behind the provider has no budget left
+  (``402`` / ``insufficient_quota`` / "Insufficient balance … Please
+  recharge").  Reachable, authenticated, and refusing to serve.  Unlike the
+  two classes above this is a *funding* condition: a top-up fixes it within
+  minutes, so its block is deliberately short-lived
+  (:data:`DEFAULT_QUOTA_BLOCK_COOLDOWN_S`) and it is a class of its own rather
+  than a widening of the credential regex — the remedy differs (top up the
+  account vs. replace the key), so conflating them would tell an operator to
+  rotate a perfectly good key.
 
-Transient errors (timeouts, 429, 5xx) are handled by retries/circuit
-breakers and must NOT remove a model from candidacy.
+Transient errors (timeouts, 429 rate limits, 5xx) are handled by
+retries/circuit breakers and must NOT remove a model from candidacy.  That
+rule is enforced structurally in :func:`is_quota_error` for the quota class:
+the classifier reads the exception's own attributes where they exist
+(:class:`chimera.exceptions.BudgetExhaustedError`) and refuses to record a
+block for a timeout or a generic 5xx, no matter what the message says.
 
 Durability (DF-CHIMERA-V2-1, repo-scoped per CHIMERA-V2-REVIEW-03)
 ----------------------------
-Both classes are long-lived (default 7 days) and **persisted to disk** as
+Both long-lived classes are long-lived (default 7 days; the quota class uses
+its own short :data:`DEFAULT_QUOTA_BLOCK_COOLDOWN_S`) and **persisted to disk** as
 wall-clock expiry timestamps.  On construction the registry reloads the
 persisted state, so a fresh process never re-picks a known-blocked model,
 and the block is not silently re-admitted after a short in-memory cooldown.
@@ -64,6 +78,7 @@ import time
 import warnings
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -74,6 +89,15 @@ log = structlog.get_logger("chimera.blocked_models")
 #: so the default is long-lived: 7 days.  The expiry is persisted, so it
 #: survives process restarts (DF-CHIMERA-V2-1).
 DEFAULT_BLOCK_COOLDOWN_S: float = 7.0 * 24.0 * 3600.0
+
+#: How long (seconds) a model stays blocked after a QUOTA/billing-exhaustion
+#: failure (DF-CHIMERA-V2-130).  Deliberately short and materially shorter than
+#: :data:`DEFAULT_BLOCK_COOLDOWN_S`: an empty balance is a funding condition
+#: that a top-up fixes in minutes, whereas a guardrail rejection or a dead key
+#: does not resolve on its own.  Long enough that a dead provider is not
+#: re-selected (and re-billed for failed calls) inside the window the operator
+#: needs to act, short enough that a topped-up provider is not exiled.
+DEFAULT_QUOTA_BLOCK_COOLDOWN_S: float = 15.0 * 60.0
 
 #: LEGACY on-disk location (machine-scoped).  No longer the default: it made
 #: every chimera process on the host share one blocked-models file, so a
@@ -154,6 +178,56 @@ CREDENTIAL_ERROR_RE = re.compile(
 #: Block classes recorded in ``reasons`` / used as the ``reason`` log field.
 REASON_GUARDRAIL = "guardrail"
 REASON_CREDENTIAL = "credential"
+REASON_QUOTA = "quota"
+
+#: The canonical quota/billing-exhaustion vocabulary (DF-CHIMERA-V2-130).
+#: SINGLE SOURCE OF TRUTH: ``chimera.gateway``'s C7 budget detector and
+#: ``chimera.api.server``'s provider-health classifier both build their token
+#: sets from this table, so the three surfaces can never disagree about what a
+#: quota failure looks like.  Every entry is BILLING wording on purpose —
+#: rate-limit wording lives in :data:`RATE_LIMIT_ERROR_TOKENS` because a 429
+#: is transient and must not block candidacy.
+QUOTA_ERROR_TOKENS: tuple[str, ...] = (
+    "insufficient_quota",
+    "insufficient_credits",
+    "insufficient balance",
+    "insufficient credit",
+    "no resource package",
+    "out of credits",
+    "you exceeded your current quota",
+    "quota exceeded",
+    "billing",
+    "payment required",
+    "account balance",
+    "spending limit",
+    "recharge",
+    # The class marker emitted by :class:`chimera.exceptions.BudgetExhaustedError`
+    # itself.  The engine records a failed stage's ``str(exc)``, so a
+    # BudgetExhaustedError whose ``details`` are empty would otherwise carry no
+    # billing wording at all and silently escape classification.
+    "budget exhausted",
+)
+
+#: Rate-limit wording.  Deliberately NOT part of the quota block class: a 429
+#: means "slow down", not "top up the account", and the engine's own docs make
+#: transient failures non-blocking.  Kept here so the gateway's C7 detector —
+#: which does treat a rate limit as a budget-shaped condition — reads from the
+#: same table instead of its own copy.
+RATE_LIMIT_ERROR_TOKENS: tuple[str, ...] = (
+    "rate limit exceeded",
+    "rate limited",
+    "too many requests",
+    "rate_limit",
+)
+
+#: Case-insensitive matcher built from :data:`QUOTA_ERROR_TOKENS`.
+QUOTA_ERROR_RE = re.compile(
+    "|".join(re.escape(token) for token in QUOTA_ERROR_TOKENS),
+    re.IGNORECASE,
+)
+
+#: Timeout shapes — never a quota condition, whatever else the message says.
+_TIMEOUT_ERROR_RE = re.compile(r"timeout|timed out|deadline exceeded", re.IGNORECASE)
 
 #: Persisted marker for a credential-class block recorded when NO credential
 #: fingerprint could be resolved at all (DF-CHIMERA-V2-58: e.g. the engine
@@ -183,6 +257,85 @@ def is_credential_error(error: object) -> bool:
     return bool(CREDENTIAL_ERROR_RE.search(str(error)))
 
 
+def _status_code(error: object) -> int | None:
+    """The HTTP status *error* carries, when the exception exposes one."""
+    code = getattr(error, "status_code", None)
+    if code is None:
+        response = getattr(error, "response", None)
+        code = getattr(response, "status_code", None) if response is not None else None
+    return code if isinstance(code, int) else None
+
+
+def is_quota_error(error: object) -> bool:
+    """True when *error* is a quota/budget-EXHAUSTION failure.
+
+    This is the class that means "the provider answered, authenticated, and
+    refused to serve because the account has no budget left" — the condition
+    a live deliberation actually died on (DF-CHIMERA-V2-130).  Detection is
+    data-first, so it does not depend on a provider's prose:
+
+    1. :class:`chimera.exceptions.BudgetExhaustedError` — the engine's own
+       typed signal — is always this class.
+    2. A timeout or a generic ``5xx`` is NEVER this class, even when the
+       message happens to contain billing-looking words: those are transient
+       and must not exile a provider (see the module docstring).
+    3. Otherwise the message is matched against the single canonical
+       :data:`QUOTA_ERROR_TOKENS` table.  Pure rate-limit wording is
+       deliberately absent from that table, so ``"429 rate limit exceeded"``
+       does not block candidacy.
+
+    An OpenAI-style exhausted balance arrives as HTTP 429 with
+    ``insufficient_quota``, so a 429 status is NOT by itself disqualifying —
+    only the absence of any billing token is.
+    """
+    # Import locally: exceptions.py is dependency-free, but importing it at
+    # module scope would make this leaf module order-sensitive for callers
+    # that import blocked_models before chimera.exceptions exists.
+    from chimera.exceptions import BudgetExhaustedError
+
+    if isinstance(error, BudgetExhaustedError):
+        return True
+    if isinstance(error, TimeoutError):
+        return False
+    code = _status_code(error)
+    if code is not None and code >= 500:
+        return False
+    text = str(error)
+    if _TIMEOUT_ERROR_RE.search(text) and not QUOTA_ERROR_RE.search(text):
+        return False
+    return bool(QUOTA_ERROR_RE.search(text))
+
+
+def classify_error(error: object) -> str | None:
+    """The block class *error* belongs to, or ``None`` for a transient failure.
+
+    The single public classifier every surface uses to say *why* a candidate
+    was dropped: ``"guardrail"`` | ``"credential"`` | ``"quota"`` | ``None``.
+    Order matters — guardrail and credential are checked first so the quota
+    class can never widen their semantics.
+    """
+    if is_guardrail_error(error):
+        return REASON_GUARDRAIL
+    if is_credential_error(error):
+        return REASON_CREDENTIAL
+    if is_quota_error(error):
+        return REASON_QUOTA
+    return None
+
+
+#: Every block class this module can persist.  Anything else in a state file
+#: (a hand-edit, a future class from a newer process) loads as a guardrail
+#: block, i.e. the most conservative, longest-lived reading.
+_KNOWN_REASONS: frozenset[str] = frozenset({REASON_GUARDRAIL, REASON_CREDENTIAL, REASON_QUOTA})
+
+#: Event name emitted per block class (kept stable for log-based alerting).
+_BLOCK_EVENT_BY_REASON: dict[str, str] = {
+    REASON_GUARDRAIL: "model_blocked_guardrail",
+    REASON_CREDENTIAL: "model_blocked_credential",
+    REASON_QUOTA: "model_blocked_quota",
+}
+
+
 class ModelBlockRegistry:
     """Tracks models blocked by guardrail- or credential-class failures.
 
@@ -195,6 +348,7 @@ class ModelBlockRegistry:
         self,
         *,
         cooldown_s: float = DEFAULT_BLOCK_COOLDOWN_S,
+        quota_cooldown_s: float = DEFAULT_QUOTA_BLOCK_COOLDOWN_S,
         clock: Callable[[], float] = time.monotonic,
         state_path: str | os.PathLike[str] | None | _DefaultPath = _DEFAULT_PATH,
     ) -> None:
@@ -210,10 +364,13 @@ class ModelBlockRegistry:
                     stacklevel=2,
                 )
         self.cooldown_s = cooldown_s
+        #: Shorter TTL for the quota class (DF-CHIMERA-V2-130): a funding
+        #: condition clears with a top-up, not with a new key.
+        self.quota_cooldown_s = quota_cooldown_s
         self._clock = clock
         self._state_path = Path(state_path).expanduser() if state_path is not None else None
         self._blocked_until: dict[str, float] = {}
-        #: Block class per model ("guardrail" | "credential").
+        #: Block class per model ("guardrail" | "credential" | "quota").
         self._reasons: dict[str, str] = {}
         #: Non-reversible credential digest per model (credentials only).
         self._fingerprints: dict[str, str | None] = {}
@@ -227,9 +384,10 @@ class ModelBlockRegistry:
     ) -> bool:
         """Record an upstream failure for *model*.
 
-        Returns True when the failure was guardrail-class OR credential-class
-        and the model is now blocked (and the block persisted); False for
-        transient failures (timeouts, 429, 5xx — never recorded).
+        Returns True when the failure was guardrail-class, credential-class OR
+        quota-class and the model is now blocked (and the block persisted);
+        False for transient failures (timeouts, 429 rate limits, 5xx — never
+        recorded).
 
         *credential_fingerprint* is a non-reversible digest of the credential
         that produced the failure.  It is stored for credential-class blocks
@@ -238,14 +396,16 @@ class ModelBlockRegistry:
         recorded as the :data:`NO_CREDENTIAL` marker instead of being dropped
         by ``_save`` — so the block can still self-heal when a later call
         supplies a real fingerprint (DF-CHIMERA-V2-58).
+
+        The quota class uses its own, much shorter TTL
+        (:attr:`quota_cooldown_s`) so an emptied balance never exiles a
+        provider for the guardrail window (DF-CHIMERA-V2-130).
         """
-        if is_guardrail_error(error):
-            reason = REASON_GUARDRAIL
-        elif is_credential_error(error):
-            reason = REASON_CREDENTIAL
-        else:
+        reason = classify_error(error)
+        if reason is None:
             return False
-        until = self._clock() + self.cooldown_s
+        ttl = self.quota_cooldown_s if reason == REASON_QUOTA else self.cooldown_s
+        until = self._clock() + ttl
         self._blocked_until[model] = until
         self._reasons[model] = reason
         if reason == REASON_CREDENTIAL:
@@ -253,10 +413,10 @@ class ModelBlockRegistry:
         else:
             self._fingerprints[model] = None
         log.warning(
-            "model_blocked_guardrail" if reason == REASON_GUARDRAIL else "model_blocked_credential",
+            _BLOCK_EVENT_BY_REASON.get(reason, "model_blocked_guardrail"),
             model=model,
             reason=reason,
-            cooldown_s=self.cooldown_s,
+            cooldown_s=ttl,
             error=str(error)[:200],
         )
         self._save()
@@ -306,12 +466,35 @@ class ModelBlockRegistry:
     def block_reason(self, model: str) -> str | None:
         """The class of the active block on *model*, or ``None`` when unblocked.
 
-        Returns ``"guardrail"`` or ``"credential"``.  Legacy entries (state
-        files written before reasons existed) are reported as ``"guardrail"``.
+        Returns ``"guardrail"``, ``"credential"`` or ``"quota"``.  Legacy
+        entries (state files written before reasons existed) are reported as
+        ``"guardrail"``.
         """
         if not self.is_blocked(model):
             return None
         return self._reasons.get(model, REASON_GUARDRAIL)
+
+    def blocked_detail(self) -> dict[str, dict[str, Any]]:
+        """Every active block as ``{model: {"reason": str, "expires_in_s": float}}``.
+
+        Expired entries are pruned first, exactly like :meth:`blocked`, so the
+        caller never sees a stale block.  This is the machine-readable form a
+        selection path (and the no-healthy-candidate error) needs: *which*
+        class dropped a model and *how long* it stays dropped.  The quota TTL
+        is short, so ``expires_in_s`` is the honest "try again after" number
+        an operator can act on.
+        """
+        now = self._clock()
+        expired = [m for m, until in self._blocked_until.items() if now >= until]
+        for m in expired:
+            self._forget(m)
+        return {
+            model: {
+                "reason": self._reasons.get(model, REASON_GUARDRAIL),
+                "expires_in_s": round(until - now, 3),
+            }
+            for model, until in self._blocked_until.items()
+        }
 
     def credential_fingerprint(self, model: str) -> str | None:
         """The persisted credential digest for *model*, or ``None``.
@@ -391,6 +574,9 @@ class ModelBlockRegistry:
         fingerprints = fingerprints_raw if isinstance(fingerprints_raw, dict) else {}
         # Persisted timestamps are wall-clock; convert the remaining TTL into
         # the injected clock's units so in-memory semantics are unchanged.
+        # The absolute expiry already carries the class-specific TTL it was
+        # recorded with, so a quota block reloads short and never inherits the
+        # guardrail window (DF-CHIMERA-V2-130).
         now_wall = time.time()
         for model, epoch in entries.items():
             if not isinstance(model, str) or not isinstance(epoch, (int, float)):
@@ -400,9 +586,7 @@ class ModelBlockRegistry:
                 continue  # expired — pruned on load
             self._blocked_until[model] = self._clock() + remaining
             reason = reasons.get(model)
-            self._reasons[model] = (
-                reason if reason in (REASON_GUARDRAIL, REASON_CREDENTIAL) else REASON_GUARDRAIL
-            )
+            self._reasons[model] = reason if reason in _KNOWN_REASONS else REASON_GUARDRAIL
             fingerprint = fingerprints.get(model)
             self._fingerprints[model] = fingerprint if isinstance(fingerprint, str) and fingerprint else None
 
@@ -465,16 +649,23 @@ def set_shared_registry(registry: ModelBlockRegistry) -> None:
 __all__ = [
     "CREDENTIAL_ERROR_RE",
     "DEFAULT_BLOCK_COOLDOWN_S",
+    "DEFAULT_QUOTA_BLOCK_COOLDOWN_S",
     "DEFAULT_STATE_PATH",
     "GUARDRAIL_ERROR_RE",
     "NO_CREDENTIAL",
+    "QUOTA_ERROR_RE",
+    "QUOTA_ERROR_TOKENS",
+    "RATE_LIMIT_ERROR_TOKENS",
     "REASON_CREDENTIAL",
     "REASON_GUARDRAIL",
+    "REASON_QUOTA",
     "STATE_PATH_ENV",
     "ModelBlockRegistry",
+    "classify_error",
     "default_state_path",
     "is_credential_error",
     "is_guardrail_error",
+    "is_quota_error",
     "set_shared_registry",
     "shared_registry",
 ]

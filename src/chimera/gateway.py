@@ -24,6 +24,7 @@ from typing import Any, Protocol, runtime_checkable
 
 import structlog
 
+from chimera import blocked_models
 from chimera.blocked_models import is_credential_error
 from chimera.circuit_breaker import ProviderCircuitBreaker, fast_fail_response
 from chimera.config import ChimeraConfig, ModelEntry, provider_api_key_env
@@ -1201,20 +1202,19 @@ def _extract_text(result: Any) -> str:
 
 
 def _is_budget_exhausted(error_str: str) -> bool:
-    """Detect provider errors indicating quota/budget exhaustion (C7)."""
-    keywords = (
-        "insufficient_quota",
-        "billing",
-        "payment required",
-        "quota exceeded",
-        "rate limit exceeded",
-        "you exceeded your current quota",
-        "insufficient_credits",
-        "account balance",
-        "billing issue",
-        "spending limit",
-    )
-    return any(kw in error_str for kw in keywords)
+    """Detect provider errors indicating quota/budget exhaustion (C7).
+
+    The token table lives in :mod:`chimera.blocked_models` (DF-CHIMERA-V2-130):
+    one canonical vocabulary shared with the provider-health classifier and the
+    quota block class, so the three surfaces can never disagree about what a
+    quota failure looks like.  C7 additionally treats an explicit rate-limit
+    rejection as budget-shaped (it is what LiteLLM raises for both), which is
+    why :data:`~chimera.blocked_models.RATE_LIMIT_ERROR_TOKENS` is consulted
+    here but NOT in the block class — a 429 must not exile a provider.
+    """
+    lowered = error_str.lower()
+    keywords = blocked_models.QUOTA_ERROR_TOKENS + ("rate limit exceeded",)
+    return any(kw in lowered for kw in keywords)
 
 
 __all__ = [
