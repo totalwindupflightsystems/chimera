@@ -553,6 +553,132 @@ install and a real degradation used to print the same words:
 None of these lines changes the exit code: the provider block never fails the run —
 only the deliberation decides pass/fail.
 
+### Run chimera as an internal answer service
+
+One shared instance answers for the fleet: the caller names a formation, gets a
+merged answer in one call, and the response says what it cost.
+
+**Base URL.** The deployed unit binds loopback (`chimera serve --host 127.0.0.1
+--port 8765`), so:
+
+- `http://127.0.0.1:8765` — this host (local agents, the Hermes provider block,
+  `scripts/smoke_live.py`);
+- tailnet — front that same listener with `tailscale serve`, which prints the
+  URL to use (`https://<host>.<tailnet>.ts.net:8443` in the recipe below). No
+  second bind and no public ingress; the full command, the `serve status`
+  output and revocation live in
+  [docs/operations.md → Exposure](docs/operations.md#exposure-tailnet-not-public).
+
+Keep the loopback bind and let `tailscale serve` front it: rebinding `--host`
+to a tailnet address would take the service away from the local consumers that
+already point at `127.0.0.1:8765` without adding anything `serve` does not.
+
+**Auth.** With `auth.enabled: true` every `/v1/*` data route requires the key
+from `CHIMERA_API_KEY` — `/v1/deliberate` and `/v1/chat/completions` included.
+Either header is accepted:
+
+```bash
+curl -s http://127.0.0.1:8765/v1/deliberate \
+  -H "Authorization: Bearer $CHIMERA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"Name one HTTP status code for not found.","formation":"quick-panel"}'
+```
+
+`X-API-Key: $CHIMERA_API_KEY` works too. The deployed key lives in the
+service's `EnvironmentFile` (never in git). Keyless on purpose: the health
+probes, `GET /v1/models`, `GET /v1/formations`,
+`GET /.well-known/agent-card.json` and `GET /metrics` — a monitor or catalog
+crawl needs no credential.
+
+**Formation selection.** `POST /v1/deliberate` takes `formation`;
+`POST /v1/chat/completions` takes `model`, which selects a **formation**, not a
+catalog model id (an unknown value is a `404 model_not_found`, `stream: true` a
+`400 stream_not_supported`).
+
+| name | lane |
+|---|---|
+| `quick-panel` | 3 flash-tier workers + one flash aggregator — the default agent lane, cents per call |
+| `quick` | the same preset under the bare name 9router needs (below) |
+| `panel` | pro-tier workers, two aggregators merged `best_of_n` — escalation only |
+| `auto`, `simple`, `debate`, … | see `GET /v1/formations` / [Formation Types](#formation-types) |
+
+`quick` exists because 9router strips its own model prefix before forwarding: a
+lane registered there as `chim/quick` reaches this API as the bare name
+`quick`. The tracked `chimera.yaml.example` defines `quick-panel` (lines 55–62)
+and points at the fleet reference for the alias; `chimera.yaml.fleet` carries it
+as a YAML anchor alias (`quick: *quick_panel`). A config that only ships the
+example therefore answers `quick-panel` but returns `404 model_not_found` for
+`quick` — add the one line `quick: quick-panel` and restart (config is read at
+boot).
+
+**Where cost and the request id live.** `POST /v1/deliberate` returns:
+
+```json
+{
+  "answer": "merged output from several models",
+  "request_id": "a71b3f2c...",
+  "trace": {
+    "request_id": "a71b3f2c...",
+    "formation": "quick-panel",
+    "stages": [{"stage_id": "worker_1", "model": "deepseek/deepseek-v4-flash", "latency_ms": 1234, "tokens_input": 300, "tokens_output": 120}],
+    "aggregator": {"stage_id": "aggregator", "model": "deepseek/deepseek-v4-flash"},
+    "aggregator_model": "deepseek/deepseek-v4-flash",
+    "total_tokens": 12345,
+    "total_cost": 0.012,
+    "total_duration_ms": 15234,
+    "degraded_reasons": [],
+    "worker_failures": []
+  }
+}
+```
+
+`trace.request_id` (mirrored top-level), `trace.total_cost` in USD at list
+prices for the whole deliberation (dispatch + every stage), `trace.total_tokens`
+and `trace.total_duration_ms`. `worker_failures` (also mirrored top-level,
+absent when clean) names any worker that failed hard while the merge still
+answered.
+
+When the aggregator chain had to substitute a model, the trace names the model
+that actually served the merge in `trace.aggregator_model` (which can differ
+from the formation's configured `aggregator`) and that stage's
+`fallback_attempts[]` lists every candidate it walked — `{model, status:
+"served"|"failed"|"skipped", reason, error, error_class, source}`, where
+`source: "this_run_survivor"` marks a substitute proven live earlier in the same
+run. The answer is real and the call is a 200; the CLI additionally reports
+`answer_degraded_reason: "aggregator_substituted"` in `--json`. `degraded_reasons`
+is a different signal — one `<stage_id>: token_limit` entry per worker the token
+cap cut off, which the chat surface mirrors as `chimera_degraded_reasons`.
+
+On the OpenAI-compatible surface the body is OpenAI-shaped: `id` is
+`chatcmpl-<request_id>`, `model` echoes the formation, `usage` carries the
+aggregated token counts — **`total_cost` is not part of that body**, so a caller
+that needs cost attribution reads it from `/v1/deliberate` or correlates the
+`chatcmpl-…` id back to the trace.
+
+**Pointing an OpenAI-SDK client at it.** Base URL is the API root plus `/v1`;
+the key is `CHIMERA_API_KEY`; `model` is the formation name:
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8765/v1", api_key=os.environ["CHIMERA_API_KEY"])
+resp = client.chat.completions.create(
+    model="quick-panel",                     # a FORMATION, not a catalog model id
+    messages=[{"role": "user", "content": "Reply with the word ok."}],
+)
+print(resp.choices[0].message.content)      # one merged answer, not one worker's
+```
+
+A fleet agent that already speaks 9router does not need a chimera base URL at
+all — register this instance as an `openai-compatible` upstream with prefix
+`chim` and name `chim/quick` / `chim/panel` (field table and liveness check:
+[docs/operations.md → 9router upstream lane](docs/operations.md#9router-upstream-lane)).
+
+Deliberation-specific knobs (`worker_model`, `stage_models`, `allowed_models`,
+`output_schema`) reach an OpenAI SDK caller through `extra_body`; the full
+surface is [docs/OPENAI_API.md](docs/OPENAI_API.md).
+
 ## Build and development
 
 Chimera is a plain Python 3.11+ package (`chimera-deliberation`, hatchling
