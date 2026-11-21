@@ -1,0 +1,22 @@
+{
+  "tick": "chimera-v2-foreman-2026-11-21-15-17-44",
+  "project": "chimera-v2",
+  "workdir": "/home/kara/chimera-v2",
+  "mode": "serial",
+  "slots_formula": "max(1, min(6, 16 - ceil(19.97))) = 1",
+  "wave_budget": 11,
+  "why_serial": "host load 19.97 on 16 cores -> slots=1; the box is loaded so one worker, not idle",
+  "block": "SKIPPED-INSTALL-CHIMERA-V2-21",
+  "rows": [
+    {
+      "task_id": "SKIPPED-INSTALL-CHIMERA-V2-21",
+      "worktree": "/home/kara/chimera-v2 (shared workdir, serial path)",
+      "branch": "main",
+      "base_commit": "129246e2ddd138550b743a6409c1025d33346a49",
+      "worker_model": "openai/gpt-6.1-terra",
+      "worker_provider": "xkiro",
+      "brief": "/tmp/brief-SKIPPED-INSTALL-CHIMERA-V2-21.txt",
+      "why_this_row": "top DRIVE block by block_drive.py (1 pending, 75% done); bunker-mvp ONLINE with 4/50 agents, so the skip reason (unreachable host) no longer holds"
+    }
+  ]
+}

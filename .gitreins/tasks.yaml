@@ -2700,3 +2700,21 @@ tasks:
   status: complete
   created_at: '2026-11-21T13:44:59.915174+00:00'
   completed_at: '2026-11-21T14:28:27.277434+00:00'
+- id: DOC-28
+  title: SECURITY.md names /health the alias of /v1/health/live
+  criteria:
+  - grep -n 'alias of' docs/SECURITY.md names /v1/health/live; live server proves
+    /health body == /v1/health/live body and differs from /v1/health; only docs/SECURITY.md
+    changes
+  status: complete
+  created_at: '2026-11-21T15:09:09.237778+00:00'
+  completed_at: '2026-11-21T15:12:43.741164+00:00'
+- id: SKIPPED-INSTALL-CHIMERA-V2-21
+  title: install leg on a reachable bunker host
+  criteria:
+  - 1. A reachable bunker host runs the install battery to completion and records
+    the cell table in .coding-hermes/evidence/. 2. Proves sdist/wheel install on clean
+    OS python, chimera --version, config init, formations, and one deliberation against
+    at least one live provider, with host destroyed afterwards.
+  status: in_progress
+  created_at: '2026-11-21T15:45:14.717488+00:00'
