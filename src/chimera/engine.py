@@ -105,6 +105,7 @@ class AggregatorFallbackAttempt(BaseModel):
     reason: str | None = None
     error: str | None = None
     error_class: str | None = None
+    source: str | None = None
 
 
 class StageSpan(BaseModel):
@@ -907,6 +908,7 @@ def _merge_fallback_skip_reason(
     excluded: Mapping[str, Any],
     failed_model: str,
     credentials_configured: bool,
+    proven_live: bool = False,
 ) -> str | None:
     """Why *model* cannot serve the merge, or ``None`` when it can be tried.
 
@@ -930,7 +932,7 @@ def _merge_fallback_skip_reason(
             f"provider {entry.provider!r} is out of quota/budget "
             "(insufficient_quota / 402; the block clears when the account is topped up)"
         )
-    if _credential_block_active(registry, config, model):
+    if not proven_live and _credential_block_active(registry, config, model):
         return (
             f"provider {entry.provider!r} rejected its credential in a recent call "
             f"(authentication error; {_credential_remedy(config, entry.provider)})"
@@ -1948,6 +1950,7 @@ class Engine:
                 exc,
                 start,
                 rank=rank,
+                run_results=results,
             )
 
         return self._build_stage_result(
@@ -1972,6 +1975,7 @@ class Engine:
         start: float,
         *,
         rank: RankPolicy | None = None,
+        run_results: Mapping[str, StageResult] | None = None,
     ) -> tuple[StageResult, StageSpan]:
         """Retry aggregator/merge/audit stages: fallback chain → plain-text → degraded.
 
@@ -2016,36 +2020,68 @@ class Engine:
         attempts: list[AggregatorFallbackAttempt] = []
         called = 0
         chain = self._merge_fallback_chain(stage, excluded=excluded, avoid_providers=avoid_providers)
-        for candidate in chain:
+        kinds = {item.id: item.kind for item in dispatch.formation.stages}
+        survivors = list(
+            dict.fromkeys(
+                result.model
+                for result in (run_results or {}).values()
+                if not result.degraded
+                and kinds.get(result.stage_id) in {"worker", "dispatcher"}
+                and result.model != stage.model
+            )
+        )
+        # Reserve one extra call beyond the ordinary cap for a proven survivor.
+        survivor_called = False
+        called_models: set[str] = set()
+        for candidate, is_survivor in [(name, False) for name in chain] + [
+            (name, True) for name in survivors
+        ]:
+            if is_survivor and candidate in called_models:
+                continue
             reason = _merge_fallback_skip_reason(
                 self.config,
                 candidate,
                 registry=blocked_models.shared_registry,
                 excluded=excluded,
                 failed_model=stage.model,
-                credentials_configured=credentials_configured,
+                credentials_configured=credentials_configured and not is_survivor,
+                proven_live=is_survivor,
             )
             if reason is not None:
                 attempts.append(
-                    AggregatorFallbackAttempt(model=candidate, status=FALLBACK_SKIPPED, reason=reason)
+                    AggregatorFallbackAttempt(
+                        model=candidate,
+                        status=FALLBACK_SKIPPED,
+                        reason=reason,
+                        source="this_run_survivor" if is_survivor else None,
+                    )
                 )
                 log.warning(
                     "engine_aggregator_fallback_skipped", stage=stage.id, model=candidate, reason=reason
                 )
                 continue
-            if called >= MAX_AGGREGATOR_FALLBACK_ATTEMPTS:
+            if (is_survivor and survivor_called) or (
+                not is_survivor and called >= MAX_AGGREGATOR_FALLBACK_ATTEMPTS
+            ):
                 attempts.append(
                     AggregatorFallbackAttempt(
                         model=candidate,
                         status=FALLBACK_SKIPPED,
+                        source="this_run_survivor" if is_survivor else None,
                         reason=(
-                            "attempt budget exhausted "
+                            "survivor attempt budget exhausted (one merge call already spent)"
+                            if is_survivor
+                            else "attempt budget exhausted "
                             f"({MAX_AGGREGATOR_FALLBACK_ATTEMPTS} merge calls already spent)"
                         ),
                     )
                 )
                 continue
-            called += 1
+            if is_survivor:
+                survivor_called = True
+            else:
+                called += 1
+            called_models.add(candidate)
             retry_stage = stage.model_copy(update={"model": candidate})
             try:
                 messages, response, rank_pass = await self._call_stage(
@@ -2060,6 +2096,7 @@ class Engine:
                     AggregatorFallbackAttempt(
                         model=candidate,
                         status=FALLBACK_FAILED,
+                        source="this_run_survivor" if is_survivor else None,
                         error=str(fallback_exc),
                         error_class=blocked_models.classify_error(fallback_exc),
                     )
@@ -2071,7 +2108,13 @@ class Engine:
                     error=str(fallback_exc),
                 )
                 continue
-            attempts.append(AggregatorFallbackAttempt(model=candidate, status=FALLBACK_SERVED))
+            attempts.append(
+                AggregatorFallbackAttempt(
+                    model=candidate,
+                    status=FALLBACK_SERVED,
+                    source="this_run_survivor" if is_survivor else None,
+                )
+            )
             log.info(
                 "engine_aggregator_fallback_served",
                 stage=stage.id,

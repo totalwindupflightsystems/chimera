@@ -688,7 +688,8 @@ Every API response includes a trace object with:
 - `aggregator_fallbacks[]` — the ordered merge fallback chain the run walked,
   with a per-entry `status` (`served` / `failed` / `skipped`) and, for a skip,
   the `reason` (unknown/disabled model, uncredentialed provider, quota-dead
-  account, the failed model itself, attempt budget)
+  account, the failed model itself, attempt budget). `source: "this_run_survivor"`
+  identifies a model that served an earlier stage.
 - `total_tokens`, `total_cost`, `total_duration_ms`
 
 ### When the merge cannot be served

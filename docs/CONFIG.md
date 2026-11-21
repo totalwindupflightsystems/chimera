@@ -172,17 +172,19 @@ Semantics:
   / `skipped` **and the skip reason** (unknown or disabled model, provider without a
   credential, quota-dead account, the failed model itself, attempt budget).
 * **Skipped, not called.** An entry that provably cannot help costs no provider
-  latency — the 83-187 s retry tail is what this avoids. At most 4 candidates are
-  actually CALLED per run; the rest are recorded as skipped.
+  latency. At most 4 ordinary fallback candidates are called per merge. After
+  the configured and implicit candidates, one additional call is reserved for
+  a model that successfully served a worker or dispatcher stage in this run;
+  it skips credential checks but remains subject to quota and model checks.
+  Its trace entry has `source: "this_run_survivor"`.
 * **`lock_aggregator` does not disable the chain.** The lock forbids ad-hoc
   per-request `aggregator_model` overrides, not resilience.
 * **Formations override.** A named formation may set its own
   `aggregator_fallbacks`; that list REPLACES the defaults for that formation. An
   explicit empty list (`aggregator_fallbacks: []`) disables the chain for that
   formation; omitting the key inherits `defaults.aggregator_fallbacks`.
-* **Empty list = previous behaviour.** With no chain configured, the engine keeps
-  its single replacement retry (the default aggregator, else the first healthy
-  catalog model), so nothing regresses.
+* **Empty list keeps implicit resilience.** With no configured chain, the default
+  aggregator, implicit replacement and this-run survivor tail remain available.
 * **Still no usable answer?** If no chain entry can serve the merge while at least
   one worker succeeded, the run exits non-zero but the paid worker outputs are
   preserved on the `--json` payload (`worker_outputs`, with

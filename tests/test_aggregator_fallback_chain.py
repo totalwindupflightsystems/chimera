@@ -236,8 +236,12 @@ async def test_unservable_merge_preserves_worker_outputs() -> None:
     """
     worker_model = "deepseek/deepseek-v4-flash"
 
+    worker_calls = 0
+
     def _respond(model: str, messages: list[dict[str, str]], **kw: Any) -> Any:
-        if model == worker_model:
+        nonlocal worker_calls
+        if model == worker_model and worker_calls == 0:
+            worker_calls += 1
             return resp("WORKER OUTPUT", model, tok_in=20, tok_out=30)
         # Every merge candidate dies: the chain, the implicit tail and the
         # schema-free retry all fail, so there is no answer to serve.
@@ -360,8 +364,12 @@ def test_cli_json_preserves_worker_outputs_when_no_fallback_can_serve(
         api_keys={"openrouter": "sk-test-not-a-real-key", "zai": "test-not-a-real-key"},
     )
 
+    worker_calls = 0
+
     def _respond(model: str, messages: list[dict[str, str]], **kw: Any) -> Any:
-        if model == worker_model:
+        nonlocal worker_calls
+        if model == worker_model and worker_calls == 0:
+            worker_calls += 1
             return resp("WORKER OUTPUT", model, tok_in=20, tok_out=30)
         raise GatewayError(GENERIC_ERROR)
 
@@ -446,8 +454,12 @@ def test_rest_502_carries_the_preserved_worker_outputs() -> None:
     doc["formations"] = {"code-review": {"dag": dag}}
     config = ChimeraConfig.model_validate(doc)
 
+    worker_calls = 0
+
     def _respond(model: str, messages: list[dict[str, str]], **kw: Any) -> Any:
-        if model == worker_model:
+        nonlocal worker_calls
+        if model == worker_model and worker_calls == 0:
+            worker_calls += 1
             return resp("WORKER OUTPUT", model, tok_in=20, tok_out=30)
         raise GatewayError(GENERIC_ERROR)
 
