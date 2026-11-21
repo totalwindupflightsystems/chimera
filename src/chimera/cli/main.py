@@ -100,11 +100,12 @@ class MutuallyExclusiveOption(click.Option):
     def handle_parse_result(
         self, ctx: click.Context, opts: Mapping[str, Any], args: list[str]
     ) -> tuple[Any, list[str]]:
-        if opts.get(self.name):
-            clashes = sorted(name for name in self.mutually_exclusive if opts.get(name))
+        own_name = self.name
+        if own_name and opts.get(own_name):
+            clashes = sorted(clash for clash in self.mutually_exclusive if opts.get(clash))
             if clashes:
-                names = [self._display_name(ctx, self.name)] + [
-                    self._display_name(ctx, name) for name in clashes
+                names = [self._display_name(ctx, own_name)] + [
+                    self._display_name(ctx, clash) for clash in clashes
                 ]
                 raise click.UsageError(
                     f"{' and '.join(names)} are mutually exclusive — pick one output mode."
