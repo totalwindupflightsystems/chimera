@@ -2719,3 +2719,28 @@ tasks:
   status: complete
   created_at: '2026-11-21T15:45:14.717488+00:00'
   completed_at: '2026-11-21T16:43:03.835302+00:00'
+- id: CH-MAINT-013
+  title: gitreins tier2 produces no verdict on this repo
+  criteria:
+  - tier2 run exceeding a configured ceiling exits non-zero with named reason + partial
+    verdict artifact; two back-to-back task completes on a scratch task terminate
+    inside the ceiling and the successful one leaves verdict.json under .gitreins/history/
+  status: in_progress
+  created_at: '2026-11-21T17:48:32.108742+00:00'
+- id: CH-MAINT-014
+  title: health test order-dependent isolation fix
+  criteria:
+  - pytest tests/test_health_providers.py::test_successful_ping_logs_no_token_limit_warning
+    -q exits 0 in isolation; fixture state explicit in test body; full suite green;
+    ruff check + format clean
+  status: complete
+  created_at: '2026-11-21T17:48:34.005683+00:00'
+  completed_at: '2026-11-21T18:55:09.059586+00:00'
+- id: DF-CHIMERA-V2-128
+  title: 'transient 429 retry invisible: no log lines, no /metrics counter'
+  criteria:
+  - 'stub upstream 429,429,200: served API log carries one line per retry attempt
+    (attempt number, delay, upstream status); /metrics exposes greppable chimera_retries_total
+    counter; test asserts it increments exactly twice; docs/RESILIENCE.md F7 updated'
+  status: in_progress
+  created_at: '2026-11-21T17:48:35.689684+00:00'

@@ -1,0 +1,49 @@
+{
+  "tick": "chimera-v2-foreman-2026-11-21-17-44-29",
+  "project": "chimera-v2",
+  "workdir": "/home/kara/chimera-v2",
+  "mode": "wave",
+  "slots_formula": "max(1, min(6, 16 - ceil(9.40))) = 6, capped by WAVE_BUDGET=3 -> 3",
+  "wave_budget": 3,
+  "block": "CH-MAINT-014",
+  "block_fill_note": "block has 2 ready rows; slot 3 filled from DF-CHIMERA-V2-135 block per foreman clause 17 (handoff 2026-11-21T20-05Z named DF-128 next)",
+  "base_sha": "20538c6",
+  "plan_review": "posted to kanban chimera-v2 card t_9bc10439, plan-unreviewed (request-review rejected by judge automation: empty response)",
+  "rows": [
+    {
+      "task_id": "CH-MAINT-013",
+      "worktree": "/home/kara/worktrees/chimera-v2-CH-MAINT-013",
+      "branch": "wt/CH-MAINT-013",
+      "base_commit": "20538c6",
+      "worker_model": "openai/gpt-6.1-terra",
+      "worker_provider": "xkiro",
+      "brief": "/tmp/brief-CH-MAINT-013-20261121-174429.txt",
+      "files_seam": ".gitreins/config.yaml (judge ceiling); read-only investigation of ~/gitreins source",
+      "why_this_row": "top DRIVE block CH-MAINT-014 (75% done, smallest remaining); tier2 judge path defect blocks row closure fleet-wide on this repo"
+    },
+    {
+      "task_id": "CH-MAINT-014",
+      "worktree": "/home/kara/worktrees/chimera-v2-CH-MAINT-014",
+      "branch": "wt/CH-MAINT-014",
+      "base_commit": "20538c6",
+      "worker_model": "openai/gpt-6.1-terra",
+      "worker_provider": "xkiro",
+      "brief": "/tmp/brief-CH-MAINT-014-20261121-174429.txt",
+      "files_seam": "tests/test_health_providers.py (+ tests/test_quota_failover.py read-only bisect)",
+      "why_this_row": "second ready row of the driven block; order-dependent test masks health/quota regressions"
+    },
+    {
+      "task_id": "DF-CHIMERA-V2-128",
+      "worktree": "/home/kara/worktrees/chimera-v2-DF-CHIMERA-V2-128",
+      "branch": "wt/DF-CHIMERA-V2-128",
+      "base_commit": "20538c6",
+      "worker_model": "openai/gpt-6.1-terra",
+      "worker_provider": "xkiro",
+      "brief": "/tmp/brief-DF-CHIMERA-V2-128-20261121-174429.txt",
+      "files_seam": "src/chimera retry/metrics path + tests + docs/RESILIENCE.md",
+      "why_this_row": "handoff 2026-11-21T20-05Z: resume DF-135 with DF-128 or DF-129 (one per wave; same retry seam); disjoint from CH-MAINT seams"
+    }
+  ],
+  "status": "dispatched",
+  "dispatched_at": null
+}
