@@ -32,7 +32,9 @@
       "order": 2,
       "worker_model": "glm-5.3-flash",
       "worker_provider": "zai-glm",
-      "status": "queued (dispatched only if CH-MAINT-015 lands with tick time remaining; sequential because both rows patch ~/gitreins and refresh the shared pipx build)"
+      "status": "dispatched (serial refill after CH-MAINT-015 merged; gitreins base pinned to 6f9fc6f1 so the build carries the 015 validator)",
+      "brief": "/tmp/brief-ch-maint-016-foreman-2026-11-22-14-40-46.md",
+      "worktrees": "gitreins wt/chimera-v2-CH-MAINT-016 (worker-created, base 6f9fc6f1); chimera-v2 wt via worktree.sh"
     }
   ],
   "off_by_one_prior_art": [

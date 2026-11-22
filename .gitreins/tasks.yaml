@@ -2746,3 +2746,12 @@ tasks:
   status: complete
   created_at: '2026-11-21T17:48:35.689684+00:00'
   completed_at: '2026-11-22T07:18:03.399437+00:00'
+- id: CH-MAINT-015
+  title: 'Judge lane coherence: refuse incoherent base_url/model pairs before tier1'
+  criteria:
+  - chimera-v2 carries judge-lane evidence docs with measured 400/403/PASS probes
+    and the installed gitreins build refuses an incoherent GITREINS_LLM base_url/model
+    pair with a named reason before tier1 runs
+  status: complete
+  created_at: '2026-11-22T14:44:05.201477+00:00'
+  completed_at: '2026-11-22T15:18:25.372497+00:00'
