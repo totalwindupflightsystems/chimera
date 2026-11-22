@@ -1,0 +1,42 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-22-14-40-46",
+  "project": "chimera-v2",
+  "workdir": "/home/kara/chimera-v2",
+  "mode": "serial",
+  "block": "CH-MAINT-016",
+  "block_progress": "8/10 done, 2 ready rows (CH-MAINT-015, CH-MAINT-016), prio P1",
+  "selection": "block_drive --top 10 ranks CH-MAINT-016 first; matches last tick's residual (events 3084); resume-first satisfied",
+  "wave_sizing": {
+    "nproc": 16,
+    "loadavg_1m_5m_15m": "19.72 28.63 38.22",
+    "slots": 1,
+    "formula": "max(1, min(6, nproc - ceil(loadavg))) = max(1, min(6, 16-20)) = 1",
+    "wave_budget_ceiling": 2,
+    "reason": "box loaded -> serial path; wave floor 1 satisfied by the single dispatch"
+  },
+  "rows": [
+    {
+      "id": "CH-MAINT-015",
+      "title": "gitreins tier2 judge lane arrives incoherent (base_url/model/key): every tier2 iteration 400/403s, INCOMPLETE verdict persisted",
+      "order": 1,
+      "worker_model": "glm-5.3-flash",
+      "worker_provider": "zai-glm",
+      "product_repo": "~/gitreins (worktree /home/kara/gitreins-wt-CH-MAINT-015, branch wt/chimera-v2-CH-MAINT-015, base f9aa97ef)",
+      "evidence_repo": "/home/kara/worktrees/chimera-v2-CH-MAINT-015 (branch wt/CH-MAINT-015, base 2c676fb)",
+      "brief": "/tmp/brief-ch-maint-015-foreman-2026-11-22-14-40-46.md",
+      "status": "dispatched"
+    },
+    {
+      "id": "CH-MAINT-016",
+      "title": "20m tier2 ceiling truncates gitreins task complete re-judges (INCOMPLETE, 0 criteria graded) while fresh judge runs grade PASS in 10-18m",
+      "order": 2,
+      "worker_model": "glm-5.3-flash",
+      "worker_provider": "zai-glm",
+      "status": "queued (dispatched only if CH-MAINT-015 lands with tick time remaining; sequential because both rows patch ~/gitreins and refresh the shared pipx build)"
+    }
+  ],
+  "off_by_one_prior_art": [
+    "data/answers/2798-gitreins-tier2-time-cap-queue-contention-variant.json: tier2 time-cap INCOMPLETE with sub-norm token burn = lane wait, not work; two-starvations rule before any max_time raise",
+    "data/answers/2265-gitreins-judge-detaches-main-repo-head-during-eval.json: judge can detach main-checkout HEAD; run judges in worktrees, verify branch after judge runs"
+  ]
+}
