@@ -2725,8 +2725,9 @@ tasks:
   - tier2 run exceeding a configured ceiling exits non-zero with named reason + partial
     verdict artifact; two back-to-back task completes on a scratch task terminate
     inside the ceiling and the successful one leaves verdict.json under .gitreins/history/
-  status: in_progress
+  status: complete
   created_at: '2026-11-21T17:48:32.108742+00:00'
+  completed_at: '2026-11-22T06:38:49.031667+00:00'
 - id: CH-MAINT-014
   title: health test order-dependent isolation fix
   criteria:
