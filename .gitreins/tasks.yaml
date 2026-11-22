@@ -2743,5 +2743,6 @@ tasks:
   - 'stub upstream 429,429,200: served API log carries one line per retry attempt
     (attempt number, delay, upstream status); /metrics exposes greppable chimera_retries_total
     counter; test asserts it increments exactly twice; docs/RESILIENCE.md F7 updated'
-  status: in_progress
+  status: complete
   created_at: '2026-11-21T17:48:35.689684+00:00'
+  completed_at: '2026-11-22T07:18:03.399437+00:00'
