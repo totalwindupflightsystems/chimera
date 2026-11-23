@@ -1,0 +1,64 @@
+{
+  "tick": "chimera-v2-ops-2026-11-23-14-41-10",
+  "row": "GUARD-MYPY-001",
+  "actor": "chimera-v2-ops",
+  "verdict": "fix_landed_and_verified",
+  "fix_commit": "ed50b7f2f59bac85a12e992670b33610503f2376",
+  "fix_files": ["pyproject.toml", "src/chimera/engine.py"],
+  "headline": "Cold-cache mypy stacked src.src.* diagnostics cured by removing the redundant mypy_path second package base (pyproject) plus one stale type-ignore the stacking masked; guard full PASS on cold cache, with and without the stray src/ symlink.",
+  "red_before": {
+    "measured_at_utc": "2026-11-23T14:43Z",
+    "command": "mypy --no-error-summary --explicit-package-bases --cache-dir <scratch>/cold1 . (repo root, cold cache)",
+    "result": "rc=1, 80 diagnostics, all stacked src.src.* paths/modules: src/chimera/config.py:1441 assignment x40, src/chimera/gateway.py:886 arg-type x40",
+    "artifact": ".coding-hermes/cache scratch preserved under ~/.hermes/cache/scratch/gmypy-001/cold1.txt"
+  },
+  "green_after": [
+    {
+      "at_utc": "2026-11-23T15:10-15:11Z",
+      "command": "mypy --no-error-summary --explicit-package-bases --cache-dir <scratch cold dir> .",
+      "result": "rc=0, zero diagnostics, zero src.src occurrences",
+      "note": "after fix; one transient in-between run showed exactly one real residue: engine.py results._iteration_count carried a stale '# type: ignore[assignment]' that the double-resolution had masked as used — removed in the fix"
+    },
+    {
+      "at_utc": "2026-11-23T15:12Z",
+      "command": "MYPY_CACHE_DIR=<fresh scratch dir> gitreins guard --json",
+      "result": "rc=2 DEGRADED PASS (nothing staged): secrets pass, static_analysis pass ('mypy — clean'), lsp pass, lint/tests skipped no-staged; fresh cache dir 61M built by this very run proves the static_analysis leg ran cold"
+    },
+    {
+      "at_utc": "2026-11-23T15:16Z",
+      "command": "git add pyproject.toml src/chimera/engine.py && MYPY_CACHE_DIR=<fresh scratch dir> gitreins guard --json",
+      "result": "rc=0, non-degraded, all five legs pass (secrets/lint/tests/static_analysis/lsp); diff-mode test lane green on the staged files"
+    },
+    {
+      "at_utc": "2026-11-23T15:16:48Z",
+      "command": "git commit -F <msg> (pre-commit gitreins guard)",
+      "result": "commit ed50b7f lands after FULL suite tier1: secrets/lint/tests(full)/static_analysis/lsp all PASS, guard log .gitreins/logs/guard-20261123T151940.726589Z.log"
+    }
+  ],
+  "coverage_proof": {
+    "method": "mypy --verbose cold run; LOG 'Parsing' lines collected",
+    "result": "all 39 project python files parsed (28 src/chimera + 11 scripts); first-party ids single-named (chimera.config parsed once from this checkout's src/); no second/duplicate id per file"
+  },
+  "attribution_ab": {
+    "context": "foreman tick 498 (concurrent, unpublished at this tick's start) attributed the fault to a stray untracked symlink src/src -> src (created 2026-11-22 19:25, vanished ~14:57Z) and left 'which mechanism' open for the fix owner; its 15:06Z canonical guard re-run (original config, symlink gone) was already PASS",
+    "ab_tests": {
+      "original-config + symlink + .venv + tests in scratch copy": "rc=1, ONE diagnostic (a src/chimera/engine.py results._iteration_count assignment vs StageResult under the stacked-name resolution) — NO 80-stack; symlink alone does not reproduce the historic red",
+      "fixed-config + symlink + .venv + tests in scratch copy": "rc=0, zero diagnostics — the fix is robust even if the symlink ever returns"
+    },
+    "joint_conclusion": "the historic 80-stack was a conjunction (stray src/src symlink era + mypy_path second package base + old tree state resolved per-base); neither factor alone reproduces it today. Both measured green states (15:06Z original config post-symlink; 15:12/15:16Z fixed config with and without symlink) are real, and the committed fix removes the config half of the conjunction permanently."
+  },
+  "unmeasured": {
+    "negative_control": "a deliberately-injected type error in a scratch copy tree to prove the gate still goes red post-fix was approval-blocked (5-minute timeout, rm -rf clause in the command line) and was NOT re-attempted; vacuity is instead bounded by: the same pipeline reported the real unused-ignore error post-fix, and the historic red at 14:43Z is the red-direction proof"
+  },
+  "changed": [
+    "pyproject.toml: mypy_path 'src' -> '' with explanation (editable install already puts this checkout's src/ on the search path; src/chimera/py.typed marks it PEP 561)",
+    "src/chimera/engine.py: removed the stale '# type: ignore[assignment]' on results._iteration_count that the double-resolution masked as used",
+    "no service restarted; no lane touched; no scheduler state touched; scratch A/B trees under ~/.hermes/cache/scratch/gmypy-001 (auto-pruned)"
+  ],
+  "left_alone": [
+    "sibling foreman tick 498 mid-flight unpublished edits in the shared checkout (its event id=3102 audit line and its foreman_note edit on this row) — published bundled with this tick's board commit, attributed to tick 498 inside the payloads themselves",
+    "untracked sibling residue .gitreins/review-state.json, .gitreins/verdicts/, docs/dogfood drafts, evidence dirs — sibling output, untouched",
+    "services, tailscale, 9router lanes — untouched"
+  ],
+  "next_fire": "if a fresh foreman/ops fire finds static_analysis red again with stacked paths, first check for a stray src/ symlink before touching config — the fix is proven to hold with the symlink present, so a reappearance would implicate a different base"
+}
