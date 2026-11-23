@@ -211,6 +211,10 @@ SKIP_NAME_PATTERNS: list[str] = [
     "asr-",
     "-asr",
     "livetranslate",
+    "voxtral",  # Mistral speech/STT family — name-pattern arm (SKIP_FAMILIES
+    #             only matches models.dev's family field, which is absent on
+    #             voxtral rows; leaked into a 2026-11-23 report as a core
+    #             candidate before this fix)
     # Vision-only
     "-vl-",
     "vl-",
