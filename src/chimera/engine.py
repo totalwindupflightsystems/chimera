@@ -1968,7 +1968,7 @@ class Engine:
 
         # Stamp the overall iteration count on the results dict for
         # trace assembly to pick up.
-        results["_iteration_count"] = iteration_pass  # type: ignore[assignment]
+        results["_iteration_count"] = iteration_pass
         return spans, results
 
     async def _execute_stage(

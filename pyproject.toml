@@ -454,7 +454,23 @@ python_version = "3.11"
 # Resolve first-party imports to THIS checkout's `src/` (with the PEP 561 marker
 # `src/chimera/py.typed` present, `chimera.*` is then checked as source instead
 # of read as an untyped installed package).
-mypy_path = "src"
+#
+# GUARD-MYPY-001 (2026-11-23): the value was `src` until this fix. Keeping `src`
+# in mypy_path made src/ a SECOND package base beside the cwd one the guard's
+# `--explicit-package-bases` implies, so every src/chimera file resolved under
+# TWO module ids at once (`chimera.<mod>` via this path entry and
+# `src.<stack>.<mod>` from base "." discovery — src/ has no __init__.py, so it
+# is a namespace component) and each self-import follow stacked one more `src.`
+# prefix: 80 `src.src.*` diagnostics on a cold cache (config.py:1441 x40,
+# gateway.py:886 x40) that warm incremental runs had masked, while a warm cache
+# skipped re-analysis and hid them. The path is no longer needed for source
+# checking: the repo's editable install (venv `_editable_impl_chimera_deliberation.pth`)
+# already puts THIS checkout's src/ on the search path and src/chimera/py.typed
+# marks it PEP 561, so discovery derives `chimera.<mod>` ids from src/chimera's
+# own __init__.py chain. Checked empirically: cold-cache run under the guard's
+# exact CLI is clean, and `mypy --verbose` shows all 28 src/chimera + 11 scripts
+# files still parsed (full coverage kept).
+mypy_path = ""
 
 # Third-party libraries without PEP 561 stubs (structlog, litellm, jsonschema,
 # the click/rich plugin surface, ...). Enumerating them module by module drifts
