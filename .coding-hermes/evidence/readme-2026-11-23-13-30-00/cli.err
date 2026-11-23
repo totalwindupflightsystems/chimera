@@ -1,0 +1,95 @@
+{"formation": "auto", "using": "auto", "event": "unknown_formation", "request_id": "a99ce69361844a35", "level": "warning", "timestamp": "2026-11-23T13:38:15.364444Z"}
+{"msg": "No enabled catalog model has resolved provider credentials; auto formation will use the full enabled catalog and provider calls will fail with auth errors. Set at least one provider API key (e.g. DEEPSEEK_API_KEY) or set auto_formation.restrict_to_credentialed_providers: false in chimera.yaml.", "event": "dispatcher_catalog_no_credentialed_models", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:15.364519Z"}
+{"requested_type": "json_object", "provider": "mock", "event": "gateway_format_removed", "request_id": "a99ce69361844a35", "formation": "auto", "level": "info", "timestamp": "2026-11-23T13:38:15.364634Z"}
+[92m08:38:17 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"model": "mock/m1", "provider": "mock", "attempt": 1, "next_attempt": 2, "delay_ms": 608, "upstream_status": 500, "reason": "server_error", "error": "litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KE", "event": "gateway_retry", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:17.064957Z"}
+[92m08:38:17 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"model": "mock/m1", "provider": "mock", "attempt": 2, "next_attempt": 3, "delay_ms": 1189, "upstream_status": 500, "reason": "server_error", "error": "litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KE", "event": "gateway_retry", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:17.684338Z"}
+[92m08:38:18 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"model": "mock/m1", "attempts": 3, "error": "litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable.", "event": "gateway_retry_exhausted", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:18.882040Z"}
+{"error": "mock/m1 call failed after 3 attempts: provider 'mock' rejected the credentials or none were found: set CHIMERA_LOCAL_FIXTURE_KEY (or the variable named by providers.mock.api_key_env). upstream error: litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable.", "using": "fallback", "event": "dispatcher_call_failed", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:18.882147Z"}
+{"error": "dispatch produced no stages", "event": "dispatcher_parse_failed", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:18.882222Z"}
+{"stages": ["worker_1", "aggregator"], "source": "fallback", "event": "dispatch_auto_done", "request_id": "a99ce69361844a35", "formation": "auto", "level": "info", "timestamp": "2026-11-23T13:38:18.882267Z"}
+{"source": "fallback", "stages": ["worker_1", "aggregator"], "event": "engine_dispatched", "request_id": "a99ce69361844a35", "formation": "auto", "level": "info", "timestamp": "2026-11-23T13:38:18.882348Z"}
+[92m08:38:18 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"model": "mock/m1", "provider": "mock", "attempt": 1, "next_attempt": 2, "delay_ms": 576, "upstream_status": 500, "reason": "server_error", "error": "litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KE", "event": "gateway_retry", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:18.890782Z"}
+[92m08:38:19 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"model": "mock/m1", "provider": "mock", "attempt": 2, "next_attempt": 3, "delay_ms": 791, "upstream_status": 500, "reason": "server_error", "error": "litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KE", "event": "gateway_retry", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:19.474512Z"}
+[92m08:38:20 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"model": "mock/m1", "attempts": 3, "error": "litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable.", "event": "gateway_retry_exhausted", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:20.275355Z"}
+{"stage": "worker_1", "model": "mock/m1", "error": "mock/m1 call failed after 3 attempts: provider 'mock' rejected the credentials or none were found: set CHIMERA_LOCAL_FIXTURE_KEY (or the variable named by providers.mock.api_key_env). upstream error: litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable.", "event": "engine_stage_failed", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:20.275499Z"}
+{"stage": "worker_1", "kind": "worker", "model": "mock/m1", "latency_ms": 1393, "tokens": 0, "started_at": 218829.929854914, "ended_at": 218831.32296012, "event": "engine_stage_done", "request_id": "a99ce69361844a35", "formation": "auto", "level": "info", "timestamp": "2026-11-23T13:38:20.275594Z"}
+{"stage": "aggregator", "total_deps": 1, "degraded": 1, "healthy": 0, "event": "aggregator_partial_inputs", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:20.275708Z"}
+{"stage": "aggregator", "kind": "aggregator", "model": "mock/m1", "n_inputs": 1, "structured": true, "max_prompt_tokens": null, "ranked": false, "event": "aggregator_execute", "request_id": "a99ce69361844a35", "formation": "auto", "level": "info", "timestamp": "2026-11-23T13:38:20.275746Z"}
+{"requested_type": "json_schema", "provider": "mock", "event": "gateway_format_removed", "request_id": "a99ce69361844a35", "formation": "auto", "level": "info", "timestamp": "2026-11-23T13:38:20.275772Z"}
+[92m08:38:20 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"model": "mock/m1", "provider": "mock", "attempt": 1, "next_attempt": 2, "delay_ms": 421, "upstream_status": 500, "reason": "server_error", "error": "litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KE", "event": "gateway_retry", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:20.281839Z"}
+[92m08:38:20 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"model": "mock/m1", "provider": "mock", "attempt": 2, "next_attempt": 3, "delay_ms": 898, "upstream_status": 500, "reason": "server_error", "error": "litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KE", "event": "gateway_retry", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:20.710340Z"}
+[92m08:38:21 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"model": "mock/m1", "attempts": 3, "error": "litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable.", "event": "gateway_retry_exhausted", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:21.616474Z"}
+{"stage": "aggregator", "model": "mock/m1", "error": "mock/m1 call failed after 3 attempts: provider 'mock' rejected the credentials or none were found: set CHIMERA_LOCAL_FIXTURE_KEY (or the variable named by providers.mock.api_key_env). upstream error: litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable.", "event": "engine_stage_failed", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:21.616685Z"}
+{"stage": "aggregator", "model": "mock/m1", "reason": "the configured aggregator itself (its call just failed)", "event": "engine_aggregator_fallback_skipped", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:21.616936Z"}
+{"stage": "aggregator", "total_deps": 1, "degraded": 1, "healthy": 0, "event": "aggregator_partial_inputs", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:21.617029Z"}
+{"stage": "aggregator", "kind": "aggregator", "model": "mock/m1", "n_inputs": 1, "structured": false, "max_prompt_tokens": null, "ranked": false, "event": "aggregator_execute", "request_id": "a99ce69361844a35", "formation": "auto", "level": "info", "timestamp": "2026-11-23T13:38:21.617091Z"}
+[92m08:38:21 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"model": "mock/m1", "provider": "mock", "attempt": 1, "next_attempt": 2, "delay_ms": 541, "upstream_status": 500, "reason": "server_error", "error": "litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KE", "event": "gateway_retry", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:21.629060Z"}
+[92m08:38:22 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"model": "mock/m1", "provider": "mock", "attempt": 2, "next_attempt": 3, "delay_ms": 1191, "upstream_status": 500, "reason": "server_error", "error": "litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KE", "event": "gateway_retry", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:22.183165Z"}
+[92m08:38:23 - LiteLLM:INFO[0m: utils.py:4023 - 
+LiteLLM completion() model= m1; provider = openai
+
+LiteLLM completion() model= m1; provider = openai
+{"model": "mock/m1", "attempts": 3, "error": "litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable.", "event": "gateway_retry_exhausted", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:23.386346Z"}
+{"stage": "aggregator", "kind": "aggregator", "model": "mock/m1", "latency_ms": 1340, "tokens": 0, "started_at": 218831.323103235, "ended_at": 218834.433928074, "event": "engine_stage_done", "request_id": "a99ce69361844a35", "formation": "auto", "level": "info", "timestamp": "2026-11-23T13:38:23.386588Z"}
+{"model": "mock/m1", "reason": "credential", "cooldown_s": 604800.0, "error": "mock/m1 call failed after 3 attempts: provider 'mock' rejected the credentials or none were found: set CHIMERA_LOCAL_FIXTURE_KEY (or the variable named by providers.mock.api_key_env). upstream error: ", "event": "model_blocked_credential", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:23.386708Z"}
+{"model": "mock/m1", "reason": "credential", "cooldown_s": 604800.0, "error": "mock/m1 call failed after 3 attempts: provider 'mock' rejected the credentials or none were found: set CHIMERA_LOCAL_FIXTURE_KEY (or the variable named by providers.mock.api_key_env). upstream error: ", "event": "model_blocked_credential", "request_id": "a99ce69361844a35", "formation": "auto", "level": "warning", "timestamp": "2026-11-23T13:38:23.389201Z"}
+warning: worker 'worker_1' (mock/m1) failed: mock/m1 call failed after 3 attempts: provider 'mock' rejected the credentials or none were found: set CHIMERA_LOCAL_FIXTURE_KEY (or the variable named by 
+providers.mock.api_key_env). upstream error:... [truncated 225 chars]
+  full error: the complete upstream message (424 chars) is in the trace — re-run with --json (or --verbose) to read it
+  credential failure: provider 'mock' rejected the API key for mock/m1.
+  fix: set a valid CHIMERA_LOCAL_FIXTURE_KEY (or unset the stale one) and re-run — the model is excluded from selection until the key changes or the block cooldown expires 
+(/home/kara/chimera-v2/.chimera/blocked-models.json).
+  escape hatch: auto_formation.restrict_to_credentialed_providers: false keeps the full catalog; provider calls still fail until the key is valid.
+warning: worker 'aggregator' (mock/m1) failed: mock/m1 call failed after 3 attempts: provider 'mock' rejected the credentials or none were found: set CHIMERA_LOCAL_FIXTURE_KEY (or the variable named 
+by providers.mock.api_key_env). upstream error:... [truncated 225 chars]
+  full error: the complete upstream message (424 chars) is in the trace — re-run with --json (or --verbose) to read it
+  credential failure: provider 'mock' rejected the API key for mock/m1.
+  fix: set a valid CHIMERA_LOCAL_FIXTURE_KEY (or unset the stale one) and re-run — the model is excluded from selection until the key changes or the block cooldown expires 
+(/home/kara/chimera-v2/.chimera/blocked-models.json).
+  escape hatch: auto_formation.restrict_to_credentialed_providers: false keeps the full catalog; provider calls still fail until the key is valid.
+warning: dispatch degraded — source=fallback (invalid_dag: dispatch produced no stages); the deliberation collapsed to a generic single-worker formation
+error: deliberation produced no usable answer (answer stage 'aggregator' degraded, no merge fallback could serve): mock/m1 call failed after 3 attempts: provider 'mock' rejected the credentials or none were found: set CHIMERA_LOCAL_FIXTURE_KEY (or the variable named by providers.mock.api_key_env). upstream error: litellm.InternalServerError: InternalServerError: OpenAIException - Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable.

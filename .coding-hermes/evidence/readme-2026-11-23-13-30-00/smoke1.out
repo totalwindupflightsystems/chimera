@@ -1,0 +1,12 @@
+service: alive  commit=0eb9232  models=1
+expected commit: origin/main (resolved to 0eb9232e9be888af5ef437425a925a96e18fe536)
+deployment: CURRENT — running commit 0eb9232 == expected commit origin/main: no gap, so no reload is owed.
+providers: 1/1 healthy
+deliberating (formation=simple) ...
+request_id: 14677e08df85479e
+trace.source: preset
+merged answer:
+---
+STUB-OK
+---
+SMOKE PASS: live deliberation returned a merged answer.

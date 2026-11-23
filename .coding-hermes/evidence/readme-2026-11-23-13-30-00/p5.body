@@ -1,0 +1,76 @@
+# HELP chimera_requests_total HTTP requests served, by route template and status class.
+# TYPE chimera_requests_total counter
+chimera_requests_total{method="GET",route="/health",status="2xx"} 1
+chimera_requests_total{method="GET",route="/v1/health",status="2xx"} 1
+chimera_requests_total{method="GET",route="/v1/health/live",status="2xx"} 1
+chimera_requests_total{method="GET",route="/v1/health/ready",status="2xx"} 1
+# HELP chimera_request_errors_total Failed HTTP requests, split by cause (client_error, server_error, exception).
+# TYPE chimera_request_errors_total counter
+# HELP chimera_request_duration_seconds HTTP request duration in seconds, by route template.
+# TYPE chimera_request_duration_seconds histogram
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="0.005"} 0
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="0.01"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="0.025"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="0.05"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="0.1"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="0.25"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="0.5"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="1"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="2.5"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="5"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="10"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="30"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="60"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/health",le="+Inf"} 1
+chimera_request_duration_seconds_sum{method="GET",route="/health"} 0.005415759020252153
+chimera_request_duration_seconds_count{method="GET",route="/health"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="0.005"} 0
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="0.01"} 0
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="0.025"} 0
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="0.05"} 0
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="0.1"} 0
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="0.25"} 0
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="0.5"} 0
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="1"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="2.5"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="5"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="10"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="30"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="60"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health",le="+Inf"} 1
+chimera_request_duration_seconds_sum{method="GET",route="/v1/health"} 0.689585089974571
+chimera_request_duration_seconds_count{method="GET",route="/v1/health"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="0.005"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="0.01"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="0.025"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="0.05"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="0.1"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="0.25"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="0.5"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="1"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="2.5"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="5"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="10"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="30"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="60"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/live",le="+Inf"} 1
+chimera_request_duration_seconds_sum{method="GET",route="/v1/health/live"} 0.0006711629976052791
+chimera_request_duration_seconds_count{method="GET",route="/v1/health/live"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="0.005"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="0.01"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="0.025"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="0.05"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="0.1"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="0.25"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="0.5"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="1"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="2.5"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="5"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="10"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="30"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="60"} 1
+chimera_request_duration_seconds_bucket{method="GET",route="/v1/health/ready",le="+Inf"} 1
+chimera_request_duration_seconds_sum{method="GET",route="/v1/health/ready"} 0.0016405080095864832
+chimera_request_duration_seconds_count{method="GET",route="/v1/health/ready"} 1
+# HELP chimera_retries_total Upstream retry attempts (F7), by cause.
+# TYPE chimera_retries_total counter
