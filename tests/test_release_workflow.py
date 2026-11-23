@@ -19,6 +19,12 @@ no provider keys:
   (simple + speed), and no head -1 / serverInfo handshake survives;
 * the fresh-user journey (config init + real CLI run with the deterministic
   GATE-OK merged-answer assertion) is intact;
+* the same gate's billing arm is CLASSIFIED, not unqualified
+  (RELEASE-FINDING-2026-11-21-001): a FAILED bare run whose log carries the
+  402 Insufficient Balance signature is a non-blocking warning with the
+  recorded INT-CI-022 reason (mirroring the ``integration`` job), replayed
+  behaviorally through the real run block against an offline stand-in venv —
+  billing green, non-billing red, funded-key GATE-OK gating unchanged;
 * the 0.2.3 lazy-pollution shape is replayed through the probe's real
   validators: the OLD shallow gate accepts it, the NEW gate rejects it;
 * the README-documented quickstart CLI SURFACE is asserted against the
@@ -265,6 +271,327 @@ def test_fresh_user_journey_is_intact(release_verify_run_blocks: str) -> None:
     assert "test -f chimera.yaml" in release_verify_run_blocks
     assert '/tmp/release-venv/bin/chimera run "Reply with exactly: GATE-OK"' in release_verify_run_blocks
     assert 'grep -q "GATE-OK" /tmp/gate_run.out' in release_verify_run_blocks
+
+
+# --- billing-classified quickstart E2E (RELEASE-FINDING-2026-11-21-001) ------- #
+#
+# Every tag run failed the DF-CHIMERA-0906-1 gate for a BILLING state, not a
+# code defect: the release-verify job gets only the repo's single (unfunded)
+# DEEPSEEK_API_KEY, so the bare run died with `litellm.BadRequestError:
+# OpenAIException - Insufficient Balance` (HTTP 402) and the unqualified step
+# failure turned the whole release gate red. The `integration` job already
+# classifies exactly this signature (INT-CI-022); the quickstart E2E step now
+# mirrors it — config init + the merged-answer assertion keep their product
+# value, a FAILED run whose log carries the billing marker is a classified
+# non-blocking warning (annotation + step summary, exit 0), and ANY other
+# failure is an error annotation + exit 1. The contract is judged three ways:
+# static pins over the real workflow, behavioral replay of the REAL run block
+# through bash against an offline stand-in venv, and mutation tests (a mutated
+# COPY must fail the contract; the real file is never edited).
+
+#: The live tag-run failure shape (mirrors the request id recorded in the
+#: workflow's integration-job comment; any billing text greps the same marker).
+_BILLING_RUN_STDOUT = (
+    "litellm.BadRequestError: OpenAIException - Insufficient Balance\n"
+    "(request_id: 399f8709-7f03-401e-8e7e-0ff5606b1c2e)"
+)
+
+#: The classified reason — annotation, stdout and step summary quote one string.
+QUICKSTART_BILLING_REASON = (
+    "quickstart E2E non-blocking: provider account unfunded (402 Insufficient "
+    "Balance) — tracked as INT-CI-022; funding is an owner decision"
+)
+
+_BILLING_WARNING_TITLE = "::warning title=quickstart E2E is non-blocking (INT-CI-022)::"
+_QUICKSTART_ERROR_TITLE = "::error title=quickstart E2E regression, not billing::"
+
+
+def _quickstart_e2e_step(job: dict) -> dict:
+    """The (single) release-verify step carrying the GATE-OK bare run."""
+    steps = [s for s in job["steps"] if "GATE-OK" in s.get("run", "")]
+    assert len(steps) == 1, f"expected exactly one quickstart-E2E step, found {len(steps)}"
+    return steps[0]
+
+
+def _assert_quickstart_e2e_billing_classification(job: dict) -> dict:
+    """Assert the classification contract; return the step it pinned.
+
+    The whole contract lives in this one helper so the mutation tests judge a
+    mutated COPY by exactly the assertions the real workflow passes.
+    """
+    step = _quickstart_e2e_step(job)
+    run = step["run"]
+
+    # Product value preserved: config init, the file assertion, the bounded
+    # bare run and the deterministic merged-answer assertion all still gate.
+    assert "/tmp/release-venv/bin/chimera config init" in run
+    assert "test -f chimera.yaml && echo 'config init OK'" in run
+    assert 'timeout 180 /tmp/release-venv/bin/chimera run "Reply with exactly: GATE-OK"' in run
+    assert 'grep -q "GATE-OK" /tmp/gate_run.out' in run
+    assert "echo 'bare run merged answer OK'" in run
+
+    # The classifier keys on the run LOG, and `tee` cannot mask the run's
+    # failure: pipefail is explicit (Actions' `bash -e` default lacks it) and
+    # the pipeline's status is captured instead of tripping errexit.
+    assert "set -o pipefail" in run
+    assert "grep -c 'Insufficient Balance' /tmp/gate_run.out" in run
+
+    # Classified non-blocking: warning annotation + step summary + the recorded
+    # INT-CI-022 reason, quoting one shared string.
+    assert _BILLING_WARNING_TITLE in run
+    assert QUICKSTART_BILLING_REASON in run
+    assert "GITHUB_STEP_SUMMARY" in run
+
+    # The hard-fail arm survives: a non-billing failure is a loud error + exit 1.
+    assert _QUICKSTART_ERROR_TITLE in run
+    assert "exit 1" in run
+
+    # The gate must stay a gate: classification lives INSIDE the step, never as
+    # a blanket escape that would silence every other release-verify failure.
+    assert not job.get("continue-on-error"), (
+        "release-verify must not blanket-ignore failures with continue-on-error — "
+        "classification belongs inside the quickstart E2E step"
+    )
+    assert "continue-on-error" not in step, "the E2E step itself must hard-fail non-billing errors"
+
+    # Key surface unchanged: still exactly the one provider credential.
+    assert step.get("env") == {"DEEPSEEK_API_KEY": "${{ secrets.DEEPSEEK_API_KEY }}"}, step.get("env")
+    return step
+
+
+def test_quickstart_e2e_classifies_billing_and_keeps_the_gates(workflow: dict) -> None:
+    """RELEASE-FINDING-2026-11-21-001: billing classified, product gates intact."""
+    step = _assert_quickstart_e2e_billing_classification(workflow["jobs"]["release-verify"])
+    assert "DF-CHIMERA-0906-1" in step["name"]
+
+
+#: Offline stand-in for the installed `chimera` console script: `config init`
+#: writes the template file (or fails hard), `run` emits a scripted answer and
+#: exit code — the two behaviours the E2E block consumes.
+_FAKE_QUICKSTART_CLI_TEMPLATE = '''#!__INTERPRETER__
+"""Offline stand-in for the installed chimera console script (test fixture)."""
+import sys
+
+ARGS = sys.argv[1:]
+CONFIG_INIT_RC = __CONFIG_INIT_RC__
+RUN_STDOUT = __RUN_STDOUT__
+RUN_RC = __RUN_RC__
+
+if ARGS[:2] == ["config", "init"]:
+    if CONFIG_INIT_RC != 0:
+        print("config init failed (fixture)", file=sys.stderr)
+        raise SystemExit(CONFIG_INIT_RC)
+    with open("chimera.yaml", "w", encoding="utf-8") as fh:
+        fh.write("server: {}\\n")
+    print("Created chimera.yaml")
+    raise SystemExit(0)
+if ARGS[:1] == ["run"]:
+    print(RUN_STDOUT)
+    raise SystemExit(RUN_RC)
+print("unexpected args: %r" % (ARGS,), file=sys.stderr)
+raise SystemExit(9)
+'''
+
+
+def _execute_quickstart_e2e_block(
+    run_block: str,
+    tmp_path: Path,
+    *,
+    run_stdout: str,
+    run_rc: int,
+    config_init_rc: int = 0,
+) -> subprocess.CompletedProcess:
+    """Drive the ACTUAL run block through bash against the offline stand-in.
+
+    GitHub Actions executes ``run:`` blocks on Linux with ``bash -e {0}``; the
+    driver reproduces that (errexit on) so hard-gate behaviour matches the
+    runner. Every literal ``/tmp`` path in the block is remapped into a
+    per-test sandbox (the stand-in venv lives at ``<sandbox>/release-venv``),
+    so the machine's /tmp is never touched.
+    """
+    sandbox = tmp_path / "tmp"
+    sandbox.mkdir(parents=True, exist_ok=True)
+    bindir = sandbox / "release-venv" / "bin"
+    bindir.mkdir(parents=True, exist_ok=True)
+    body = (
+        _FAKE_QUICKSTART_CLI_TEMPLATE.replace("__INTERPRETER__", sys.executable)
+        .replace("__CONFIG_INIT_RC__", repr(config_init_rc))
+        .replace("__RUN_STDOUT__", repr(run_stdout))
+        .replace("__RUN_RC__", repr(run_rc))
+    )
+    cli = bindir / "chimera"
+    cli.write_text(body, encoding="utf-8")
+    cli.chmod(0o755)
+
+    assert "/tmp" in run_block, "premise broken: the block lost its /tmp paths"
+    sandboxed = run_block.replace("/tmp", str(sandbox))
+    assert "/tmp" not in sandboxed.replace(str(sandbox), ""), (
+        "premise broken: a raw /tmp path survived the sandbox remap"
+    )
+
+    script = tmp_path / "quickstart-e2e.sh"
+    script.write_text(sandboxed, encoding="utf-8")
+    return subprocess.run(
+        ["bash", "-e", str(script)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "HOME": str(tmp_path),
+            "DEEPSEEK_API_KEY": "ci-unfunded-account",
+            "GITHUB_STEP_SUMMARY": str(tmp_path / "step-summary.md"),
+        },
+    )
+
+
+def _assert_billing_scenario_green(proc: subprocess.CompletedProcess, tmp_path: Path) -> None:
+    """The classified-billing outcome, judged from an executed block."""
+    assert proc.returncode == 0, f"billing failure must classify non-blocking:\n{proc.stdout}\n{proc.stderr}"
+    assert _BILLING_WARNING_TITLE + QUICKSTART_BILLING_REASON in proc.stdout
+    assert _QUICKSTART_ERROR_TITLE not in proc.stdout
+    summary = (tmp_path / "step-summary.md").read_text(encoding="utf-8")
+    assert "### Quickstart E2E — non-blocking (INT-CI-022)" in summary
+    assert QUICKSTART_BILLING_REASON in summary
+    assert "bare run exit code: 1" in summary
+
+
+def test_quickstart_e2e_block_classifies_the_live_billing_failure(tmp_path: Path) -> None:
+    """Billing marker in a FAILED run -> classified non-blocking: job green.
+
+    The live 402 shape replayed through the real workflow block: exit 0 with
+    the warning annotation and the recorded INT-CI-022 reason, without faking
+    a merged answer.
+    """
+    step = _quickstart_e2e_step(_load_workflow()["jobs"]["release-verify"])
+    proc = _execute_quickstart_e2e_block(step["run"], tmp_path, run_stdout=_BILLING_RUN_STDOUT, run_rc=1)
+    _assert_billing_scenario_green(proc, tmp_path)
+    assert "bare run merged answer OK" not in proc.stdout, "a classified skip must not fake the merged answer"
+    gate_log = (tmp_path / "tmp" / "gate_run.out").read_text(encoding="utf-8")
+    assert "GATE-OK" not in gate_log, "premise broken: the billing fixture must not answer GATE-OK"
+
+
+def test_quickstart_e2e_block_hard_fails_a_non_billing_regression(tmp_path: Path) -> None:
+    """A failed run WITHOUT the billing signature is still a job red."""
+    step = _quickstart_e2e_step(_load_workflow()["jobs"]["release-verify"])
+    proc = _execute_quickstart_e2e_block(step["run"], tmp_path, run_stdout="KeyError: 'formation'", run_rc=1)
+    assert proc.returncode == 1, f"non-billing failure must hard-fail:\n{proc.stdout}\n{proc.stderr}"
+    assert _QUICKSTART_ERROR_TITLE in proc.stdout
+    assert "no 'Insufficient Balance' in its log" in proc.stdout
+    assert _BILLING_WARNING_TITLE not in proc.stdout
+    assert not (tmp_path / "step-summary.md").exists(), "no billing summary for a regression"
+
+
+def test_quickstart_e2e_block_hard_fails_a_silent_zero_exit(tmp_path: Path) -> None:
+    """Exit 0 without GATE-OK is a regression — billing text changes nothing.
+
+    The classifier keys on FAILED runs: an exit-0 run without the
+    deterministic answer is a product defect even when its log mentions
+    billing, so the billing branch can never swallow a merged-answer defect.
+    """
+    step = _quickstart_e2e_step(_load_workflow()["jobs"]["release-verify"])
+    proc = _execute_quickstart_e2e_block(
+        step["run"], tmp_path, run_stdout="Insufficient Balance mentioned; no answer", run_rc=0
+    )
+    assert proc.returncode == 1, f"exit-0-without-answer must hard-fail:\n{proc.stdout}\n{proc.stderr}"
+    assert _QUICKSTART_ERROR_TITLE in proc.stdout
+    assert "exited 0 but its output never contained GATE-OK" in proc.stdout
+    assert _BILLING_WARNING_TITLE not in proc.stdout
+
+
+def test_quickstart_e2e_block_gates_green_when_the_key_is_funded(tmp_path: Path) -> None:
+    """GREEN control: a funded key answers -> the merged answer gates as before."""
+    step = _quickstart_e2e_step(_load_workflow()["jobs"]["release-verify"])
+    proc = _execute_quickstart_e2e_block(step["run"], tmp_path, run_stdout="GATE-OK", run_rc=0)
+    assert proc.returncode == 0, f"funded-key run must pass:\n{proc.stdout}\n{proc.stderr}"
+    assert "config init OK" in proc.stdout
+    assert "bare run merged answer OK" in proc.stdout
+    assert "::warning" not in proc.stdout and "::error" not in proc.stdout
+    assert not (tmp_path / "step-summary.md").exists()
+
+
+def test_quickstart_e2e_block_keeps_config_init_a_hard_gate(tmp_path: Path) -> None:
+    """config init is local + keyless — its failure can never classify."""
+    step = _quickstart_e2e_step(_load_workflow()["jobs"]["release-verify"])
+    proc = _execute_quickstart_e2e_block(
+        step["run"], tmp_path, run_stdout="GATE-OK", run_rc=0, config_init_rc=3
+    )
+    assert proc.returncode != 0, f"config init failure must hard-fail:\n{proc.stdout}\n{proc.stderr}"
+    assert _BILLING_WARNING_TITLE not in proc.stdout
+    assert not (tmp_path / "tmp" / "chimera.yaml").exists()
+
+
+def _assert_mutated_quickstart_e2e_fails(tmp_path: Path, mutate: Callable[[dict], None], match: str) -> None:
+    """A mutated COPY of ci.yml must FAIL the contract (the real file is untouched)."""
+    doc = _load_workflow()
+    mutate(doc["jobs"]["release-verify"])
+    mutated = _load_workflow(_write_workflow_copy(tmp_path, doc))
+    with pytest.raises(AssertionError, match=re.escape(match)):
+        _assert_quickstart_e2e_billing_classification(mutated["jobs"]["release-verify"])
+
+
+def test_dropping_the_billing_marker_grep_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: without the billing grep there is no classification to trust."""
+
+    def drop_grep(job: dict) -> None:
+        step = _quickstart_e2e_step(job)
+        line = "billing=$(grep -c 'Insufficient Balance' /tmp/gate_run.out 2>/dev/null || true)"
+        assert line in step["run"], "premise broken: the billing grep changed shape"
+        step["run"] = step["run"].replace(line, "billing=0")
+        assert "grep -c 'Insufficient Balance'" not in step["run"]
+
+    _assert_mutated_quickstart_e2e_fails(tmp_path, drop_grep, "grep -c 'Insufficient Balance'")
+
+
+def test_dropping_the_warning_annotation_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: an un-annotated classified skip is just a silent green."""
+
+    def drop_warning(job: dict) -> None:
+        step = _quickstart_e2e_step(job)
+        line = f'  echo "{_BILLING_WARNING_TITLE}${{REASON}}"'
+        assert line in step["run"], "premise broken: the warning line changed shape"
+        step["run"] = step["run"].replace(line, "")
+        assert _BILLING_WARNING_TITLE not in step["run"]
+
+    _assert_mutated_quickstart_e2e_fails(tmp_path, drop_warning, "quickstart E2E is non-blocking")
+
+
+def test_dropping_the_hard_fail_arm_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: classifying EVERYTHING green would erase the gate's teeth."""
+
+    def drop_exit_1(job: dict) -> None:
+        step = _quickstart_e2e_step(job)
+        assert "exit 1" in step["run"], "premise broken: no hard-fail arm to drop"
+        step["run"] = step["run"].replace("exit 1", "exit 0")
+        assert "exit 1" not in step["run"]
+
+    _assert_mutated_quickstart_e2e_fails(tmp_path, drop_exit_1, "exit 1")
+
+
+def test_job_level_continue_on_error_fails_the_pin(tmp_path: Path) -> None:
+    """NEGATIVE: blanket continue-on-error would soften EVERY release-verify step."""
+
+    def add_blanket_escape(job: dict) -> None:
+        job["continue-on-error"] = True
+
+    _assert_mutated_quickstart_e2e_fails(tmp_path, add_blanket_escape, "continue-on-error")
+
+
+def test_rehardening_the_billing_branch_is_red_proven_behaviorally(tmp_path: Path) -> None:
+    """NEGATIVE (behavioral RED proof): a copy that hard-fails the classified
+    billing branch puts the release gate back into the red-on-billing state
+    this row removes — the replay catches it. The real workflow is never
+    edited; the mutation lives only in the in-memory copy under test.
+    """
+    step = _quickstart_e2e_step(_load_workflow()["jobs"]["release-verify"])
+    anchor = 'matches the recorded INT-CI-022 state."'
+    assert step["run"].count(anchor) == 1, "premise broken: the classified-exit anchor changed shape"
+    mutated = step["run"].replace(f"{anchor}\n  exit 0", f"{anchor}\n  exit 1")
+    assert mutated != step["run"], "premise broken: the classified exit 0 was not found"
+    proc = _execute_quickstart_e2e_block(mutated, tmp_path, run_stdout=_BILLING_RUN_STDOUT, run_rc=1)
+    with pytest.raises(AssertionError):
+        _assert_billing_scenario_green(proc, tmp_path)
 
 
 # --- 0.2.3 lazy-pollution replay ---------------------------------------------- #
