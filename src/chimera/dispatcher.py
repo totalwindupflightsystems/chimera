@@ -31,7 +31,7 @@ from chimera.config import (
     credentialed_enabled_models,
     model_credential_fingerprint,
 )
-from chimera.exceptions import DagShapeError
+from chimera.exceptions import BudgetExhaustedError, DagShapeError
 from chimera.gateway import Gateway, GatewayError, GatewayResponse
 
 log = structlog.get_logger("chimera.dispatcher")
@@ -1175,6 +1175,20 @@ class Dispatcher:
             )
         except GatewayError as exc:
             log.warning("dispatcher_call_failed", error=str(exc), using="fallback")
+            return GatewayResponse(text="{}", model=model, tokens_input=0, tokens_output=0)
+        except BudgetExhaustedError as exc:
+            # RELEASE-FINDING-2026-11-21-002: the design call is a gateway call
+            # like any other, so quota exhaustion degrades to the same `{}` fallback
+            # (PERF-2 contract) instead of escaping as a raw BudgetExhaustedError.
+            # Unlike a GatewayError, the quota class must ALSO reach the
+            # DF-CHIMERA-V2-130 filter, which runs AFTER this call returns
+            # (engine._apply_quota_blocked_models) — record the block here, the
+            # same way stage failures record theirs (_collect_worker_failures),
+            # so the dead provider is excluded and, when nothing healthy is left,
+            # the run raises the classified NoHealthyCandidateError (503
+            # no_healthy_candidate) that an explicit formation already returns.
+            blocked_models.shared_registry.record_failure(model, exc)
+            log.warning("dispatcher_call_failed", error=str(exc), using="fallback", reason="quota")
             return GatewayResponse(text="{}", model=model, tokens_input=0, tokens_output=0)
 
 

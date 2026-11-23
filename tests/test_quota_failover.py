@@ -23,7 +23,12 @@ What these tests pin:
   ``BudgetExhaustedError`` on the merge no longer escapes as a 500),
 * when NOTHING healthy is left, the answer is a machine-readable 503 naming
   every skipped candidate (provider + model + failure class), and no call is
-  spent discovering that.
+  spent discovering that,
+* the SAME all-quota-dead deployment on the bare (no formation) ``auto`` path
+  answers the same classified 503 instead of raising ``BudgetExhaustedError``
+  out of the request (RELEASE-FINDING-2026-11-21-002): the dispatcher design
+  call failing is caught, the block is recorded, and the DF-130 filter turns
+  it into ``NoHealthyCandidateError``.
 
 Wiring, not mocks of the thing under test: everything below drives the real
 ``create_app`` -> route -> ``Engine.deliberate`` -> selection -> gateway path.
@@ -54,6 +59,7 @@ from chimera.blocked_models import (  # noqa: E402
     is_quota_error,
 )
 from chimera.config import ChimeraConfig  # noqa: E402
+from chimera.dispatcher import Dispatcher  # noqa: E402
 from chimera.engine import Engine  # noqa: E402
 from chimera.exceptions import BudgetExhaustedError, NoHealthyCandidateError  # noqa: E402
 from chimera.gateway import GatewayResponse  # noqa: E402
@@ -573,3 +579,133 @@ def test_missing_credentials_alone_is_not_a_no_candidate_error() -> None:
 
     assert result.answer_degraded is False  # nothing was excluded; the calls ran
     assert gateway.calls != []
+
+
+# --------------------------------------------------------------------------- #
+# 7. The bare (no formation) auto path converges on the SAME classified error
+#    (RELEASE-FINDING-2026-11-21-002)
+# --------------------------------------------------------------------------- #
+
+
+def _dead_only_config() -> ChimeraConfig:
+    """The incident shape: ONE provider, quota-dead, and it IS the dispatcher.
+
+    The release-verify traceback (run 44912051562) died on the dispatcher model
+    itself — ``BudgetExhaustedError('Budget exhausted for model
+    deepseek/deepseek-v4-flash (provider: deepseek)')`` raised out of
+    ``dispatcher._dispatch_auto`` — because on ``auto`` the design call runs
+    BEFORE the DF-CHIMERA-V2-130 quota filter ever sees the run.  With no other
+    provider configured, ``auto`` must answer the same classified 503 an
+    explicit formation answers.
+    """
+    cfg = ChimeraConfig.model_validate(
+        {
+            "provider_discovery": False,
+            "providers": {
+                "deepseek": {"base_url": "https://api.deepseek.com/v1"},
+            },
+            "models": {
+                DEAD_MODEL: {
+                    "provider": "deepseek",
+                    "cost_tier": "budget",
+                    "categories": {
+                        "code": 95.0,
+                        "analysis": 85.0,
+                        "design": 40.0,
+                        "audit": 60.0,
+                        "reasoning": 80.0,
+                    },
+                },
+                DEAD_MODEL_2: {
+                    "provider": "deepseek",
+                    "cost_tier": "budget",
+                    "categories": {
+                        "code": 88.0,
+                        "analysis": 80.0,
+                        "design": 50.0,
+                        "audit": 55.0,
+                        "reasoning": 75.0,
+                    },
+                },
+            },
+            "defaults": {
+                "dispatcher": DEAD_MODEL_2,
+                "default_worker": DEAD_MODEL,
+                "default_aggregator": DEAD_MODEL,
+            },
+            "formations": {
+                "auto": {"mode": "auto"},
+                "simple": {"workers": 2, "aggregator": "default"},
+            },
+            "observability": {"log_level": "warning", "trace_enabled": False, "langfuse": {"enabled": False}},
+            "server": {"host": "127.0.0.1", "port": 8000},
+        }
+    )
+    # The key is PRESENT — the account is simply out of budget.  A missing key
+    # is a different failure class and keeps its own (auth-error) behaviour.
+    cfg.api_keys.update({"deepseek": "«redacted:sk-…»"})
+    return cfg
+
+
+def test_quota_dead_auto_dispatch_returns_machine_readable_503() -> None:
+    """Bare request (no formation), cold health cache → 503 no_healthy_candidate.
+
+    Pre-fix this raised ``BudgetExhaustedError`` out of the request (the raw
+    traceback of the release-verify run).  The health cache is deliberately
+    None here: the ONLY quota signal is the block the dispatcher's catch must
+    record, so this test exercises BOTH halves of the fix — without the catch
+    the exception escapes; without the record the run proceeds and dies as a
+    bare 502 on stage failures.
+    """
+    cfg = _dead_only_config()
+    gateway = _transport()
+    client = _client(cfg, gateway, None)  # cold cache: only the failure itself signals
+
+    response = client.post("/v1/deliberate", json={"prompt": "explain the release"})
+
+    assert response.status_code == 503, response.text
+    error = response.json()["error"]
+    assert error["type"] == "no_healthy_candidate"
+    assert "No healthy candidate" in error["message"]
+    # Every configured candidate is named, with its provider and failure class.
+    attempts = error["attempts"]
+    assert {a["model"] for a in attempts} == {DEAD_MODEL, DEAD_MODEL_2}
+    assert {a["provider"] for a in attempts} == {"deepseek"}
+    assert {a["error_class"] for a in attempts} == {"quota"}
+    # The block carries its own short TTL → the 503 tells the caller when to retry.
+    assert response.headers.get("Retry-After") is not None
+    # Exactly ONE provider call was spent discovering this — the dispatcher
+    # design call itself; no worker/aggregator/merge stage was attempted.
+    assert _calls(gateway) == [DEAD_MODEL_2]
+
+
+def test_auto_dispatch_quota_dead_raises_no_healthy_candidate_not_budget_error() -> None:
+    """Engine level: the bare ``auto`` deliberation raises the classified error."""
+    cfg = _dead_only_config()
+    engine = Engine(cfg, _transport())
+
+    with pytest.raises(NoHealthyCandidateError) as excinfo:
+        asyncio.run(engine.deliberate("hello"))
+
+    assert not isinstance(excinfo.value, BudgetExhaustedError)
+    attempts = excinfo.value.attempts
+    assert {a["model"] for a in attempts} == {DEAD_MODEL, DEAD_MODEL_2}
+    assert all(a["error_class"] == "quota" for a in attempts)
+    assert all(a["provider"] == "deepseek" for a in attempts)
+
+
+def test_quota_dead_dispatcher_call_falls_back_and_records_block() -> None:
+    """The design call itself: `{}` fallback contract kept, quota block recorded.
+
+    PERF-2: a failed dispatcher call must still yield a usable fallback outcome
+    (`{}` → generic formation, ``source='fallback'``) — for a quota-dead design
+    call it must ALSO leave the block that ``_apply_quota_blocked_models``
+    consumes, which is what turns the run into the classified 503.
+    """
+    cfg = _dead_only_config()
+    outcome = asyncio.run(Dispatcher(cfg, _transport()).dispatch("task", "auto"))
+
+    assert outcome.result.source == "fallback"
+    assert outcome.response.text == "{}"
+    assert blocked_models.shared_registry.block_reason(DEAD_MODEL_2) == REASON_QUOTA
+    assert blocked_models.shared_registry.is_blocked(DEAD_MODEL_2)
