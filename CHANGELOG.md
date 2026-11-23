@@ -4,7 +4,10 @@ All notable changes to Chimera will be documented in this file.
 
 ## [Unreleased]
 
-Nothing yet — 0.3.0 is the cut from this tree.
+### Fixed
+
+- **`X-Chimera-Timeout` is honoured and validated on `/v1/chat/completions`** (DF-CHIMERA-V2-116). The header was documented for the REST surface but the OpenAI-compatible chat route silently ignored it, so a caller asking for a smaller budget paid the full unbounded wall time. It now applies with the same validation as `/v1/deliberate`, and chat idempotency keys include the exact timeout header so distinct budgets cannot replay one another.
+- **Retry jitter is decorrelated per call** (DF-CHIMERA-V2-127). Backoff jitter was seeded from the attempt number (`hash(str(attempt))`), so every concurrent caller drew the same delay and retried in lock-step — 4 in-flight requests retried within 0.2 s of one another. Each call now draws its own jitter, and the pre-jitter cap is preserved rather than re-clamped, keeping retry timing semantics unchanged.
 
 ## [0.3.0] — 2026-11-21
 
