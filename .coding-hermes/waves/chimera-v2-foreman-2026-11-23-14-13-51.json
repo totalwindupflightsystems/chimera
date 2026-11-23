@@ -1,0 +1,24 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-23-14-13-51",
+  "block": "RELEASE-FINDING-2026-11-21-008",
+  "posture": "SERIAL (WAVE_BUDGET=1 hard ceiling; slots=max(1,16-ceil(16.77))=1 on 16 cores at load 16.77)",
+  "created_at": "2026-11-23T14:25:00-05:00",
+  "rows": [
+    {
+      "id": "RELEASE-FINDING-2026-11-21-001",
+      "priority": "P1",
+      "title": "release-verify red on every tag: quickstart E2E depends on unfunded DeepSeek account",
+      "worktree": "/home/kara/worktrees/chimera-v2-RELEASE-FINDING-2026-11-21-001",
+      "branch": "wt/RELEASE-FINDING-2026-11-21-001",
+      "base_sha": "50cd094",
+      "brief": "/tmp/brief-RELEASE-FINDING-2026-11-21-001.md",
+      "model": "glm-5.3-flash",
+      "provider": "zai-glm",
+      "gitreins_task": "RELEASE-FINDING-2026-11-21-001 (created+started pre-dispatch)"
+    }
+  ],
+  "parallel_foreman_track": [
+    "RELEASE-FINDING-2026-11-21-008 verification-close (readme-lane evidence 50cd094 + fresh live probe)",
+    "RELEASE-FINDING-2026-11-21-004 verification-close pending smoke_live.py CODE-CURRENT proof"
+  ]
+}
