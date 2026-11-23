@@ -1264,3 +1264,35 @@ docker_build OK; `ci-pass` FAIL is `act` dying in `setup/index.js`, not a red re
 re-runnable probes:
 `.coding-hermes/evidence/chimera-v2-dogfood-2026-11-20-06-01-48/run33-retry-resilience/`
 (`stub429.py` + `probe_retry.py` for arrivals, `retry_after.sh` for the header arms).
+
+## Update 2026-11-23 (run 35) — the DF-130 fallback is REAL, and three surfaces timed
+
+Verified against the LIVE deployed instance (`:8765`, commit `0eb9232`, contains the DF-130 fix;
+board-only delta to HEAD):
+
+- **A credential-dead provider no longer sinks a deliberation.** Force it with
+  `allowed_models=["cliproxy/deepseek,deepseek-v4-flash"]`: both workers fail after 3 attempts,
+  the request still returns **200 with a real answer in 3.63 s** (aggregator-only merge). Failed
+  worker spans carry `degraded=true` and a literal `[stage … unavailable: <full upstream error>]`
+  response — never a fabricated partial.
+- **Read `trace.worker_failures`, not `degraded_reasons`, for failure stories.** The top-level
+  `degraded_reasons` is truncation-only by spec (`engine.py:330`): after a worker-layer wipeout it
+  is `[]` and the answer still reads as a normal multi-model merge (`DF-CHIMERA-V2-111-R2`).
+- **Auth:** `/v1/deliberate` and `/v1/chat/completions` need `Authorization: Bearer` or `X-API-Key`
+  (env-mode `CHIMERA_API_KEY`); missing key = honest 401 naming both. `/v1/health`, `/v1/models`,
+  `/v1/formations`, `/openapi.json` are open.
+- **Latency cheat-sheet (one-line prompts):** REST `speed` 3.75 s cold / 4.61 s warm; CLI
+  `--formation speed` 5.77 s; CLI default `auto` **79 s** (dispatcher + `deepseek-v4-pro`). The
+  quickstart's first command is the slow one — pick the formation before you pick a fight with
+  the clock (`DF-CHIMERA-V2-137`). Warm/cold is jitter, not product: overhead stays ≤0.55 s
+  (run 34 stub floor).
+- **Config:** discovery is walk-up-from-cwd; from `~` you get a one-line refusal. The documented
+  pin is `CHIMERA_CONFIG=<path>` (README.md:123) — but the refusal only names `chimera config
+  init` (`DF-CHIMERA-V2-136`).
+- **Error contracts verified exact:** unknown formation REST 422 / CLI exit 2 with the available
+  list; malformed `X-Chimera-Timeout` 400; missing prompt 422; `--json --quiet` exit 2.
+
+Rows this run: `DF-CHIMERA-V2-136` (P5), `DF-CHIMERA-V2-137` (P2), `DF-CHIMERA-V2-111-R2` (P2,
+recurrence). No PERF row — nothing user-felt is the product's own cost. Evidence:
+`.coding-hermes/evidence/chimera-v2-dogfood-2026-11-23-14-28-25/run35/`; install leg on bunker
+agent `24c5ae12` (bunker-mvp), verdict in the run-35 dogfood-log entry.

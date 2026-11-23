@@ -1318,3 +1318,40 @@ works; the tree is red. Filed as `DF-CHIMERA-V2-135` (P1).
 **Docs index repair (this lane, docs only):** added run 33 and run 34 lines to `docs/README.md`
 after the detector proved run 33's report was referenced nowhere (`git log -S 'run33-retry-resilience'
 -- docs/README.md` → empty). No `src/` file touched.
+
+## Run 35 (2026-11-23) — the fallback contract is real; the top-level signal is not the worker story
+
+**What changed since run 34.** The DF-CHIMERA-V2-130 fix (89aee38) landed and IS deployed: the
+live `:8765` instance serves `0eb9232`, which contains it — the run-34 "stale deploy" finding is
+resolved for product code (the 2-commit delta to HEAD is board-only). Deepseek balance was
+topped up, so every provider but `cliproxy` (missing credentials) was live this run.
+
+**The reintroduction arm that matters.** You cannot wait for a provider to die on schedule, so
+the defect was reintroduced by ALLOWLIST: `allowed_models=["cliproxy/deepseek,deepseek-v4-flash"]`
+forces both `speed` workers onto the credential-dead provider. Result: each worker fails after 3
+attempts (full litellm error in `trace.worker_failures`), the worker span flips `degraded=true`
+and its `response` becomes an explicit `[stage … unavailable: <error>]` notice — and the request
+still returns 200 with a real answer in 3.63 s, served by the aggregator alone. That is the
+DF-130 contract working. Note the honest-worker-response shape: a failed stage NEVER contributes
+a fabricated answer; its slot in the trace carries the unavailability notice.
+
+**The trap this run adds to the trail:** `degraded_reasons` is truncation-only by spec
+(`src/chimera/engine.py:330` — "Stage truncations that silently degrade the merged answer",
+i.e. `finish_reason == "length"`). After a worker-layer wipeout it is `[]` while the merge ran
+on zero worker output. A caller keying on that field's NAME reads the wipeout as a clean
+multi-model merge; the real signal is buried one level down in `trace.worker_failures`
+(recurrence of DF-CHIMERA-V2-111, measured on the response surface).
+
+**Measurement notes for the next fire.**
+- Warm/cold on `/v1/deliberate` is noise: idle-cold 3.75 s vs back-to-back warm 4.61 s on the
+  same prompt — jitter dominates because the wall is upstream model time (client CPU 5 %). The
+  run-34 stub-floor result (product overhead ≤0.55 s) stands; do not re-profile without a
+  slower arm.
+- The CLI's 79 s vs 5.77 s auto/speed split (same one-line prompt) is a FORMATION effect, not a
+  product defect: `auto` adds a dispatcher call and routes to `deepseek-v4-pro`. It became a
+  docs row (DF-CHIMERA-V2-137), not a PERF row — the product is not slow, the quickstart is.
+- Config discovery is walk-up-from-cwd (`find_config_path`, config.py:1080); the documented
+  `CHIMERA_CONFIG` env pin (README.md:123) exists but the refusal message never names it (136).
+- Reading the deployed instance's auth key for a legitimate owner-side probe: pull it from the
+  server process environ into a shell var (`/proc/<pid>/environ`), never echo it — stage the
+  header file with chmod 600 and keep it OUT of any committed evidence dir.

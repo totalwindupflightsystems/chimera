@@ -66,4 +66,5 @@ against the live deployment, **not** a description of current behavior.
 - [dogfood/2026-11-20-run31-provider-resilience-integration.md](dogfood/2026-11-20-run31-provider-resilience-integration.md) — run 31, provider resilience: one dead aggregator discards the whole run (2026-11-20)
 - [dogfood/2026-11-20-run33-retry-resilience-integration.md](dogfood/2026-11-20-run33-retry-resilience-integration.md) — run 33, retry layer: one call is three upstream requests, a recovered 429 is invisible (2026-11-20)
 - [dogfood/2026-11-20-run34-abandon-resume-integration.md](dogfood/2026-11-20-run34-abandon-resume-integration.md) — run 34, walking away: the abandoned run keeps the slot, keeps spending, and is counted as a success (2026-11-20)
+- [dogfood/2026-11-23-run35-fallback-auth-integration.md](dogfood/2026-11-23-run35-fallback-auth-integration.md) — run 35, live fallback: a credential-dead provider returns 200 with an aggregator-only answer, auth and error contracts verified, three surfaces timed (2026-11-23)
 - [dogfood/diagnostics.md](dogfood/diagnostics.md) — build/diagnostic trail behind the 2026-08-03 run

@@ -1,0 +1,1 @@
+error: No chimera.yaml found. Copy chimera.yaml.example to chimera.yaml. Run `chimera config init` to create one from the shipped template (the wheel carries it, so this also works for pip installs).
