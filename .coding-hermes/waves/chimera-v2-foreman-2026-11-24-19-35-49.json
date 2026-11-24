@@ -13,7 +13,7 @@
       "disposition": "CLOSED — death-recovery: work commit 0c1e24f already at HEAD from dead session 2026-11-23; foreman judged the committed tree via staging pattern (verdict .gitreins/history/2026-11-24/1e35ad95 PASS, tier1+tier2), re-landed as ad7635f, task complete accepted verdict; no re-dispatch",
       "worktree": "main tree",
       "branch": "main",
-      "commit": "ad7635ff0fa15cb7e1728d905352aeb96faa3494",
+      "commit": "0c1e24f07dc0efb4e4a12eef8b8f225e565a4884",
       "status": "complete"
     },
     {
@@ -24,7 +24,7 @@
       "brief": "/tmp/brief-rf006-resume.md",
       "worker_model": "glm-5.3-flash",
       "worker_provider": "zai-glm",
-      "commit": "8c63e49c34b66be8287dff3a8e7cfc830c470939",
+      "commit": "a2db690697cf553918edfcca41d2d241f0c512ed",
       "status": "complete"
     }
   ],
@@ -40,6 +40,6 @@
   "local_gate": "merged-main full suite 2437 passed / 62 skipped / 0 failed (224.95s, PYTHONPATH=src, exit 0); 25/25 release-acceptance gate tests; ruff format+check clean; deletions-vs-origin-main 0",
   "remote_ci_before_closeout": "green 3/3 (github totalwindupflightsystems/chimera, incl. success run on the -002 fix content 2026-11-24T01:00Z)",
   "finished_at": "2026-11-24T21:08:19Z",
-  "closeout_sha": "8c63e49c34b66be8287dff3a8e7cfc830c470939",
+  "closeout_sha": "a2db690697cf553918edfcca41d2d241f0c512ed",
   "status": "finished"
 }
