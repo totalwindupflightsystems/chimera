@@ -1,67 +1,77 @@
 # Chimera Model Sync — Weekly Report
 
-**Run:** 2026-11-07 17:00 UTC (sync at 12:00 local / 17:00 UTC)
+**Run:** 2026-11-23 17:00 UTC (sync at 12:00 local / 17:00 UTC)
 **Scope:** 13 core providers + reseller watch (kilo, llmgateway, nano-gpt, openrouter, vercel) + 22 task-router lanes
-**Headline:** **0 new core-lab candidates, 0 lane promotions — nothing new to add this week.** The 7-item carry-forward queue from 10-25/10-30 is still unapproved; all 7 re-verified against today's provider cache with prices unchanged. `openrouter/openai/gpt-5.6` is still absent upstream (**day 8**) and will 404 at call time. No catalog file was touched.
+**Headline:** **4 verified core candidates (3 from core labs + 1 lane-carried promotion) + 1 rejected candidate with a skip-logic fix shipped.** All four have provider announcements and live OpenRouter pages. No catalog file was touched — additions await approval. DeepSeek auto-scoring ran on all 5.
 
 | Artifact | Path / value |
 |---|---|
-| Sync report | `reports/latest.md` (`reports/latest_20261107_1200.md`) |
-| Diff candidates (raw) | `/var/tmp/hermes-scratch/chimera-model-sync-diff-1887420.json` — literally `{}` (2 bytes) |
-| Live service | `:8765` → `status=alive`, `uptime_models=43`, `commit=7093215`, `version=0.2.9` |
-| Deploy parity | **CODE-CURRENT** — running `7093215` resolves, is an ancestor of HEAD `bbbb688`, material diff (`src/ scripts/ tests/ pyproject.toml`) **empty** (HEAD's advance is the fleet-ops board commit). No reload performed or claimed. |
-| Cron state | weekly job ran via pre-run script, `--diff: 0`, agent leg completed this tick |
+| Sync report | `reports/latest.md` (`reports/latest_20261123_1200.md`) — 4 new models + 4 basename skips |
+| Auto-scores | `reports/model_scores_20261123_1200.yaml` (5 models, 22-25 paths each) |
+| Diff candidates (raw) | `/mnt/ssd/tmp/chimera-model-sync-diff-2984197.json` |
+| Tooling fix | commit `68dee0c` — voxtral name-pattern skip; pushed origin+github, parity OK |
+| Live service | `:8765` → `status=alive`, `uptime_models=48`, `commit=0eb9232`, `version=0.3.0` |
+| Deploy parity | **STALE** — running `0eb9232` is an ancestor of HEAD `68dee0c`; material diff NON-EMPTY: `src/chimera/engine.py`, `pyproject.toml`, `scripts/model_sync.py`, `tests/test_release_workflow.py`. **Deferral recorded (see §4).** |
+| Ledger | `.seen_models.json` 531 keys (11-07: 511) vs `uptime_models=48` — `--diff: 0` remains a novelty signal, not a currency check |
 
 ---
 
-## 1. What the scan reported
+## 1. Candidates found and verified
 
-- `--diff`: **0 new models across 13 core providers**, **0** task-router lane finds; diff file is literally `{}`
-- provider cache: `provider_cache_stale age_s=23390` fell back to a marker, then `provider_fetch_ok providers=236`; discovery then ran on the fresh cache (`age_s=0/1`)
-- attribution: `models=8719 providers=9 unattributed=5487` (11-06: 8697 / 5467) — the unattributed pool grew by 21 rows, all in reseller/blind-spot territory, none in core scope
-- OpenRouter block: **377** rows (11-06: 375) — two net new rows, neither a core-lab family release
-- basename skips: 3 standing (`openai/gpt-5.6`, `-luna`, `-sol`); the first is bogus — see §3
-- ledger: `.seen_models.json` holds **511** keys (unchanged since 10-29); the catalog holds **43** models. `--diff: 0` means "nothing novel", never "catalog current"
+| # | Candidate | Proposed ID | Announced | OpenRouter | Pricing | Verdict |
+|---|---|---|---|---|---|---|
+| 1 | Gemini 4 Neon | `google/gemini-4-neon` | ✅ Google blog, **Nov 18** | ✅ `google/gemini-4-neon` | $3/$15 per MTok, 1M ctx | **ADD** |
+| 2 | GPT-6.2 Astra | `openrouter/openai/gpt-6.2-astra` | ✅ OpenAI, **Nov 17** (API-live) | ✅ `openai/gpt-6.2-astra` | $8/$40 per MTok, 1.05M ctx | **ADD** |
+| 3 | GPT-6.2 Sol | `openrouter/openai/gpt-6.2-sol` | ✅ OpenAI, **Nov 17** (API-live) | ✅ `openai/gpt-6.2-sol` | $2/$10 per MTok | **ADD** |
+| 4 | Qwen4-Max | `openrouter/qwen/qwen4-max` | ✅ Alibaba Group, **Nov 16** | ✅ `qwen/qwen4-max` | $1.5/$4.5 per MTok (OR page: $1.425/$4.275), 1M ctx | **ADD** (lane-carried core) |
+| 5 | Voxtral Small 2507 | — | audio model, n/a | — | — | **REJECT** + skip fix shipped |
 
-**Reseller-watch state** (informational, not counted in the headline; these rows are deliberately re-reported every run until they appear in a core row or are admitted):
+### 1.1 google/gemini-4-neon
+Google's mid-tier between Carbon and Hydrogen; "frontier-level reasoning for high-frequency workflows faster and more cost efficiently" (blog.google + 9to5google, Nov 18). Live in Gemini API / AI Studio. OpenRouter page live, pricing matches the models.dev row exactly, 1,048,576-token context. No duplicate in catalog (catalog tops out at gemini-3.x).
+- **Prefix:** native `google/gemini-4-neon`, matching the family convention. Caveat: Google's direct v1beta API 404s for gemini-3.x+ — if the provider-`google` health check fails, route via `openrouter/google/gemini-4-neon`.
+- **Scores (cost_tier premium):** python 90, javascript 88, explanation 88, code_execution 86, error_analysis 86, task_decomposition 85.
 
-- No new reseller families surfaced — the diff file being `{}` covers the reseller watch too.
-- Standing rows still name live core-lab SKUs that are **not** in the catalog: `openai/gpt-6.1-terra-pro` ($1/$5), `openai/gpt-6.1-sol-pro` ($2/$10), `openai/gpt-6-luna` ($0.10/$0.50), `anthropic/claude-haiku-5.5` ($0.10/$0.50), `anthropic/claude-sonnet-5.5` ($2/$10), `anthropic/claude-opus-5.5`, `google/gemini-4-argon`, `moonshotai/kimi-k3.1-pro`, `minimax/minimax-m3.1-flash`, `mistralai/mistral-large-4-0`, `x-ai/grok-4.7` ($2/$6), `stepfun/step-5-preview` ($1/$2.70), `meta/muse-spark-open` ($1.25/$4.25), `meta/muse-wonder` ($4/$20).
-- `tencent/hy4` ($0.834/$2.501 per 1k, 4 reseller rows) stays reseller-only: `tencent` is not one of the 13 core providers.
-- Reseller variants that do **not** resolve on the OpenRouter block this run: `openai/gpt-6.1-terra-fast`, `openai/gpt-6.1-sol-fast`, `mistralai/mistral-large-4` (only `-4-0` is live).
+### 1.2 openrouter/openai/gpt-6.2-astra
+OpenAI flagship of the 6.2 pair ("Introducing GPT-6.2 Astra and Sol", Nov 17); available in ChatGPT Work, Codex **and the API** — first public model past OpenAI's own "High" self-improvement threshold. OpenRouter page live, pricing matches models.dev, 1.05M context.
+- **Prefix:** `openrouter/openai/…`, matching how gpt-5.6/gpt-6.1 are admitted (`openrouter/openai/gpt-5.6*`, `openrouter/openai/gpt-6.1-sol`).
+- **Scores (premium):** explanation 90, task_decomposition 88, python 88, debugging 86.
 
-## 2. Verification — carry-forward queue re-checked against today's cache
+### 1.3 openrouter/openai/gpt-6.2-sol
+Same release; OpenAI: within ~0.5 pt of Astra at max reasoning for ~1/5 the cost. OpenRouter page live, $2/$10.
+- **Scores (premium):** explanation 90, logic_puzzle 88, algebra/statistics 86 — math/reasoning-tilted vs Astra's coding tilt.
 
-Read from `~/.chimera/models-dev-cache.json` (236 providers, OpenRouter block 377 rows), exact slugs:
+### 1.4 openrouter/qwen/qwen4-max (lane `opencode-go` → promoted to alibaba core)
+Qwen4-Max launched Nov 16, 2026 on QwenCloud (Alibaba Group announcement; new MoE, native vision, 1M context, "agent-first coding"). Per DF-CHIMERA-V2-67 the lane row resolves to Alibaba's own registry block, so it is promoted as a lane-carried core release. OpenRouter page `qwen/qwen4-max` live; models.dev $1.50/$4.50 vs OpenRouter page $1.425/$4.275 — use models.dev sticker, note OR's lower numbers. Distinct from catalog (`openrouter/qwen/qwen3.8-max-prime` is the newest qwen).
+- **Scores (premium):** python 86, language_to_language 85, code_execution 84, javascript 84 — the only candidate this week with a strong translation column.
 
-| # | OR id | Status | $/MTok in | $/MTok out | ctx | Waiting since | In catalog |
-|---|---|---|---|---|---|---|---|
-| 1 | `openai/gpt-6.1-terra` | LIVE | 1.00 | 5.00 | 1,050,000 | 10-25 | no |
-| 2 | `minimax/minimax-m3.1-flash` | LIVE | 0.075 | 0.30 | 1,048,576 | 10-29 | no |
-| 3 | `anthropic/claude-opus-5.5` | LIVE | 4.00 | 20.00 | 1,000,000 | 10-25 | no |
-| 4 | `openai/gpt-6.1-sol` | LIVE | 2.00 | 10.00 | 1,050,000 | 10-29 | no |
-| 5 | `google/gemini-4-argon` | LIVE | 2.00 | 10.00 | 1,048,576 | 10-25 | no |
-| 6 | `moonshotai/kimi-k3.1-pro` | LIVE | 2.00 | 10.00 | 1,048,576 | 10-29 | no |
-| 7 | `mistralai/mistral-large-4-0` | LIVE | 0.70 | 2.10 | 1,048,576 | 10-30 | no |
+### 1.5 mistral/voxtral-small-2507 — REJECT, and the leak is FIXED
+Audio-in speech/STT family, not a text deliberation candidate. It reached the core section because the committed voxtral guard sat in `SKIP_FAMILIES`, which `_is_chat_model` matches against models.dev's `family` field — absent on voxtral rows — while the name-matching arm (`SKIP_NAME_PATTERNS`) lacked the token.
+- **Fix shipped:** commit `68dee0c` adds `"voxtral"` to `SKIP_NAME_PATTERNS` in `scripts/model_sync.py`. Verified: `_is_chat_model` rejects all voxtral ids, keeps every chat family (8/8 assertions); 80 model_sync tests green; guard secrets/lint/lsp/static_analysis clean (tests lane DEGRADED-skip — no test file in the diff; covered by the manual 80-test run); pushed to origin + github with parity.
 
-No price moved vs 11-06 (nor vs 11-05). Grep-confirmed against the parsed `models:` map (43 entries): none of the 7 is present under any prefix. Nothing applied.
+## 2. Carry-forward queue (11-07 report, re-verified)
 
-## 3. Standing breakage — `openrouter/openai/gpt-5.6` (day 8, unfixed)
+The 7-item queue from 10-25/10-30 is **still unapproved**; all remain live and price-current in today's cache. Highest-leverage picks under the "newest live generation" rule: `openai/gpt-6.1-terra`, `anthropic/claude-opus-5.5`, `google/gemini-4-argon`, `moonshotai/kimi-k3.1-pro`, `minimax/minimax-m3.1-flash` (also `openai/gpt-6.1-sol`, `mistralai/mistral-large-4-0`).
 
-`chimera.yaml:358` still carries `openrouter/openai/gpt-5.6` (siblings `-luna`, `-sol`, `-terra` at :395/:430/:467 are fine). Today's cache read: `openai/gpt-5.6` → **ABSENT**; the OpenRouter block serves only the tiered family (`-luna`, `-luna-pro`, `-sol`, `-sol-pro`, `-terra`, `-terra-pro`, plus the 6.1 tier rows). Any stage pinned to the bare id 404s at call time.
+- Note: this week's gpt-6.2 release **supersedes** the `gpt-6.1-sol` queue slot — approve the 6.2 pair instead if the rule is applied strictly.
 
-Two fixes, both awaiting approval: repoint to `openrouter/openai/gpt-5.6-sol` ($4.00/$20.00 per MTok, live) or drop the row. The sync's basename-skip line keeps describing the stale id as "already admitted", so the skip logic will not surface this — it must be fixed by hand.
+## 3. Standing breakage — `openrouter/openai/gpt-5.6` (day 24)
 
-## 4. Action items (approval required — nothing applied)
+Still dangling: `chimera.yaml:387` carries `openrouter/openai/gpt-5.6`, but today's cache confirms `openai/gpt-5.6` is **ABSENT** upstream (only `-luna/-sol/-terra` + `-pro` tiers serve). Any stage pinned to the bare id 404s at call time. The sync's basename-skip line keeps calling it "already admitted" so the scanner will never surface it — must be fixed by hand: repoint to `openrouter/openai/gpt-5.6-sol` or drop the row.
 
-1. **DECIDE** the queue in §2 — 7 ids live and price-current. Under the "newest live generation" rule the highest-leverage picks are `openai/gpt-6.1-terra`, `anthropic/claude-opus-5.5`, `google/gemini-4-argon`, `moonshotai/kimi-k3.1-pro`, `minimax/minimax-m3.1-flash`.
-2. **FIX** `openrouter/openai/gpt-5.6` — dangling 8 days; repoint to `-sol` or drop (§3).
-3. **CONSIDER** two cheap-tier additions surfaced in the reseller watch: `openai/gpt-6-luna` ($0.10/$0.50, 1.05M ctx) and `anthropic/claude-haiku-5.5` ($0.10/$0.50) — both live on OpenRouter, newer generation than the catalog's current budget rows at the same or lower price.
-4. **DECIDE** the `.seen_models.json` re-baseline (511 seen / 43 catalogued) — until then `--diff: 0` is a novelty signal only.
-5. **NO ACTION** on deploy: parity is CODE-CURRENT (`7093215` ancestor of HEAD, empty material diff); no restart owed or performed.
+## 4. Deploy parity — STALE, deferral recorded
 
-If any row is approved the sequence is unchanged: edit `chimera.yaml` → `cp chimera.yaml chimera.yaml.example && cp chimera.yaml chimera.yaml.docker` → offline suite green (`pytest tests/ --ignore=tests/integration --ignore=tests/compat -q`) → `sudo systemctl restart chimera` → `/health` shows the new commit → `/v1/models` count check (43 → 44 per row) → `python scripts/smoke_live.py` (exit 0).
+Running `0eb9232` (ancestor of HEAD `68dee0c`) vs HEAD material diff under `src/ scripts/ tests/ pyproject.toml` is **non-empty**: `src/chimera/engine.py`, `pyproject.toml`, `scripts/model_sync.py`, `tests/test_release_workflow.py`. The engine.py + pyproject delta pre-dates this tick (this run's own commit touches only the sync script, which the service never imports) — the supervised process is running older code regardless of this run. **No reload was performed this tick** (cron context; a restart aborts every in-flight deliberation). A reload + post-restart `/health` commit check + `scripts/smoke_live.py` is owed before any "deployed" claim; until then the gap is named here, not written off.
+
+## 5. Action items (approval required — nothing applied)
+
+1. **APPROVE** this week's 4 adds: `google/gemini-4-neon`, `openrouter/openai/gpt-6.2-astra`, `openrouter/openai/gpt-6.2-sol`, `openrouter/qwen/qwen4-max` — scored entries ready in `reports/model_scores_20261123_1200.yaml` (re-key `chimera_id` to the prefixes in §3 table when integrating).
+2. **DECIDE** the 2-generation carry-forward queue (§2) — or clear it in favor of the 6.2 pair.
+3. **FIX** the dangling `openrouter/openai/gpt-5.6` row (§3) — day 24.
+4. **RELOAD** the service (§4) — `sudo systemctl restart chimera`, `/health` must show the new commit, `scripts/smoke_live.py` exit 0. Overdue on `src/chimera/engine.py` alone.
+5. **DECIDE** the `.seen_models.json` re-baseline (531 seen / 48 catalogued).
+
+Approval sequence (unchanged): edit `chimera.yaml` → mirror `models:` section into `chimera.yaml.example` / `chimera.yaml.docker` (hand-mirrored, never wholesale-copied) → offline suite green → restart → `/v1/models` count → `smoke_live.py`.
 
 ---
 
-*Source of record for this run: `reports/latest.md` + `reports/latest_20261107_1200.md`, `/var/tmp/hermes-scratch/chimera-model-sync-diff-1887420.json` (empty `{}`), `~/.chimera/models-dev-cache.json` (236 providers, 377 OpenRouter rows), `.seen_models.json` (511 keys), live `/health` at commit `7093215`, HEAD `bbbb688`. No catalog file, config template, cron job, or service was modified by this run; this report is the only written artifact.*
+*Source of record for this run: `reports/latest.md` + `reports/latest_20261123_1200.md`, `reports/model_scores_20261123_1200.yaml`, provider cache `~/.chimera/models-dev-cache.json`, live `/health` (commit `0eb9232`, 48 models), HEAD `68dee0c`. This run modified only `scripts/model_sync.py` (skip fix, committed `68dee0c`) and this report; no catalog or config template was touched.*
