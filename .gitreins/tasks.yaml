@@ -2785,3 +2785,34 @@ tasks:
   status: complete
   created_at: '2026-11-23T14:23:19.115660+00:00'
   completed_at: '2026-11-23T15:10:37.239209+00:00'
+- id: RELEASE-FINDING-2026-11-21-002
+  title: Auto dispatch raises unclassified BudgetExhaustedError; explicit formations
+    answer classified 503 no_healthy_candidate
+  criteria:
+  - A deliberation with no explicit formation against a provider set whose only candidate
+    is quota-dead returns the same classified status (503 + error_class no_healthy_candidate)
+    that an explicit formation returns, instead of raising BudgetExhaustedError out
+    of the request; a regression test covers the no-formation path and asserts the
+    classified status
+  status: complete
+  created_at: '2026-11-23T22:17:47.972967+00:00'
+  completed_at: '2026-11-24T20:22:28.820572+00:00'
+- id: RELEASE-FINDING-2026-11-21-005
+  title: CHANGELOG [Unreleased] must name DF-CHIMERA-V2-116 and DF-CHIMERA-V2-127
+    before the next tag
+  criteria:
+  - CHANGELOG.md [Unreleased] names DF-CHIMERA-V2-116 and DF-CHIMERA-V2-127 so the
+    next cut carries both post-tag fixes
+  status: complete
+  created_at: '2026-11-23T22:20:14.608728+00:00'
+  completed_at: '2026-11-23T22:22:08.965508+00:00'
+- id: RELEASE-FINDING-2026-11-21-006
+  title: Release cut grades acceptance evidence on a pre-tag checkout; runbook must
+    refuse to tag when graded SHA != tag target
+  criteria:
+  - The acceptance evidence file for the next cut records the exact graded SHA and
+    the release script refuses to tag when that SHA is not the tag target, printing
+    both SHAs
+  status: complete
+  created_at: '2026-11-23T22:36:35.989814+00:00'
+  completed_at: '2026-11-24T20:36:43.421708+00:00'
