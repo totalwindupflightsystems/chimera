@@ -1,0 +1,45 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-24-19-35-49",
+  "block": "release-block-2026-11-21 (12 rows; CLOSED 12/12 this tick: -002 death-recovery judged, -006 worker resume)",
+  "wave_budget": 1,
+  "slots_box": 4,
+  "slots_effective": 1,
+  "wave_size": 1,
+  "path": "serial (WAVE_BUDGET=1 hard ceiling; resume-first rule targeted the release block)",
+  "base_sha": "0c1e24f07dc0efb4e4a12eef8b8f225e565a4884",
+  "rows": [
+    {
+      "task_id": "RELEASE-FINDING-2026-11-21-002",
+      "disposition": "CLOSED — death-recovery: work commit 0c1e24f already at HEAD from dead session 2026-11-23; foreman judged the committed tree via staging pattern (verdict .gitreins/history/2026-11-24/1e35ad95 PASS, tier1+tier2), re-landed as ad7635f, task complete accepted verdict; no re-dispatch",
+      "worktree": "main tree",
+      "branch": "main",
+      "commit": "ad7635ff0fa15cb7e1728d905352aeb96faa3494",
+      "status": "complete"
+    },
+    {
+      "task_id": "RELEASE-FINDING-2026-11-21-006",
+      "disposition": "CLOSED — worker resume: dead session left uncommitted script+tests+ci.yml+notes (13/25 tests red at pickup); worker glm-5.3-flash @ zai-glm fixed all failures + staged, died on gateway disconnect pre-commit; foreman committed the staged tree with the worker's message file (4af8f78), rebased onto ad7635f -> 8c63e49; merged-main suite 2437/62/0 green",
+      "worktree": "/home/kara/worktrees/chimera-v2-RELEASE-FINDING-2026-11-21-006",
+      "branch": "wt/RELEASE-FINDING-2026-11-21-006",
+      "brief": "/tmp/brief-rf006-resume.md",
+      "worker_model": "glm-5.3-flash",
+      "worker_provider": "zai-glm",
+      "commit": "8c63e49c34b66be8287dff3a8e7cfc830c470939",
+      "status": "complete"
+    }
+  ],
+  "workers": [
+    {
+      "task_id": "RELEASE-FINDING-2026-11-21-006",
+      "dispatched_at": "2026-11-24T19:47:00Z",
+      "model": "glm-5.3-flash",
+      "provider": "zai-glm",
+      "outcome": "completed (resume mode); final worker turn cut by gateway disconnect after staging — tree recovered and committed by foreman with the worker's own commit message"
+    }
+  ],
+  "local_gate": "merged-main full suite 2437 passed / 62 skipped / 0 failed (224.95s, PYTHONPATH=src, exit 0); 25/25 release-acceptance gate tests; ruff format+check clean; deletions-vs-origin-main 0",
+  "remote_ci_before_closeout": "green 3/3 (github totalwindupflightsystems/chimera, incl. success run on the -002 fix content 2026-11-24T01:00Z)",
+  "finished_at": "2026-11-24T21:08:19Z",
+  "closeout_sha": "8c63e49c34b66be8287dff3a8e7cfc830c470939",
+  "status": "finished"
+}
