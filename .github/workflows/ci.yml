@@ -296,6 +296,22 @@ jobs:
           echo "expected published version: ${VERSION}"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
+      - name: Acceptance-evidence SHA gate — the evidence must grade the exact tagged commit (RELEASE-FINDING-2026-11-21-006 gate)
+        run: |
+          # RELEASE-FINDING-2026-11-21-006: v0.3.0's artifact-acceptance evidence
+          # graded a PRE-release checkout (worktree HEAD f7cf034) while the pushed
+          # v0.3.0 tag peeled to 57e298c — 72 commits later, 11 touching product
+          # source — so the acceptance record certified a tree no user receives.
+          # This gate re-derives both sides from the checkout: the graded SHA is
+          # read from the evidence file (the documented `graded-sha: <sha>` line or
+          # the `at HEAD `<sha>`` form that file used), the tag target from
+          # `git rev-parse <tag>{}`, and the job fails loudly naming BOTH unless
+          # they are the exact same commit. Equality is the bar: ancestor-only is
+          # refused, and the sole escape is a SCOPE-WAIVER line plus a VERIFIED
+          # empty packaged-path delta. The evidence path defaults to the tracked
+          # convention .coding-hermes/evidence/**/artifact-acceptance-<version>.md.
+          python scripts/release_acceptance_check.py "${GITHUB_REF_NAME}"
+
       - name: Fresh-venv install of the EXACT published version (DF-CHIMERA-0911-2 gate)
         run: |
           python -m venv /tmp/release-venv
