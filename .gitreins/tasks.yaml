@@ -2816,3 +2816,18 @@ tasks:
   status: complete
   created_at: '2026-11-23T22:36:35.989814+00:00'
   completed_at: '2026-11-24T20:36:43.421708+00:00'
+- id: README-15
+  title: README Python recipe prints engine observability logs on stdout by default
+    and never names the remedy
+  criteria:
+  - 'The README Python block (README.md:125-134) carries one sentence stating that
+    engine observability logs go to stdout in library use by default, and names the
+    remedy (observability.use_stdout: false, pointing at docs/CONFIG.md observability)'
+  - Re-running the documented block through the minimal local fixture after the fix
+    shows stdout holding only the answer line (or the README states exactly what stdout
+    will contain)
+  - 'The sentence must not change CLI claims: CLI --quiet/--json stdout purity (one
+    payload) stays untouched'
+  status: complete
+  created_at: '2026-11-25T05:50:33.825286+00:00'
+  completed_at: '2026-11-25T06:03:57.916542+00:00'
