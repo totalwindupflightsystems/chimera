@@ -2842,3 +2842,13 @@ tasks:
   status: complete
   created_at: '2026-11-25T15:26:22.200496+00:00'
   completed_at: '2026-11-25T16:33:28.166891+00:00'
+- id: QA-CHIMERA-V2-47
+  title: 'Fix QA battery classifiers: pytest-comma counts guard + chaos-shutdown vacuous-OK
+    guard'
+  criteria:
+  - bunker-qa.sh disconnect_suite_counts accepts comma-separated pytest summaries
+    (2332 passed, 67 skipped matches); chaos-shutdown OK requires a nonzero action
+    counter, zero-action run grades FAIL with counter block; bash -n clean; classifier
+    functions unit-tested against real recorded evidence logs
+  status: in_progress
+  created_at: '2026-11-25T22:40:05.756194+00:00'
