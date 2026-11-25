@@ -127,6 +127,11 @@ import asyncio
 
 from chimera import Engine, LiteLLMGateway, load_config
 
+# NOTE: in library use the engine's observability logs go to stdout by
+# default (stdout mixes the answer line with log output); set
+# `observability.use_stdout: false` in chimera.yaml to route logs to
+# stderr so stdout holds only the answer — see docs/CONFIG.md, section
+# `observability`.
 config = load_config()
 engine = Engine(config, LiteLLMGateway(config))
 result = asyncio.run(engine.deliberate("Explain quantum computing."))
