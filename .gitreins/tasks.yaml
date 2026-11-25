@@ -2831,3 +2831,14 @@ tasks:
   status: complete
   created_at: '2026-11-25T05:50:33.825286+00:00'
   completed_at: '2026-11-25T06:03:57.916542+00:00'
+- id: QA-CHIMERA-V2-51
+  title: act replay of CI workflow reds test_repo_venv_guard_treats_unreadable_venv_as_absent
+    under root
+  criteria:
+  - tests/test_release_workflow.py unreadable-venv arm passes BOTH as root (euid==0)
+    and as non-root via the repo's documented pytest command; fix = skip assertion
+    under root or exercise unreadability via unprivileged subprocess; hosted CI of
+    the same tip stays green
+  status: complete
+  created_at: '2026-11-25T15:26:22.200496+00:00'
+  completed_at: '2026-11-25T16:33:28.166891+00:00'
