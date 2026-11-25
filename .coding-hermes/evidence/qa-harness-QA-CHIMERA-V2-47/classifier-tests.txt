@@ -1,0 +1,49 @@
+================================================================
+QA-CHIMERA-V2-47 classifier test transcript
+generated: 2026-11-25T22:48:24Z
+target: /home/kara/.hermes/scripts/bunker-qa.sh
+================================================================
+
+--- TEST 1: bash -n whole file (post-edit) ---
+PASS: bash -n clean
+
+--- TEST 2: disconnect_suite_counts (extracted verbatim from edited file) ---
+extraction: bash -c 'source <(sed -n "/^disconnect_suite_counts()/,/^}/p" file)'
+PASS: expect=MATCH got=MATCH :: real 11-21 fixture (comma after count word) :: <<2332 passed, 67 skipped in 153.85s>>
+PASS: expect=MATCH got=MATCH :: real auger-gate fixture (~/.hermes/qa/evidence/auger-gate-20261001-1848.log) :: <<1 failed, 279 passed, 1 skipped, 1 error in 2417.92s>>
+PASS: expect=MATCH got=MATCH :: comma-led counts-before-passed variant :: <<67 skipped, 2332 passed in 153.85s>>
+PASS: expect=MATCH got=MATCH :: regression: plain '3 passed' :: <<3 passed>>
+PASS: expect=NOMATCH got=NOMATCH :: log with NO suite counts :: <<NETWORK_CUT_APPLIED>>
+PASS: expect=MATCH got=MATCH :: regression: go 'ok' alternation (untouched) :: <<ok   github.com/x/pkg 0.1s>>
+PASS: expect=MATCH got=MATCH :: regression: cargo 'test result:' alternation (untouched) :: <<test result: ok. 42 passed; 0 failed; 0 ignored>>
+NOTE on '67 skipped, 2332 passed in 153.85s': the fix's first alternation lists
+(passed|failed|error|errors) only — '67 skipped,' does NOT match ('skipped' is not
+in the alternation); the line matches via '2332 passed' followed by a space.
+
+--- TEST 3: chaos-shutdown vacuous-lifecycle guard (pure-bash logic harness) ---
+guard condition extracted verbatim from the edited file (heredoc escapes un-escaped:
+sed 's/\\//g' on the containers/sd_vacuous/sd_counters/verdict lines); cell() and
+fail_detail() are stubs. Synthetic sd.log marker sets drive the same elif chain.
+case A: all-zero counters WITH CONTAINERS=0 (never-started stack, clean rc chain)
+  verdict -> chaos-shutdown / FAIL : no containers were ever started — lifecycle actions are vacuous — UP=0 STOP=0 RESTART=0 KILL=0 KILLRECOVER=0 DOWN=0 CONTAINERS=0
+PASS: expect=FAIL got=FAIL :: A: zero containers + clean chain
+case B: all-zero counters WITH CONTAINERS=3 (real lifecycle, clean chain)
+  verdict -> chaos-shutdown / OK : SIGTERM + SIGKILL recovery clean — UP=0 STOP=0 RESTART=0 KILL=0 KILLRECOVER=0 DOWN=0 CONTAINERS=3
+PASS: expect=OK got=OK :: B: 3 containers + clean chain
+case C: all-zero counters, CONTAINERS marker MISSING (guard must not OK)
+  verdict -> chaos-shutdown / FAIL : no containers were ever started — lifecycle actions are vacuous — UP=0 STOP=0 RESTART=0 KILL=0 KILLRECOVER=0 DOWN=0 CONTAINERS=0
+PASS: expect=FAIL got=FAIL :: C: missing CONTAINERS marker + clean chain
+case D: down failed (rc=1) with real containers — OK branch (down ignored) + counters
+  verdict -> chaos-shutdown / OK : SIGTERM + SIGKILL recovery clean — UP=0 STOP=0 RESTART=0 KILL=0 KILLRECOVER=0 DOWN=0 CONTAINERS=3
+PASS: expect=OK got=OK :: D: down_rc=1, CONTAINERS=3
+case E: down failed (rc=1) with ZERO containers — vacuous, must FAIL
+  verdict -> chaos-shutdown / FAIL : no containers were ever started — lifecycle actions are vacuous — UP=0 STOP=0 RESTART=0 KILL=0 KILLRECOVER=0 DOWN=0 CONTAINERS=0
+PASS: expect=FAIL got=FAIL :: E: down_rc=1, CONTAINERS=0
+
+--- TEST 4: edit presence greps ---
+grep 'space:],)' (DEFECT 1 fix — class [[:space:],)]: terminator ']' then ',' member): 1 occurrence(s) — expect 1
+grep 'echo CONTAINERS=' (DEFECT 2 capture): 1 occurrence(s) — expect 1
+grep 'lifecycle actions are vacuous' (DEFECT 2 guard): 2 occurrence(s) — expect 2 (both OK branches)
+grep 'sd_counters=' (counter block build): 1 occurrence(s) — expect 1 build + verdict refs
+
+END OF TRANSCRIPT

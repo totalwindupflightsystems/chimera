@@ -1,0 +1,18 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-25-22-36-40",
+  "tick_number": 502,
+  "block": "QA block (qa, 37/43=86% done) — resumed from tick 501; rows 46/47/50 P2 harness, 48/49/DOCS-1 P3",
+  "selection": "QA-CHIMERA-V2-47 (P2, root cause diagnosed in-row, best local-verify profile)",
+  "path": "serial (slots=1: loadavg 15.71/16c -> max(1,16-ceil(15.71))=1; WAVE_BUDGET=5 unused: concurrency capped by box load, not budget)",
+  "rows": [
+    {
+      "task_id": "QA-CHIMERA-V2-47",
+      "brief": "/tmp/brief-QA-CHIMERA-V2-47-20261125T2245Z.md",
+      "worker_model": "glm-5.3-flash",
+      "worker_provider": "opencode-go-2",
+      "worktree": "n/a — edit target is ~/.hermes/scripts/bunker-qa.sh (external shared harness, not in any git repo); repo evidence snapshot committed by foreman",
+      "branch": "n/a (same)"
+    }
+  ],
+  "written_before_dispatch": true
+}

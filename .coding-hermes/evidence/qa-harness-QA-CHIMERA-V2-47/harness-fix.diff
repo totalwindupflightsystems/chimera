@@ -1,0 +1,57 @@
+--- /home/kara/.hermes/scripts/backup/bunker-qa.sh.bak-QA-CHIMERA-V2-47-20261125T224306Z	2026-11-25 17:43:06.364799296 -0500
++++ /home/kara/.hermes/scripts/bunker-qa.sh	2026-11-25 17:48:15.866392519 -0500
+@@ -4484,7 +4484,7 @@
+ # a 100s suite as a hang on a slower agent (QA-HERMES-CANOPY-21). The computed
+ # window is APPLIED to the timeout invocation below — not merely named.
+ disconnect_suite_counts() { # <log> — require evidence that tests actually ran
+-  grep -Eq '(^|[[:space:]])[1-9][0-9]* (passed|failed|error|errors)([[:space:]]|$)|^ok[[:space:]]+[^[:space:]]+[[:space:]]+[0-9]|test result:.*[1-9][0-9]* passed' "\$1" 2>/dev/null
++  grep -Eq '(^|[[:space:]])[1-9][0-9]* (passed|failed|error|errors)([[:space:],)]|$)|^ok[[:space:]]+[^[:space:]]+[[:space:]]+[0-9]|test result:.*[1-9][0-9]* passed' "\$1" 2>/dev/null
+ }
+ disconnect_log_valid() { # <log> — cut marker AND non-vacuous test counts are required
+   grep -q '^NETWORK_CUT_APPLIED$' "\$1" 2>/dev/null && disconnect_suite_counts "\$1"
+@@ -4538,6 +4538,10 @@
+   # the failing verb; grading below still keys on the STOP=/KILLRECOVER= markers.
+   up_rc=0; stop_rc=0; start1_rc=0; kill_rc=0; start2_rc=0; down_rc=0
+   { docker compose up -d >/dev/null 2>&1; up_rc=\$?; echo UP=\$up_rc
++    # QA-CHIMERA-V2-47: container count right after up is the lifecycle action
++    # counter — a stack with zero containers makes every later stop/start rc 0
++    # on nothing, so the rc chain alone cannot prove a real shutdown lifecycle.
++    CNT=\$(docker compose ps -q 2>/dev/null | wc -l); echo CONTAINERS=\$CNT
+     docker compose stop >/dev/null 2>&1; stop_rc=\$?; echo STOP=\$stop_rc
+     [ \$stop_rc -eq 0 ] && sleep 4
+     docker compose start >/dev/null 2>&1; start1_rc=\$?; echo RESTART=\$start1_rc
+@@ -4552,15 +4556,25 @@
+   [ "\$sd_rc" -eq 0 ] && sd_rc=\$kill_rc
+   [ "\$sd_rc" -eq 0 ] && sd_rc=\$start2_rc
+   [ "\$sd_rc" -eq 0 ] && sd_rc=\$down_rc
+-  if [ "\$up_rc" -ne 0 ]; then cell chaos-shutdown FAIL "compose up failed before the stop/kill chain — \$(fail_detail \$up_rc \$LOGD/sd.log 'docker compose up -d')"
+-  elif [ "\$stop_rc" -ne 0 ]; then cell chaos-shutdown FAIL "compose stop failed rc=\$stop_rc (chain rc=\$sd_rc) — \$(cat \$LOGD/sd.log)"
+-  elif [ "\$start1_rc" -ne 0 ]; then cell chaos-shutdown FAIL "compose start (post-stop) failed rc=\$start1_rc (chain rc=\$sd_rc) — \$(cat \$LOGD/sd.log)"
+-  elif [ "\$kill_rc" -ne 0 ]; then cell chaos-shutdown INFO "graceful ok, kill step failed rc=\$kill_rc (chain rc=\$sd_rc) — \$(cat \$LOGD/sd.log)"
+-  elif [ "\$start2_rc" -ne 0 ]; then cell chaos-shutdown FAIL "kill-recovery start failed rc=\$start2_rc (chain rc=\$sd_rc) — \$(cat \$LOGD/sd.log)"
+-  elif [ "\$down_rc" -ne 0 ]; then cell chaos-shutdown OK "SIGTERM + SIGKILL recovery clean (down rc=\$down_rc ignored)"
+-  elif grep -qE 'STOP=0' \$LOGD/sd.log && grep -qE 'KILLRECOVER=0' \$LOGD/sd.log; then cell chaos-shutdown OK "SIGTERM + SIGKILL recovery clean"
+-  elif grep -qE 'STOP=0' \$LOGD/sd.log; then cell chaos-shutdown INFO "graceful ok, kill-recovery issue: \$(cat \$LOGD/sd.log)"
+-  else cell chaos-shutdown FAIL "\$(fail_detail \$sd_rc \$LOGD/sd.log 'docker compose up -d; stop; start; kill; start; down')"; fi
++  # QA-CHIMERA-V2-47: docker compose stop/start on a stack that was never
++  # actually started returns 0, so a clean rc chain over zero containers is a
++  # VACUOUS lifecycle, not a shutdown result. Require the post-up container
++  # count captured above: missing or 0 -> no OK verdict may fire.
++  containers=\$(( \$(sed -n 's/^CONTAINERS=//p' \$LOGD/sd.log | tail -1) + 0 ))
++  sd_vacuous=0
++  [ "\$containers" -eq 0 ] && sd_vacuous=1
++  sd_counters="UP=\$up_rc STOP=\$stop_rc RESTART=\$start1_rc KILL=\$kill_rc KILLRECOVER=\$start2_rc DOWN=\$down_rc CONTAINERS=\$containers"
++  if [ "\$up_rc" -ne 0 ]; then cell chaos-shutdown FAIL "compose up failed before the stop/kill chain — \$(fail_detail \$up_rc \$LOGD/sd.log 'docker compose up -d') — \$sd_counters"
++  elif [ "\$stop_rc" -ne 0 ]; then cell chaos-shutdown FAIL "compose stop failed rc=\$stop_rc (chain rc=\$sd_rc) — \$(cat \$LOGD/sd.log) — \$sd_counters"
++  elif [ "\$start1_rc" -ne 0 ]; then cell chaos-shutdown FAIL "compose start (post-stop) failed rc=\$start1_rc (chain rc=\$sd_rc) — \$(cat \$LOGD/sd.log) — \$sd_counters"
++  elif [ "\$kill_rc" -ne 0 ]; then cell chaos-shutdown INFO "graceful ok, kill step failed rc=\$kill_rc (chain rc=\$sd_rc) — \$(cat \$LOGD/sd.log) — \$sd_counters"
++  elif [ "\$start2_rc" -ne 0 ]; then cell chaos-shutdown FAIL "kill-recovery start failed rc=\$start2_rc (chain rc=\$sd_rc) — \$(cat \$LOGD/sd.log) — \$sd_counters"
++  elif [ "\$down_rc" -ne 0 ]; then
++    if [ "\$sd_vacuous" -eq 1 ]; then cell chaos-shutdown FAIL "no containers were ever started — lifecycle actions are vacuous — \$sd_counters"; else cell chaos-shutdown OK "SIGTERM + SIGKILL recovery clean (down rc=\$down_rc ignored) — \$sd_counters"; fi
++  elif grep -qE 'STOP=0' \$LOGD/sd.log && grep -qE 'KILLRECOVER=0' \$LOGD/sd.log; then
++    if [ "\$sd_vacuous" -eq 1 ]; then cell chaos-shutdown FAIL "no containers were ever started — lifecycle actions are vacuous — \$sd_counters"; else cell chaos-shutdown OK "SIGTERM + SIGKILL recovery clean — \$sd_counters"; fi
++  elif grep -qE 'STOP=0' \$LOGD/sd.log; then cell chaos-shutdown INFO "graceful ok, kill-recovery issue: \$(cat \$LOGD/sd.log) — \$sd_counters"
++  else cell chaos-shutdown FAIL "\$(fail_detail \$sd_rc \$LOGD/sd.log 'docker compose up -d; stop; start; kill; start; down') — \$sd_counters"; fi
+ else cell chaos-shutdown N/A "no compose file"; fi
+ 
+ # 8 · chaos-corruption — truncate a state file, OBSERVE the next start, restore
