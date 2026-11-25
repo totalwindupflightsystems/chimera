@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -1477,6 +1478,16 @@ def test_repo_venv_guard_treats_unreadable_venv_as_absent(tmp_path: Path) -> Non
     bin_dir = tmp_path / ".venv" / "bin"
     bin_dir.mkdir(parents=True)
     (bin_dir / "python").write_bytes(b"")
+    if os.geteuid() == 0:
+        # act's container runs CI jobs as root, and chmod(0o000) cannot make a
+        # directory unreadable for euid 0 — the probe would (correctly for
+        # root) see the path, so this arm is unexercisable, not broken. Skip
+        # with the reason named; hosted non-root runners still cover it
+        # (QA-CHIMERA-V2-51).
+        pytest.skip(
+            "running as root: chmod(0o000) cannot hide bin/ from euid 0, so "
+            "the unreadable->absent arm cannot be exercised in this environment"
+        )
     bin_dir.chmod(0o000)
     try:
         assert _path_probeable(bin_dir / "python") is False
