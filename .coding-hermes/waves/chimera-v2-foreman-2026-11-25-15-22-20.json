@@ -1,0 +1,40 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-25-15-22-20",
+  "block": "QA-CHIMERA-V2-51 (qa block 36/43=83% done, top DRIVE line after policy-gated health row skipped)",
+  "wave_budget": 1,
+  "slots": 1,
+  "slots_reason": "loadavg 18.33 on 16 cores at tick open -> max(1, 16-ceil(18.33)) = 1; WAVE_BUDGET=1 caps concurrency at 1 anyway -> serial path, loaded box (owner ruling: load is never an idle reason)",
+  "wave_size": 1,
+  "path": "serial",
+  "base_sha": "861853a",
+  "rows": [
+    {
+      "task_id": "QA-CHIMERA-V2-51",
+      "status": "merged-closed",
+      "worktree": "/home/kara/worktrees/chimera-v2-QA-CHIMERA-V2-51",
+      "branch": "wt/QA-CHIMERA-V2-51",
+      "worker_model": "glm-5.3-flash",
+      "worker_provider": "opencode-go-2",
+      "brief": "/tmp/brief-QA-CHIMERA-V2-51-20261125T1524Z.md"
+    }
+  ],
+  "workers": [
+    {
+      "task_id": "QA-CHIMERA-V2-51",
+      "brief": "/tmp/brief-QA-CHIMERA-V2-51-20261125T1524Z.md",
+      "dispatched_at": "2026-11-25T15:31:00Z"
+    }
+  ],
+  "status": "closed",
+  "started_at": "2026-11-25T15:24:00Z",
+  "gitreins_task": "QA-CHIMERA-V2-51",
+  "outcome": {
+    "QA-CHIMERA-V2-51": {
+      "outcome": "closed",
+      "commit": "0ded9da",
+      "worker_commit": "43715b2",
+      "judge": "c5422a72 PASS (9a2cc961)",
+      "residual": "LOCAL_CI.md stale dated table (judge-noted)"
+    }
+  }
+}
