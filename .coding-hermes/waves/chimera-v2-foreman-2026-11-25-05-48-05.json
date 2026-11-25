@@ -1,0 +1,32 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-25-05-48-05",
+  "tick": 500,
+  "block": "README-15 (readme-health block, 14/15 done, top block_drive line)",
+  "wave_budget": 4,
+  "slots": 1,
+  "slots_reason": "loadavg 16.60 on 16 cores at tick open -> max(1, 16-ceil(16.60)) = 1; serial path, loaded box (owner ruling: load is never an idle reason)",
+  "wave_size": 1,
+  "path": "serial",
+  "base_sha": "cc53820bc52e60b290d8e23c3f3051f397a11d3f",
+  "rows": [
+    {
+      "task_id": "README-15",
+      "status": "dispatched",
+      "worktree": "/home/kara/worktrees/chimera-v2-README-15",
+      "branch": "wt/README-15",
+      "worker_model": "glm-5.3-flash",
+      "worker_provider": "zai-glm",
+      "brief": "/tmp/brief-README-15-20261125T0552Z.md"
+    }
+  ],
+  "workers": [
+    {
+      "task_id": "README-15",
+      "brief": "/tmp/brief-README-15-20261125T0552Z.md",
+      "dispatched_at": "2026-11-25T05:52:30Z"
+    }
+  ],
+  "status": "open",
+  "started_at": "2026-11-25T05:52:30Z",
+  "gitreins_task": "README-15 (created+started pre-dispatch, criteria copied from board ACs)"
+}
