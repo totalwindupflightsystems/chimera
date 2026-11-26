@@ -33,6 +33,8 @@ Early, dated artifacts kept for history. They are **not** current documentation
 
 ## Dogfood run logs
 
+- [dogfood/2026-11-26-150341-install-harvest.md](dogfood/2026-11-26-150341-install-harvest.md) — bunker installation harvest and evidence limits (2026-11-26)
+
 Historical run logs: each file is a dated snapshot of one real-use dogfood run
 against the live deployment, **not** a description of current behavior.
 
