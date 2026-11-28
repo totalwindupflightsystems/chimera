@@ -1,0 +1,19 @@
+{
+  "tick_id": "chimera-v2-foreman-2026-11-28-15-39-30",
+  "project": "chimera-v2",
+  "block": "RELEASE-READINESS-2026-11-27",
+  "wave_budget": 6,
+  "wave_size": 1,
+  "reason": "The selected block has one ready row; the box is saturated (loadavg 33.10 on 16 CPUs), so slots=max(1,16-ceil(33.10))=1. Serial wave is required by the block's singleton shape.",
+  "rows": [
+    {
+      "task_id": "RELEASE-READINESS-2026-11-27",
+      "worktree": "/home/kara/worktrees/chimera-v2-RELEASE-READINESS-2026-11-27",
+      "branch": "wt/RELEASE-READINESS-2026-11-27",
+      "base_sha": "ef75ff350b464e6426ff56d3b80124f6ebe7ebcb",
+      "brief": "/home/kara/.hermes/cache/scratch/brief-RELEASE-READINESS-2026-11-27.txt",
+      "model": "glm-5.3-flash",
+      "provider": "opencode-go-2"
+    }
+  ]
+}
